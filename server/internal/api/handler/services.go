@@ -21,6 +21,27 @@ type servicePayload struct {
 	ServiceData map[string]any `json:"service_data"`
 }
 
+// List GET /instances/{id}/services —— 返回 HA 服务目录，供动作编辑器选择服务与字段。
+func (h *Services) List(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(r)
+	if !ok {
+		WriteErr(w, 404, "not_found", "instance not found")
+		return
+	}
+	rst, err := h.manager.Rest(r.Context(), id)
+	if err != nil {
+		WriteErr(w, 404, "no_instance", "no configured instance")
+		return
+	}
+	catalog, err := rst.GetServices(r.Context())
+	if err != nil {
+		WriteErr(w, 502, "ha_unreachable", err.Error())
+		return
+	}
+	active, _ := h.manager.ActiveID(r.Context())
+	WriteMeta(w, 200, catalog, active)
+}
+
 // Call POST /instances/{id}/services
 func (h *Services) Call(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(r)

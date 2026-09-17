@@ -719,21 +719,94 @@
               </button>
             </div>
 
-            <template>
+            <div>
               <div v-for="(a, i) in wizard.actions" :key="i" class="space-y-2 mb-3 p-3 rounded-xl bg-surface-alt/60 border border-border/60">
+                <!-- 动作类型（对应 HA 动作的 service / delay / wait_template / stop） -->
                 <div class="flex items-center gap-2">
                   <span class="text-xs text-faint font-body flex-shrink-0 w-6">#{{ i + 1 }}</span>
-                  <input
-                    v-model="a.service"
-                    type="text"
-                    placeholder="服务，如 light.turn_on"
-                    class="flex-1 min-w-0 bg-surface border border-border rounded-lg px-2.5 py-1.5 text-xs font-body text-on-background outline-none focus:border-primary/50 placeholder:text-faint"
-                  />
-                  <button v-if="wizard.actions.length > 1" class="p-1 rounded text-faint hover:text-danger transition-colors" @click="removeAction(i)">
+                  <select
+                    v-model="a.type"
+                    class="flex-1 min-w-0 bg-surface border border-border rounded-lg px-2 py-1 text-xs font-body text-on-background outline-none focus:border-primary/50"
+                    @change="onActionTypeChange(a)"
+                  >
+                    <option v-if="a.raw" value="raw">复杂动作（原样保留）</option>
+                    <option value="service">调用服务</option>
+                    <option value="delay">延时</option>
+                    <option value="wait_template">等待条件</option>
+                    <option value="stop">停止</option>
+                  </select>
+                  <button v-if="i > 0" class="p-1 rounded text-faint hover:text-on-surface transition-colors" title="上移" @click="moveAction(i, -1)">
+                    <span class="material-symbols-outlined text-sm">arrow_upward</span>
+                  </button>
+                  <button v-if="i < wizard.actions.length - 1" class="p-1 rounded text-faint hover:text-on-surface transition-colors" title="下移" @click="moveAction(i, 1)">
+                    <span class="material-symbols-outlined text-sm">arrow_downward</span>
+                  </button>
+                  <button v-if="wizard.actions.length > 1" class="p-1 rounded text-faint hover:text-danger transition-colors" title="删除动作" @click="removeAction(i)">
                     <span class="material-symbols-outlined text-sm">close</span>
                   </button>
                 </div>
-                <div class="entity-search relative">
+
+                <!-- 复杂动作（choose/repeat/device 等）：无法拆分编辑，保存时原样写回 -->
+                <p v-if="a.raw" class="text-xs text-muted font-body">
+                  该动作由 HA 高级编辑器创建，本页不拆分编辑，保存时原样写回。
+                </p>
+
+                <template v-else-if="a.type === 'service'">
+                  <!-- 服务 -->
+                  <div class="entity-search relative">
+                    <label class="block text-xs text-muted font-body mb-1">服务 <span class="text-error">*</span></label>
+                    <div
+                      class="flex items-center gap-2 bg-surface border border-border rounded-lg px-2.5 py-1.5 text-xs font-body text-on-background outline-none focus-within:border-primary/50 cursor-text"
+                      @click.stop="a._svcOpen = !a._svcOpen"
+                    >
+                      <span class="material-symbols-outlined text-base text-muted flex-shrink-0">bolt</span>
+                      <input
+                        :value="a._svcSearch || (a.service ? serviceLabel(a.service) : '')"
+                        type="text"
+                        placeholder="搜索服务，如 light.turn_on"
+                        class="flex-1 min-w-0 bg-transparent outline-none text-xs font-body text-on-background placeholder:text-faint"
+                        @input="a._svcSearch = $event.target.value; a._svcOpen = true"
+                      />
+                      <button
+                        v-if="a.service"
+                        class="flex-shrink-0 text-muted hover:text-on-surface"
+                        @click.stop="a.service = ''; a.params = {}; a._svcSearch = ''; a._svcOpen = false"
+                      >
+                        <span class="material-symbols-outlined text-base">close</span>
+                      </button>
+                      <span class="material-symbols-outlined text-base text-muted flex-shrink-0" :class="a._svcOpen ? 'rotate-180' : ''">expand_more</span>
+                    </div>
+                    <div v-if="a._svcOpen" class="absolute z-50 top-full left-0 right-0 mt-1 bg-surface border border-border rounded-lg shadow-xl max-h-56 overflow-y-auto">
+                      <div
+                        v-if="a._svcSearch.trim() && !serviceOptions.some((s) => s.value === a._svcSearch.trim())"
+                        class="flex items-center gap-2 px-3 py-1.5 text-xs font-body cursor-pointer hover:bg-primary/10 transition-colors border-b border-border/60"
+                        @click="selectActionService(i, a._svcSearch.trim())"
+                      >
+                        <span class="material-symbols-outlined text-base text-muted flex-shrink-0">edit</span>
+                        <span class="truncate">直接使用「{{ a._svcSearch.trim() }}」</span>
+                      </div>
+                      <div v-if="filteredServices(a._svcSearch).length" class="py-1">
+                        <div
+                          v-for="s in filteredServices(a._svcSearch)"
+                          :key="s.value"
+                          class="flex items-center gap-2 px-3 py-1.5 text-xs font-body cursor-pointer hover:bg-primary/10 transition-colors"
+                          :class="{ 'bg-primary/10': a.service === s.value }"
+                          @click="selectActionService(i, s.value)"
+                        >
+                          <span class="material-symbols-outlined text-base text-muted flex-shrink-0">bolt</span>
+                          <div class="min-w-0 flex-1">
+                            <div class="text-on-background truncate">{{ s.label }}</div>
+                            <div class="text-faint truncate">{{ s.value }}</div>
+                          </div>
+                        </div>
+                      </div>
+                      <p v-else-if="!a._svcSearch" class="px-3 py-1.5 text-xs text-faint font-body">服务目录未加载，可在上方直接输入服务名</p>
+                      <p v-else class="px-3 py-1.5 text-xs text-faint font-body">无匹配服务</p>
+                    </div>
+                  </div>
+
+                  <!-- 目标实体 -->
+                  <div class="entity-search relative">
                   <label class="block text-xs text-muted font-body mb-1">目标实体（可选）</label>
                   <div
                     class="flex items-center gap-2 bg-surface border border-border rounded-lg px-2.5 py-1.5 text-xs font-body text-on-background outline-none focus-within:border-primary/50 cursor-text"
@@ -778,19 +851,105 @@
                     <p v-else class="px-3 py-1.5 text-xs text-faint font-body">无匹配实体</p>
                   </div>
                 </div>
-                <input
-                  v-model="a.data"
-                  type="text"
-                  placeholder='参数 JSON（可选），如 {"brightness": 200}'
-                  class="w-full bg-surface border border-border rounded-lg px-2.5 py-1.5 text-xs font-body text-on-background outline-none focus:border-primary/50 placeholder:text-faint"
-                />
+                <!-- 服务参数（按 HA 的 fields 定义生成，留空则不提交） -->
+                  <div v-if="serviceFields(a).length" class="space-y-1.5">
+                    <div v-for="f in serviceFields(a)" :key="f.name" class="flex items-center gap-2">
+                      <label class="text-xs text-muted font-body w-24 flex-shrink-0 truncate" :title="f.description || f.name">
+                        {{ f.name }}<span v-if="f.required" class="text-error">*</span>
+                      </label>
+                      <input
+                        v-if="f.kind === 'boolean'"
+                        type="checkbox"
+                        class="flex-shrink-0 accent-primary"
+                        :checked="a.params[f.name] === true"
+                        @change="a.params[f.name] = $event.target.checked"
+                      />
+                      <select
+                        v-else-if="f.kind === 'select'"
+                        v-model="a.params[f.name]"
+                        class="flex-1 min-w-0 bg-surface border border-border rounded-lg px-2 py-1 text-xs font-body text-on-background outline-none focus:border-primary/50"
+                      >
+                        <option value="">（默认）</option>
+                        <option v-for="o in f.options" :key="o.value" :value="o.value">{{ o.label }}</option>
+                      </select>
+                      <input
+                        v-else-if="f.kind === 'number'"
+                        v-model.number="a.params[f.name]"
+                        type="number"
+                        :min="f.min"
+                        :max="f.max"
+                        :step="f.step || 'any'"
+                        class="flex-1 min-w-0 bg-surface border border-border rounded-lg px-2 py-1 text-xs font-body text-on-background outline-none focus:border-primary/50"
+                      />
+                      <input
+                        v-else
+                        v-model="a.params[f.name]"
+                        type="text"
+                        class="flex-1 min-w-0 bg-surface border border-border rounded-lg px-2 py-1 text-xs font-body text-on-background outline-none focus:border-primary/50"
+                      />
+                      <span v-if="f.unit" class="text-[11px] text-faint font-body flex-shrink-0">{{ f.unit }}</span>
+                    </div>
+                  </div>
+
+                  <input
+                    v-model="a.extra"
+                    type="text"
+                    placeholder='额外参数 JSON（可选），如 {"brightness": 200}'
+                    class="w-full bg-surface border border-border rounded-lg px-2.5 py-1.5 text-xs font-body text-on-background outline-none focus:border-primary/50 placeholder:text-faint"
+                  />
+                </template>
+
+                <!-- 延时 -->
+                <template v-else-if="a.type === 'delay'">
+                  <div class="grid grid-cols-3 gap-2">
+                    <label class="text-xs text-muted font-body">
+                      时
+                      <input v-model="a.delayH" type="number" min="0" placeholder="0" class="w-full mt-1 bg-surface border border-border rounded-lg px-2 py-1 text-xs font-body text-on-background outline-none focus:border-primary/50 placeholder:text-faint" />
+                    </label>
+                    <label class="text-xs text-muted font-body">
+                      分
+                      <input v-model="a.delayM" type="number" min="0" placeholder="0" class="w-full mt-1 bg-surface border border-border rounded-lg px-2 py-1 text-xs font-body text-on-background outline-none focus:border-primary/50 placeholder:text-faint" />
+                    </label>
+                    <label class="text-xs text-muted font-body">
+                      秒
+                      <input v-model="a.delayS" type="number" min="0" placeholder="0" class="w-full mt-1 bg-surface border border-border rounded-lg px-2 py-1 text-xs font-body text-on-background outline-none focus:border-primary/50 placeholder:text-faint" />
+                    </label>
+                  </div>
+                  <p class="text-[11px] text-faint font-body">至少填写一个时间单位，对应 HA 的 delay。</p>
+                </template>
+
+                <!-- 等待条件 -->
+                <template v-else-if="a.type === 'wait_template'">
+                  <input
+                    v-model="a.waitTemplate"
+                    type="text"
+                    placeholder="等待条件模板，如 is_state('binary_sensor.door', 'off')"
+                    class="w-full bg-surface border border-border rounded-lg px-2.5 py-1.5 text-xs font-body text-on-background outline-none focus:border-primary/50 placeholder:text-faint"
+                  />
+                  <input
+                    v-model="a.waitTimeout"
+                    type="text"
+                    placeholder="超时（可选），如 00:05:00"
+                    class="w-full bg-surface border border-border rounded-lg px-2.5 py-1.5 text-xs font-body text-on-background outline-none focus:border-primary/50 placeholder:text-faint"
+                  />
+                </template>
+
+                <!-- 停止 -->
+                <template v-else>
+                  <input
+                    v-model="a.stopReason"
+                    type="text"
+                    placeholder="停止原因（可选，会写入日志）"
+                    class="w-full bg-surface border border-border rounded-lg px-2.5 py-1.5 text-xs font-body text-on-background outline-none focus:border-primary/50 placeholder:text-faint"
+                  />
+                </template>
               </div>
               <p v-if="!wizard.actions.length" class="text-xs text-faint font-body">尚未添加动作。</p>
-            </template>
+            </div>
           </div>
 
           <p v-if="wizard.triggers.length === 0 && !wizard.rawTrigger" class="text-[11px] text-warning font-body">
-            提示：无触发器的自动化需要动作包含 notify/device 类服务才有实际用途。
+            提示：触发器为必填项，请添加触发器并选择触发设备或时间。
           </p>
         </div>
 
@@ -1031,6 +1190,7 @@ function closeAllDropdowns(e) {
   if (e.target.closest('.entity-search')) return
   openActionDropdown.value = null
   wizard.value?.triggers?.forEach((tr) => { tr._open = false })
+  wizard.value?.actions?.forEach((a) => { a._svcOpen = false })
 }
 
 async function loadEntities() {
@@ -1052,7 +1212,7 @@ function blankWizard() {
     conditionLogic: 'or',
     rawCondition: null,
     conditions: [],
-    actions: [{ service: '', entity: '', data: '' }],
+    actions: [makeAction('service')],
     saving: false,
   }
 }
@@ -1062,6 +1222,7 @@ function newWizard() {
   _condIdCounter = 0
   wizard.value = blankWizard()
   loadEntities()
+  loadServiceCatalog()
 }
 
 function addTrigger(platform) {
@@ -1135,6 +1296,7 @@ async function openEdit(r) {
   w.entityId = r._entity
   wizard.value = w
   loadEntities()
+  loadServiceCatalog()
   try {
     const { data } = await api.automationConfig(store.activeID, r._entity)
     applyConfig(data || {})
@@ -1248,22 +1410,214 @@ function applyConfig(cfg) {
 
   // 动作
   const acts = Array.isArray(cfg.action) ? cfg.action : []
-  const simple = acts.every((a) => a && typeof a === 'object' && typeof a.service === 'string')
-  if (acts.length && simple) {
-    w.actions = acts.map((a) => ({
-      service: a.service,
-      entity: a.entity_id || '',
-      data: a.data && typeof a.data === 'object' ? JSON.stringify(a.data) : (a.data || ''),
-    }))
+  if (acts.length) w.actions = acts.map((a) => parseAction(a))
+}
+
+// ---- 动作编辑器 ----
+// 结构对齐 HA 的动作定义：调用服务 / 延时 / 等待 / 停止，顺序即执行顺序。
+//   { service: "light.turn_on", entity_id, data: {...} }
+//   { delay: { hours|minutes|seconds } }
+//   { wait_template: "...", timeout: "00:05:00" }
+//   { stop: "原因" }
+
+// HA 服务目录（/api/services 透传），用于服务选择与参数表单。
+const serviceCatalog = ref([])
+let _catalogLoading = false
+
+async function loadServiceCatalog() {
+  if (serviceCatalog.value.length || _catalogLoading) return
+  _catalogLoading = true
+  try {
+    const { data } = await api.serviceCatalog(store.activeID)
+    serviceCatalog.value = Array.isArray(data) ? data : []
+  } catch {
+    serviceCatalog.value = []
+  } finally {
+    _catalogLoading = false
   }
 }
 
+// 拍平服务目录为可搜索列表。
+const serviceOptions = computed(() => {
+  const out = []
+  for (const d of serviceCatalog.value) {
+    const domain = d && d.domain
+    if (!domain) continue
+    for (const [name, meta] of Object.entries((d && d.services) || {})) {
+      out.push({
+        value: `${domain}.${name}`,
+        label: (meta && meta.name) || name,
+        fields: (meta && meta.fields) || {},
+      })
+    }
+  }
+  return out
+})
+
+// 服务下拉过滤：匹配 domain.service 或中文名，最多 50 条。
+function filteredServices(q) {
+  const t = (q || '').trim().toLowerCase()
+  const list = t
+    ? serviceOptions.value.filter((s) =>
+      s.value.toLowerCase().includes(t) || (s.label || '').toLowerCase().includes(t))
+    : serviceOptions.value
+  return list.slice(0, 50)
+}
+
+function serviceLabel(value) {
+  const hit = serviceOptions.value.find((s) => s.value === value)
+  return hit ? `${hit.label}（${hit.value}）` : value
+}
+
+function selectActionService(i, value) {
+  const a = wizard.value.actions[i]
+  const prev = (a.service || '').split('.')[0]
+  const next = (value || '').split('.')[0]
+  a.service = value
+  a._svcSearch = ''
+  a._svcOpen = false
+  // 换域时清空参数：旧参数对新服务多半非法（HA 同样会重置）。
+  if (prev && prev !== next) a.params = {}
+}
+
+// HA selector → 输入控件类型。
+function fieldMeta(name, f) {
+  const sel = (f && f.selector) || {}
+  let kind = 'text'
+  if (sel.boolean) kind = 'boolean'
+  else if (sel.number || sel.color_temp) kind = 'number'
+  else if (sel.select) kind = 'select'
+  const num = sel.number || sel.color_temp || {}
+  return {
+    name,
+    description: (f && f.description) || '',
+    required: !!(f && f.required),
+    kind,
+    options: (((sel.select && sel.select.options) || [])).map((o) =>
+      typeof o === 'string' ? { value: o, label: o } : { value: o.value, label: o.label || o.value }),
+    unit: num.unit_of_measurement || '',
+    min: num.min,
+    max: num.max,
+    step: num.step,
+  }
+}
+
+// 所选服务的可配置字段；目标类字段由「目标实体」统一处理，不重复渲染。
+function serviceFields(a) {
+  const hit = serviceOptions.value.find((s) => s.value === a.service)
+  if (!hit) return []
+  const skip = new Set(['entity_id', 'device_id', 'area_id', 'target'])
+  return Object.entries(hit.fields || {})
+    .filter(([name, f]) => {
+      if (skip.has(name)) return false
+      const sel = (f && f.selector) || {}
+      return !sel.entity && !sel.device && !sel.area && !sel.target
+    })
+    .map(([name, f]) => fieldMeta(name, f))
+}
+
+function makeAction(type = 'service') {
+  return {
+    type,
+    service: '',
+    entity: '',
+    params: {},
+    extra: '',
+    delayH: '',
+    delayM: '',
+    delayS: '',
+    waitTemplate: '',
+    waitTimeout: '',
+    stopReason: '',
+    raw: null,
+    _svcOpen: false,
+    _svcSearch: '',
+  }
+}
+
+// HA 动作结构 → 编辑器模型；无法识别的结构（choose/repeat/device 等）放进 raw，
+// 保存时原样写回，避免编辑后丢失配置。
+function parseAction(a) {
+  const raw = () => { const it = makeAction('service'); it.raw = a; return it }
+  if (!a || typeof a !== 'object') return makeAction('service')
+
+  if (a.delay !== undefined && Object.keys(a).length === 1) {
+    const d = a.delay
+    if (d && typeof d === 'object' &&
+      Object.keys(d).every((k) => ['hours', 'minutes', 'seconds'].includes(k))) {
+      const it = makeAction('delay')
+      it.delayH = d.hours ?? ''
+      it.delayM = d.minutes ?? ''
+      it.delayS = d.seconds ?? ''
+      return it
+    }
+    return raw()
+  }
+
+  if (a.wait_template !== undefined) {
+    if (typeof a.wait_template !== 'string' ||
+      Object.keys(a).some((k) => !['wait_template', 'timeout'].includes(k))) return raw()
+    const it = makeAction('wait_template')
+    it.waitTemplate = a.wait_template
+    if (typeof a.timeout === 'string') it.waitTimeout = a.timeout
+    return it
+  }
+
+  if (a.stop !== undefined && Object.keys(a).length === 1) {
+    if (typeof a.stop !== 'string') return raw()
+    const it = makeAction('stop')
+    it.stopReason = a.stop
+    return it
+  }
+
+  if (typeof a.service === 'string') {
+    if (Object.keys(a).some((k) => !['service', 'entity_id', 'data', 'target'].includes(k))) return raw()
+    const it = makeAction('service')
+    it.service = a.service
+    it.entity = a.entity_id || ''
+    // HA 新版用 target.entity_id 表达目标；只识别单个实体，其它（区域/设备/多实体）原样保留。
+    if (a.target !== undefined) {
+      const t = a.target
+      const one = t && typeof t === 'object' && Object.keys(t).length === 1 && t.entity_id !== undefined &&
+        (typeof t.entity_id === 'string' ||
+          (Array.isArray(t.entity_id) && t.entity_id.length === 1 && typeof t.entity_id[0] === 'string'))
+      if (!one) return raw()
+      it.entity = Array.isArray(t.entity_id) ? t.entity_id[0] : t.entity_id
+    }
+    if (a.data && typeof a.data === 'object') {
+      it.params = { ...a.data }
+      if (!it.entity && typeof it.params.entity_id === 'string') {
+        it.entity = it.params.entity_id
+        delete it.params.entity_id
+      }
+    } else if (typeof a.data === 'string') {
+      it.extra = a.data
+    }
+    return it
+  }
+
+  return raw()
+}
+
 function addAction() {
-  wizard.value.actions.push({ service: '', entity: '', data: '' })
+  wizard.value.actions.push(makeAction('service'))
 }
 
 function removeAction(i) {
   wizard.value.actions.splice(i, 1)
+}
+
+// 动作顺序即执行顺序（HA 支持调整），这里用上移/下移实现。
+function moveAction(i, delta) {
+  const list = wizard.value.actions
+  const j = i + delta
+  if (j < 0 || j >= list.length) return
+  const [item] = list.splice(i, 1)
+  list.splice(j, 0, item)
+}
+
+function onActionTypeChange(a) {
+  a.raw = null // 从「复杂动作」切回标准类型时丢弃原样保留的结构
 }
 
 function buildTrigger() {
@@ -1300,18 +1654,55 @@ function buildTrigger() {
   return result
 }
 
+// 单个动作 → HA 动作结构；未填写完整时返回 null（保存前会拦截提示）。
+function buildAction(a) {
+  if (a.raw) return a.raw
+  if (a.type === 'delay') {
+    const d = {}
+    if (a.delayH !== '' && a.delayH !== null && a.delayH !== undefined) d.hours = Number(a.delayH)
+    if (a.delayM !== '' && a.delayM !== null && a.delayM !== undefined) d.minutes = Number(a.delayM)
+    if (a.delayS !== '' && a.delayS !== null && a.delayS !== undefined) d.seconds = Number(a.delayS)
+    return Object.keys(d).length ? { delay: d } : null
+  }
+  if (a.type === 'wait_template') {
+    const tpl = (a.waitTemplate || '').trim()
+    if (!tpl) return null
+    const item = { wait_template: tpl }
+    if (a.waitTimeout && a.waitTimeout.trim()) item.timeout = a.waitTimeout.trim()
+    return item
+  }
+  if (a.type === 'stop') return { stop: (a.stopReason || '').trim() }
+  const svc = (a.service || '').trim()
+  if (!svc) return null
+  const item = { service: svc }
+  if (a.entity) item.entity_id = a.entity
+  const data = {}
+  for (const [k, v] of Object.entries(a.params || {})) {
+    if (v === '' || v === null || v === undefined) continue
+    data[k] = v
+  }
+  if (a.extra && a.extra.trim()) {
+    try { Object.assign(data, JSON.parse(a.extra)) } catch { /* 非法 JSON 忽略，避免破坏自动化 */ }
+  }
+  if (Object.keys(data).length) item.data = data
+  return item
+}
+
+// 完全空白的动作（用户没填任何内容）在保存时直接忽略。
+function isActionEmpty(a) {
+  if (a.raw) return false
+  if (a.type === 'delay') return !(a.delayH || a.delayM || a.delayS)
+  if (a.type === 'wait_template') return !(a.waitTemplate || '').trim()
+  if (a.type === 'stop') return !(a.stopReason || '').trim()
+  return !(a.service || '').trim() && !a.entity &&
+    !Object.keys(a.params || {}).length && !(a.extra || '').trim()
+}
+
 function buildActions() {
-  const w = wizard.value
-  return w.actions
-    .filter((a) => a.service && a.service.trim())
-    .map((a) => {
-      const item = { service: a.service.trim() }
-      if (a.entity) item.entity_id = a.entity
-      if (a.data && a.data.trim()) {
-        try { item.data = JSON.parse(a.data) } catch { /* 非法 JSON 忽略，避免破坏自动化 */ }
-      }
-      return item
-    })
+  return wizard.value.actions
+    .filter((a) => !isActionEmpty(a))
+    .map(buildAction)
+    .filter(Boolean)
 }
 
 function buildConditions() {
@@ -1350,7 +1741,14 @@ function buildConditions() {
 async function saveWizard() {
   const w = wizard.value
   if (!w.alias.trim()) { showToast('请填写自动化名称'); return }
-  if (!buildActions().length) { showToast('请至少添加一个动作'); return }
+  // HA 的自动化必须至少有一个触发器，否则保存会被后端（HA）拒绝。
+  if (!buildTrigger().length) { showToast('请至少添加一个触发器，并选择触发设备或时间'); return }
+  const filled = w.actions.filter((a) => !isActionEmpty(a))
+  if (!filled.length) { showToast('请至少添加一个动作'); return }
+  if (filled.some((a) => buildAction(a) === null)) {
+    showToast('有动作未填写完整：请选择服务、填写延时时长或等待条件')
+    return
+  }
   w.saving = true
   const cfg = {
     alias: w.alias.trim(),

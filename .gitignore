@@ -3,3 +3,8 @@
 
 # 例外：必须跟踪的隐藏文件
 !.gitignore
+
+# SQLite 数据库：不入版本库，部署后由服务启动时自动建库（见 internal/store/db.go 的 migrate）
+*.db
+*.db-wal
+*.db-shm

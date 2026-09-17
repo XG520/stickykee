@@ -235,10 +235,18 @@ function onClick(e) {
 }
 
 // 滑条实时调用：data-hc="range" data-svc data-key data-div（值除以 data-div，默认 1）
+// 拖动过程按元素 120ms 节流上报，避免逐像素打 HA；change（松手）时立即补发一次。
+const rangeTimers = new Map()
 function onInput(e) {
   if (!props.interactive) return
   const el = e.target.closest('[data-hc="range"]')
   if (!el) return
+  if (!el.dataset.svc || !el.dataset.key) return
+  clearTimeout(rangeTimers.get(el))
+  rangeTimers.set(el, setTimeout(() => { rangeTimers.delete(el); pushRange(el) }, 120))
+}
+
+function pushRange(el) {
   const svc = el.dataset.svc
   const key = el.dataset.key
   if (!svc || !key) return
@@ -248,26 +256,38 @@ function onInput(e) {
   const v = Number(el.value)
   if (!Number.isFinite(v)) return
   const div = Number(el.dataset.div || 1) || 1
+  const val = v / div
   const targetId = el.dataset.entity || props.card.entity_id
-  api.callService(store.activeID, { domain, service, entity_id: targetId, service_data: { [key]: v / div } })
+  api.callService(store.activeID, { domain, service, entity_id: targetId, service_data: { [key]: val } })
     .then(() => requestEntityRefresh(600))
     .catch(() => {})
 }
 
-// 下拉变化调用：data-hc="select" data-svc（参数 option）
+// 下拉/滑条松手：data-hc="select"（data-key 参数名，默认 option）或 range 立即补发
 function onChange(e) {
   if (!props.interactive) return
+  const rangeEl = e.target.closest('[data-hc="range"]')
+  if (rangeEl) {
+    clearTimeout(rangeTimers.get(rangeEl))
+    rangeTimers.delete(rangeEl)
+    pushRange(rangeEl)
+    return
+  }
   const el = e.target.closest('[data-hc="select"]')
   if (!el) return
   const svc = el.dataset.svc
   if (!svc) return
   const opt = el.value
-  if (!opt) return
+  if (opt === '') return
   const dot = svc.indexOf('.')
   const domain = svc.slice(0, dot)
   const service = svc.slice(dot + 1)
+  const key = el.dataset.key || 'option'
+  let args = {}
+  try { args = JSON.parse(el.dataset.args || '{}') } catch { /* 忽略非法 JSON */ }
+  args = { ...args, [key]: opt }
   const targetId = el.dataset.entity || props.card.entity_id
-  api.callService(store.activeID, { domain, service, entity_id: targetId, service_data: { option: opt } })
+  api.callService(store.activeID, { domain, service, entity_id: targetId, service_data: args })
     .then(() => requestEntityRefresh(300))
     .catch(() => {})
 }
@@ -333,6 +353,8 @@ onMounted(() => {
 onBeforeUnmount(() => {
   if (clock) clearInterval(clock)
   if (schemeObs) { schemeObs.disconnect(); schemeObs = null }
+  rangeTimers.forEach((t) => clearTimeout(t))
+  rangeTimers.clear()
   unmountMap()
   if (styleEl.value) {
     styleEl.value.remove()

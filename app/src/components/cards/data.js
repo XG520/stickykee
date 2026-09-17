@@ -3,6 +3,7 @@
 //  - entity 由 CodeCard 按 card.entity_id 从实时实体流中查找
 //  - 与 templates.js 的占位符清单一一对应；缺失的占位符会原样保留
 import { attr, numVal, isOn, iconFor, domainGlyph, domainColorCls } from '@/utils/entities'
+import { buildControls, renderControlsHtml } from '@/utils/entityControls'
 import api from '@/api'
 import { store } from '@/store'
 
@@ -102,23 +103,26 @@ function forecastHtml(entity) {
 }
 
 // ================= 各卡组数据 =================
+// 控件 HTML 片段：由 utils/entityControls 的能力模型统一推导（与设备页「更多信息」面板同源），
+// 这样「属性缺失」也不会导致控件消失（如关闭状态下的亮度滑条）。
+function controlsOf(entity) {
+  return entity ? renderControlsHtml(buildControls(entity), entity.entity_id) : ''
+}
+// 只要指定 id 的控件（模板已自绘同功能 UI 时，避免重复）
+function controlsOfIds(entity, ids) {
+  if (!entity) return ''
+  const want = new Set(ids)
+  return renderControlsHtml(buildControls(entity).filter((c) => want.has(c.id)), entity.entity_id)
+}
+
 function toggleData(entity, hasData) {
   const b = base(entity, hasData, 'toggle_on')
-  if (!entity) return { ...b, onCls: 'b-off', stateLabel: '', state: '', rangeHtml: '' }
+  if (!entity) return { ...b, onCls: 'b-off', stateLabel: '', state: '', controlsHtml: '' }
   const on = isOn(entity)
-  const d = entity.domain
-  let rangeHtml = ''
-  if (d === 'light') {
-    const br = numVal(attr(entity, 'brightness'))
-    if (br != null) {
-      const pct = Math.round((br / 255) * 100)
-      rangeHtml = `<input class="h-bar" type="range" min="1" max="100" value="${pct}" data-hc="range" data-svc="light.turn_on" data-key="brightness_pct" data-div="1">`
-    }
-  } else if (d === 'fan') {
-    const pct = numVal(attr(entity, 'percentage'))
-    if (pct != null) rangeHtml = `<input class="h-bar" type="range" min="1" max="100" value="${Math.round(pct)}" data-hc="range" data-svc="fan.set_percentage" data-key="percentage" data-div="1">`
+  return {
+    ...b, onCls: on ? 'b-on' : 'b-off', stateLabel: on ? '已开启' : '已关闭',
+    state: String(entity.state), controlsHtml: controlsOf(entity),
   }
-  return { ...b, onCls: on ? 'b-on' : 'b-off', stateLabel: on ? '已开启' : '已关闭', state: String(entity.state), rangeHtml }
 }
 
 function sensorData(entity, hasData) {
@@ -167,7 +171,7 @@ const hvacMap = { heat: '制热', cool: '制冷', auto: '自动', dry: '除湿',
 function climateData(entity, hasData) {
   const b = base(entity, hasData, 'thermostat')
   if (!entity) {
-    return { ...b, temp: '—', tempUnit: '', target: '', hvacHtml: '', setSvc: '', decArgs: '{}', incArgs: '{}', modeLabel: '—' }
+    return { ...b, temp: '—', tempUnit: '', target: '', hvacHtml: '', setSvc: '', decArgs: '{}', incArgs: '{}', modeLabel: '—', extraControls: '' }
   }
   const d = entity.domain
   const unit = d === 'water_heater' ? '°' : (entity.unit || '°C').replace('°C', '°')
@@ -187,12 +191,21 @@ function climateData(entity, hasData) {
     if (d === 'water_heater') setSvc = 'water_heater.set_temperature'
   }
   const cur = d === 'humidifier' ? numVal(attr(entity, 'humidity')) : (numVal(attr(entity, 'temperature')) ?? numVal(attr(entity, 'target_temperature')))
-  let decArgs = '{}'
-  let incArgs = '{}'
+  // ±1 步进：按 target_temp_step 步进，并用 min_temp/max_temp 夹取；无当前值时按钮置空（不误发无参调用）
+  let decArgs = ''
+  let incArgs = ''
+  let stepSvc = setSvc
   if (cur != null) {
     const key = d === 'humidifier' ? 'humidity' : 'temperature'
-    decArgs = JSON.stringify({ [key]: Math.round((cur - 1) * 10) / 10 })
-    incArgs = JSON.stringify({ [key]: Math.round((cur + 1) * 10) / 10 })
+    const step = numVal(attr(entity, 'target_temp_step')) || 1
+    const min = numVal(attr(entity, 'min_temp'))
+    const max = numVal(attr(entity, 'max_temp'))
+    const lo = Math.round((cur - step) * 10) / 10
+    const hi = Math.round((cur + step) * 10) / 10
+    decArgs = JSON.stringify({ [key]: min != null ? Math.max(min, lo) : lo })
+    incArgs = JSON.stringify({ [key]: max != null ? Math.min(max, hi) : hi })
+  } else {
+    stepSvc = ''
   }
   const modeKey = d === 'humidifier' ? 'mode' : d === 'water_heater' ? 'operation_mode' : 'hvac_mode'
   const modeSvc = d === 'humidifier' ? 'set_mode' : d === 'water_heater' ? 'set_operation_mode' : 'set_hvac_mode'
@@ -202,22 +215,27 @@ function climateData(entity, hasData) {
     .map((m) => `<span class="${m === curMode ? 'on' : ''}" data-hc="svc" data-svc="${d}.${modeSvc}" data-args='${JSON.stringify({ [modeKey]: m })}'>${hvacMap[m] || m}</span>`)
     .join('')
   const modeLabel = hvacMap[curMode] || String(curMode || '')
-  return { ...b, temp, tempUnit: unit, target, hvacHtml: chips, setSvc, decArgs, incArgs, modeLabel }
+  // 模板已自绘模式芯片与 ± 调温按钮，这里只补风档/预设/摆风/湿度等附加控件
+  const extraControls = controlsOfIds(entity, ['fan_mode', 'preset_mode', 'swing_mode', 'swing_horizontal_mode', 'humidity'])
+  return { ...b, temp, tempUnit: unit, target, hvacHtml: chips, setSvc: stepSvc, decArgs, incArgs, modeLabel, extraControls }
 }
 
 function coverData(entity, hasData) {
   const b = base(entity, hasData, 'curtains')
-  if (!entity) return { ...b, onCls: 'b-off', stateLabel: '—', posText: '—' }
+  if (!entity) return { ...b, onCls: 'b-off', stateLabel: '—', posText: '—', controlsHtml: '' }
   const s = String(entity.state)
   const map = { open: '已打开', opening: '打开中…', closed: '已关闭', closing: '关闭中…', stopped: '已停止' }
   const on = ['open', 'opening'].includes(s)
   const pos = numVal(attr(entity, 'current_position'))
-  return { ...b, onCls: on ? 'b-on' : 'b-off', stateLabel: map[s] || s, posText: pos != null ? pos + '%' : '—' }
+  return {
+    ...b, onCls: on ? 'b-on' : 'b-off', stateLabel: map[s] || s,
+    posText: pos != null ? pos + '%' : '—', controlsHtml: controlsOf(entity),
+  }
 }
 
 function mediaData(entity, hasData) {
   const b = base(entity, hasData, 'tv')
-  if (!entity) return { ...b, mediaGlyph: 'music_note', mediaTitle: '—', playSvc: 'media_player.media_play', playIcon: 'play_arrow', volumePct: '0' }
+  if (!entity) return { ...b, mediaGlyph: 'music_note', mediaTitle: '—', playSvc: 'media_player.media_play', playIcon: 'play_arrow', volumePct: '0', extraControls: '' }
   const playing = String(entity.state) === 'playing'
   const title = attr(entity, 'media_title') || attr(entity, 'media_artist') || attr(entity, 'media_album_name') || '暂无播放内容'
   const vol = numVal(attr(entity, 'volume_level'))
@@ -226,6 +244,8 @@ function mediaData(entity, hasData) {
     playSvc: playing ? 'media_player.media_pause' : 'media_player.media_play',
     playIcon: playing ? 'pause' : 'play_arrow',
     volumePct: vol != null ? String(Math.round(vol * 100)) : '0',
+    // 模板已自绘输送按钮与音量滑条，这里只补静音/音源/声音模式
+    extraControls: controlsOfIds(entity, ['mute', 'source', 'sound_mode']),
   }
 }
 

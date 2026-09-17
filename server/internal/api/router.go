@@ -86,6 +86,7 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, manager *ha.Mana
 						r.Post("/toggle", entities.Toggle)
 					})
 					r.Post("/services", services.Call)
+					r.Get("/services", services.List)
 					r.Get("/scenes", agg.Scenes)
 					r.Get("/automations", agg.Automations)
 					r.Route("/automations/{entityID}", func(r chi.Router) {

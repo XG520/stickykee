@@ -74,11 +74,11 @@
             >
               <div class="flex items-start gap-3">
                 <div class="relative w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-                  :class="d.activeCount > 0 ? iconBox(d) : 'bg-faint border border-border'">
-                  <span class="material-symbols-outlined text-xl" :class="d.activeCount > 0 ? iconColor(d) : 'text-faint'">{{ d.mainIconGlyph }}</span>
+                  :class="d.active_count > 0 ? iconBox(d) : 'bg-faint border border-border'">
+                  <span class="material-symbols-outlined text-xl" :class="d.active_count > 0 ? iconColor(d) : 'text-faint'">{{ deviceGlyph(d) }}</span>
                   <span
                     class="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full ring-2 ring-background"
-                    :class="d.activeCount > 0 ? 'bg-success' : 'bg-faint'"
+                    :class="deviceOnline(d) ? 'bg-success' : 'bg-faint'"
                   ></span>
                 </div>
                 <div class="flex-1 min-w-0">
@@ -141,13 +141,13 @@
             </button>
             <div class="flex items-center gap-2.5 flex-1 min-w-0">
               <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-                :class="detail.activeCount > 0 ? iconBox(detail) : 'bg-faint border border-border'">
-                <span class="material-symbols-outlined text-xl" :class="detail.activeCount > 0 ? iconColor(detail) : 'text-faint'">{{ detail.mainIconGlyph }}</span>
+                :class="detail.active_count > 0 ? iconBox(detail) : 'bg-faint border border-border'">
+                <span class="material-symbols-outlined text-xl" :class="detail.active_count > 0 ? iconColor(detail) : 'text-faint'">{{ deviceGlyph(detail) }}</span>
               </div>
               <div class="min-w-0">
                 <div class="flex items-center gap-2 min-w-0">
                   <h2 class="font-headline font-bold text-lg text-on-background truncate leading-tight">{{ detail.display_name }}</h2>
-                  <span class="shrink-0 w-2 h-2 rounded-full" :class="detail.activeCount > 0 ? 'bg-success' : 'bg-faint'" title="在线状态"></span>
+                  <span class="shrink-0 w-2 h-2 rounded-full" :class="deviceOnline(detail) ? 'bg-success' : 'bg-faint'" title="在线状态"></span>
                 </div>
                 <p class="font-body text-xs text-muted truncate">{{ deviceMeta(detail) }}</p>
               </div>
@@ -181,8 +181,9 @@
               <div
                 v-for="e in visibleEntities"
                 :key="e.entity_id"
-                class="flex items-center gap-3 bg-surface-alt border rounded-xl p-3 min-w-0 transition-colors duration-200"
+                class="flex items-center gap-3 bg-surface-alt border rounded-xl p-3 min-w-0 transition-colors duration-200 cursor-pointer hover:border-primary/60"
                 :class="isOn(e.state) ? 'border-primary/40' : 'border-border'"
+                @click="openMore(e)"
               >
                 <div class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
                   :class="isOn(e.state) ? iconBox(detail) : 'bg-faint border border-border'">
@@ -201,7 +202,7 @@
                     v-if="canToggle(e) && !e.disabled"
                     class="relative w-10 h-6 rounded-full shrink-0 cursor-pointer transition-colors duration-200"
                     :class="isOn(e.state) ? accentToggle(detail) : 'bg-faint'"
-                    @click="onToggleEntity(e)"
+                    @click.stop="onToggleEntity(e)"
                   >
                     <span
                       class="absolute top-1 left-1 w-4 h-4 rounded-full bg-on-primary shadow transition-transform duration-200"
@@ -209,6 +210,14 @@
                     ></span>
                   </button>
                   <span v-if="canToggle(e)" class="font-body text-[11px] font-medium shrink-0" :class="isOn(e.state) ? iconColor(detail) : 'text-faint'">{{ isOn(e.state) ? '开' : '关' }}</span>
+                  <button
+                    v-if="hasMore(e) && !e.disabled"
+                    class="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-muted hover:text-primary hover:bg-primary/10 transition-colors"
+                    title="更多操作"
+                    @click.stop="openMore(e)"
+                  >
+                    <span class="material-symbols-outlined text-lg">tune</span>
+                  </button>
                 </div>
               </div>
               <div v-if="!visibleEntities.length" class="col-span-full px-5 py-10 text-center font-body text-sm text-faint">该设备没有关联实体</div>
@@ -223,6 +232,9 @@
         <p class="font-body text-muted">从左侧选择一个设备，查看其实体与实时状态</p>
       </div>
     </div>
+
+    <!-- 实体「更多信息」面板（HA more-info 形态）：按实体能力渲染控件 -->
+    <EntityMoreInfo v-if="moreEntity" :entity="moreEntity" @close="moreEntityId = ''" />
   </div>
 </template>
 
@@ -230,7 +242,9 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import api from '@/api'
 import { store, backendOnline, onEntityChange, refreshEntities, entityStates } from '@/store'
-import { isOn, domainGlyph } from '@/utils/entities'
+import { isOn, isAvailable, iconFor, domainGlyph } from '@/utils/entities'
+import { buildControls } from '@/utils/entityControls'
+import EntityMoreInfo from '@/components/EntityMoreInfo.vue'
 
 const filter = ref('all')
 const keyword = ref('')
@@ -246,7 +260,7 @@ function toggleRoom(id) {
   if (s.has(id)) s.delete(id); else s.add(id)
   collapsedRooms.value = s
 }
-function onRoomCount(room) { return room.devices.filter((d) => d.activeCount > 0).length }
+function onRoomCount(room) { return room.devices.filter(deviceOnline).length }
 
 // 类型 tabs（与官方设备类型接近）
 const tabs = [
@@ -297,6 +311,15 @@ function domainLabel(domain) {
   return map[domain] || domain
 }
 function glyph(domain) { return domainGlyph[domain] || 'widgets' }
+// 设备卡片/详情图标：优先取主实体的 HA 图标（mdi:xxx → Material 图标名，后端按名取 SVG），
+// 没有图标时回退到按主域取图标。原先绑定的是 mainIconGlyph，后端并无该字段，图标恒为空。
+function deviceGlyph(d) { return iconFor({ icon: d && d.main_icon }, glyph(d && d.domain)) }
+// 设备在线：至少一个实体可用（不是 unavailable/unknown），与 HA 的可用性语义一致。
+// 不能用 active_count（"开启"的实体数）——传感器等领域永远不会是 on，全关的灯其实也在线。
+function deviceOnline(d) {
+  if (!d || d.disabled) return false
+  return (d.entities || []).some(isAvailable)
+}
 function domainFilterMatch(d) {
   if (filter.value === 'all') return true
   const list = tabDomains[filter.value] || []
@@ -347,7 +370,7 @@ const visibleEntities = computed(() => {
   return detail.value.entities || []
 })
 
-const onDeviceCount = computed(() => devices.value.filter((d) => d.activeCount > 0).length)
+const onDeviceCount = computed(() => devices.value.filter(deviceOnline).length)
 
 function deviceMeta(d) {
   const parts = []
@@ -386,7 +409,7 @@ function domainPal(d) {
 }
 function iconBox(d) { return domainPal(d).box }
 function iconColor(d) { return domainPal(d).color }
-function accentBorder(d) { return d.activeCount > 0 ? 'border-primary/40' : 'border-border' }
+function accentBorder(d) { return d.active_count > 0 ? 'border-primary/40' : 'border-border' }
 function accentToggle(d) { return domainPal(d).toggle }
 // 列表行样式：选中设备高亮（主色描边 + 浅底）
 function roomDeviceCls(d) {
@@ -405,16 +428,62 @@ function sensorValue(e) {
 }
 function stateText(e) { return `${e.state}${e.unit ? ' ' + e.unit : ''}` }
 
-function canToggle(e) {
-  return ['light', 'switch', 'plug', 'fan', 'cover', 'lock', 'media_player', 'vacuum', 'humidifier', 'automation'].includes(e.domain)
+// 实体行的可用操作由能力模型推导（与「更多信息」面板同源）：
+// 需要拿到实时 attributes（supported_features 等），故优先用实时实体、否则回退注册表快照。
+function liveEntityOf(e) {
+  const live = entityStates[e.entity_id]
+  if (!live) return e
+  return {
+    ...e,
+    state: live.state !== undefined ? live.state : e.state,
+    attributes: { ...(e.attributes || {}), ...(live.attributes || {}) },
+    domain: e.domain || live.domain,
+  }
 }
+function controlsOf(e) {
+  return buildControls(liveEntityOf(e))
+}
+function canToggle(e) {
+  return controlsOf(e).some((c) => c.kind === 'toggle')
+}
+function hasMore(e) {
+  return controlsOf(e).length > 0
+}
+
+// ---- 「更多信息」面板：按 entity_id 定位，实时 attributes 优先于注册表快照 ----
+const moreEntityId = ref('')
+function findRegistryEntity(id) {
+  for (const g of devices.value) {
+    const hit = (g.entities || []).find((e) => e.entity_id === id)
+    if (hit) return hit
+  }
+  return (unassigned.value || []).find((e) => e.entity_id === id) || null
+}
+const moreEntity = computed(() => {
+  const id = moreEntityId.value
+  if (!id) return null
+  const reg = findRegistryEntity(id)
+  const live = entityStates[id]
+  if (!reg && !live) return null
+  const attrs = { ...(reg?.attributes || {}), ...(live?.attributes || {}) }
+  return {
+    entity_id: id,
+    domain: reg?.domain || live?.domain || id.split('.')[0],
+    friendly_name: attrs.friendly_name || reg?.friendly_name || id,
+    icon: reg?.icon || '',
+    unit: attrs.unit_of_measurement || reg?.unit || '',
+    state: live?.state !== undefined ? live.state : (reg?.state ?? ''),
+    attributes: attrs,
+  }
+})
+function openMore(e) { moreEntityId.value = e.entity_id }
 
 function openDetail(d) {
   detail.value = d
 }
 
 function openEntityQuick(e) {
-  const stub = { device: {}, display_name: e.friendly_name || e.entity_id, domain: e.domain, area_name: '', activeCount: isOn(e.state) ? 1 : 0, entity_count: 1, entities: [e] }
+  const stub = { device: {}, display_name: e.friendly_name || e.entity_id, domain: e.domain, area_name: '', active_count: isOn(e.state) ? 1 : 0, entity_count: 1, entities: [e] }
   detail.value = stub
 }
 
@@ -459,11 +528,19 @@ function mergeLive(g) {
     }
     return e
   })
+  // 在线数由实体状态推导，状态被实时覆盖后必须重算，
+  // 否则开关设备后「在线」会停留在上一次注册表快照的旧值。
+  g.active_count = g.entities.filter((e) => !e.disabled && isOn(e)).length
   return g
 }
 
 let off = null
-function onEsc(e) { if (e.key === 'Escape') detail.value = null }
+function onEsc(e) {
+  if (e.key !== 'Escape') return
+  // 先关「更多信息」面板，再关设备抽屉（层级从内向外）
+  if (moreEntityId.value) moreEntityId.value = ''
+  else detail.value = null
+}
 onMounted(async () => {
   window.addEventListener('keydown', onEsc)
   await refreshEntities(store.activeID)

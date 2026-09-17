@@ -10,7 +10,7 @@
 //      data-hc="link"  data-href="#/map"     跳转
 
 // 公共外壳样式（每张卡的 CSS 都以此为基底）
-const shell = `.hc{flex:1;min-height:0;display:flex;flex-direction:column;gap:4px;overflow:hidden}
+const SHELL_BASE = `.hc{flex:1;min-height:0;display:flex;flex-direction:column;gap:4px;overflow:hidden}
 .h-head{display:flex;align-items:center;gap:4px;min-width:0}
 .h-ic{font-size:13px;color:var(--hc-color,var(--hc-primary));flex-shrink:0}
 .h-t{font-size:10px;font-weight:600;color:var(--hc-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
@@ -33,6 +33,21 @@ const shell = `.hc{flex:1;min-height:0;display:flex;flex-direction:column;gap:4p
 .h-cap{font-size:7px;color:var(--hc-sub);font-style:normal}
 .h-bar{width:100%;height:3px;accent-color:var(--hc-color,var(--hc-primary));cursor:pointer}`
 
+// 实体控件样式（entityControls 渲染出的 .h-ctl/.h-lb/.h-vv/.h-sel/.h-chip/.h-tin）。
+// 单独导出：卡片 CSS 是创建时的快照，历史卡片迁移时需要把这段补进去。
+export const CTL_CSS = `
+.h-ctl{display:flex;align-items:center;gap:4px;min-width:0}
+.h-ctl .h-lb{font-size:8px;color:var(--hc-sub);white-space:nowrap;flex-shrink:0}
+.h-ctl .h-vv{font-size:8px;font-weight:600;color:var(--hc-text);margin-left:auto;white-space:nowrap}
+.h-ctl .h-bar{flex:1;min-width:0}
+.h-sel{flex:1;min-width:0;font-size:8px;padding:1px 2px;border-radius:6px;background:var(--hc-bg2);border:1px solid var(--hc-border);color:var(--hc-text);outline:none}
+.h-chip{font-size:8px;padding:1px 6px;border-radius:99px;background:var(--hc-bg2);border:1px solid var(--hc-border);color:var(--hc-sub);cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:2px}
+.h-chip.on{background:rgb(var(--hc-primary-rgb) / .15);border-color:var(--hc-color,var(--hc-primary));color:var(--hc-color,var(--hc-primary))}
+.h-chip:active{transform:scale(.93)}
+.h-tin{flex:1;min-width:0;font-size:8px;padding:1px 4px;border-radius:6px;background:var(--hc-bg2);border:1px solid var(--hc-border);color:var(--hc-text);outline:none}`
+
+const shell = SHELL_BASE + CTL_CSS
+
 const head = `<div class="h-head"><span class="h-ic material-symbols-outlined">{{glyph}}</span><span class="h-t">{{name}}</span>{{badge}}</div>`
 
 // 空态 / 缺实体
@@ -51,7 +66,7 @@ export function tplToggle() {
       <span class="material-symbols-outlined" style="font-size:22px;color:{{onColor}}">{{glyph}}</span>
     </button>
   </div>
-  <div class="h-row">{{rangeHtml}}</div>
+  <div class="h-ctl" style="flex-direction:column;gap:3px;align-items:stretch">{{controlsHtml}}</div>
 </div>`
   const css = shell + `
 .hc{padding:6px}
@@ -106,6 +121,7 @@ export function tplClimate() {
     </div>
   </div>
   <div class="hvac">{{hvacHtml}}</div>
+  <div class="h-ctl" style="flex-wrap:wrap">{{extraControls}}</div>
   <div class="h-row" style="justify-content:center">
     <button class="h-btn h-btn-ghost" style="width:24px;height:24px" data-hc="svc" data-svc="{{setSvc}}" data-args="{{decArgs}}"><span class="material-symbols-outlined" style="font-size:12px">remove</span></button>
     <span class="h-num" style="font-size:10px">{{modeLabel}}</span>
@@ -131,11 +147,7 @@ export function tplCover() {
     <span class="h-badge {{onCls}}">{{stateLabel}}</span>
     <span class="h-mut" style="margin-left:auto">{{posText}}</span>
   </div>
-  <div class="h-row" style="justify-content:center;gap:6px">
-    <button class="h-btn" style="width:30px;height:30px" data-hc="svc" data-svc="cover.open_cover"><span class="material-symbols-outlined" style="font-size:14px">open_in_full</span></button>
-    <button class="h-btn h-btn-ghost" style="width:30px;height:30px" data-hc="svc" data-svc="cover.stop_cover"><span class="material-symbols-outlined" style="font-size:14px">stop</span></button>
-    <button class="h-btn" style="width:30px;height:30px" data-hc="svc" data-svc="cover.close_cover"><span class="material-symbols-outlined" style="font-size:14px">close_fullscreen</span></button>
-  </div>
+  <div class="h-ctl" style="flex-direction:column;gap:3px;align-items:stretch">{{controlsHtml}}</div>
 </div>`
   const css = shell + `.hc{padding:6px}`
   return { html, css }
@@ -155,6 +167,7 @@ export function tplMedia() {
     <button class="h-btn h-btn-ghost" style="width:24px;height:24px" data-hc="svc" data-svc="media_player.media_next_track"><span class="material-symbols-outlined" style="font-size:12px">skip_next</span></button>
   </div>
   <div class="h-row"><input class="h-bar" type="range" min="0" max="100" value="{{volumePct}}" data-hc="range" data-svc="media_player.volume_set" data-key="volume_level" data-div="100"></div>
+  <div class="h-ctl" style="flex-wrap:wrap">{{extraControls}}</div>
 </div>`
   const css = shell + `.hc{padding:6px}`
   return { html, css }

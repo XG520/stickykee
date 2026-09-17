@@ -126,6 +126,7 @@ import { syncCurrentLocation } from '@/utils/location'
 import CodeCard from '@/components/cards/CodeCard.vue'
 import CardEditor from '@/components/cards/CardEditor.vue'
 import { cardDefaults } from '@/components/cards/defaults'
+import { CTL_CSS } from '@/components/cards/templates'
 
 function meta(type) { return cardDefaults[type] || cardDefaults.greeting }
 
@@ -141,6 +142,19 @@ function upgradePersonCard(card) {
     '\n  <div class="h-sub{{subCls}}"><span class="material-symbols-outlined h-sub-ic">{{subGlyph}}</span><span class="h-sub-v">{{subValue}}</span></div>\n$1',
   )
   card.css = (card.css || '') + '\n.h-sub{display:flex;align-items:center;justify-content:center;gap:3px;margin-top:auto}\n.h-sub.is-hide{display:none}\n.h-sub-ic{font-size:10px;color:var(--hc-color,#5EC4B0);flex-shrink:0}\n.h-sub-v{font-size:9px;font-weight:600;color:#F2F0EB;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}'
+}
+
+// 实体卡旧模板升级：早期开关卡只在「有当前值」时渲染一个滑条（{{rangeHtml}}，如灯关闭时
+// 没有亮度条）。改为能力模型输出的 {{controlsHtml}}——与设备页「更多信息」面板同源，
+// 属性缺失也能操作，并覆盖风扇档位/窗帘位置等更多能力（幂等，已迁移过则跳过）。
+function upgradeToggleCard(card) {
+  if (!card || !card.html || !String(card.html).includes('{{rangeHtml}}')) return
+  card.html = String(card.html)
+    .replace(/<div class="h-row">\s*\{\{rangeHtml\}\}\s*<\/div>/g,
+      '<div class="h-ctl" style="flex-direction:column;gap:3px;align-items:stretch">{{controlsHtml}}</div>')
+    .replace(/\{\{rangeHtml\}\}/g, '{{controlsHtml}}')
+  // 卡片 CSS 是创建时的快照，需要补上实体控件样式
+  if (!String(card.css || '').includes('.h-ctl{')) card.css = (card.css || '') + CTL_CSS
 }
 
 function newCard(type, extra = {}) {
@@ -294,6 +308,7 @@ async function loadLayout() {
             .filter((c) => cardDefaults[c.type])
           if (list.length) {
             list.forEach(upgradePersonCard)
+            list.forEach(upgradeToggleCard)
             cards.value = list
             has = true
           }

@@ -93,6 +93,8 @@ export const api = {
 
   // 服务通用转发
   callService: (id, p) => api.post(insPath(id) + '/services', p),
+  // HA 服务目录（含字段定义），供自动化动作编辑器使用。
+  serviceCatalog: (id = 0) => api.get(insPath(id) + '/services'),
 
   // 场景 / 自动化
   scenes: (id = 0) => api.get(insPath(id) + '/scenes'),

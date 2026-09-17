@@ -179,6 +179,16 @@ func (c *Rest) GetHistory(ctx context.Context, entityIDs []string, start time.Ti
 	return out, nil
 }
 
+// GetServices 拉取 HA 服务目录（/api/services）：每个域下的服务及其字段定义（fields），
+// 供前端「调用服务」动作选择服务并生成参数表单。结构直接透传，避免与 HA 版本漂移。
+func (c *Rest) GetServices(ctx context.Context) ([]map[string]any, error) {
+	var out []map[string]any
+	if err := c.do(ctx, http.MethodGet, "/api/services", nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // GetScenes 拉取全部场景。
 func (c *Rest) GetScenes(ctx context.Context) ([]model.EntityState, error) {
 	var states []model.EntityState
@@ -230,15 +240,19 @@ func (c *Rest) GetAutomationConfig(ctx context.Context, automationID string) (ma
 	return out, nil
 }
 
-// CreateAutomation 创建自动化。HA 多数版本用 POST /api/config/automation/config/new 创建，
-// 新版也支持直接 POST /api/config/automation/config。返回 automation_id。
+// CreateAutomation 创建自动化。创建端点 /api/config/automation/config/new 需要管理员权限，
+// 该路径不存在时（旧版 HA）回退到无 id 的 POST；其余错误（如 401 令牌非管理员）直接上抛，
+// 避免被回退路径的 404 覆盖成误导性报错。
 func (c *Rest) CreateAutomation(ctx context.Context, cfg map[string]any) (string, error) {
 	var out struct {
 		AutomationID string `json:"automation_id"`
 	}
-	// 先试 /new（旧版 HA 唯一创建端点；该路径不存在时返回 404）。
-	if err := c.do(ctx, http.MethodPost, "/api/config/automation/config/new", cfg, &out); err == nil && out.AutomationID != "" {
+	errNew := c.do(ctx, http.MethodPost, "/api/config/automation/config/new", cfg, &out)
+	if errNew == nil && out.AutomationID != "" {
 		return out.AutomationID, nil
+	}
+	if errNew != nil && !strings.Contains(errNew.Error(), "404") {
+		return "", errNew
 	}
 	// 回退新版端点（部分 HA 版本仅支持无 id 的 POST）。
 	if err := c.do(ctx, http.MethodPost, "/api/config/automation/config", cfg, &out); err != nil {

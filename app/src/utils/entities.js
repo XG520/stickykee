@@ -10,6 +10,14 @@ export function isOn(entity) {
   return false
 }
 
+// 判断实体是否可用（在线）。HA 用 unavailable 表示设备失联、unknown 表示状态未就绪，
+// 二者都算不在线；disabled 的实体不参与判断。
+export function isAvailable(entity) {
+  if (!entity || entity.disabled) return false
+  const s = String(entity.state || '').toLowerCase()
+  return s !== '' && s !== 'unavailable' && s !== 'unknown'
+}
+
 // 前端 tabs 的 type 归类（与后端 matchesType 对齐）。
 export function classifyType(entity) {
   const d = entity.domain
