@@ -1,0 +1,10 @@
+{
+  "name": "归栖",
+  "short_name": "Lumina",
+  "description": "智能家居能源监控中心",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0E0F12",
+  "theme_color": "#0E0F12",
+  "icons": []
+}

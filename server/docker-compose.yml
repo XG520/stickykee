@@ -1,0 +1,22 @@
+services:
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: homecanvas-server
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      HC_HTTP_ADDR: ":8080"
+      HC_DB_PATH: "/app/data/homecanvas.db"
+      HC_JWT_SECRET: "${HC_JWT_SECRET:-dev-secret-change-me}"
+      HC_LOG_LEVEL: "${HC_LOG_LEVEL:-info}"
+      # 注释即可用环境变量注入默认 HA 实例
+      # HA_DEFAULT_URL: "${HA_DEFAULT_URL:-}"
+      # HA_DEFAULT_TOKEN: "${HA_DEFAULT_TOKEN:-}"
+    volumes:
+      - homecanvas-data:/app/data
+
+volumes:
+  homecanvas-data:

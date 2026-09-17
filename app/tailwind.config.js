@@ -1,0 +1,41 @@
+export default {
+  content: ['./index.html', './src/**/*.{vue,js,ts,jsx,tsx}'],
+  darkMode: 'class',
+  theme: {
+    extend: {
+      colors: {
+        primary: 'rgb(var(--c-primary) / <alpha-value>)',
+        'primary-hover': 'rgb(var(--c-primary-hover) / <alpha-value>)',
+        'on-primary': 'rgb(var(--c-on-primary) / <alpha-value>)',
+        background: 'rgb(var(--c-background) / <alpha-value>)',
+        surface: 'rgb(var(--c-surface) / <alpha-value>)',
+        'surface-alt': 'rgb(var(--c-surface-alt) / <alpha-value>)',
+        'surface-hover': 'rgb(var(--c-surface-hover) / <alpha-value>)',
+        'on-background': 'rgb(var(--c-on-background) / <alpha-value>)',
+        'on-surface': 'rgb(var(--c-on-surface) / <alpha-value>)',
+        muted: 'rgb(var(--c-muted) / <alpha-value>)',
+        faint: 'rgb(var(--c-faint) / <alpha-value>)',
+        border: 'rgb(var(--c-border) / <alpha-value>)',
+        'border-focus': 'rgb(var(--c-border-focus) / <alpha-value>)',
+        accent: 'rgb(var(--c-accent) / <alpha-value>)',
+        error: 'rgb(var(--c-error) / <alpha-value>)',
+        warning: 'rgb(var(--c-warning) / <alpha-value>)',
+        success: 'rgb(var(--c-success) / <alpha-value>)',
+        info: 'rgb(var(--c-info) / <alpha-value>)',
+      },
+      fontFamily: {
+        headline: ['var(--font-headline)', 'system-ui', 'sans-serif'],
+        body: ['var(--font-body)', 'system-ui', 'sans-serif'],
+      },
+      borderRadius: {
+        DEFAULT: '4px',
+        lg: '8px',
+        xl: '12px',
+        '2xl': '16px',
+        '3xl': '20px',
+        full: '9999px',
+      },
+    },
+  },
+  plugins: [],
+}

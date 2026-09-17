@@ -1,0 +1,492 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ================= 主题变量 =================
+   全部界面颜色经 :root CSS 变量驱动，tailwind 颜色类引用 var(--c-*)；
+   运行时切换主题只需改写这些变量，全局即时生效（见 src/themes.js）。 */
+:root {
+  --c-primary: 245 166 35;
+  --c-primary-hover: 255 184 77;
+  --c-on-primary: 14 15 18;
+  --c-background: 14 15 18;
+  --c-surface: 26 27 30;
+  --c-surface-alt: 34 35 39;
+  --c-surface-hover: 42 43 47;
+  --c-on-background: 242 240 235;
+  --c-on-surface: 232 229 221;
+  --c-muted: 138 137 134;
+  --c-faint: 92 91 88;
+  --c-border: 46 47 51;
+  --c-border-focus: 245 166 35;
+  --c-accent: 94 196 176;
+  --c-error: 232 93 76;
+  --c-warning: 232 168 76;
+  --c-success: 94 196 176;
+  --c-info: 107 163 217;
+  --font-headline: 'Space Grotesk', system-ui, sans-serif;
+  --font-body: 'Source Sans 3', system-ui, sans-serif;
+}
+
+/* ================= 中国风主题 =================
+   采用 Tailwind 官方 class 主题方案：html 上切换 .theme-china 即整体换肤，
+   变量静态编译进 CSS，无需 JS 注入，切换即时可靠（对应 src/themes.js）。 */
+.theme-china {
+  --c-primary: 198 57 44; /* 朱砂 #C6392C */
+  --c-primary-hover: 226 92 70;
+  --c-on-primary: 255 250 244; /* 米白 */
+  --c-background: 17 13 11; /* 暖墨（水墨基底） */
+  --c-surface: 27 22 18;
+  --c-surface-alt: 38 31 26;
+  --c-surface-hover: 49 41 34;
+  --c-on-background: 245 238 226;
+  --c-on-surface: 237 229 216;
+  --c-muted: 152 140 122;
+  --c-faint: 104 93 79;
+  --c-border: 62 52 44;
+  --c-border-focus: 198 57 44;
+  --c-accent: 212 175 55; /* 鎏金 #D4AF37 */
+  --c-error: 226 98 78;
+  --c-warning: 214 150 58; /* 赭金 */
+  --c-success: 104 162 128; /* 青瓷绿 */
+  --c-info: 110 132 186; /* 黛蓝 */
+  --font-headline: 'KaiTi', 'STKaiti', '楷体', 'Noto Serif SC', serif;
+  --font-body: 'Source Han Serif SC', 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
+}
+
+/* ================= 多风格主题背景系统 =================
+   共 9 套预设主题（default / china / aurora / forest / geo / tech / retro / autumn / festive）
+   + 1 套「自定义主题」（key='custom'，无静态类，运行时由 themes.js 派生完整变量 inline 注入）。
+   每套主题 = 完整 CSS 变量集（换肤）+ 背景装饰层（主背景 / 辅助元素 / 配色）。
+   装饰层实现：html 承载底色，body 背景透明，body::before/::after 用
+   position:fixed + z-index:-1 的纯 CSS 渐变/图案层铺满视口，不遮挡内容、无 JS 动画，性能友好。
+   注意：App.vue 根容器不得再使用不透明白底（bg-background），否则会盖住装饰层。 */
+
+/* ---------- 极光（渐变色彩） ---------- */
+.theme-aurora {
+  --c-primary: 94 234 212; /* 极光青 #5EEAD4 */
+  --c-primary-hover: 134 239 196;
+  --c-on-primary: 6 15 20;
+  --c-background: 9 12 26; /* 深靛蓝夜空 */
+  --c-surface: 18 22 42;
+  --c-surface-alt: 26 31 56;
+  --c-surface-hover: 34 40 68;
+  --c-on-background: 232 240 250;
+  --c-on-surface: 226 232 244;
+  --c-muted: 148 156 186;
+  --c-faint: 100 107 140;
+  --c-border: 44 51 84;
+  --c-border-focus: 94 234 212;
+  --c-accent: 167 139 250; /* 极光紫 #A78BFA */
+  --c-error: 244 114 114;
+  --c-warning: 251 191 36;
+  --c-success: 52 211 153;
+  --c-info: 96 165 250;
+}
+html.theme-aurora { background-color: rgb(9 12 26 / 1); }
+html.theme-aurora body { background-color: transparent; }
+html.theme-aurora body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 75% 60% at 15% -10%, rgb(139 92 246 / 0.32), transparent 62%),
+    radial-gradient(ellipse 60% 55% at 88% 8%, rgb(34 211 238 / 0.22), transparent 62%),
+    radial-gradient(ellipse 70% 60% at 50% 118%, rgb(16 185 129 / 0.20), transparent 62%),
+    linear-gradient(180deg, rgb(10 13 29 / 1) 0%, rgb(13 17 40 / 1) 55%, rgb(10 13 27 / 1) 100%);
+}
+
+/* ---------- 森林（自然风景 · 苔藓绿 + 暖阳光斑，去荧光） ---------- */
+.theme-forest {
+  --c-primary: 110 158 122; /* 苔藓绿 #6E9E7A */
+  --c-primary-hover: 138 180 148;
+  --c-on-primary: 10 22 14;
+  --c-background: 11 19 14; /* 深林 */
+  --c-surface: 19 30 23;
+  --c-surface-alt: 27 41 31;
+  --c-surface-hover: 35 52 40;
+  --c-on-background: 238 244 238;
+  --c-on-surface: 230 238 230;
+  --c-muted: 148 168 154;
+  --c-faint: 100 122 108;
+  --c-border: 43 60 48;
+  --c-border-focus: 110 158 122;
+  --c-accent: 196 168 96; /* 暖阳金 #C4A860 */
+  --c-error: 210 116 94;
+  --c-warning: 200 156 84;
+  --c-success: 92 158 118;
+  --c-info: 120 150 170;
+}
+html.theme-forest { background-color: rgb(11 19 14 / 1); }
+html.theme-forest body { background-color: transparent; }
+html.theme-forest body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    linear-gradient(115deg, rgb(196 168 96 / 0.07) 0%, transparent 32%, transparent 68%, rgb(196 168 96 / 0.05) 100%),
+    radial-gradient(ellipse 55% 45% at 18% 8%, rgb(196 168 96 / 0.10), transparent 65%),
+    radial-gradient(ellipse 50% 40% at 78% 22%, rgb(110 158 122 / 0.10), transparent 65%),
+    radial-gradient(ellipse 60% 45% at 62% 90%, rgb(27 70 45 / 0.45), transparent 70%),
+    linear-gradient(180deg, rgb(11 19 14 / 1) 0%, rgb(15 26 18 / 1) 55%, rgb(8 15 11 / 1) 100%);
+}
+
+/* ---------- 几何（孟菲斯撞色 · 几何构成，橙/钴蓝/明黄） ---------- */
+.theme-geo {
+  --c-primary: 240 106 64; /* 孟菲斯橙 #F06A40 */
+  --c-primary-hover: 255 140 98;
+  --c-on-primary: 40 18 8;
+  --c-background: 15 15 24; /* 深墨蓝 */
+  --c-surface: 24 24 36;
+  --c-surface-alt: 32 32 47;
+  --c-surface-hover: 41 41 58;
+  --c-on-background: 244 242 248;
+  --c-on-surface: 236 234 242;
+  --c-muted: 152 150 172;
+  --c-faint: 104 102 124;
+  --c-border: 47 47 66;
+  --c-border-focus: 240 106 64;
+  --c-accent: 76 118 246; /* 钴蓝 #4C76F6 */
+  --c-error: 238 88 84;
+  --c-warning: 246 190 60; /* 明黄 #F6BE3C */
+  --c-success: 76 186 130;
+  --c-info: 96 165 250;
+}
+html.theme-geo { background-color: rgb(15 15 24 / 1); }
+html.theme-geo body { background-color: transparent; }
+html.theme-geo body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 60% 45% at 82% -8%, rgb(240 106 64 / 0.16), transparent 60%),
+    radial-gradient(ellipse 55% 42% at 12% 108%, rgb(76 118 246 / 0.12), transparent 60%),
+    radial-gradient(ellipse 45% 35% at 45% 60%, rgb(246 190 60 / 0.05), transparent 60%),
+    linear-gradient(180deg, rgb(15 15 24 / 1) 0%, rgb(19 19 30 / 1) 100%);
+}
+html.theme-geo body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cg fill='none'%3E%3Ccircle cx='22' cy='22' r='2' fill='%23F06A40' fill-opacity='0.16'/%3E%3Ccircle cx='112' cy='112' r='2' fill='%234C76F6' fill-opacity='0.16'/%3E%3Ccircle cx='160' cy='40' r='2' fill='%23F6BE3C' fill-opacity='0.16'/%3E%3Cpath d='M112 180v-44a34 34 0 0 1 68 0v44' stroke='%23F06A40' stroke-opacity='0.10' stroke-width='2.5'/%3E%3Cpath d='M6 6h34L23 34z' fill='%23F6BE3C' fill-opacity='0.08'/%3E%3Ccircle cx='76' cy='150' r='14' stroke='%234C76F6' stroke-opacity='0.12' stroke-width='2'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* ---------- 科技（深空蓝 + 霓虹青 + 精密细网格，去噪精致化） ---------- */
+.theme-tech {
+  --c-primary: 45 212 236; /* 霓虹青 #2DD4EC */
+  --c-primary-hover: 103 232 249;
+  --c-on-primary: 4 14 20;
+  --c-background: 5 10 20; /* 深空蓝 */
+  --c-surface: 13 19 34;
+  --c-surface-alt: 20 28 48;
+  --c-surface-hover: 28 38 62;
+  --c-on-background: 234 244 252;
+  --c-on-surface: 226 238 248;
+  --c-muted: 134 150 176;
+  --c-faint: 86 100 126;
+  --c-border: 37 48 74;
+  --c-border-focus: 45 212 236;
+  --c-accent: 147 97 246; /* 电子紫 #9361F6 */
+  --c-error: 240 100 110;
+  --c-warning: 246 190 60;
+  --c-success: 52 211 153;
+  --c-info: 96 165 250;
+}
+html.theme-tech { background-color: rgb(5 10 20 / 1); }
+html.theme-tech body { background-color: transparent; }
+html.theme-tech body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    linear-gradient(rgb(45 212 236 / 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(45 212 236 / 0.035) 1px, transparent 1px),
+    radial-gradient(ellipse 45% 30% at 50% 0%, rgb(45 212 236 / 0.14), transparent 60%),
+    radial-gradient(ellipse 60% 45% at 50% 118%, rgb(147 97 246 / 0.10), transparent 60%),
+    radial-gradient(circle 1.2px at 12% 18%, rgb(200 220 255 / 0.50), transparent 60%),
+    radial-gradient(circle 1px at 32% 70%, rgb(200 220 255 / 0.40), transparent 60%),
+    radial-gradient(circle 1.2px at 64% 30%, rgb(200 220 255 / 0.45), transparent 60%),
+    radial-gradient(circle 1px at 82% 62%, rgb(200 220 255 / 0.35), transparent 60%),
+    linear-gradient(180deg, rgb(5 10 20 / 1) 0%, rgb(8 15 30 / 1) 55%, rgb(4 8 16 / 1) 100%);
+  background-size: 32px 32px, 32px 32px, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%;
+}
+
+/* ---------- 复古（米黄纸感 + 噪点，浅色主题） ---------- */
+.theme-retro {
+  --c-primary: 217 119 6; /* 琥珀棕 #D97706 */
+  --c-primary-hover: 245 158 11;
+  --c-on-primary: 255 251 240;
+  --c-background: 248 242 230; /* 米黄纸感 */
+  --c-surface: 255 252 244;
+  --c-surface-alt: 250 244 230;
+  --c-surface-hover: 243 235 218;
+  --c-on-background: 56 46 32;
+  --c-on-surface: 62 52 38;
+  --c-muted: 138 120 98;
+  --c-faint: 178 162 140;
+  --c-border: 216 202 176;
+  --c-border-focus: 217 119 6;
+  --c-accent: 176 92 46; /* 赭陶红 */
+  --c-error: 190 62 42;
+  --c-warning: 196 138 22;
+  --c-success: 76 140 82;
+  --c-info: 90 110 160;
+}
+html.theme-retro { background-color: rgb(248 242 230 / 1); }
+html.theme-retro body { background-color: transparent; }
+html.theme-retro body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 70% 50% at 50% 0%, rgb(255 255 255 / 0.55), transparent 60%),
+    radial-gradient(ellipse 60% 45% at 50% 110%, rgb(196 150 90 / 0.14), transparent 60%),
+    linear-gradient(180deg, rgb(250 246 236 / 1) 0%, rgb(244 236 220 / 1) 100%);
+}
+html.theme-retro body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
+}
+
+/* ---------- 秋日（枫叶橙红 + 暖金斜阳，去土气） ---------- */
+.theme-autumn {
+  --c-primary: 232 106 54; /* 枫叶橙红 #E86A36 */
+  --c-primary-hover: 248 134 78;
+  --c-on-primary: 44 20 8;
+  --c-background: 22 14 10; /* 深栗 */
+  --c-surface: 33 22 15;
+  --c-surface-alt: 44 30 20;
+  --c-surface-hover: 55 38 25;
+  --c-on-background: 250 243 232;
+  --c-on-surface: 245 236 222;
+  --c-muted: 170 146 120;
+  --c-faint: 120 99 78;
+  --c-border: 62 45 30;
+  --c-border-focus: 232 106 54;
+  --c-accent: 245 184 66; /* 暖金 #F5B842 */
+  --c-error: 226 96 74;
+  --c-warning: 240 164 52;
+  --c-success: 140 172 110;
+  --c-info: 150 158 184;
+}
+html.theme-autumn { background-color: rgb(22 14 10 / 1); }
+html.theme-autumn body { background-color: transparent; }
+html.theme-autumn body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    linear-gradient(105deg, rgb(245 184 66 / 0.07) 0%, transparent 35%, transparent 70%, rgb(232 106 54 / 0.06) 100%),
+    radial-gradient(ellipse 55% 42% at 80% -6%, rgb(232 106 54 / 0.22), transparent 60%),
+    radial-gradient(ellipse 50% 40% at 12% 102%, rgb(245 184 66 / 0.14), transparent 60%),
+    radial-gradient(ellipse 45% 35% at 62% 62%, rgb(190 90 44 / 0.06), transparent 65%),
+    linear-gradient(180deg, rgb(22 14 10 / 1) 0%, rgb(31 20 13 / 1) 60%, rgb(18 11 8 / 1) 100%);
+}
+
+/* ---------- 节日（绯红鎏金 · 丝绒质感，克制不俗） ---------- */
+.theme-festive {
+  --c-primary: 226 76 92; /* 绯红 #E24C5C */
+  --c-primary-hover: 244 108 120;
+  --c-on-primary: 46 8 14;
+  --c-background: 24 10 14; /* 丝绒深红 */
+  --c-surface: 36 17 22;
+  --c-surface-alt: 48 24 30;
+  --c-surface-hover: 60 31 38;
+  --c-on-background: 250 240 242;
+  --c-on-surface: 245 232 234;
+  --c-muted: 176 142 148;
+  --c-faint: 126 96 102;
+  --c-border: 74 42 48;
+  --c-border-focus: 226 76 92;
+  --c-accent: 232 178 58; /* 鎏金 #E8B23A */
+  --c-error: 236 96 100;
+  --c-warning: 240 178 66;
+  --c-success: 94 178 130;
+  --c-info: 152 156 204;
+}
+html.theme-festive { background-color: rgb(24 10 14 / 1); }
+html.theme-festive body { background-color: transparent; }
+html.theme-festive body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    linear-gradient(115deg, transparent 42%, rgb(232 178 58 / 0.10) 46%, rgb(232 178 58 / 0.04) 48%, transparent 52%),
+    radial-gradient(ellipse 65% 48% at 50% -8%, rgb(226 76 92 / 0.22), transparent 60%),
+    radial-gradient(ellipse 55% 42% at 50% 115%, rgb(232 178 58 / 0.08), transparent 60%),
+    radial-gradient(circle 2px at 18% 30%, rgb(232 178 58 / 0.40), transparent 60%),
+    radial-gradient(circle 1.6px at 74% 24%, rgb(255 255 255 / 0.30), transparent 60%),
+    radial-gradient(circle 1.8px at 86% 58%, rgb(232 178 58 / 0.35), transparent 60%),
+    radial-gradient(circle 1.5px at 30% 78%, rgb(226 76 92 / 0.40), transparent 60%),
+    linear-gradient(180deg, rgb(24 10 14 / 1) 0%, rgb(32 14 19 / 1) 60%, rgb(20 8 12 / 1) 100%);
+  background-size: 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%;
+}
+
+/* ---------- 中国风（水墨晕染 + 鎏金祥云） ---------- */
+html.theme-china { background-color: rgb(17 13 11 / 1); }
+html.theme-china body { background-color: transparent; }
+html.theme-china body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 55% 42% at 88% -6%, rgb(198 57 44 / 0.16), transparent 60%),
+    radial-gradient(ellipse 48% 38% at 6% 102%, rgb(212 175 55 / 0.10), transparent 60%),
+    radial-gradient(ellipse 42% 34% at 22% 78%, rgb(110 132 186 / 0.05), transparent 65%),
+    radial-gradient(ellipse 50% 40% at 70% 90%, rgb(198 57 44 / 0.05), transparent 65%),
+    linear-gradient(180deg, rgb(17 13 11 / 1) 0%, rgb(23 18 14 / 1) 60%, rgb(14 11 9 / 1) 100%);
+}
+html.theme-china body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.7;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cg fill='none' stroke='%23D4AF37' stroke-width='1.2' stroke-opacity='0.07'%3E%3Cpath d='M18 62c16-10 34-10 48-3 8-16 24-24 40-19-2 13-13 22-26 22H18z'/%3E%3Cpath d='M96 116c12-9 26-9 35-2 8-13 22-17 33-12-2 10-11 17-22 17H96z'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+@layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    @apply bg-background text-on-background font-body antialiased;
+    min-height: max(884px, 100dvh);
+    /* 为底部 Tab/悬浮操作区预留空间 */
+    padding-bottom: 96px;
+  }
+
+  /* 主题兜底：强制 body 背景/文字跟随 --c-* 变量（防止工具链使用旧 tailwind 配置时主题失效） */
+  body {
+    background-color: rgb(var(--c-background) / 1);
+    color: rgb(var(--c-on-background) / 1);
+  }
+}
+
+/* ================= 滚动条样式 =================
+   页面级（html）滚动条完全隐藏，滚动不受影响（滚轮/触摸）；
+   内部滚动容器改用细窄深色滚动条，替代浏览器默认样式。 */
+html {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+html::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #2e2f33;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3a3b40;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2e2f33 transparent;
+}
+
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  line-height: 1;
+  user-select: none;
+}
+
+/* 后端 SVG 图标（CSS mask + currentColor 着色 + 1em 随 font-size 等比缩放） */
+.hc-iconsvg {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  box-sizing: border-box;
+  vertical-align: -0.15em;
+  background: currentColor;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+
+/* 脉冲圆点动画（当前值指示） */
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.6);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+.pulse-dot {
+  transform-origin: center;
+  transform-box: fill-box;
+  animation: pulse-ring 1.8s ease-out infinite;
+}
+
+/* 路由切换淡入 */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.18s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+/* 激活设备卡片的外发光（模拟灯光） */
+.glow-active {
+  box-shadow: 0 0 20px rgba(245, 166, 35, 0.08), inset 0 0 20px rgba(245, 166, 35, 0.02);
+}
+
+/* 区块滑入动画 */
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-slide-in {
+  animation: slide-in 0.35s ease both;
+}

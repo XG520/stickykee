@@ -1,0 +1,19 @@
+<template>
+  <div class="py-2">
+    <div class="flex items-center gap-2 mb-5">
+      <span class="material-symbols-outlined text-primary text-xl">map</span>
+      <h1 class="font-headline text-xl font-semibold text-on-background">地图定位</h1>
+      <p class="text-muted text-sm font-body ml-2 hidden sm:block">查看家的范围与家人实时位置，可刷新同步定位</p>
+    </div>
+
+    <div class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5">
+      <HomeMap :height="'min(68vh, 620px)'" />
+    </div>
+
+    <p class="text-muted text-xs font-body mt-3">家（黄色区域）与家的范围圆来自 Home Assistant 的 zone 实体；成员标记在设置中选择了「位置同步到」的家人会使用其 HA 头像。浏览器定位需 HTTPS 环境。</p>
+  </div>
+</template>
+
+<script setup>
+import HomeMap from '@/components/map/HomeMap.vue'
+</script>
