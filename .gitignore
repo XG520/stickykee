@@ -8,3 +8,7 @@
 *.db
 *.db-wal
 *.db-shm
+
+# 运行时数据目录：数据库、图标缓存、调试日志等，全部由服务运行时生成，不纳入版本库
+# 代码层面用 CREATE TABLE IF NOT EXISTS 增量迁移，不会重置已有数据
+server/data/
