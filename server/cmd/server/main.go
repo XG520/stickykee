@@ -1,4 +1,4 @@
-// Command server 启动 HomeCanvas 后端服务。
+// Command server 启动 Sticky Nuo 后端服务。
 package main
 
 import (
@@ -11,13 +11,13 @@ import (
 	"syscall"
 	"time"
 
-	"homecanvas/server/internal/api"
-	"homecanvas/server/internal/auth"
-	"homecanvas/server/internal/config"
-	"homecanvas/server/internal/ha"
-	"homecanvas/server/internal/hub"
-	"homecanvas/server/internal/icons"
-	"homecanvas/server/internal/store"
+	"stickynuo/server/internal/api"
+	"stickynuo/server/internal/auth"
+	"stickynuo/server/internal/config"
+	"stickynuo/server/internal/ha"
+	"stickynuo/server/internal/hub"
+	"stickynuo/server/internal/icons"
+	"stickynuo/server/internal/store"
 )
 
 func main() {
@@ -33,6 +33,9 @@ func main() {
 	defer db.Close()
 	repo := store.NewInstanceRepo(db.DB())
 	urepo := store.NewUserRepo(db.DB())
+	uprefs := store.NewUserPrefs(db.DB())
+	mrepo := store.NewMessageRepo(db.DB())
+	hb := hub.New(slog.Default())
 
 	// 可选：注入种子实例
 	if cfg.SeedURL != "" {
@@ -45,10 +48,11 @@ func main() {
 		}
 	}
 
-	manager := ha.NewManager(repo, hub.New(slog.Default()), slog.Default(), cfg.TLSInsecure)
-	handler := api.Router(repo, urepo, manager, auth.Option{
-		Authenticate: func(token string) (string, bool) {
-			return urepo.UserByToken(context.Background(), token)
+	manager := ha.NewManager(repo, uprefs, hb, slog.Default(), cfg.TLSInsecure)
+	handler := api.Router(repo, urepo, uprefs, mrepo, hb, manager, auth.Option{
+		Authenticate: func(token string) (auth.Identity, bool) {
+			u, isAdmin, ok := urepo.IdentityByToken(context.Background(), token)
+			return auth.Identity{Username: u, IsAdmin: isAdmin}, ok
 		},
 	})
 
@@ -68,7 +72,7 @@ func main() {
 		_ = srv.Shutdown(ctx)
 	}()
 
-	slog.Info("HomeCanvas server started", "addr", cfg.HTTPAddr, "db", cfg.DBPath)
+	slog.Info("Sticky Nuo server started", "addr", cfg.HTTPAddr, "db", cfg.DBPath)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		slog.Error("server", "err", err)
 		os.Exit(1)

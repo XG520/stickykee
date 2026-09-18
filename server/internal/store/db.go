@@ -61,6 +61,23 @@ func migrate(db *sql.DB) error {
 			is_admin INTEGER NOT NULL DEFAULT 0,
 			created_at TEXT NOT NULL DEFAULT (datetime('now'))
 		);`,
+		`CREATE TABLE IF NOT EXISTS user_prefs (
+			username TEXT NOT NULL,
+			key TEXT NOT NULL,
+			value TEXT NOT NULL,
+			PRIMARY KEY (username, key)
+		);`,
+		`CREATE TABLE IF NOT EXISTS messages (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			from_user TEXT NOT NULL,
+			to_user TEXT NOT NULL,
+			msg_type TEXT NOT NULL DEFAULT 'text',
+			payload TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL DEFAULT '',
+			read INTEGER NOT NULL DEFAULT 0,
+			created_at TEXT NOT NULL DEFAULT (datetime('now'))
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_messages_users ON messages(from_user, to_user);`,
 	}
 	for _, s := range schemas {
 		if _, err := db.Exec(s); err != nil {

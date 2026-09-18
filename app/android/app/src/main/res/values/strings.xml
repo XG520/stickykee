@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">归栖</string>
-    <string name="title_activity_main">归栖</string>
+    <string name="app_name">Sticky Nuo</string>
+    <string name="title_activity_main">Sticky Nuo</string>
     <string name="package_name">com.luminahome.app</string>
     <string name="custom_url_scheme">com.luminahome.app</string>
 </resources>

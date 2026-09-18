@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strings"
 
-	"homecanvas/server/internal/ha"
-	"homecanvas/server/internal/ha/client"
+	"stickynuo/server/internal/ha"
+	"stickynuo/server/internal/ha/client"
 )
 
 // Automation 提供自动化配置的创建/读取/更新/删除（对接 HA REST 配置接口），

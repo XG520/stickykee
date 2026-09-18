@@ -81,7 +81,7 @@ const markers = usePersonMarkers()
 const zones = useZones()
 const mapEl = ref(null)
 
-const cfg = ref({ amap_key: '', dev_id: 'homecanvas', location_name: '', sync_target: '' })
+const cfg = ref({ amap_key: '' })
 const configured = computed(() => !!cfg.value.amap_key)
 
 const mapStatus = ref('idle')
@@ -97,6 +97,8 @@ let personMarks = [] // 成员标记
 let homeMark = null // 家的标记
 let circles = [] // 家的范围圆
 let myMarker = null
+const personMarkMap = new Map() // entity_id -> marker，用于增量更新
+let firstFitDone = false // 首次有数据后自动 fitView 一次，之后不再自动重置缩放
 
 async function loadConfig() {
   try {
@@ -105,9 +107,6 @@ async function loadConfig() {
     if (data?.map_config) { try { mc = JSON.parse(data.map_config) } catch {} }
     cfg.value = {
       amap_key: (mc.amap_key || '').trim(),
-      dev_id: mc.dev_id || 'homecanvas',
-      location_name: mc.location_name || '',
-      sync_target: mc.sync_target || '',
     }
   } catch { /* 后端离线静默 */ }
 }
@@ -188,23 +187,43 @@ function renderHome() {
 
 function renderMarkers() {
   if (!map || mapStatus.value !== 'ready') return
-  personMarks.forEach((m) => { try { m.remove() } catch {} })
-  personMarks = []
+  const AMap = window.AMap
+  const seen = new Set()
   markers.value.forEach((mk) => {
-    const m = new AMap.Marker({
-      position: gcjPt(mk.lng, mk.lat),
-      title: mk.name,
-      content: avatarHTML(mk),
-      anchor: 'bottom-center',
-      offset: new AMap.Pixel(0, -2),
-    })
-    m.on('click', () => {
-      statusOk.value = true
-      statusText.value = `${mk.name} · ${mk.away ? '离家' : '在家'} · ${mk.location}`
-    })
-    m.addTo(map)
-    personMarks.push(m)
+    const pos = gcjPt(mk.lng, mk.lat)
+    let m = personMarkMap.get(mk.entity_id)
+    if (m) {
+      // 已存在：只更新位置与外观，不重建（避免标记闪烁）
+      m.setPosition(pos)
+      m.setContent(avatarHTML(mk))
+      m.setExtData(mk)
+    } else {
+      m = new AMap.Marker({
+        position: pos,
+        title: mk.name,
+        content: avatarHTML(mk),
+        anchor: 'bottom-center',
+        offset: new AMap.Pixel(0, -2),
+      })
+      m.setExtData(mk)
+      m.on('click', () => {
+        const d = m.getExtData() || mk
+        statusOk.value = true
+        statusText.value = `${d.name} · ${d.away ? '离家' : '在家'} · ${d.location}`
+      })
+      m.addTo(map)
+      personMarkMap.set(mk.entity_id, m)
+    }
+    seen.add(mk.entity_id)
   })
+  // 移除不再存在的成员
+  for (const [id, m] of personMarkMap) {
+    if (!seen.has(id)) {
+      try { m.remove() } catch {}
+      personMarkMap.delete(id)
+    }
+  }
+  personMarks = Array.from(personMarkMap.values())
 }
 
 async function refreshLocation() {
@@ -213,13 +232,11 @@ async function refreshLocation() {
   statusOk.value = true
   statusText.value = '正在定位并同步…'
   try {
-    const mc = cfg.value
-    const target = mc.sync_target || ''
-    // 同步到当前设备自己的 tracker（别名），可选同时同步到关联的家人。
-    const res = await syncCurrentLocation(target)
+    // 经 HA 官方 mobile_app webhook 上报本机定位，HA 自动绑定到该注册设备的 device_tracker。
+    const res = await syncCurrentLocation()
     updateMyMarker(res.lat, res.lng, res.name || '当前设备')
     statusOk.value = true
-    statusText.value = res.address ? `${res.name} 位置已同步：${res.address}` : `${res.name} 位置已同步（device_tracker.${res.dev_id}）`
+    statusText.value = res.address ? `${res.name} 位置已同步：${res.address}` : `${res.name} 位置已同步`
   } catch (e) {
     statusOk.value = false
     statusText.value = e.message || '位置同步失败（请确认已连接 Home Assistant 并允许定位）'
@@ -244,17 +261,28 @@ function updateMyMarker(lat, lng, name) {
   map.setZoomAndCenter(15, [gLng, gLat])
 }
 
-const stopA = watch(markers, () => { renderMarkers(); fitView() }, { deep: true })
-const stopB = watch(zones, () => { renderHome(); fitView() }, { deep: true })
+// 首次拿到数据后自动 fitView 一次；之后用户手动缩放/拖动不被打断。
+// 实时数据更新只增量刷新标记位置，不再重置视图（避免"放大后自动缩小"）。
+function maybeFit() {
+  if (firstFitDone) return
+  if (personMarks.length || homeMark || zones.value.length) {
+    fitView()
+    firstFitDone = true
+  }
+}
+const stopA = watch(markers, () => { renderMarkers(); maybeFit() }, { deep: true })
+const stopB = watch(zones, () => { renderHome(); maybeFit() }, { deep: true })
 
 onUnmounted(() => {
   stopA(); stopB()
   if (myMarker) { try { myMarker.remove() } catch {} }
   if (homeMark) { try { homeMark.remove() } catch {} }
-  personMarks.forEach((m) => { try { m.remove() } catch {} })
+  personMarkMap.forEach((m) => { try { m.remove() } catch {} })
+  personMarkMap.clear()
+  personMarks = []
   circles.forEach((c) => { try { c.remove() } catch {} })
   if (map) { try { map.destroy() } catch {} }
-  map = null; personMarks = []; homeMark = null; circles = []; myMarker = null
+  map = null; homeMark = null; circles = []; myMarker = null; firstFitDone = false
 })
 
 onMounted(async () => {

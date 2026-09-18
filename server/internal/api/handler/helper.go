@@ -2,14 +2,33 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
 
-	"homecanvas/server/internal/ha/model"
+	"stickynuo/server/internal/auth"
+	"stickynuo/server/internal/ha"
+	"stickynuo/server/internal/ha/model"
 
 	"github.com/go-chi/chi/v5"
 )
+
+// rUsername 返回当前登录用户名；未登录（路由已鉴权，正常不会发生）返回空串。
+func rUsername(r *http.Request) string {
+	id, _ := auth.From(r.Context())
+	return id.Username
+}
+
+// haErr 统一把底层 HA 连接错误映射为前端可读错误。
+// 个人 token 未配置（无配置即禁用）时给出明确指引，其余按「未配置实例」处理。
+func haErr(w http.ResponseWriter, err error) {
+	if errors.Is(err, ha.ErrNoHAToken) {
+		WriteErr(w, 403, "no_ha_token", "未配置 Home Assistant 个人 Token（无 Token 时 HA 访问被禁用），请在设置中填写")
+		return
+	}
+	WriteErr(w, 404, "no_instance", "no configured instance")
+}
 
 // pathID 解析路径中的 {id} 实例名。
 func pathID(r *http.Request) (int64, bool) {

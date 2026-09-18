@@ -3,7 +3,7 @@ package ha
 import (
 	"sync"
 
-	"homecanvas/server/internal/ha/model"
+	"stickynuo/server/internal/ha/model"
 )
 
 // StateStore 缓存单个 HA 实例的实体状态快照，并在更新时通知订阅者。

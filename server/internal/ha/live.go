@@ -12,7 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"homecanvas/server/internal/ha/model"
+	"stickynuo/server/internal/ha/model"
 
 	"github.com/gorilla/websocket"
 )
@@ -36,7 +36,17 @@ type Realtime struct {
 	pending map[uint64]chan *wsMessage
 	log     *slog.Logger
 	writeMu sync.Mutex // gorilla 要求写串行化；命令写与心跳 ping 共用同一连接
+
+	cmdMu     sync.Mutex
+	onCommand CommandHandler // Browser_mod 风格命令回调（由 Manager 注入，路由到前端）
 }
+
+// CommandHandler 处理从 HA 事件总线收到的浏览器定向命令。
+// deviceID 为空或 "all" 表示广播到全部设备；payload 为已序列化的前端命令消息。
+type CommandHandler func(deviceID string, payload []byte)
+
+// 从 HA 订阅的 Browser_mod 风格命令事件类型（与官方 browser_mod 兼容，便于迁移既有自动化）。
+var commandEventTypes = []string{"stickynuo_command", "browser_mod_command"}
 
 // 心跳保活参数：每 keepAlive 间隔发送一次 ping；若 readStale 内没有任何消息
 // （含 HA 应答的 pong）则判定连接停滞并重连。readStale 必须明显大于 keepAlive。
@@ -65,6 +75,13 @@ type wsMessage struct {
 // NewRealtime 构造实时连接（惰性，由 Start 发起）。
 func NewRealtime(cfg RTConfig, store *StateStore, log *slog.Logger) *Realtime {
 	return &Realtime{cfg: cfg, store: store, pending: map[uint64]chan *wsMessage{}, log: log}
+}
+
+// OnCommand 注入命令回调（由 Manager 在 Live 时设置，路由到前端）。
+func (r *Realtime) OnCommand(fn CommandHandler) {
+	r.cmdMu.Lock()
+	defer r.cmdMu.Unlock()
+	r.onCommand = fn
 }
 
 // Start 阻塞式启动连接循环，直到 ctx 取消。
@@ -152,6 +169,21 @@ func (r *Realtime) run(ctx context.Context) error {
 
 	// 全量拉取并写入快照（由上方读取 goroutine 投递响应）。每个握手命令都有硬超时，
 	// 防止 HA 认证后沉默的僵尸连接把 run 卡死在这里（进而让后续所有 WS 命令超时）。
+	// 先记录当前用户 admin 权限，用于判断命令事件订阅授权。
+	if r.log != nil {
+		if uctx, uc := context.WithTimeout(ctx, connectOp); true {
+			u, uerr := r.call(uctx, "auth/current_user", nil)
+			uc()
+			if uerr == nil {
+				var up struct {
+					Username string `json:"name"`
+					IsAdmin  bool   `json:"is_admin"`
+				}
+				_ = json.Unmarshal(u.Result, &up)
+				r.log.Info("ha current user", "instance", r.cfg.InstanceID, "name", up.Username, "is_admin", up.IsAdmin)
+			}
+		}
+	}
 	opCtx, opCancel := context.WithTimeout(ctx, connectOp)
 	statesRes, err := r.call(opCtx, "get_states", nil)
 	opCancel()
@@ -167,6 +199,19 @@ func (r *Realtime) run(ctx context.Context) error {
 	opCancel2()
 	if err != nil {
 		return fmt.Errorf("subscribe: %w", err)
+	}
+	// 订阅 Browser_mod 风格命令事件（HA 经 event.fire_event 下发浏览器定向命令）。
+	// 该订阅为「尽力而为」：HA 对非 admin 用户的任意事件订阅会返回 unauthorized，
+	// 此时不能终止连接（否则会破坏现有的 state_changed 通道并反复重连），仅记录警告。
+	for _, et := range commandEventTypes {
+		opCtx3, opCancel3 := context.WithTimeout(ctx, connectOp)
+		_, err = r.call(opCtx3, "subscribe_events", map[string]any{"event_type": et})
+		opCancel3()
+		if err != nil {
+			if r.log != nil {
+				r.log.Warn("command event subscription unsupported", "instance", r.cfg.InstanceID, "event", et, "err", err)
+			}
+		}
 	}
 
 	// 心跳保活：周期性发送 ping，HA 应答 pong，维持读取超时判定所需的流量。
@@ -294,6 +339,30 @@ func (r *Realtime) handleEvent(ev map[string]any) {
 				r.store.Apply(*newState)
 			}
 		}
+		return
+	}
+	// Browser_mod 风格命令：data 即 event_data，含 device_id / command / data。
+	for _, et := range commandEventTypes {
+		if eventType != et || data == nil {
+			continue
+		}
+		cmd, _ := data["command"].(string)
+		deviceID, _ := data["device_id"].(string)
+		payload, err := json.Marshal(map[string]any{
+			"type": "cmd",
+			"cmd":  cmd,
+			"data": data["data"],
+		})
+		if err != nil || cmd == "" {
+			return
+		}
+		r.cmdMu.Lock()
+		onCmd := r.onCommand
+		r.cmdMu.Unlock()
+		if onCmd != nil {
+			onCmd(deviceID, payload)
+		}
+		return
 	}
 }
 

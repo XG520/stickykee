@@ -7,7 +7,7 @@
         </div>
         <div>
           <h1 class="font-headline text-on-background font-semibold text-base leading-tight">归栖</h1>
-          <p class="text-muted text-xs leading-tight">HA dashboard</p>
+          <p class="text-muted text-xs leading-tight">Sticky Nuo</p>
         </div>
       </router-link>
 
@@ -21,9 +21,10 @@
           class="w-9 h-9 rounded-full bg-surface-alt border border-border flex items-center justify-center hover:bg-surface-hover transition-colors duration-200">
           <span class="material-symbols-outlined text-on-surface text-base">{{ isFullscreen ? 'fullscreen_exit' : 'fullscreen' }}</span>
         </button>
-        <button class="relative w-9 h-9 rounded-full bg-surface-alt border border-border flex items-center justify-center hover:bg-surface-hover transition-colors duration-200">
+        <button @click="toggleIm" title="消息中心"
+          class="relative w-9 h-9 rounded-full bg-surface-alt border border-border flex items-center justify-center hover:bg-surface-hover transition-colors duration-200">
           <span class="material-symbols-outlined text-on-surface text-base">notifications</span>
-          <span class="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-error text-background text-[10px] font-semibold flex items-center justify-center">0</span>
+          <span v-if="imUnread > 0" class="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-error text-background text-[10px] font-semibold flex items-center justify-center">{{ imUnread > 99 ? '99+' : imUnread }}</span>
         </button>
         <div class="w-9 h-9 rounded-full bg-primary/20 border border-primary/40 flex items-center justify-center">
           <span class="material-symbols-outlined text-primary text-sm">person</span>
@@ -35,11 +36,13 @@
       </div>
     </div>
   </header>
+  <MessageCenter />
 </template>
 
 <script setup>
-import { auth, authLogout } from '@/store'
+import { auth, authLogout, imUnread, toggleIm } from '@/store'
 import { useFullscreen } from '@/composables/useFullscreen'
+import MessageCenter from './MessageCenter.vue'
 
 const { isFullscreen, toggle: toggleFullscreen } = useFullscreen()
 

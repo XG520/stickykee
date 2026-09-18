@@ -117,15 +117,39 @@ export const api = {
   // 偏好
   getPrefs: () => api.get('/prefs'),
   putPrefs: (body) => api.put('/prefs', body),
+
+  // 用户管理（仅管理员）
+  listUsers: () => api.get('/users'),
+  createUser: (b) => api.post('/users', b),
+  updateUser: (username, b) => api.put(`/users/${username}`, b),
+  setUserMapPolicy: (username, useAdmin) => api.put(`/users/${username}/map`, { use_admin: useAdmin }),
+  setUserHAToken: (username, token) => api.put(`/users/${username}/ha`, { token }),
+  deleteUser: (username) => api.del(`/users/${username}`),
+
+  // 用户间 IM & 仪表盘共享
+  listConversations: () => api.get('/messages/conversations'),
+  listContacts: () => api.get('/messages/contacts'),
+  getMessages: (user, limit = 50) => api.get(`/messages/${encodeURIComponent(user)}?limit=${limit}`),
+  sendMessage: (user, content) => api.post(`/messages/${encodeURIComponent(user)}`, { content }),
+  sendShare: (user, dashboard) => api.post(`/messages/${encodeURIComponent(user)}/share`, { dashboard }),
+  sendDevice: (user, device) => api.post(`/messages/${encodeURIComponent(user)}/device`, { device }),
+  markMessageRead: (user) => api.post(`/messages/${encodeURIComponent(user)}/read`),
+  acceptShare: (id) => api.post(`/messages/${id}/accept`),
+  declineShare: (id) => api.post(`/messages/${id}/decline`),
 }
 
 // WS 也能提供封装的路径拼接（供实时连接使用）。
-export const wsUrl = (instanceId) => {
+export const wsUrl = (instanceId, deviceId) => {
   const p = window.location.protocol === 'https:' ? 'wss' : 'ws'
   const host = window.location.host
-  // 浏览器无法为 WebSocket 设置 Header，随 query 附带会话 token。
+  // 浏览器无法为 WebSocket 设置 Header，随 query 附带会话 token 与设备标识。
+  // device_id 供后端将 Browser_mod 命令按设备定向路由到本连接。
+  const params = new URLSearchParams()
+  if (instanceId) params.set('instance', instanceId)
   const token = sessionStorage.getItem('hc_token') || ''
-  return `${p}://${host}/api/v1/ws?instance=${instanceId || ''}&token=${encodeURIComponent(token)}`
+  if (token) params.set('token', token)
+  if (deviceId) params.set('device', deviceId)
+  return `${p}://${host}/api/v1/ws?${params.toString()}`
 }
 
 export default api

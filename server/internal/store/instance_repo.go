@@ -131,12 +131,30 @@ func (r *InstanceRepo) Delete(ctx context.Context, id int64) error {
 }
 
 // ActiveID 返回当前激活实例 id（从 prefs 读取；无则 0）。
+// 若激活指向的实例已被删除（悬挂引用，例如删除最后一个实例后未清理、
+// 又新增了实例），自动回退到当前首个实例并修复 prefs，避免前端永远指向已删除实例。
 func (r *InstanceRepo) ActiveID(ctx context.Context) (int64, error) {
 	v, _ := r.GetPref(ctx, "active_instance")
 	if v == "" {
 		return 0, nil
 	}
-	return parseID(v)
+	id, _ := parseID(v)
+	if id == 0 {
+		return 0, nil
+	}
+	var exists int
+	err := r.db.QueryRowContext(ctx, `SELECT 1 FROM instances WHERE id=?`, id).Scan(&exists)
+	if err == nil {
+		return id, nil
+	}
+	// 悬挂引用：回退到第一个存在的实例，并即时修复持久化值。
+	var first int64
+	if err := r.db.QueryRowContext(ctx, `SELECT id FROM instances ORDER BY id LIMIT 1`).Scan(&first); err != nil {
+		_ = r.SetPref(ctx, "active_instance", "")
+		return 0, nil
+	}
+	_ = r.SetActive(ctx, first)
+	return first, nil
 }
 
 // SetActive 将某 id 设为 active（持久化到 prefs 单值 key）。

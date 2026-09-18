@@ -5,8 +5,9 @@ import (
 	"net/http"
 	"strconv"
 
-	"homecanvas/server/internal/ha"
-	"homecanvas/server/internal/store"
+	"stickynuo/server/internal/auth"
+	"stickynuo/server/internal/ha"
+	"stickynuo/server/internal/store"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -40,8 +41,20 @@ func (h *Instances) List(w http.ResponseWriter, r *http.Request) {
 	WriteMeta(w, 200, list, active)
 }
 
+// requireAdmin 校验当前用户是否为管理员；非管理员返回 403 并返回 false。
+func requireAdmin(w http.ResponseWriter, r *http.Request) bool {
+	if auth.IsAdmin(r.Context()) {
+		return true
+	}
+	WriteErr(w, 403, "forbidden", "admin required")
+	return false
+}
+
 // Create POST /instances
 func (h *Instances) Create(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r) {
+		return
+	}
 	var p instancePayload
 	if err := DecodeBody(r, &p); err != nil || p.URL == "" {
 		WriteErr(w, 400, "bad_request", "name/url required")
@@ -77,6 +90,9 @@ func (h *Instances) require(c context.Context, id int64, w http.ResponseWriter) 
 
 // Update PUT /instances/{id}
 func (h *Instances) Update(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r) {
+		return
+	}
 	id, ok := h.idParam(r)
 	if !ok || !h.require(r.Context(), id, w) {
 		return
@@ -101,6 +117,9 @@ func (h *Instances) Update(w http.ResponseWriter, r *http.Request) {
 
 // Delete DELETE /instances/{id}
 func (h *Instances) Delete(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r) {
+		return
+	}
 	id, ok := h.idParam(r)
 	if !ok {
 		WriteErr(w, 404, "not_found", "instance not found")
@@ -117,6 +136,9 @@ func (h *Instances) Delete(w http.ResponseWriter, r *http.Request) {
 
 // Switch POST /instances/{id}/switch 把实例置为 active
 func (h *Instances) Switch(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r) {
+		return
+	}
 	id, ok := h.idParam(r)
 	if !ok || !h.require(r.Context(), id, w) {
 		return

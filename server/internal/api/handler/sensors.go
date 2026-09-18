@@ -8,9 +8,9 @@ import (
 	"net/http"
 	"strings"
 
-	"homecanvas/server/internal/ha"
-	"homecanvas/server/internal/ha/client"
-	"homecanvas/server/internal/store"
+	"stickynuo/server/internal/ha"
+	"stickynuo/server/internal/ha/client"
+	"stickynuo/server/internal/store"
 )
 
 // SensorDef 传感器注册表项。
@@ -35,10 +35,11 @@ var SENSOR_DEFS = []SensorDef{
 	{Key: "wifi_ssid", Name: "WiFi SSID", Icon: "mdi:wifi", StateClass: "measurement", Category: "diagnostic", Label: "Wi-Fi 名称", Desc: "当前连接的 Wi-Fi 名称（SSID）"},
 	{Key: "screen_state", Name: "Screen State", Icon: "mdi:monitor", Category: "diagnostic", Label: "屏幕状态", Desc: "页面可见性（在前台 / 后台）"},
 	{Key: "light_sensor", Name: "Light Sensor", Icon: "mdi:white-balance-sunny", Unit: "lx", DeviceClass: "illuminance", StateClass: "measurement", Category: "diagnostic", Label: "环境光强度", Desc: "当前环境光照强度（勒克斯）"},
+	{Key: "proximity", Name: "Proximity", Icon: "mdi:face-recognition", DeviceClass: "presence", Category: "diagnostic", Label: "接近感应", Desc: "检测是否有人靠近（靠近时屏幕自动点亮）"},
 	{Key: "public_ip", Name: "Public IP", Icon: "mdi:ip-network", Category: "diagnostic", Label: "公网 IP", Desc: "设备的公网 IP 地址"},
 	{Key: "current_time_zone", Name: "Current Time Zone", Icon: "mdi:clock-outline", Category: "diagnostic", Label: "时区", Desc: "设备当前时区"},
 	{Key: "last_update_trigger", Name: "Last Update Trigger", Icon: "mdi:update", Category: "diagnostic", Label: "更新触发原因", Desc: "本次传感器上报的触发原因（手动 / 事件 / 周期）"},
-	{Key: "app_version", Name: "App Version", Icon: "mdi:cellphone-information", Category: "diagnostic", Label: "应用版本", Desc: "homecanvas 应用版本"},
+	{Key: "app_version", Name: "App Version", Icon: "mdi:cellphone-information", Category: "diagnostic", Label: "应用版本", Desc: "Sticky Nuo 应用版本"},
 	{Key: "bssid", Name: "BSSID", Icon: "mdi:access-point", Category: "diagnostic", Label: "Wi-Fi 接入点 MAC", Desc: "当前连接的无线接入点 MAC 地址"},
 	{Key: "geocoded_location", Name: "Geocoded Location", Icon: "mdi:map-marker", Category: "diagnostic", Label: "所在位置", Desc: "基于定位解析的地址（需浏览器授权定位）"},
 }
@@ -54,14 +55,17 @@ func sensorDefByKey(key string) SensorDef {
 }
 
 // Sensors 设备传感器：经 HA 官方 mobile_app 协议注册真实设备与 sensor 实体。
+// 设备注册、传感器开关与 mobile_app 注册信息均按登录用户隔离，存于 user_prefs，
+// 使每个用户只管理自己的设备、只向自己 HA 实例上报，互不串扰。
 type Sensors struct {
-	manager *ha.Manager
-	repo    *store.InstanceRepo
+	manager   *ha.Manager
+	repo      *store.InstanceRepo
+	userPrefs *store.UserPrefs
 }
 
 // NewSensors 构造 handler。
-func NewSensors(manager *ha.Manager, repo *store.InstanceRepo) *Sensors {
-	return &Sensors{manager: manager, repo: repo}
+func NewSensors(manager *ha.Manager, repo *store.InstanceRepo, userPrefs *store.UserPrefs) *Sensors {
+	return &Sensors{manager: manager, repo: repo, userPrefs: userPrefs}
 }
 
 // Definitions GET /sensors/definitions  返回传感器注册表（前端渲染开关面板用）。
@@ -126,6 +130,7 @@ func (h *Sensors) Report(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	username := rUsername(r)
 
 	// 1. REST 客户端（不存在实例 → 404）。
 	rest, err := h.manager.Rest(ctx, id)
@@ -135,9 +140,9 @@ func (h *Sensors) Report(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 2. 设备信息（dev_id 用于构造 unique_id）；未注册则自动创建。
-	dev := h.lookupDevice(ctx, body.DeviceID)
+	dev := h.lookupDevice(ctx, username, body.DeviceID)
 	if dev == nil {
-		d, err := (&Devices{repo: h.repo}).upsert(ctx, body.DeviceID, body.DeviceName)
+		d, err := (&Devices{repo: h.repo, userPrefs: h.userPrefs}).upsert(ctx, username, body.DeviceID, body.DeviceName)
 		if err != nil {
 			WriteErr(w, 500, "internal", err.Error())
 			return
@@ -146,7 +151,7 @@ func (h *Sensors) Report(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 3. 确保 mobile_app 设备已注册（幂等，复用 webhook_id）。无启用传感器也执行，保证 HA 中立即出现设备。
-	reg, err := h.ensureRegistration(ctx, rest, dev, body)
+	reg, err := h.ensureRegistration(ctx, username, rest, dev, body)
 	if err != nil {
 		slog.Warn("mobile_app registration failed", "instance", id, "device", dev.DevID, "err", err.Error())
 		WriteErr(w, 502, "mobile_app_unavailable", "mobile_app 集成不可用（默认由 default_config 启用，请检查 HA 配置是否移除了 default_config）")
@@ -155,7 +160,7 @@ func (h *Sensors) Report(w http.ResponseWriter, r *http.Request) {
 	slog.Info("mobile_app device registered", "instance", id, "device", dev.DevID, "webhook_id", reg.WebhookID)
 
 	// 4. 按 sensor_config 过滤：仅登记/上报已启用的传感器。
-	enabled := h.enabledSensors(ctx, body.DeviceID)
+	enabled := h.enabledSensors(ctx, username, body.DeviceID)
 	if len(enabled) == 0 {
 		slog.Info("mobile_app report: no enabled sensors", "instance", id, "device", dev.DevID)
 		WriteJSON(w, 200, map[string]any{"registered": true, "reported": 0})
@@ -164,13 +169,13 @@ func (h *Sensors) Report(w http.ResponseWriter, r *http.Request) {
 
 	// 5. 登记传感器实体并上报状态；若 webhook 失效（如 HA 侧删除了该设备），
 	//    自动清除旧注册信息并重新注册后重试一次（与官方 App 的失效重注册一致）。
-	reported, err := h.pushStates(ctx, rest, reg, body, enabled)
+	reported, err := h.pushStates(ctx, username, rest, reg, body, enabled)
 	if err != nil && webhookInvalid(err) {
 		slog.Warn("mobile_app webhook stale, re-registering", "instance", id, "device", dev.DevID, "err", err.Error())
-		h.clearReg(ctx, body.DeviceID)
-		if reg2, err2 := h.ensureRegistration(ctx, rest, dev, body); err2 == nil {
+		h.clearReg(ctx, username, body.DeviceID)
+		if reg2, err2 := h.ensureRegistration(ctx, username, rest, dev, body); err2 == nil {
 			reg = reg2
-			reported, err = h.pushStates(ctx, rest, reg, body, enabled)
+			reported, err = h.pushStates(ctx, username, rest, reg, body, enabled)
 		} else {
 			err = err2
 		}
@@ -185,8 +190,8 @@ func (h *Sensors) Report(w http.ResponseWriter, r *http.Request) {
 
 // pushStates 登记未注册的传感器实体并上报状态，返回实际上报的传感器数量。
 // 若 registerSensors 或 update_sensor_states 失败（设备已被 HA 删除），返回错误供上层重注册。
-func (h *Sensors) pushStates(ctx context.Context, rest *client.Rest, reg *mobileReg, body sensorReport, enabled map[string]bool) (int, error) {
-	if err := h.registerSensors(ctx, rest, reg, enabled); err != nil {
+func (h *Sensors) pushStates(ctx context.Context, username string, rest *client.Rest, reg *mobileReg, body sensorReport, enabled map[string]bool) (int, error) {
+	if err := h.registerSensors(ctx, username, rest, reg, enabled); err != nil {
 		return 0, err
 	}
 	states := make([]map[string]any, 0, len(enabled))
@@ -252,17 +257,17 @@ func (h *Sensors) webhookAlive(ctx context.Context, rest *client.Rest, reg *mobi
 }
 
 // clearReg 清除某设备的 mobile_app 注册缓存，触发下次上报重新注册。
-func (h *Sensors) clearReg(ctx context.Context, deviceID string) {
-	regs := h.readRegs(ctx)
+func (h *Sensors) clearReg(ctx context.Context, username, deviceID string) {
+	regs := h.readRegs(ctx, username)
 	if _, ok := regs[deviceID]; ok {
 		delete(regs, deviceID)
-		_ = h.saveRegs(ctx, regs)
+		_ = h.saveRegs(ctx, username, regs)
 	}
 }
 
 // lookupDevice 按 device_id 查设备。
-func (h *Sensors) lookupDevice(ctx context.Context, deviceID string) *Device {
-	devices := (&Devices{repo: h.repo}).list(ctx)
+func (h *Sensors) lookupDevice(ctx context.Context, username, deviceID string) *Device {
+	devices := (&Devices{repo: h.repo, userPrefs: h.userPrefs}).list(ctx, username)
 	for i := range devices {
 		if devices[i].DeviceID == deviceID {
 			return &devices[i]
@@ -272,10 +277,10 @@ func (h *Sensors) lookupDevice(ctx context.Context, deviceID string) *Device {
 }
 
 // enabledSensors 返回某设备已启用的传感器 key 集（按注册表顺序，保证登记顺序稳定）。
-func (h *Sensors) enabledSensors(ctx context.Context, deviceID string) map[string]bool {
+func (h *Sensors) enabledSensors(ctx context.Context, username, deviceID string) map[string]bool {
 	out := map[string]bool{}
-	v, err := h.repo.GetPref(ctx, "sensor_config")
-	if err != nil || v == "" {
+	v := h.userPrefs.Get(ctx, username, "sensor_config")
+	if v == "" {
 		return out
 	}
 	var cfg map[string]map[string]bool
@@ -292,26 +297,26 @@ func (h *Sensors) enabledSensors(ctx context.Context, deviceID string) map[strin
 	return out
 }
 
-func (h *Sensors) readRegs(ctx context.Context) map[string]mobileReg {
+func (h *Sensors) readRegs(ctx context.Context, username string) map[string]mobileReg {
 	out := map[string]mobileReg{}
-	v, err := h.repo.GetPref(ctx, "mobile_app_reg")
-	if err != nil || v == "" {
+	v := h.userPrefs.Get(ctx, username, "mobile_app_reg")
+	if v == "" {
 		return out
 	}
 	_ = json.Unmarshal([]byte(v), &out)
 	return out
 }
 
-func (h *Sensors) saveRegs(ctx context.Context, regs map[string]mobileReg) error {
+func (h *Sensors) saveRegs(ctx context.Context, username string, regs map[string]mobileReg) error {
 	b, _ := json.Marshal(regs)
-	return h.repo.SetPref(ctx, "mobile_app_reg", string(b))
+	return h.userPrefs.Set(ctx, username, "mobile_app_reg", string(b))
 }
 
 // ensureRegistration 获取/注册 mobile_app 设备并返回 webhook_id。
 // 有缓存时先用 get_config 探测 webhook 是否仍有效：HA 侧删除设备后 webhook 失效（404/410），
 // 此时才清除缓存重新注册；设备仍存在则直接复用缓存，避免每次上报都重复注册设备。
-func (h *Sensors) ensureRegistration(ctx context.Context, rest *client.Rest, dev *Device, body sensorReport) (*mobileReg, error) {
-	regs := h.readRegs(ctx)
+func (h *Sensors) ensureRegistration(ctx context.Context, username string, rest *client.Rest, dev *Device, body sensorReport) (*mobileReg, error) {
+	regs := h.readRegs(ctx, username)
 	if r, ok := regs[dev.DeviceID]; ok && r.WebhookID != "" {
 		if h.webhookAlive(ctx, rest, &r) {
 			return &r, nil
@@ -320,14 +325,14 @@ func (h *Sensors) ensureRegistration(ctx context.Context, rest *client.Rest, dev
 		// 在删除前保存旧记录，以便后续判断是否需要保留传感器登记状态。
 		old := r
 		delete(regs, dev.DeviceID)
-		return h.doRegister(ctx, rest, dev, body, old, regs)
+		return h.doRegister(ctx, username, rest, dev, body, old, regs)
 	}
-	return h.doRegister(ctx, rest, dev, body, mobileReg{}, regs)
+	return h.doRegister(ctx, username, rest, dev, body, mobileReg{}, regs)
 }
 
 // doRegister 执行实际的 mobile_app 设备注册，返回注册结果。
 // old 为被清除的旧注册记录；had=true 表示本次是从缓存失效触发的重注册。
-func (h *Sensors) doRegister(ctx context.Context, rest *client.Rest, dev *Device, body sensorReport, old mobileReg, regs map[string]mobileReg) (*mobileReg, error) {
+func (h *Sensors) doRegister(ctx context.Context, username string, rest *client.Rest, dev *Device, body sensorReport, old mobileReg, regs map[string]mobileReg) (*mobileReg, error) {
 	deviceName := dev.Name
 	if deviceName == "" {
 		deviceName = dev.DevID
@@ -345,10 +350,10 @@ func (h *Sensors) doRegister(ctx context.Context, rest *client.Rest, dev *Device
 		osName = "web"
 	}
 	payload := map[string]any{
-		"app_id":              "homecanvas",
-		"app_name":            "homecanvas",
+		"app_id":              "stickynuo",
+		"app_name":            "stickynuo",
 		"app_version":         "1.0.0",
-		"device_id":           "homecanvas_" + dev.DevID,
+		"device_id":           "stickynuo_" + dev.DevID,
 		"device_name":         deviceName,
 		"manufacturer":        manufacturer,
 		"model":               model,
@@ -380,15 +385,15 @@ func (h *Sensors) doRegister(ctx context.Context, rest *client.Rest, dev *Device
 		reg.Sensors = old.Sensors
 	}
 	regs[dev.DeviceID] = reg
-	if err := h.saveRegs(ctx, regs); err != nil {
+	if err := h.saveRegs(ctx, username, regs); err != nil {
 		return nil, err
 	}
 	return &reg, nil
 }
 
 // registerSensors 经官方 webhook 协议逐个登记尚未注册的传感器实体（忽略 already_registered）。
-func (h *Sensors) registerSensors(ctx context.Context, rest *client.Rest, reg *mobileReg, enabled map[string]bool) error {
-	regs := h.readRegs(ctx)
+func (h *Sensors) registerSensors(ctx context.Context, username string, rest *client.Rest, reg *mobileReg, enabled map[string]bool) error {
+	regs := h.readRegs(ctx, username)
 	current := regs[reg.DeviceID]
 	if current.Sensors == nil {
 		current.Sensors = map[string]bool{}
@@ -429,7 +434,7 @@ func (h *Sensors) registerSensors(ctx context.Context, rest *client.Rest, reg *m
 	}
 	if changed {
 		regs[reg.DeviceID] = current
-		if err := h.saveRegs(ctx, regs); err != nil {
+		if err := h.saveRegs(ctx, username, regs); err != nil {
 			return err
 		}
 	}

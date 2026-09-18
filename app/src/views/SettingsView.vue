@@ -2,22 +2,60 @@
   <div class="space-y-6 pb-4">
     <h1 class="font-headline text-2xl font-bold text-on-background hidden lg:block">个性化设置</h1>
 
-    <!-- 分组导航：设置项分组收纳，页面更短；保存栏始终悬浮底部 -->
-    <nav class="flex flex-wrap gap-1.5 p-1.5 w-fit rounded-2xl bg-surface-alt/90 backdrop-blur-xl border border-border shadow-sm">
-      <button v-for="t in tabs" :key="t.key" @click="activeTab = t.key"
-        class="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 active:scale-95"
-        :class="activeTab === t.key
-          ? 'bg-primary text-on-primary shadow-md shadow-primary/25'
-          : 'text-muted hover:text-on-surface hover:bg-surface'">
-        <span class="material-symbols-outlined text-base leading-none">{{ t.icon }}</span>
-        {{ t.label }}
+    <!-- 顶部导航 + 重置按钮（不再悬浮，常驻导航区右侧） -->
+    <div class="flex flex-wrap items-center gap-2">
+      <nav class="flex flex-wrap gap-1.5 p-1.5 w-fit rounded-2xl bg-surface-alt/90 backdrop-blur-xl border border-border shadow-sm">
+        <button v-for="t in tabs" :key="t.key" @click="activeTab = t.key"
+          class="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 active:scale-95"
+          :class="activeTab === t.key
+            ? 'bg-primary text-on-primary shadow-md shadow-primary/25'
+            : 'text-muted hover:text-on-surface hover:bg-surface'">
+          <span class="material-symbols-outlined text-base leading-none">{{ t.icon }}</span>
+          {{ t.label }}
+        </button>
+      </nav>
+      <button @click="resetDefaults" title="将所有偏好恢复为系统默认值"
+        class="ml-auto flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border text-muted hover:text-on-surface hover:bg-surface text-sm transition-colors">
+        <span class="material-symbols-outlined text-base">restart_alt</span> 重置为默认
       </button>
-    </nav>
+    </div>
 
     <!-- ===== 连接与设备 ===== -->
     <div v-show="activeTab === 'connect'" class="space-y-6">
-    <!-- Home Assistant 连接管理 -->
+    <!-- 我的 HA Token：地址管理员全局配置，密钥属个人（所有用户可见，可自配或管理员代配） -->
     <section class="bg-surface-alt border border-border rounded-2xl p-5">
+      <div class="flex items-center gap-2.5 mb-3">
+        <div class="w-8 h-8 rounded-xl bg-primary/20 flex items-center justify-center">
+          <span class="material-symbols-outlined text-primary text-lg">key</span>
+        </div>
+        <div>
+          <h2 class="font-headline text-on-background text-base font-semibold">我的 HA Token</h2>
+          <p class="text-muted text-xs mt-0.5">访问 Home Assistant 的个人密钥</p>
+        </div>
+        <span class="ml-auto px-2.5 py-1 rounded-full text-xs font-medium"
+          :class="haTokenConfigured ? 'bg-success/15 text-success' : 'bg-error/15 text-error'">
+          {{ haTokenConfigured ? '已配置' : '未配置（HA 访问已禁用）' }}
+        </span>
+      </div>
+      <p class="text-muted text-xs mb-3 font-body leading-relaxed">
+        Home Assistant 的地址由管理员统一配置；访问密钥属于个人，可自己填写。
+        {{ auth.isAdmin ? '也可由管理员在「用户管理」中代配。' : '管理员也可在「用户管理」中为你代配。' }}
+        修改或切换后即时生效，无需重启服务器。
+      </p>
+      <div class="flex gap-2">
+        <input v-model="myToken" type="password" autocomplete="new-password" placeholder="粘贴你的 Long-Lived Token（配置后即可访问实体）"
+          class="flex-1 bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
+        <button @click="saveMyToken" :disabled="savingToken"
+          class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-on-primary text-sm font-semibold transition-all disabled:opacity-70 flex items-center gap-1.5">
+          <span v-if="savingToken" class="hc-spinner"></span>
+          {{ savingToken ? '保存中…' : '保存' }}
+        </button>
+      </div>
+      <p v-if="tokMsg" class="mt-2 text-xs font-body" :class="tokMsgErr ? 'text-error' : 'text-success'">{{ tokMsg }}</p>
+    </section>
+
+    <!-- Home Assistant 连接管理（仅管理员可见） -->
+    <section v-if="auth.isAdmin" class="bg-surface-alt border border-border rounded-2xl p-5">
       <div class="flex items-center justify-between mb-4">
         <div class="flex items-center gap-2.5">
           <div class="w-8 h-8 rounded-xl bg-primary/20 flex items-center justify-center">
@@ -72,13 +110,14 @@
         <p v-if="!store.instances.length" class="text-muted text-sm text-center py-3 font-body">尚未配置任何实例，请添加你的 Home Assistant</p>
       </div>
 
-      <form @submit.prevent="addInstance" class="grid grid-cols-1 sm:grid-cols-[1fr_1fr] gap-3">
-        <input v-model="form.name" placeholder="实例名称（如 家）"
+      <form @submit.prevent="addInstance" autocomplete="off" class="grid grid-cols-1 sm:grid-cols-[1fr_1fr] gap-3">
+        <input v-model="form.name" placeholder="实例名称（如 家）" autocomplete="off"
           class="bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
-        <input v-model="form.url" placeholder="HA 地址（如 http://192.168.1.10:8123）"
+        <input v-model="form.url" placeholder="HA 地址（如 http://192.168.1.10:8123）" autocomplete="off" inputmode="url" type="text"
           class="bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
-        <input v-model="form.token" placeholder="Long-Lived Token（可选）" type="password"
-          class="col-span-full bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
+        <!-- 诱饵字段：吸收浏览器自动填充，避免污染上面的 url -->
+        <input type="text" name="username" autocomplete="username" class="hidden" aria-hidden="true" tabindex="-1">
+        <input type="password" name="password" autocomplete="current-password" class="hidden" aria-hidden="true" tabindex="-1">
         <label class="col-span-full flex items-center gap-2.5 cursor-pointer select-none">
           <input v-model="form.skipTLS" type="checkbox" class="w-4 h-4 accent-primary">
           <span class="text-on-surface text-sm">忽略证书验证</span>
@@ -104,42 +143,37 @@
       </div>
 
       <div class="space-y-3">
-        <div>
-          <label class="text-on-surface text-sm font-medium mb-2 block">高德 Web 端 Key</label>
+        <div v-if="auth.isAdmin">
+          <label class="text-on-surface text-sm font-medium mb-2 block">管理员全局 Key</label>
           <input v-model="map.amap_key" placeholder="填写高德开放平台申请到的 Key"
             class="w-full bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
           <p class="text-muted text-xs mt-1.5 font-body leading-relaxed">
-            前往 <a href="https://console.amap.com/" target="_blank" rel="noopener" class="text-primary hover:underline">高德开放平台</a> → 应用管理，新建「Web端(JS API)」应用并开启定位权限，把 Key 粘贴到上方。<br>
-            未配置 Key 时，首页地图卡会提示前往设置配置。
+            管理员全局 Key 供所有「使用管理员 Key」的用户渲染地图。每个用户用谁的 Key 可在「用户管理」中逐人设置。<br>
+            前往 <a href="https://console.amap.com/" target="_blank" rel="noopener" class="text-primary hover:underline">高德开放平台</a> → 应用管理，新建「Web端(JS API)」应用并开启定位权限，把 Key 粘贴到上方。
           </p>
         </div>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label class="text-on-surface text-sm font-medium mb-2 block">位置同步设备标识（dev_id）</label>
-            <input v-model="map.dev_id" placeholder="默认 homecanvas"
-              class="w-full bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
-            <p class="text-muted text-xs mt-1.5 font-body">刷新定位后写入 Home Assistant 的 device_tracker 实体标识（如 device_tracker.homecanvas）。</p>
-          </div>
-          <div>
-            <label class="text-on-surface text-sm font-medium mb-2 block">默认位置名（location_name）</label>
-            <input v-model="map.location_name" placeholder="默认 home"
-              class="w-full bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
-            <p class="text-muted text-xs mt-1.5 font-body">定位同步时可附带的位置语义名，缺省使用逆地理地址。</p>
+        <div v-else-if="mapConfig.use_admin">
+          <div class="rounded-xl bg-background border border-border px-3 py-2.5">
+            <p class="text-on-surface text-xs font-semibold mb-1">当前地图使用「管理员的高德 Key」渲染</p>
+            <p class="text-muted text-xs font-body leading-relaxed">由管理员指定，无需填写自己的 Key。</p>
           </div>
         </div>
-        <div>
-          <label class="text-on-surface text-sm font-medium mb-2 block">位置同步到（自动定位 / 刷新位置写入的 Home Assistant 实体）</label>
-          <select v-model="sync_target" class="w-full bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none transition-colors">
-            <option value="">自动（写入 device_tracker.homecanvas，不关联人物）</option>
-            <optgroup v-if="peopleOptions.length" label="人物 person">
-              <option v-for="o in peopleOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
-            </optgroup>
-            <optgroup v-if="trackerOptions.length" label="设备跟踪 device_tracker">
-              <option v-for="o in trackerOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
-            </optgroup>
-          </select>
+        <div v-else>
+          <label class="text-on-surface text-sm font-medium mb-2 block">我的高德 Key</label>
+          <input v-model="map.amap_key" placeholder="填写你的高德 Key，以渲染首页地图"
+            class="w-full bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
           <p class="text-muted text-xs mt-1.5 font-body leading-relaxed">
-            选择某位家人（person）后，定位会同步到该 person 关联的设备跟踪器（device_tracker），首页「家人状态」卡片会随之变为 在家/离家/所在位置。若 HA 中没有需要关联的 person，请选择「自动」。<br>
+            管理员已指定你使用「本人的高德 Key」，请在此填写。<br>
+            前往 <a href="https://console.amap.com/" target="_blank" rel="noopener" class="text-primary hover:underline">高德开放平台</a> → 应用管理，新建「Web端(JS API)」应用并开启定位权限。
+          </p>
+        </div>
+        <div class="rounded-xl bg-background border border-border px-3 py-2.5">
+          <p class="text-on-surface text-xs font-semibold mb-1">位置同步方式（HA 官方 mobile_app 协议）</p>
+          <p class="text-muted text-xs font-body leading-relaxed">
+            定位经 HA 官方 <span class="font-mono">update_location</span> 命令上报，HA 会为该注册设备自动创建并绑定
+            <span class="font-mono">device_tracker</span> 实体（带唯一标识符，可在 HA 中管理），无需手动指定 dev_id。<br>
+            实体状态由 HA 依据「家」zone 自动判定，显示<span class="font-mono">在家</span>/<span class="font-mono">离家</span>。<br>
+            若要把本机位置关联到某位家人（person），请在 HA 中「设置 → 人员 → 选择该人员 → 跟踪设备」勾选本机设备，person 会自动取用其位置。<br>
             <span class="text-warning">提示：浏览器定位需在 HTTPS 下生效；部分浏览器首次需授权位置权限。</span>
           </p>
         </div>
@@ -170,7 +204,7 @@
               <span class="text-on-surface text-sm font-medium truncate">{{ d.name }}</span>
               <span v-if="d.device_id === currentDevId" class="text-[10px] px-1.5 py-0.5 rounded bg-success/15 text-success font-semibold">当前设备</span>
             </div>
-            <span class="text-muted text-xs font-mono">device_tracker.{{ d.dev_id }}</span>
+            <span class="text-muted text-xs font-body">HA 中已自动创建并绑定该设备的 device_tracker 实体</span>
           </div>
           <!-- 别名编辑 -->
           <div class="flex items-center gap-1.5">
@@ -227,10 +261,43 @@
 
       <p v-if="lastReport" class="text-muted text-xs mt-3 font-body">最近上报：{{ lastReport }}</p>
       <p class="text-muted text-xs mt-1 font-body leading-relaxed">
-        提示：官方 mobile_app 集成由 HA 的 default_config 默认启用（除非已从配置中移除）。
-        本应用会注册为「homecanvas」设备，在 HA 中生成 <span class="font-mono">sensor.homecanvas_*</span> 传感器实体，
-        状态变化自动上报（约 60 秒兜底）。
+        提示： 
       </p>
+    </section>
+
+    <!-- 浏览器命令（Browser_mod 风格）：HA 侧经事件总线向本设备下发命令 -->
+    <section class="bg-surface-alt border border-border rounded-2xl p-5">
+      <div class="flex items-center gap-2.5 mb-3">
+        <div class="w-8 h-8 rounded-xl bg-warning/20 flex items-center justify-center">
+          <span class="material-symbols-outlined text-warning text-lg">contrast</span>
+        </div>
+        <div>
+          <h2 class="font-headline text-on-background text-base font-semibold">浏览器命令（Browser_mod 风格）</h2>
+          <p class="text-muted text-xs mt-0.5">Home Assistant 经事件总线（<code class="font-code text-muted">stickynuo_command</code>）向本设备下发通知/亮屏/亮度/媒体/服务命令</p>
+        </div>
+      </div>
+
+      <div class="flex flex-wrap gap-2 mb-4">
+        <button @click="grantNotify" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface hover:bg-surface/60 text-on-surface text-xs font-semibold border border-border transition-all duration-200 active:scale-95">
+          <span class="material-symbols-outlined text-sm">notifications</span> 授权系统通知
+        </button>
+        <button @click="testNotify" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface hover:bg-surface/60 text-on-surface text-xs font-semibold border border-border transition-all duration-200 active:scale-95">
+          <span class="material-symbols-outlined text-sm">report</span> 测试通知
+        </button>
+        <button @click="toggleBlackout" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface hover:bg-surface/60 text-on-surface text-xs font-semibold border border-border transition-all duration-200 active:scale-95">
+          <span class="material-symbols-outlined text-sm">visibility_off</span> {{ blackout ? '取消黑屏' : '模拟关屏（黑屏）' }}
+        </button>
+        <button @click="toggleWake" :class="waking ? 'bg-primary text-on-primary' : 'bg-surface hover:bg-surface/60 text-on-surface border border-border'" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 active:scale-95">
+          <span class="material-symbols-outlined text-sm">brightness_7</span> {{ waking ? '保持亮屏（释放）' : '保持亮屏' }}
+        </button>
+      </div>
+
+      <div class="mb-1 flex items-center justify-between text-xs text-muted font-body">
+        <span>屏幕亮度（视觉遮罩模拟）</span>
+        <span class="font-code">{{ testBrightness }}</span>
+      </div>
+      <input type="range" min="0" max="255" v-model.number="testBrightness"
+        @input="setBrightnessPreview" class="w-full accent-primary" />
     </section>
     </div>
 
@@ -498,11 +565,11 @@
       </div>
 
       <form @submit.prevent="doChangePassword" class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <input v-model="pw.oldPassword" type="password" placeholder="当前密码"
+        <input v-model="pw.oldPassword" type="password" placeholder="当前密码" autocomplete="current-password"
           class="bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
-        <input v-model="pw.newPassword" type="password" placeholder="新密码（至少 6 位）"
+        <input v-model="pw.newPassword" type="password" placeholder="新密码（至少 6 位）" autocomplete="new-password"
           class="bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
-        <input v-model="pw.confirm" type="password" placeholder="确认新密码"
+        <input v-model="pw.confirm" type="password" placeholder="确认新密码" autocomplete="new-password"
           class="bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
         <button type="submit" class="sm:col-span-2 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-on-primary text-sm font-semibold transition-all duration-200 flex items-center justify-center gap-2">
           <span class="material-symbols-outlined text-lg">lock_reset</span> 修改密码
@@ -516,23 +583,104 @@
     </section>
     </div>
 
-    <!-- 底部悬浮保存栏（始终可见） -->
-    <div class="sticky bottom-16 md:bottom-0 z-40 mt-8">
-      <div class="absolute inset-x-0 -top-5 h-5 bg-gradient-to-t from-background/90 to-transparent pointer-events-none rounded-t-2xl"></div>
-      <div class="relative flex items-center gap-3 p-3 rounded-2xl bg-surface-alt/90 backdrop-blur-xl border border-border shadow-xl shadow-black/15">
-        <button class="flex-1 py-3 rounded-xl border border-border text-muted hover:text-on-surface hover:bg-surface hover:border-primary/30 active:scale-[0.97] transition-all duration-200 font-body text-sm font-medium flex items-center justify-center gap-1.5"
-          title="将所有偏好恢复为系统默认值">
-          <span class="material-symbols-outlined text-lg">restart_alt</span>重置为默认
-        </button>
-        <button @click="saveSettings" :disabled="saving"
-          class="flex-[2] py-3 rounded-xl text-on-primary font-body text-sm font-semibold flex items-center justify-center gap-2 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.97] disabled:opacity-70 disabled:hover:translate-y-0 disabled:cursor-not-allowed"
-          :class="saved ? 'bg-success shadow-lg shadow-success/30' : 'bg-primary hover:bg-primary-hover shadow-lg shadow-primary/30'">
-          <span v-if="saving" class="hc-spinner"></span>
-          <span v-else-if="saved" class="material-symbols-outlined text-lg">check_circle</span>
-          <span v-else class="material-symbols-outlined text-lg">save</span>
-          {{ saving ? '保存中…' : (saved ? '已保存' : '保存设置') }}
-        </button>
+    <!-- ===== 用户管理（仅管理员） ===== -->
+    <div v-if="auth.isAdmin" v-show="activeTab === 'users'" class="space-y-6">
+    <section class="bg-surface-alt border border-border rounded-2xl p-5">
+      <div class="flex items-center gap-2.5 mb-4">
+        <div class="w-8 h-8 rounded-xl bg-info/20 flex items-center justify-center">
+          <span class="material-symbols-outlined text-info text-lg">group</span>
+        </div>
+        <div>
+          <h2 class="font-headline text-on-background text-base font-semibold">用户管理</h2>
+          <p class="text-muted text-xs mt-0.5">仅管理员可创建用户，可管理角色、密码与地图 Key 使用策略</p>
+        </div>
       </div>
+
+      <!-- 创建用户 -->
+      <form @submit.prevent="createUser" autocomplete="off" class="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-3">
+        <input v-model="newUser.username" placeholder="用户名" autocomplete="off"
+          class="bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
+        <input v-model="newUser.password" type="password" placeholder="密码（至少 6 位）" autocomplete="new-password"
+          class="bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
+        <button type="submit" class="px-4 py-2 rounded-xl bg-primary justify-center hover:bg-primary-hover text-on-primary text-sm font-semibold transition-all flex items-center gap-2">
+          <span class="material-symbols-outlined text-lg">person_add</span> 创建用户
+        </button>
+        <label class="col-span-full flex items-center gap-2.5 cursor-pointer select-none">
+          <input v-model="newUser.is_admin" type="checkbox" class="w-4 h-4 accent-primary">
+          <span class="text-on-surface text-sm">设为管理员</span>
+          <span class="text-muted text-xs">（管理员可管理 HA 连接与用户）</span>
+        </label>
+      </form>
+      <p v-if="umsg" class="mt-3 text-xs font-body" :class="umsgErr ? 'text-error' : 'text-success'">{{ umsg }}</p>
+
+      <!-- 用户列表 -->
+      <div class="mt-4 space-y-2">
+        <div v-for="u in users" :key="u.username"
+          class="rounded-xl bg-surface border border-border p-3 flex flex-wrap items-center gap-3">
+          <span class="w-8 h-8 rounded-full flex items-center justify-center"
+            :class="u.username === auth.user ? 'bg-primary/20 text-primary' : 'bg-surface-hover text-muted'">
+            <span class="material-symbols-outlined text-base">person</span>
+          </span>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2">
+              <span class="text-on-surface text-sm font-medium">{{ u.username }}</span>
+              <span v-if="u.username === auth.user" class="text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-semibold">当前账号</span>
+              <span v-if="u.is_admin" class="text-[10px] px-1.5 py-0.5 rounded bg-warning/15 text-warning font-semibold">管理员</span>
+            </div>
+            <span class="text-muted text-xs font-body">{{ (u.created_at || '').slice(0, 16).replace('T', ' ') }}</span>
+          </div>
+
+          <!-- 角色切换（永不操作自身） -->
+          <div v-if="u.username !== auth.user">
+            <button v-if="!u.is_admin" @click="toggleAdmin(u)"
+              class="px-2.5 py-1.5 rounded-lg bg-surface-hover hover:bg-surface border border-border text-xs text-on-surface transition-colors">设为管理员</button>
+            <button v-else @click="toggleAdmin(u)"
+              class="px-2.5 py-1.5 rounded-lg border border-border text-xs text-error hover:bg-error/10 transition-colors">取消管理员</button>
+          </div>
+
+          <!-- 重置密码 -->
+          <button v-if="u.username !== auth.user" @click="resetUserPassword(u)"
+            class="px-2.5 py-1.5 rounded-lg bg-surface-hover hover:bg-surface border border-border text-xs text-on-surface transition-colors flex items-center gap-1">
+            <span class="material-symbols-outlined text-sm">lock_reset</span> 重置密码
+          </button>
+
+          <!-- 地图 Key 使用策略 -->
+          <div class="flex items-center gap-2 bg-background border border-border rounded-lg px-3 py-1.5">
+            <span class="text-muted text-xs">地图Key</span>
+            <div class="flex rounded-md overflow-hidden border border-border text-xs">
+              <button type="button" class="px-2 py-1 font-semibold transition-colors" :class="u.map_use_admin ? 'text-muted bg-background' : 'bg-primary text-on-primary'"
+                @click="setUserMapPolicy(u, false)">本人</button>
+              <button type="button" class="px-2 py-1 font-semibold transition-colors" :class="u.map_use_admin ? 'bg-primary text-on-primary' : 'text-muted bg-background'"
+                @click="setUserMapPolicy(u, true)">管理员</button>
+            </div>
+          </div>
+
+          <!-- HA 个人 Token：管理员代配/清除，即时生效 -->
+          <div class="flex items-center gap-2">
+            <span class="px-2 py-1 rounded text-xs flex items-center gap-1"
+              :class="u.has_ha_token ? 'bg-success/10 text-success' : 'bg-error/10 text-error'">
+              <span class="material-symbols-outlined text-sm">{{ u.has_ha_token ? 'key' : 'key_off' }}</span>
+              {{ u.has_ha_token ? 'HA Token 已配' : 'HA Token 未配' }}
+            </span>
+            <button type="button" @click="u._editHA = !u._editHA"
+              class="px-2.5 py-1.5 rounded-lg bg-surface-hover hover:bg-surface border border-border text-xs text-on-surface transition-colors">代配</button>
+          </div>
+          <div v-if="u._editHA" class="flex gap-2 w-full max-w-md">
+            <input v-model="u._haToken" type="password" autocomplete="new-password"
+              :placeholder="u.has_ha_token ? '输入新 Token 覆盖；留空则清除并禁用' : '粘贴该用户的 Long-Lived Token'"
+              class="flex-1 bg-background border border-border rounded-lg px-3 py-1.5 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
+            <button type="button" @click="setUserHAToken(u)"
+              class="px-3 py-1.5 rounded-lg bg-primary hover:bg-primary-hover text-on-primary text-xs font-semibold transition-colors">保存</button>
+          </div>
+
+          <button @click="removeUser(u)" :disabled="u.username === auth.user"
+            class="p-1.5 rounded-lg hover:bg-error/10 text-muted hover:text-error transition-colors disabled:opacity-40 disabled:pointer-events-none">
+            <span class="material-symbols-outlined text-lg">delete</span>
+          </button>
+        </div>
+        <p v-if="!users.length" class="text-muted text-sm font-body">暂无其他用户。首个注册用户为管理员，其余用户需在此创建。</p>
+      </div>
+    </section>
     </div>
   </div>
 </template>
@@ -543,7 +691,8 @@ import ToggleRow from '@/components/ToggleRow.vue'
 import api from '@/api'
 import { listDevices, ensureDevice, renameDevice, deleteDevice, getDeviceId } from '@/utils/device'
 import { availableSensors, unavailableReason, startSensorMonitor, buildReportPayload } from '@/utils/sensors'
-import { loadInstances, switchInstance, changePassword, authLogout, auth, store, backendOnline } from '@/store'
+import { showNotify, setBlackout, setScreenBrightness, setScreenWake } from '@/utils/browserCommands'
+import { loadInstances, switchInstance, changePassword, authLogout, auth, store, backendOnline, haTokenConfigured, saveHAToken } from '@/store'
 import { applyTheme, resolveTheme, THEMES, CUSTOM_COLOR_KEYS, DEFAULT_CUSTOM_COLORS } from '@/themes'
 
 // ---- HA 实例管理 ----
@@ -557,16 +706,36 @@ function flash(text, err = false) {
   setTimeout(() => { msg.value = '' }, 3000)
 }
 
+// ---- 个人 HA Token ----
+const myToken = ref('')
+const savingToken = ref(false)
+const tokMsg = ref('')
+const tokMsgErr = ref(false)
+
+async function saveMyToken() {
+  savingToken.value = true
+  try {
+    await saveHAToken(myToken.value.trim())
+    tokMsgErr.value = false
+    tokMsg.value = '已保存，连接即时生效'
+    myToken.value = ''
+  } catch (e) {
+    tokMsgErr.value = true
+    tokMsg.value = e.message
+  }
+  savingToken.value = false
+  setTimeout(() => { tokMsg.value = '' }, 3000)
+}
+
 async function addInstance() {
   if (!form.url) { flash('请填写 Home Assistant 地址', true); return }
   try {
     await api.createInstance({
       name: form.name || form.url,
       url: form.url,
-      token: form.token,
       skip_tls: form.skipTLS,
     })
-    form.name = form.url = form.token = ''
+    form.name = form.url = ''
     form.skipTLS = false
     await loadInstances()
     flash('实例已添加')
@@ -578,7 +747,7 @@ async function addInstance() {
 // 切换某实例的忽略证书验证开关
 async function setSkipTLS(ins, checked) {
   try {
-    await api.updateInstance(ins.id, { name: ins.name, url: ins.url, token: ins.token, skip_tls: checked })
+    await api.updateInstance(ins.id, { name: ins.name, url: ins.url, skip_tls: checked })
     ins.skip_tls = checked
     flash(checked ? '已开启忽略证书验证' : '已关闭忽略证书验证')
   } catch (e) {
@@ -636,7 +805,9 @@ async function doLogout() {
 }
 
 // ---- 偏好设置（对接 + 自动加载） ----
-const map = reactive({ amap_key: '', dev_id: 'homecanvas', location_name: 'home' })
+const map = reactive({ amap_key: '' })
+// 地图 Key 使用策略（普通用户）：use_admin=true 用管理员 Key；false 用本人 Key
+const mapConfig = reactive({ use_admin: false, has_own_key: false })
 const themeKey = ref('default')
 const customColor = ref('')
 // 自定义主题调色板（11 个可调色项，实时预览）
@@ -654,12 +825,9 @@ const tabs = [
   { key: 'connect', icon: 'link', label: '连接与设备' },
   { key: 'personal', icon: 'palette', label: '个性化' },
   { key: 'account', icon: 'shield_person', label: '账户' },
+  ...(auth.isAdmin ? [{ key: 'users', icon: 'group', label: '用户管理' }] : []),
 ]
 const activeTab = ref('connect')
-
-// 保存栏交互状态：saving 转圈中 / saved 成功反馈（2s 后复原）
-const saving = ref(false)
-const saved = ref(false)
 // 9 套主题（与 src/themes.js THEMES 同源，新增主题只需维护 THEMES）
 const themeOptions = Object.values(THEMES)
 const colors = [
@@ -709,21 +877,6 @@ const toggles = ref([
 
 const wakeWord = ref('你好， Lumina')
 
-// 位置同步目标（person / device_tracker 实体下拉）
-const sync_target = ref('')
-const peopleOptions = ref([])
-const trackerOptions = ref([])
-async function loadTargets() {
-  if (!store.activeID) return
-  try {
-    const { data: p } = await api.entities({ instance: store.activeID, domain: 'person' })
-    const { data: t } = await api.entities({ instance: store.activeID, domain: 'device_tracker' })
-    const pick = (ent) => ({ value: ent.entity_id, label: `${ent.friendly_name || ent.entity_id}（${String(ent.state || '未知')}）` })
-    peopleOptions.value = (Array.isArray(p?.data) ? p.data : []).map(pick)
-    trackerOptions.value = (Array.isArray(t?.data) ? t.data : []).map(pick)
-  } catch { /* 未连接时下拉为空 */ }
-}
-
 // 设备列表：自动识别、去重、别名
 const deviceList = ref([])
 const currentDevId = ref('')
@@ -769,6 +922,7 @@ const SENSOR_ICONS = {
   wifi_ssid: 'wifi_find',
   screen_state: 'monitor',
   light_sensor: 'light_mode',
+  proximity: 'sensor_occupied',
   public_ip: 'public',
   current_time_zone: 'schedule',
   last_update_trigger: 'history',
@@ -797,7 +951,7 @@ async function loadSensors() {
     }
   } catch { /* 忽略坏配置 */ }
   syncMonitor()
-  // 无论是否启用传感器都上报一次：注册 mobile_app 设备（HA 中立即出现 homecanvas 设备）。
+  // 无论是否启用传感器都上报一次：注册 mobile_app 设备（HA 中立即出现 Sticky Nuo 设备）。
   // activeID 由实例列表异步加载，尚未就绪时等待其变化后触发。
   if (sensorDefs.value.length) {
     if (store.activeID) reportNow(false)
@@ -827,13 +981,14 @@ async function toggleSensor(key, on) {
 
 // 有启用项时启动状态变化监听（变化即上报 + 60s 兜底），全部关闭时停止
 function syncMonitor() {
-  const enabled = sensorDefs.value.some((d) => sensorConfig[d.key])
-  if (enabled && !stopMonitor) {
+  const enabledKeys = sensorDefs.value.filter((d) => sensorConfig[d.key]).map((d) => d.key)
+  if (enabledKeys.length && !stopMonitor) {
     stopMonitor = startSensorMonitor({
       onChange: (reason) => reportNow(false, reason),
       onError: (e) => console.warn('[sensors] monitor:', e),
+      scope: enabledKeys,
     })
-  } else if (!enabled && stopMonitor) {
+  } else if (!enabledKeys.length && stopMonitor) {
     stopMonitor()
     stopMonitor = null
   }
@@ -864,6 +1019,86 @@ async function reportNow(showMsg = true, trigger = 'manual') {
   }
 }
 
+// ---- 浏览器命令（Browser_mod 风格）：本地自测 ----
+const testBrightness = ref(255)
+const blackout = ref(false)
+const waking = ref(false)
+async function grantNotify() {
+  try { await showNotify({ title: '通知已授权', message: '现在可通过 Home Assistant 下发通知了' }) }
+  catch (e) { flash(e.message, true) }
+}
+function testNotify() {
+  showNotify({ title: 'Sticky Nuo 测试通知', message: '这条通知来自浏览器命令面板。', actions: [{ label: '知道了', type: 'none' }] })
+}
+async function toggleBlackout() {
+  blackout.value = !blackout.value
+  setBlackout(blackout.value, 200)
+}
+async function toggleWake() {
+  waking.value = await setScreenWake(!waking.value)
+  if (!waking.value) flash('当前浏览器不支持屏幕唤醒锁', true)
+}
+function setBrightnessPreview() {
+  setScreenBrightness(testBrightness.value, 60)
+}
+
+// ---- 用户管理（仅管理员） ----
+const users = ref([])
+const newUser = reactive({ username: '', password: '', is_admin: false })
+const umsg = ref('')
+const umsgErr = ref(false)
+function uflash(text, err = false) { umsg.value = text; umsgErr.value = err }
+async function loadUsers() {
+  if (!auth.isAdmin) return
+  try { users.value = (await api.listUsers()).data || [] } catch { /* 静默 */ }
+}
+async function createUser() {
+  if (!newUser.username || newUser.password.length < 6) { uflash('用户名必填，密码至少 6 位', true); return }
+  try {
+    await api.createUser({ username: newUser.username, password: newUser.password, is_admin: newUser.is_admin })
+    newUser.username = newUser.password = ''; newUser.is_admin = false
+    await loadUsers(); uflash('用户已创建')
+  } catch (e) { uflash(e.message, true) }
+}
+async function toggleAdmin(u) {
+  try {
+    await api.updateUser(u.username, { is_admin: !u.is_admin })
+    u.is_admin = !u.is_admin; uflash('角色已更新')
+  } catch (e) { uflash(e.message, true) }
+}
+async function resetUserPassword(u) {
+  const p = prompt(`输入「${u.username}」的新密码（至少 6 位）`)
+  if (!p) return
+  if (p.length < 6) { uflash('密码至少 6 位', true); return }
+  try { await api.updateUser(u.username, { password: p }); uflash('密码已重置') }
+  catch (e) { uflash(e.message, true) }
+}
+async function setUserMapPolicy(u, useAdmin) {
+  if (u.map_use_admin === useAdmin) return
+  try {
+    await api.setUserMapPolicy(u.username, useAdmin)
+    u.map_use_admin = useAdmin
+    uflash(useAdmin ? `「${u.username}」将使用管理员的高德 Key` : `「${u.username}」将使用本人的高德 Key`)
+  } catch (e) { uflash(e.message, true) }
+}
+async function removeUser(u) {
+  if (!confirm(`确定删除用户「${u.username}」？其个性化与仪表盘布局将一并清除。`)) return
+  try { await api.deleteUser(u.username); users.value = users.value.filter(x => x.username !== u.username); uflash('用户已删除') }
+  catch (e) { uflash(e.message, true) }
+}
+// 管理员代配（或清除）某用户的 HA 个人 Token：保存后即时生效，无需重启服务器。
+async function setUserHAToken(u) {
+  try {
+    const tok = (u._haToken || '').trim()
+    await api.setUserHAToken(u.username, tok)
+    u.has_ha_token = !!tok
+    u._haToken = ''
+    u._editHA = false
+    uflash(tok ? `「${u.username}」的 HA Token 已保存并即时生效` : `已清除「${u.username}」的 HA Token（其 HA 访问已禁用）`)
+  } catch (e) { uflash(e.message, true) }
+}
+
+// ---- 偏好加载与保存 ----
 async function loadPrefs() {
   try {
     const { data } = await api.getPrefs()
@@ -889,51 +1124,80 @@ async function loadPrefs() {
     if (data.map_config) {
       try {
         const mc = JSON.parse(data.map_config)
-        if (mc.amap_key) map.amap_key = mc.amap_key
-        if (mc.dev_id) map.dev_id = mc.dev_id
-        if (mc.location_name) map.location_name = mc.location_name
-        if (mc.sync_target) sync_target.value = mc.sync_target
+        mapConfig.use_admin = !!mc.use_admin
+        mapConfig.has_own_key = !!mc.has_own_key
+        // 管理员始终可编辑全局 Key；普通用户仅在「本人 Key」模式下可编辑
+        if (auth.isAdmin || !mapConfig.use_admin) map.amap_key = mc.amap_key
       } catch { /* 忽略坏配置 */ }
     }
   } catch { /* 后端离线时静默 */ }
 }
 
-async function saveSettings() {
-  if (saving.value) return
-  saving.value = true
-  saved.value = false
+// ---- 自动保存：去掉「保存设置」按钮，偏好变化即自动持久化（不再需要手动保存） ----
+// 把当前个性化偏好组装成 prefs 请求体并持久化。
+async function persistPrefs() {
   const animation = {}
   toggles.value.forEach((t) => { animation[t.id] = t.on })
   // 主题持久化：自定义主题存完整调色板；预设主题 + 自定义主色存旧格式 JSON；否则存主题 key
   let theme = themeKey.value
   if (themeKey.value === 'custom') theme = JSON.stringify({ theme: 'custom', colors: { ...customColors } })
   else if (customColor.value) theme = JSON.stringify({ theme: themeKey.value, custom: customColor.value })
+  const body = {
+    theme,
+    font: fontSize.value,
+    icons: iconStyle.value,
+    floorplan: floorStyle.value,
+    animation: JSON.stringify(animation),
+    wakeWord: wakeWord.value,
+  }
+  if (auth.isAdmin) {
+    // 管理员始终写全局 Key
+    body.map_config = JSON.stringify({ amap_key: map.amap_key.trim() })
+  } else if (!mapConfig.use_admin) {
+    // 普通用户且「本人 Key」模式：写本人的 Key
+    body.map_config = JSON.stringify({ amap_key: map.amap_key.trim() })
+  }
+  await api.putPrefs(body)
+}
+
+let saveTimer = null
+function scheduleAutoSave() {
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = setTimeout(() => {
+    saveTimer = null
+    persistPrefs().catch(() => { /* 后端离线/写冲突时静默，下次变化再试 */ })
+  }, 600)
+}
+
+// 任一偏好变化（含地图 Key）即触发自动保存
+watch(
+  [themeKey, customColor, customColors, fontSize, iconStyle, floorStyle, toggles, wakeWord, () => map.amap_key],
+  () => scheduleAutoSave(),
+  { deep: true },
+)
+
+// ---- 重置为默认：恢复全部个性化偏好并立即持久化 ----
+async function resetDefaults() {
+  if (!confirm('将所有偏好恢复为系统默认值？')) return
+  themeKey.value = 'default'
+  customColor.value = ''
+  Object.assign(customColors, DEFAULT_CUSTOM_COLORS)
+  fontSize.value = 'standard'
+  iconStyle.value = 'linear'
+  floorStyle.value = 'wireframe'
+  toggles.value.forEach((t) => { t.on = t.id !== 'micro' }) // 默认 transition/glow 开、micro 关
+  wakeWord.value = '你好， Lumina'
+  applyTheme('default', '')
+  if (saveTimer) { clearTimeout(saveTimer); saveTimer = null }
   try {
-    await api.putPrefs({
-      theme,
-      font: fontSize.value,
-      icons: iconStyle.value,
-      floorplan: floorStyle.value,
-      animation: JSON.stringify(animation),
-      wakeWord: wakeWord.value,
-      map_config: JSON.stringify({
-        amap_key: map.amap_key.trim(),
-        dev_id: map.dev_id.trim() || 'homecanvas',
-        location_name: map.location_name.trim() || 'home',
-        sync_target: sync_target.value,
-      }),
-    })
-    saved.value = true
-    setTimeout(() => { saved.value = false }, 2000)
-    flash('设置已保存')
+    await persistPrefs()
+    flash('已重置为默认')
   } catch (e) {
     flash(e.message, true)
-  } finally {
-    saving.value = false
   }
 }
 
-onMounted(() => { loadPrefs(); loadTargets(); loadDevices(); loadSensors() })
+onMounted(() => { loadPrefs(); loadDevices(); loadSensors(); loadUsers() })
 onUnmounted(() => { if (stopMonitor) { stopMonitor(); stopMonitor = null } })
 </script>
 

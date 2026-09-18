@@ -12,8 +12,8 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"homecanvas/server/internal/auth"
-	"homecanvas/server/internal/store"
+	"stickynuo/server/internal/auth"
+	"stickynuo/server/internal/store"
 )
 
 // Auth 处理用户注册/登录/登出/改密与状态查询。

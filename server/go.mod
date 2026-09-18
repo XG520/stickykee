@@ -1,4 +1,4 @@
-module homecanvas/server
+module stickynuo/server
 
 go 1.26.3
 

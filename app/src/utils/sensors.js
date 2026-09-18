@@ -20,6 +20,7 @@ export function detectCapabilities() {
     battery: typeof navigator.getBattery === 'function', // 桌面 Chrome 也支持（Secure Context）
     connection: !!(navigator.connection && typeof navigator.connection.addEventListener === 'function'),
     light: typeof window.AmbientLightSensor === 'function' || typeof window.DeviceLightEvent === 'function',
+    wakeLock: typeof navigator.wakeLock === 'object' && typeof navigator.wakeLock.request === 'function',
     visibility: true, // 页面可见性所有浏览器都支持
     geolocation: typeof navigator.geolocation !== 'undefined',
     mobile: type === 'mobile' || type === 'tablet',
@@ -36,6 +37,7 @@ export function availableSensors() {
   if (cap.connection) { keys.add('connection_type'); keys.add('network_quality'); keys.add('wifi_ssid'); keys.add('bssid') }
   if (cap.visibility) keys.add('screen_state')
   if (cap.mobile && cap.light) keys.add('light_sensor')
+  if (cap.mobile && cap.light) keys.add('proximity')
   keys.add('public_ip')
   keys.add('current_time_zone')
   keys.add('last_update_trigger')
@@ -59,6 +61,10 @@ export function unavailableReason(key) {
     case 'light_sensor':
       if (!cap.mobile) return '环境光传感器仅移动端可用'
       return cap.light ? '' : '当前浏览器不支持环境光传感器'
+    case 'proximity':
+      if (!cap.mobile) return '接近感应仅移动端可用'
+      if (!cap.light) return '接近感应依赖环境光传感器'
+      return cap.wakeLock ? '' : '当前浏览器不支持接近自动亮屏（需屏幕唤醒锁）'
     case 'geocoded_location':
       return cap.geolocation ? '' : '当前浏览器不支持定位'
     case 'screen_state':
@@ -77,23 +83,44 @@ let batteryManager = null
 let luxSensor = null
 
 // 与后端 mobile_app 注册的 app_version 保持一致
-const HC_VERSION = '1.0.0'
+const SN_VERSION = '1.0.0'
 
 let cachedIP = ''
 let cachedIPAt = 0
-// 公网 IP：官方 App 用 ipify 生成；5 分钟缓存，避免频繁外网请求
+// 公网 IP：官方 App 用 ipify 生成；多源回退（ipify 在部分网络不可达），5 分钟缓存，避免频繁外网请求
+const IP_SOURCES = [
+  'https://api.ipify.org?format=json',
+  'https://ipinfo.io/ip',
+  'https://myip.ipip.net',
+  'https://4.ipw.cn',
+]
+async function fetchSource(url) {
+  const ctrl = new AbortController()
+  const t = setTimeout(() => ctrl.abort(), 3000)
+  try {
+    const res = await fetch(url, { signal: ctrl.signal })
+    clearTimeout(t)
+    if (!res.ok) return ''
+    const text = await res.text()
+    let ip = ''
+    try {
+      const j = JSON.parse(text)
+      ip = (j && (j.ip || j.data)) || ''
+    } catch { ip = text }
+    const m = String(ip).match(/\d{1,3}(\.\d{1,3}){3}/)
+    return m ? m[0] : ''
+  } catch {
+    clearTimeout(t)
+    return ''
+  }
+}
 async function fetchPublicIP() {
   const now = Date.now()
   if (cachedIP && now - cachedIPAt < 300000) return cachedIP
-  try {
-    const ctrl = new AbortController()
-    const t = setTimeout(() => ctrl.abort(), 3000)
-    const res = await fetch('https://api.ipify.org?format=json', { signal: ctrl.signal })
-    clearTimeout(t)
-    const j = await res.json()
-    cachedIP = (j && j.ip) || ''
-    cachedIPAt = now
-  } catch { cachedIP = '' }
+  for (const url of IP_SOURCES) {
+    const ip = await fetchSource(url)
+    if (ip) { cachedIP = ip; cachedIPAt = now; break }
+  }
   return cachedIP
 }
 
@@ -172,6 +199,84 @@ function ensureLuxSensor(onChange) {
   } catch { return null }
 }
 
+// ---- 接近感应（Browser_mod 同款思路：用环境光阴影检测是否有人靠近） ----
+// 当有人站在面前（遮挡光线，lux 明显低于最近基线）判定为 near，
+// 屏幕被唤醒锁点亮；人离开（光线恢复）回 far，释放唤醒锁让屏幕可按时间熄灭。
+const PROXIMITY = {
+  state: 'far',       // 'near' | 'far'
+  lux: 0,             // 最近一次环境光
+  baseline: 0,        // 近 2 分钟 lux 中位数（对短暂阴影鲁棒）
+  readings: [],       // [{t, v}] 时间窗内的 lux 样本
+  wakeLock: null,     // 当前持有的屏幕唤醒锁
+  active: false,      // 是否已接入监听（monitor 持有期间为 true）
+}
+const PROX_BASELINE_WINDOW = 120000 // 基线取近 2 分钟
+const PROX_NEAR_RATIO = 0.5         // lux < 基线×0.5 视为被遮挡（有人靠近）
+const PROX_MIN_BASELINE = 10        // 基线过低（全暗环境）时不判断，避免开屏无效
+
+// 喂入一次 lux，刷新接近状态；返回 'near'|'far'。
+function feedProximityLux(lux) {
+  const now = Date.now()
+  PROXIMITY.lux = lux
+  PROXIMITY.readings.push({ t: now, v: lux })
+  const cutoff = now - PROX_BASELINE_WINDOW
+  while (PROXIMITY.readings.length && PROXIMITY.readings[0].t < cutoff) PROXIMITY.readings.shift()
+  if (PROXIMITY.readings.length >= 3) {
+    const vals = PROXIMITY.readings.map((r) => r.v).sort((a, b) => a - b)
+    PROXIMITY.baseline = vals[Math.floor(vals.length / 2)]
+    PROXIMITY.state = (PROXIMITY.baseline >= PROX_MIN_BASELINE && lux < PROXIMITY.baseline * PROX_NEAR_RATIO) ? 'near' : 'far'
+  } else {
+    PROXIMITY.state = 'far'
+  }
+  return PROXIMITY.state
+}
+
+// 按接近状态请求/释放屏幕唤醒锁：near 时保持屏幕点亮。返回是否成功改变状态。
+async function syncProximityWakeLock(state) {
+  if (typeof navigator.wakeLock !== 'object') return false
+  const want = state === 'near'
+  try {
+    if (want && !PROXIMITY.wakeLock) {
+      PROXIMITY.wakeLock = await navigator.wakeLock.request('screen')
+      PROXIMITY.wakeLock.addEventListener('release', () => { PROXIMITY.wakeLock = null })
+      return true
+    }
+    if (!want && PROXIMITY.wakeLock) {
+      await PROXIMITY.wakeLock.release()
+      PROXIMITY.wakeLock = null
+      return true
+    }
+  } catch { /* 忽略（权限拒绝/重入异常） */ }
+  return false
+}
+
+// 全局「人接近自动亮屏」：不依赖设置页，应用常驻期间持续监听环境光阴影。
+// 靠近（遮挡光线）→ 请求屏幕唤醒锁点亮；离开 → 释放。返回 stop 函数。
+export function startProximityScreenWake() {
+  const cap = detectCapabilities()
+  if (!cap.mobile || !cap.light || !cap.wakeLock) return null
+  if (typeof window.AmbientLightSensor !== 'function') return null
+  let sensor = null
+  try {
+    sensor = new window.AmbientLightSensor({ frequency: 5 })
+  } catch { return null }
+  const onReading = () => {
+    const lux = currentLux()
+    if (lux === undefined) return
+    PROXIMITY.active = true
+    const next = feedProximityLux(lux)
+    syncProximityWakeLock(next)
+  }
+  sensor.addEventListener('reading', onReading)
+  try { sensor.start() } catch { try { sensor.stop() } catch {} return null }
+  return () => {
+    try { sensor.stop() } catch {}
+    PROXIMITY.active = false
+    PROXIMITY.readings = []
+    syncProximityWakeLock('far')
+  }
+}
+
 // 采集启用项的当前值 → { key: { state, attributes? } }
 // trigger：本次上报触发原因（manual/event/periodic）；amapKey：高德 key（geocoded_location 需要）
 export async function collect(enabled, trigger = 'manual', amapKey = '') {
@@ -217,6 +322,16 @@ export async function collect(enabled, trigger = 'manual', amapKey = '') {
     if (typeof lux === 'number') sensors.light_sensor = { state: lux }
   }
 
+  if (has('proximity')) {
+    // 状态由监听持续刷新；此处只做一次实时采样兜底并上报缓存状态
+    const lux = currentLux()
+    if (typeof lux === 'number' && !PROXIMITY.active) feedProximityLux(lux)
+    sensors.proximity = {
+      state: PROXIMITY.state,
+      attributes: { lux: Math.round(PROXIMITY.lux), baseline: Math.round(PROXIMITY.baseline) },
+    }
+  }
+
   if (has('public_ip')) {
     const ip = await fetchPublicIP()
     if (ip) sensors.public_ip = { state: ip }
@@ -232,7 +347,7 @@ export async function collect(enabled, trigger = 'manual', amapKey = '') {
   }
 
   if (has('app_version')) {
-    sensors.app_version = { state: HC_VERSION }
+    sensors.app_version = { state: SN_VERSION }
   }
 
   if (has('bssid')) {
@@ -251,11 +366,13 @@ export async function collect(enabled, trigger = 'manual', amapKey = '') {
 }
 
 // 启动监听：状态变化立即触发 onChange('event')，另加 60s 周期兜底 onChange('periodic')。
-// 返回 stop 函数。onError 接收可上报的错误（如环境光传感器启动失败）。
-export function startSensorMonitor({ onChange, onError } = {}) {
+// opts.scope：启用的传感器 key 集（用于接近感应等需监听并开唤醒锁的项）；opts.onError 接收可上报的错误。
+// 返回 stop 函数。
+export function startSensorMonitor({ onChange, onError, scope } = {}) {
   const cb = () => onChange && onChange('event')
   const err = (e) => onError && onError(e)
   const stopFns = []
+  const wantProximity = scope ? (scope instanceof Set ? scope.has('proximity') : scope.includes('proximity')) : false
 
   const on = (target, evt, fn) => {
     target && target.addEventListener && target.addEventListener(evt, fn)
@@ -277,10 +394,25 @@ export function startSensorMonitor({ onChange, onError } = {}) {
     if (b) { on(b, 'levelchange', cb); on(b, 'chargingchange', cb) }
   }).catch(() => {})
 
-  // 环境光（移动端）
+  // 环境光 + 接近感应（移动端）：lux 变化驱动接近判定，并在靠近时用唤醒锁点亮屏幕
   if (typeof window.AmbientLightSensor === 'function') {
-    const s = ensureLuxSensor(() => { if (currentLux() !== undefined) cb() })
-    if (s) stopFns.push(() => { try { s.stop() } catch {} })
+    const luxHandler = () => {
+      const lux = currentLux()
+      if (lux === undefined) return
+      if (wantProximity) {
+        const prev = PROXIMITY.state
+        const next = feedProximityLux(lux)
+        syncProximityWakeLock(next)
+        if (next !== prev) cb() // 接近状态变化时上报
+      } else {
+        cb() // 仅环境光：lux 有值即当作变化上报
+      }
+    }
+    const s = ensureLuxSensor(luxHandler)
+    if (s) {
+      if (wantProximity) PROXIMITY.active = true
+      stopFns.push(() => { try { s.stop() } catch {} })
+    }
     else err(new Error('环境光传感器启动失败'))
   }
 
@@ -288,16 +420,22 @@ export function startSensorMonitor({ onChange, onError } = {}) {
   const timer = setInterval(() => onChange && onChange('periodic'), 60000)
   stopFns.push(() => clearInterval(timer))
 
-  return () => { stopFns.forEach((f) => { try { f() } catch {} }); stopFns.length = 0 }
+  return () => {
+    stopFns.forEach((f) => { try { f() } catch {} }); stopFns.length = 0
+    // 停止时释放接近唤醒锁，避免监控关闭后屏幕被锁死常亮
+    if (wantProximity) { PROXIMITY.active = false; PROXIMITY.readings = []; syncProximityWakeLock('far') }
+  }
 }
 
 // 组装上报请求体（device_id + 采集值 + 设备信息）。
-// opts.trigger：手动/事件/周期；opts.amapKey：高德 key（geocoded_location 需要）。
+// opts.trigger：手动/事件/周期；opts.amapKey：高德 key（geocoded_location 需要）；opts.debug：是否打印采集日志（默认 true）。
 export async function buildReportPayload(activeID, enabled, opts = {}) {
   const dev = await currentDevice()
   const trigger = opts.trigger || 'manual'
   const sensors = await collect(enabled, trigger, opts.amapKey || '')
-  console.log('[sensors] enabled:', JSON.stringify(enabled), 'collected:', JSON.stringify(Object.keys(sensors)), 'raw:', JSON.stringify(sensors))
+  if (opts.debug !== false) {
+    console.log('[sensors] enabled:', JSON.stringify(enabled), 'collected:', JSON.stringify(Object.keys(sensors)), 'raw:', JSON.stringify(sensors))
+  }
   const ua = navigator.userAgent || 'unknown'
   const platform = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || 'web'
   return {

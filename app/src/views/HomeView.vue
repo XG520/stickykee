@@ -7,6 +7,13 @@
       <span class="min-w-0">{{ locMsg }}</span>
     </div>
 
+    <!-- 未配置个人 HA Token 提示 -->
+    <div v-if="!haTokenConfigured && auth.user"
+      class="mb-4 flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-body bg-warning/10 border border-warning/30 text-warning animate-slide-in">
+      <span class="material-symbols-outlined text-lg shrink-0">key_off</span>
+      <span class="min-w-0">尚未配置你的 Home Assistant 个人 Token，HA 实体访问已禁用。请到「设置 → Home Assistant 连接 → 我的 HA Token」填写后立即生效。</span>
+    </div>
+
     <!-- 折叠工具栏（非沉浸态、非编辑态）：平时折叠隐藏，占位导航栏下方；
          鼠标移到这一行（导航栏下面一点）即自动弹出，移开 3 秒后收起 -->
     <template v-if="!immersive && !editing">
@@ -119,7 +126,7 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import api from '@/api'
-import { ui, entityStates } from '@/store'
+import { ui, entityStates, haTokenConfigured, auth } from '@/store'
 import { useEntities } from '@/composables/useLive'
 import { useAutoHide } from '@/composables/useAutoHide'
 import { syncCurrentLocation } from '@/utils/location'
@@ -350,9 +357,7 @@ function markAutoLocateRan() { try { sessionStorage.setItem('hc_autolocate_ran',
 async function locate(silent) {
   locating.value = true
   try {
-    const mc = cfg.map_config || {}
-    const target = mc.sync_target || ''
-    const res = await syncCurrentLocation(target)
+    const res = await syncCurrentLocation()
     const where = res.address || `${res.lat.toFixed(5)}, ${res.lng.toFixed(5)}`
     if (!silent) toast(`${res.name} 位置已同步（${where}）`)
   } catch (e) {

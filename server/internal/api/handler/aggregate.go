@@ -1,12 +1,13 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
 
-	"homecanvas/server/internal/ha"
-	"homecanvas/server/internal/ha/model"
+	"stickynuo/server/internal/ha"
+	"stickynuo/server/internal/ha/model"
 )
 
 // Aggregate 提供场景/自动化/能耗/历史/日志等聚合接口。
@@ -25,7 +26,7 @@ func (h *Aggregate) rest(w http.ResponseWriter, r *http.Request) (int64, bool) {
 		return 0, false
 	}
 	if _, err := h.manager.Rest(r.Context(), id); err != nil {
-		WriteErr(w, 404, "no_instance", "no configured instance")
+		haErr(w, err)
 		return 0, false
 	}
 	return id, true
@@ -140,6 +141,10 @@ func (h *Aggregate) Statistics(w http.ResponseWriter, r *http.Request) {
 	}
 	raw, err := h.manager.CallCommand(r.Context(), id, "recorder/statistics_during_period", payload)
 	if err != nil {
+		if errors.Is(err, ha.ErrNoHAToken) {
+			haErr(w, err)
+			return
+		}
 		WriteErr(w, 502, "ha_unreachable", err.Error())
 		return
 	}
@@ -173,6 +178,10 @@ func (h *Aggregate) SumStatistics(w http.ResponseWriter, r *http.Request) {
 		"period":        "day",
 	})
 	if err != nil {
+		if errors.Is(err, ha.ErrNoHAToken) {
+			haErr(w, err)
+			return
+		}
 		WriteErr(w, 502, "ha_unreachable", err.Error())
 		return
 	}

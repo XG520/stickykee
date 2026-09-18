@@ -56,10 +56,13 @@ import { auth, loadInstances, ui } from '@/store'
 import { useFullscreen } from '@/composables/useFullscreen'
 import { useAutoHide } from '@/composables/useAutoHide'
 import { applyTheme, resolveTheme, loadThemeFromCache } from '@/themes'
+import { startAutoSync, stopAutoSync } from '@/utils/autoSync'
+import { startProximityScreenWake } from '@/utils/sensors'
 import api from '@/api'
 
 const route = useRoute()
 const isPublic = computed(() => !!route.meta.public)
+let stopProx = null // 人接近自动亮屏的停止函数
 const { toggle: toggleFullscreen } = useFullscreen()
 const { visible: exitShow, enter: exitEnter, leave: exitLeave } = useAutoHide(3000)
 
@@ -81,7 +84,13 @@ watch(
     if (u) {
       loadInstances()
       restoreTheme()
+      // 登录后常驻自动同步：自动定位 + 自动上传传感器（无需手动）
+      startAutoSync()
+      // 人接近自动亮屏（依赖环境光阴影 + 屏幕唤醒锁，不支持时返回 null）
+      stopProx = startProximityScreenWake()
     } else {
+      stopAutoSync() // 登出/无会话时停止自动同步
+      if (stopProx) { stopProx(); stopProx = null } // 释放屏幕唤醒锁
       loadThemeFromCache()
     }
   },

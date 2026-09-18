@@ -271,7 +271,7 @@ func httpGetSVG(url string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "homecanvas/1.0")
+	req.Header.Set("User-Agent", "stickynuo/1.0")
 	resp, err := remoteClient.Do(req)
 	if err != nil {
 		return nil, err

@@ -7,8 +7,9 @@ import (
 	"strconv"
 	"time"
 
-	"homecanvas/server/internal/ha"
-	"homecanvas/server/internal/ha/model"
+	"stickynuo/server/internal/auth"
+	"stickynuo/server/internal/ha"
+	"stickynuo/server/internal/ha/model"
 
 	"github.com/gorilla/websocket"
 )
@@ -31,11 +32,11 @@ var upgrader = websocket.Upgrader{
 type WS struct {
 	manager      *ha.Manager
 	log          *slog.Logger
-	authenticate func(token string) (string, bool) // 校验会话 token
+	authenticate func(token string) (auth.Identity, bool) // 校验会话 token，返回身份
 }
 
 // NewWS 构造 WS handler。
-func NewWS(manager *ha.Manager, log *slog.Logger, authenticate func(token string) (string, bool)) *WS {
+func NewWS(manager *ha.Manager, log *slog.Logger, authenticate func(token string) (auth.Identity, bool)) *WS {
 	if log == nil {
 		log = slog.Default()
 	}
@@ -45,21 +46,20 @@ func NewWS(manager *ha.Manager, log *slog.Logger, authenticate func(token string
 // ServeHTTP GET /api/v1/ws?instance={id}&token={token}
 func (h *WS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// 浏览器无法为 WebSocket 设置 Header，改从 query 读取会话 token 并校验。
-	token := r.URL.Query().Get("token")
-	username, ok := h.authenticate(token)
-	if token == "" || !ok || username == "" {
+	ident, ok := h.authenticate(r.URL.Query().Get("token"))
+	if r.URL.Query().Get("token") == "" || !ok || ident.Username == "" {
 		http.Error(w, `{"error":{"code":"unauthorized","message":"missing or invalid token"}}`, http.StatusUnauthorized)
 		return
 	}
 	// 解析实例（查询参数 → 负数用 active）。
 	var instanceID int64
 	if q := r.URL.Query().Get("instance"); q != "" {
-		id, err := strconv.ParseInt(q, 10, 64)
+		parsed, err := strconv.ParseInt(q, 10, 64)
 		if err != nil {
 			WriteErr(w, 400, "bad_request", "invalid instance id")
 			return
 		}
-		instanceID = id
+		instanceID = parsed
 	}
 	active, err := h.manager.ActiveID(r.Context())
 	if err != nil && instanceID <= 0 {
@@ -70,6 +70,10 @@ func (h *WS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		instanceID = active
 	}
 
+	// 后端 HA 连接按 (instance, user) 隔离：把已认证身份写入 ctx，
+	// 供 manager.Live/Rest 解析该用户的个人 HA token（无 token 即禁用）。
+	ctx := auth.WithIdentity(r.Context(), ident)
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		h.log.Warn("ws upgrade failed", "err", err)
@@ -77,14 +81,14 @@ func (h *WS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	// 确保实例实时连接在运行，然后注册到 Hub。
-	store, err := h.manager.Live(r.Context(), instanceID)
+	// 确保该用户的实例实时连接在运行，然后注册到 Hub。
+	store, err := h.manager.Live(ctx, instanceID)
 	if err != nil {
 		_ = writeJSON(conn, map[string]any{"type": "error", "message": err.Error()})
 		return
 	}
-	client := h.manager.Hub().Register(instanceID)
-	defer h.manager.Hub().Unregister(instanceID, client)
+	client := h.manager.Hub().Register(instanceID, ident.Username, r.URL.Query().Get("device"))
+	defer h.manager.Hub().Unregister(instanceID, ident.Username, client)
 
 	// 首次连接即推送当前全量快照（统一为 DisplayEntity 富结构，与 REST /entities 一致）。
 	if snap := model.ParseDisplays(store.Snapshot()); len(snap) > 0 {

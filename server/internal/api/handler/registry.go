@@ -10,15 +10,16 @@ import (
 	"sync"
 	"time"
 
-	"homecanvas/server/internal/ha"
-	"homecanvas/server/internal/ha/model"
+	"stickynuo/server/internal/ha"
+	"stickynuo/server/internal/ha/model"
 )
 
-// 注册表刷新策略：后台每 refreshInterval 拉取一次 HA 的设备/实体/区域注册表并缓存，
-// 前端请求直接读缓存即时返回。这样即使某次 HA WS 命令卡住，也不会拖垮接口——
-// 后台刷新失败时保留上一次成功快照继续对外服务。
+// 注册表刷新策略：按请求方用户按需刷新。个人 HA token 由每用户独立配置，
+// 无法用无用户身份做后台刷新（会因缺 token 报 ErrNoHAToken），因此改为
+// List 请求时用请求方身份拉取，并按 TTL 复用已成功快照以减小 HA WS 压力。
+// 即使某次 HA WS 命令卡住，也会因超时返回而不会拖垮接口。
 const (
-	refreshInterval = 60 * time.Second // 缓存刷新周期
+	refreshInterval = 60 * time.Second // 缓存有效期（TTL）
 	refreshTimeout  = 30 * time.Second // 单次刷新（3 条注册表命令 + 快照）整体超时
 )
 
@@ -46,21 +47,18 @@ type RegisteredEntities struct {
 	mu       sync.Mutex
 	caches   map[int64]*registrySnapshot
 	fetching map[int64]chan struct{} // 单飞：同实例并发的刷新合并为一次
-	stop     chan struct{}
 }
 
-// NewRegisteredEntities 构造 handler 并启动后台缓存刷新。
+// NewRegisteredEntities 构造 handler。注册表不再后台自动刷新：个人 token 无法用
+// 无用户身份拉取，改由 List 请求按请求方身份按需刷新（配合缓存 TTL 复用）。
 func NewRegisteredEntities(manager *ha.Manager) *RegisteredEntities {
 	log := slog.Default()
-	h := &RegisteredEntities{
+	return &RegisteredEntities{
 		manager:  manager,
 		log:      log,
 		caches:   map[int64]*registrySnapshot{},
 		fetching: map[int64]chan struct{}{},
-		stop:     make(chan struct{}),
 	}
-	go h.runRefresher()
-	return h
 }
 
 // List GET /instances/{id}/registry/devices
@@ -85,10 +83,11 @@ func (h *RegisteredEntities) List(w http.ResponseWriter, r *http.Request) {
 }
 
 // load 返回实例 id 的注册表快照。force 为 true 时跳过缓存强制重新拉取。
+// 缓存命中且未超过 TTL 时直接返回快照；超过 TTL 则用请求方用户的 token 重新拉取。
 // 同一实例的并发 load 由单飞合并：后来者等待在途刷新完成后读其结果。
 func (h *RegisteredEntities) load(ctx context.Context, id int64, force bool) (*registrySnapshot, error) {
 	h.mu.Lock()
-	if snap, ok := h.caches[id]; ok && !force {
+	if snap, ok := h.caches[id]; ok && !force && time.Since(snap.updated) < refreshInterval {
 		h.mu.Unlock()
 		return snap, nil
 	}
@@ -212,44 +211,6 @@ func (h *RegisteredEntities) fetch(ctx context.Context, id int64) (*regData, int
 
 	active, _ := h.manager.ActiveID(ctx)
 	return &regData{Areas: areas, Devices: order, Unassigned: unassigned}, active, nil
-}
-
-// runRefresher 后台定时刷新：启动即暖场 active 实例，之后每个周期重刷一次。
-// 冷启动时先做一次立即刷新，让首个设备页请求命中缓存而不是实时拉取。
-func (h *RegisteredEntities) runRefresher() {
-	h.refreshWarm()
-	ticker := time.NewTicker(refreshInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-h.stop:
-			return
-		case <-ticker.C:
-			h.refreshWarm()
-		}
-	}
-}
-
-// refreshWarm 刷新 active 实例与所有已被请求过的实例；失败保留旧缓存并记日志。
-func (h *RegisteredEntities) refreshWarm() {
-	ctx, cancel := context.WithTimeout(context.Background(), refreshTimeout)
-	defer cancel()
-
-	active, _ := h.manager.ActiveID(ctx)
-	h.mu.Lock()
-	ids := make(map[int64]bool, len(h.caches)+1)
-	for id := range h.caches {
-		ids[id] = true
-	}
-	h.mu.Unlock()
-	if active > 0 {
-		ids[active] = true
-	}
-	for id := range ids {
-		if _, err := h.load(ctx, id, true); err != nil {
-			h.log.Warn("registry refresh failed (keep stale cache)", "instance", id, "err", err)
-		}
-	}
 }
 
 // isOnGraph 判断实体状态是否视为"开启"（与前端 utils/entities isOn 对齐）。

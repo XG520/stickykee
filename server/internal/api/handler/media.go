@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"homecanvas/server/internal/ha"
+	"stickynuo/server/internal/ha"
 )
 
 // Media 代理 Home Assistant 的实体图片/头像资源。

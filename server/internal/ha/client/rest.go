@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"homecanvas/server/internal/ha/model"
+	"stickynuo/server/internal/ha/model"
 )
 
 // Rest 是 HA REST API 客户端。

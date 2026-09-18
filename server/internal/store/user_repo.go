@@ -61,6 +61,13 @@ func (r *UserRepo) CreateUser(ctx context.Context, username, passwordHash string
 	return r.GetByUsername(ctx, username)
 }
 
+// SetPassword 更新用户密码哈希。
+func (r *UserRepo) SetPassword(ctx context.Context, username, newHash string) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE users SET password_hash=? WHERE username=?`, newHash, username)
+	return err
+}
+
 // GetByUsername 按用户名查询用户。
 func (r *UserRepo) GetByUsername(ctx context.Context, username string) (User, error) {
 	row := r.db.QueryRowContext(ctx,
@@ -72,11 +79,78 @@ func (r *UserRepo) GetByUsername(ctx context.Context, username string) (User, er
 	return u, err
 }
 
-// SetPassword 更新用户密码哈希。
-func (r *UserRepo) SetPassword(ctx context.Context, username, newHash string) error {
+// Create 新增用户（供管理员经 /users 创建）。isAdmin 指定是否管理员。
+func (r *UserRepo) Create(ctx context.Context, username, passwordHash string, isAdmin bool) (User, error) {
 	_, err := r.db.ExecContext(ctx,
-		`UPDATE users SET password_hash=? WHERE username=?`, newHash, username)
+		`INSERT INTO users(username, password_hash, is_admin) VALUES(?,?,?)`,
+		username, passwordHash, boolToInt(isAdmin))
+	if err != nil {
+		if errSQLiteUnique(err) {
+			return User{}, ErrUserExists
+		}
+		return User{}, err
+	}
+	return r.GetByUsername(ctx, username)
+}
+
+// List 返回全部用户。
+func (r *UserRepo) List(ctx context.Context) ([]User, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id, username, password_hash, is_admin, created_at FROM users ORDER BY is_admin DESC, id ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []User{}
+	for rows.Next() {
+		u, err := scanUser(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+// Delete 删除用户（连同其会话与个性化配置）。
+func (r *UserRepo) Delete(ctx context.Context, username string) error {
+	_, err := r.db.ExecContext(ctx, `DELETE FROM users WHERE username=?`, username)
 	return err
+}
+
+// SetIsAdmin 更新用户管理员角色。admin 是否设置为管理员。
+func (r *UserRepo) SetIsAdmin(ctx context.Context, username string, admin bool) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE users SET is_admin=? WHERE username=?`, boolToInt(admin), username)
+	return err
+}
+
+// CountAdmins 统计管理员数量（用于保护最后一个管理员）。
+func (r *UserRepo) CountAdmins(ctx context.Context) (int, error) {
+	var n int
+	err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM users WHERE is_admin=1`).Scan(&n)
+	return n, err
+}
+
+// IdentityByToken 校验会话并返回用户名与其管理员身份（过期会话会被删除）。
+func (r *UserRepo) IdentityByToken(ctx context.Context, token string) (username string, isAdmin bool, ok bool) {
+	if token == "" {
+		return "", false, false
+	}
+	var expires string
+	err := r.db.QueryRowContext(ctx,
+		`SELECT s.user, s.expires_at, u.is_admin
+		 FROM sessions s LEFT JOIN users u ON u.username = s.user
+		 WHERE s.id=?`, token).Scan(&username, &expires, &isAdmin)
+	if err != nil {
+		return "", false, false
+	}
+	exp, perr := time.Parse(time.RFC3339, expires)
+	if perr != nil || !time.Now().Before(exp) {
+		_, _ = r.db.ExecContext(ctx, `DELETE FROM sessions WHERE id=?`, token)
+		return "", false, false
+	}
+	return username, isAdmin, username != ""
 }
 
 // CreateSession 写入一条登录会话 (id=token)。

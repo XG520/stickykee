@@ -4,19 +4,20 @@ import (
 	"net/http"
 	"time"
 
-	"homecanvas/server/internal/auth"
-	"homecanvas/server/internal/ha"
-	"homecanvas/server/internal/store"
+	"stickynuo/server/internal/auth"
+	"stickynuo/server/internal/ha"
+	"stickynuo/server/internal/hub"
+	"stickynuo/server/internal/store"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
-	"homecanvas/server/internal/api/handler"
-	"homecanvas/server/internal/icons"
+	"stickynuo/server/internal/api/handler"
+	"stickynuo/server/internal/icons"
 )
 
 // Router 组装全部 HTTP 路由。
-func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, manager *ha.Manager, authOpt auth.Option) http.Handler {
+func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store.UserPrefs, msgRepo *store.MessageRepo, hb *hub.Hub, manager *ha.Manager, authOpt auth.Option) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
@@ -40,15 +41,19 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, manager *ha.Mana
 	instances := handler.NewInstances(repo, manager)
 	entities := handler.NewEntities(manager)
 	services := handler.NewServices(manager)
-	prefs := handler.NewPrefs(repo)
+	prefs := handler.NewPrefs(repo, userPrefs, manager)
+	users := handler.NewUsers(userRepo, userPrefs, manager)
 	ws := handler.NewWS(manager, nil, authOpt.Authenticate)
 	agg := handler.NewAggregate(manager)
 	automation := handler.NewAutomation(manager)
-	location := handler.NewLocation(manager)
-	media := handler.NewMedia(manager)
-	devices := handler.NewDevices(repo)
+	devices := handler.NewDevices(repo, userPrefs)
 	registrations := handler.NewRegisteredEntities(manager)
-	sensors := handler.NewSensors(manager, repo)
+	sensors := handler.NewSensors(manager, repo, userPrefs)
+	// Location 复用 sensors 的 mobile_app 注册与 webhook 探测能力，使
+	// device_tracker 实体经官方 update_location 命令自动绑定到注册设备。
+	location := handler.NewLocation(manager, sensors)
+	media := handler.NewMedia(manager)
+	im := handler.NewIm(msgRepo, userPrefs, userRepo, hb)
 
 	r.Route("/api/v1", func(r chi.Router) {
 		// 认证：status/register/login 公开，me/logout/change-password 需登录。
@@ -112,6 +117,27 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, manager *ha.Mana
 			r.Post("/devices", devices.Register)
 			r.Put("/devices/{device_id}", devices.Rename)
 			r.Delete("/devices/{device_id}", devices.Delete)
+
+			// 用户间消息 & 仪表盘共享（全部登录可见，action 端做归属校验）
+			r.Get("/messages/conversations", im.Conversations)
+			r.Get("/messages/contacts", im.Contacts)
+			r.Get("/messages/{user}", im.History)
+			r.Post("/messages/{user}", im.SendText)
+			r.Post("/messages/{user}/share", im.SendShare)
+			r.Post("/messages/{user}/device", im.SendDevice)
+			r.Post("/messages/{user}/read", im.MarkRead)
+			r.Post("/messages/{id}/accept", im.Accept)
+			r.Post("/messages/{id}/decline", im.Decline)
+
+			// 用户管理（仅管理员可用，handler 内部校验）
+			r.Route("/users", func(r chi.Router) {
+				r.Get("/", users.List)
+				r.Post("/", users.Create)
+				r.Put("/{username}", users.Update)
+				r.Put("/{username}/map", users.SetMapPolicy)
+				r.Put("/{username}/ha", users.SetHAToken)
+				r.Delete("/{username}", users.Delete)
+			})
 		})
 	})
 

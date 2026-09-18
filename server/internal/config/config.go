@@ -21,17 +21,17 @@ type Config struct {
 
 // Load 从环境变量加载配置，未设置时用默认值。
 func Load() *Config {
-	dbPath := getenv("HC_DB_PATH", "data/homecanvas.db")
+	dbPath := getenv("SN_DB_PATH", "data/stickynuo.db")
 	return &Config{
-		HTTPAddr:    getenv("HC_HTTP_ADDR", ":8080"),
+		HTTPAddr:    getenv("SN_HTTP_ADDR", ":8080"),
 		DBPath:      dbPath,
-		JWTSecret:   getenv("HC_JWT_SECRET", "dev-secret-change-me"),
-		LogLevel:    getenv("HC_LOG_LEVEL", "info"),
+		JWTSecret:   getenv("SN_JWT_SECRET", "dev-secret-change-me"),
+		LogLevel:    getenv("SN_LOG_LEVEL", "info"),
 		SeedURL:     os.Getenv("HA_DEFAULT_URL"),
 		SeedToken:   os.Getenv("HA_DEFAULT_TOKEN"),
-		Standalone:  os.Getenv("HC_STANDALONE") == "1",
-		TLSInsecure: getenv("HC_TLS_SKIP_VERIFY", "1") == "1",
-		IconCache:   getenv("HC_ICON_CACHE_DIR", filepath.Join(filepath.Dir(dbPath), "icons")),
+		Standalone:  os.Getenv("SN_STANDALONE") == "1",
+		TLSInsecure: getenv("SN_TLS_SKIP_VERIFY", "1") == "1",
+		IconCache:   getenv("SN_ICON_CACHE_DIR", filepath.Join(filepath.Dir(dbPath), "icons")),
 	}
 }
 

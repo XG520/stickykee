@@ -1,12 +1,13 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
-	"homecanvas/server/internal/ha"
-	"homecanvas/server/internal/ha/client"
-	"homecanvas/server/internal/ha/model"
+	"stickynuo/server/internal/ha"
+	"stickynuo/server/internal/ha/client"
+	"stickynuo/server/internal/ha/model"
 )
 
 // Entities 提供实体查询与开关控制。
@@ -26,13 +27,17 @@ func (h *Entities) List(w http.ResponseWriter, r *http.Request) {
 	}
 	rst, err := h.manager.Rest(r.Context(), id)
 	if err != nil {
-		WriteErr(w, 404, "no_instance", "no configured instance")
+		haErr(w, err)
 		return
 	}
 
 	// 优先读实时快照缓存（由 HA WS 维护），失败时回退 REST 直连。
 	states, err := h.snapshotStates(r, id, rst)
 	if err != nil {
+		if errors.Is(err, ha.ErrNoHAToken) {
+			haErr(w, err)
+			return
+		}
 		WriteErr(w, 502, "ha_unreachable", err.Error())
 		return
 	}
@@ -77,11 +82,15 @@ func (h *Entities) Get(w http.ResponseWriter, r *http.Request) {
 	}
 	rst, err := h.manager.Rest(r.Context(), id)
 	if err != nil {
-		WriteErr(w, 404, "no_instance", "no configured instance")
+		haErr(w, err)
 		return
 	}
 	states, err := h.snapshotStates(r, id, rst)
 	if err != nil {
+		if errors.Is(err, ha.ErrNoHAToken) {
+			haErr(w, err)
+			return
+		}
 		WriteErr(w, 502, "ha_unreachable", err.Error())
 		return
 	}
@@ -109,7 +118,7 @@ func (h *Entities) Toggle(w http.ResponseWriter, r *http.Request) {
 	}
 	rst, err := h.manager.Rest(r.Context(), id)
 	if err != nil {
-		WriteErr(w, 404, "no_instance", "no configured instance")
+		haErr(w, err)
 		return
 	}
 	if err := rst.Toggle(r.Context(), entityID); err != nil {

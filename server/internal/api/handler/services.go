@@ -3,7 +3,7 @@ package handler
 import (
 	"net/http"
 
-	"homecanvas/server/internal/ha"
+	"stickynuo/server/internal/ha"
 )
 
 // Services 提供对 HA 服务的通用调用（控制设备）。
@@ -30,7 +30,7 @@ func (h *Services) List(w http.ResponseWriter, r *http.Request) {
 	}
 	rst, err := h.manager.Rest(r.Context(), id)
 	if err != nil {
-		WriteErr(w, 404, "no_instance", "no configured instance")
+		haErr(w, err)
 		return
 	}
 	catalog, err := rst.GetServices(r.Context())
@@ -56,7 +56,7 @@ func (h *Services) Call(w http.ResponseWriter, r *http.Request) {
 	}
 	rst, err := h.manager.Rest(r.Context(), id)
 	if err != nil {
-		WriteErr(w, 404, "no_instance", "no configured instance")
+		haErr(w, err)
 		return
 	}
 	if err := rst.CallService(r.Context(), p.Domain, p.Service, p.EntityID, p.ServiceData); err != nil {
