@@ -132,10 +132,10 @@ func (h *Sensors) Report(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	username := rUsername(r)
 
-	// 1. REST 客户端（不存在实例 → 404）。
+	// 1. REST 客户端（未配置个人 Token → 403 no_ha_token；无实例 → 404 no_instance）。
 	rest, err := h.manager.Rest(ctx, id)
 	if err != nil {
-		WriteErr(w, 404, "no_instance", "未配置或找不到该 Home Assistant 实例")
+		haErr(w, err)
 		return
 	}
 

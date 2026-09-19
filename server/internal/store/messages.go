@@ -201,10 +201,23 @@ func (r *MessageRepo) SetFromRead(ctx context.Context, me, other string) error {
 }
 
 // CardCount 统计仪表盘 JSON 快照中的卡片数（解析失败返回 0）。
+// 兼容两种结构：v1 顶层卡片数组；v2 { version, pages: [{ cards: [...] }] }。
 func CardCount(dashboard string) int {
 	var arr []json.RawMessage
-	if json.Unmarshal([]byte(dashboard), &arr) != nil {
+	if json.Unmarshal([]byte(dashboard), &arr) == nil {
+		return len(arr)
+	}
+	var v2 struct {
+		Pages []struct {
+			Cards []json.RawMessage `json:"cards"`
+		} `json:"pages"`
+	}
+	if json.Unmarshal([]byte(dashboard), &v2) != nil {
 		return 0
 	}
-	return len(arr)
+	n := 0
+	for _, p := range v2.Pages {
+		n += len(p.Cards)
+	}
+	return n
 }

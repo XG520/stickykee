@@ -31,7 +31,7 @@ func (m *Media) Picture(w http.ResponseWriter, r *http.Request) {
 	}
 	rst, err := m.manager.Rest(r.Context(), id)
 	if err != nil {
-		WriteErr(w, 404, "no_instance", "no configured instance")
+		haErr(w, err)
 		return
 	}
 	states, err := rst.GetStates(r.Context())

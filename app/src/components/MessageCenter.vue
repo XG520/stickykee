@@ -18,7 +18,7 @@
 
             <!-- 新建会话 / 共享目标 -->
             <div class="px-3 pt-2">
-              <button @click="showPicker = !showPicker"
+              <button @click="togglePicker"
                 class="w-full flex items-center gap-2 px-3 py-2 rounded-xl bg-primary text-on-primary text-sm font-medium hover:bg-primary-hover transition-colors">
                 <span class="material-symbols-outlined text-base">add_comment</span> 发起会话 / 共享
               </button>
@@ -205,6 +205,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import api from '@/api'
 import { auth, imOpen, imRefresher, imConversations, closeIm, bumpIm, store, entityStates, requestEntityRefresh } from '@/store'
+import { dashboardCardCount } from '@/utils/dashboard'
 
 const conversations = imConversations
 const activeUser = ref('')
@@ -271,6 +272,12 @@ async function loadCandidates() {
     const list = Array.isArray(data) ? data : []
     candidates.value = list.filter((u) => u !== auth.user)
   } catch { candidates.value = [] }
+}
+
+// 展开选择器时重新拉取用户列表，保证刚新增的用户即时可选，无需刷新页面。
+async function togglePicker() {
+  showPicker.value = !showPicker.value
+  if (showPicker.value) await loadCandidates()
 }
 
 function fmtTime(s) {
@@ -434,7 +441,7 @@ async function share() {
   busy.value = true
   try {
     const { data } = await api.getPrefs()
-    if (!data?.dashboard || !data.dashboard.trim() || data.dashboard.trim() === '[]') {
+    if (!data?.dashboard || dashboardCardCount(data.dashboard) === 0) {
       toast('当前仪表盘为空，请先在首页编辑并保存', true)
       return
     }
@@ -470,6 +477,12 @@ async function doDecline(m) {
 watch(imRefresher, async () => {
   if (!imOpen.value) return
   if (activeUser.value) await loadMessages(activeUser.value)
+})
+
+// 打开抽屉时重拉可选用户（用户可能在别处新增过），关闭时收起选择器。
+watch(imOpen, async (open) => {
+  if (!open) { showPicker.value = false; return }
+  await loadCandidates()
 })
 
 onMounted(async () => {

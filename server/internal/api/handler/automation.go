@@ -36,7 +36,7 @@ func (h *Automation) rest(w http.ResponseWriter, r *http.Request) (*client.Rest,
 	}
 	rst, err := h.manager.Rest(r.Context(), id)
 	if err != nil {
-		WriteErr(w, 404, "no_instance", "no configured instance")
+		haErr(w, err)
 		return nil, false
 	}
 	return rst, true

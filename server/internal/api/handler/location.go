@@ -61,7 +61,7 @@ func (h *Location) Update(w http.ResponseWriter, r *http.Request) {
 
 	rst, err := h.manager.Rest(ctx, id)
 	if err != nil {
-		WriteErr(w, 404, "no_instance", "no configured instance")
+		haErr(w, err)
 		return
 	}
 
