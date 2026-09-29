@@ -25,6 +25,12 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(60 * time.Second))
 
+	// 传输压缩：实体全量 JSON 体积最大，gzip 后通常只剩两三成，首屏收益最明显。
+	// 放在 etagJSON 之外层，先算好 ETag / 再压缩输出；图片与 WebSocket 升级不受影响。
+	r.Use(middleware.Compress(5, "application/json", "text/plain", "text/html", "text/css", "application/javascript", "image/svg+xml"))
+	// 条件请求：GET JSON 命中 If-None-Match 时回 304，重复访问不再传正文。
+	r.Use(etagJSON)
+
 	// 健康探针（跳过鉴权）
 	health := handler.Health{}
 	r.Get("/healthz", health.Healthz)

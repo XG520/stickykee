@@ -6,6 +6,7 @@ import { watch } from 'vue'
 import api from '@/api'
 import { auth, store } from '@/store'
 import { getDeviceId } from '@/utils/device'
+import { getPrefs } from '@/utils/prefs'
 import { syncCurrentLocation, reportLocation } from '@/utils/location'
 import { buildReportPayload } from '@/utils/sensors'
 
@@ -42,7 +43,7 @@ function distM(a, b) {
 // 本机设备当前启用的传感器 key 列表（来自后端 sensor_config）。
 async function enabledSensorKeys() {
   try {
-    const { data } = await api.getPrefs()
+    const { data } = await getPrefs()
     const all = JSON.parse((data && data.sensor_config) || '{}') || {}
     const mine = all[getDeviceId()] || {}
     return Object.keys(mine).filter((k) => mine[k])
@@ -52,7 +53,7 @@ async function enabledSensorKeys() {
 // 高德 Key（geocoded_location 逆地理需要；无则跳过该传感器）。
 async function mapKey() {
   try {
-    const { data } = await api.getPrefs()
+    const { data } = await getPrefs()
     const mc = JSON.parse((data && data.map_config) || '{}') || {}
     return (mc.amap_key || '').trim()
   } catch { return '' }

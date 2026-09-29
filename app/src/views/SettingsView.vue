@@ -1,6 +1,7 @@
 <template>
   <div class="space-y-6 pb-4">
-    <h1 class="font-headline text-2xl font-bold text-on-background hidden lg:block">个性化设置</h1>
+    <!-- 页面标题只保留给屏读器（可见标题行占的垂直空间已省掉） -->
+    <h1 class="sr-only">个性化设置</h1>
 
     <!-- 顶部导航 + 重置按钮（不再悬浮，常驻导航区右侧） -->
     <div class="flex flex-wrap items-center gap-2">
@@ -33,8 +34,8 @@
           <p class="text-muted text-xs mt-0.5">访问 Home Assistant 的个人密钥</p>
         </div>
         <span class="ml-auto px-2.5 py-1 rounded-full text-xs font-medium"
-          :class="haTokenConfigured ? 'bg-success/15 text-success' : 'bg-error/15 text-error'">
-          {{ haTokenConfigured ? '已配置' : '未配置（HA 访问已禁用）' }}
+          :class="haTokenBadge.cls">
+          {{ haTokenBadge.text }}
         </span>
       </div>
       <p class="text-muted text-xs mb-3 font-body leading-relaxed">
@@ -285,7 +286,7 @@
           <span class="material-symbols-outlined text-sm">report</span> 测试通知
         </button>
         <button @click="toggleBlackout" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface hover:bg-surface/60 text-on-surface text-xs font-semibold border border-border transition-all duration-200 active:scale-95">
-          <span class="material-symbols-outlined text-sm">visibility_off</span> {{ blackout ? '取消黑屏' : '模拟关屏（黑屏）' }}
+          <span class="material-symbols-outlined text-sm">visibility_off</span> {{ blackout.active ? '取消黑屏' : '模拟关屏（黑屏）' }}
         </button>
         <button @click="toggleWake" :class="waking ? 'bg-primary text-on-primary' : 'bg-surface hover:bg-surface/60 text-on-surface border border-border'" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 active:scale-95">
           <span class="material-symbols-outlined text-sm">brightness_7</span> {{ waking ? '保持亮屏（释放）' : '保持亮屏' }}
@@ -294,10 +295,44 @@
 
       <div class="mb-1 flex items-center justify-between text-xs text-muted font-body">
         <span>屏幕亮度（视觉遮罩模拟）</span>
-        <span class="font-code">{{ testBrightness }}</span>
+        <span class="font-code">{{ blackout.brightness }}</span>
       </div>
-      <input type="range" min="0" max="255" v-model.number="testBrightness"
-        @input="setBrightnessPreview" class="w-full accent-primary" />
+      <input type="range" min="0" max="255" :value="blackout.brightness"
+        @input="setBrightnessPreview($event.target.value)" class="w-full accent-primary" />
+
+      <!-- 黑屏解除方式：双击手势始终可用；接近感应解除默认关闭，用环境光 lux 模拟接近 -->
+      <div class="mt-4 pt-4 border-t border-border">
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <p class="text-on-surface text-xs font-semibold">接近感应解除黑屏</p>
+            <p class="text-muted text-[11px] mt-0.5 font-body leading-relaxed">
+              浏览器没有真实接近传感器，这里用环境光模拟：手盖住屏幕时 lux 下降，全黑状态下 lux ≤ 阈值即自动解除。双击屏幕随时可解除。
+            </p>
+          </div>
+          <label class="flex items-center gap-2 shrink-0 pt-0.5 cursor-pointer" :class="blackout.supported ? '' : 'opacity-50'">
+            <input type="checkbox" :checked="blackout.enabled" :disabled="!blackout.supported"
+              @change="setDismissEnabled($event.target.checked)" class="accent-primary w-4 h-4" />
+            <span class="text-xs text-muted">启用</span>
+          </label>
+        </div>
+
+        <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2">
+          <label class="flex items-center gap-2 text-xs text-muted font-body">
+            解除阈值（lux ≤）
+            <input type="number" min="0" step="1"
+              :value="blackout.threshold" :disabled="!blackout.supported"
+              @change="setDismissThreshold($event.target.value)"
+              class="w-20 px-2.5 py-1.5 rounded-lg bg-surface border border-border text-xs text-on-surface font-code outline-none focus:border-primary/50 disabled:opacity-50" />
+          </label>
+          <span class="text-xs text-muted font-body">
+            环境光实时值：
+            <span class="font-code text-on-surface">{{ blackout.supported ? (blackout.lux ?? '—') : '不支持' }}</span>
+          </span>
+        </div>
+        <p v-if="!blackout.supported" class="text-warning text-[11px] mt-2 font-body leading-relaxed">
+          当前浏览器不提供环境光传感器（桌面端通常不支持，需 Android Chrome 等移动端），接近解除不可用；双击手势不受影响。
+        </p>
+      </div>
     </section>
     </div>
 
@@ -691,9 +726,10 @@ import ToggleRow from '@/components/ToggleRow.vue'
 import api from '@/api'
 import { listDevices, ensureDevice, renameDevice, deleteDevice, getDeviceId } from '@/utils/device'
 import { availableSensors, unavailableReason, startSensorMonitor, buildReportPayload } from '@/utils/sensors'
-import { showNotify, setBlackout, setScreenBrightness, setScreenWake } from '@/utils/browserCommands'
-import { loadInstances, switchInstance, changePassword, authLogout, auth, store, backendOnline, haTokenConfigured, saveHAToken } from '@/store'
+import { showNotify, setBlackout, setScreenBrightness, setScreenWake, blackout, saveBlackoutDismiss, watchAmbientLight } from '@/utils/browserCommands'
+import { loadInstances, switchInstance, changePassword, authLogout, auth, store, backendOnline, haTokenConfigured, haTokenKnown, saveHAToken } from '@/store'
 import { applyTheme, resolveTheme, THEMES, CUSTOM_COLOR_KEYS, DEFAULT_CUSTOM_COLORS } from '@/themes'
+import { getPrefs, putPrefs } from '@/utils/prefs'
 
 // ---- HA 实例管理 ----
 const form = reactive({ name: '', url: '', token: '', skipTLS: false })
@@ -711,6 +747,15 @@ const myToken = ref('')
 const savingToken = ref(false)
 const tokMsg = ref('')
 const tokMsgErr = ref(false)
+
+// 状态徽标：未取到后端权威值（haTokenKnown=false）时显示「检查中…」，
+// 不能直接断言「未配置」，否则刷新/请求失败时会误报
+const haTokenBadge = computed(() => {
+  if (!haTokenKnown.value) return { cls: 'bg-surface text-muted', text: '检查中…' }
+  return haTokenConfigured.value
+    ? { cls: 'bg-success/15 text-success', text: '已配置' }
+    : { cls: 'bg-error/15 text-error', text: '未配置（HA 访问已禁用）' }
+})
 
 async function saveMyToken() {
   savingToken.value = true
@@ -912,6 +957,7 @@ const sensorAvail = ref(new Set())  // 当前设备可用的 key 集
 const reporting = ref(false)
 const lastReport = ref('')
 let stopMonitor = null
+let stopLightWatch = null // 环境光实时值的停止函数（面板打开期间生效）
 
 // 后端图标为 mdi:xxx，设置页统一用 material 图标呈现
 const SENSOR_ICONS = {
@@ -943,7 +989,7 @@ async function loadSensors() {
   // 默认全部关闭，再套用已保存配置
   sensorDefs.value.forEach((d) => { if (!(d.key in sensorConfig)) sensorConfig[d.key] = false })
   try {
-    const { data } = await api.getPrefs()
+    const { data } = await getPrefs()
     if (data && data.sensor_config) {
       const all = JSON.parse(data.sensor_config) || {}
       const mine = all[getDeviceId()] || {}
@@ -964,11 +1010,12 @@ async function loadSensors() {
 async function saveSensorConfig() {
   let all = {}
   try {
-    const { data } = await api.getPrefs()
+    // 读-改-写：必须拿最新值，绕过本地缓存，否则可能覆盖掉别处的改动
+    const { data } = await getPrefs({ force: true })
     if (data && data.sensor_config) all = JSON.parse(data.sensor_config) || {}
   } catch { /* 忽略 */ }
   all[getDeviceId()] = { ...sensorConfig }
-  await api.putPrefs({ sensor_config: JSON.stringify(all) })
+  await putPrefs({ sensor_config: JSON.stringify(all) })
 }
 
 async function toggleSensor(key, on) {
@@ -1020,8 +1067,6 @@ async function reportNow(showMsg = true, trigger = 'manual') {
 }
 
 // ---- 浏览器命令（Browser_mod 风格）：本地自测 ----
-const testBrightness = ref(255)
-const blackout = ref(false)
 const waking = ref(false)
 async function grantNotify() {
   try { await showNotify({ title: '通知已授权', message: '现在可通过 Home Assistant 下发通知了' }) }
@@ -1031,15 +1076,16 @@ function testNotify() {
   showNotify({ title: 'Sticky Nuo 测试通知', message: '这条通知来自浏览器命令面板。', actions: [{ label: '知道了', type: 'none' }] })
 }
 async function toggleBlackout() {
-  blackout.value = !blackout.value
-  setBlackout(blackout.value, 200)
+  setBlackout(!blackout.active, 200) // 状态由 browserCommands 的 blackout 持有（手势/接近解除也会改它）
 }
+function setDismissEnabled(v) { saveBlackoutDismiss({ enabled: v }) }
+function setDismissThreshold(v) { saveBlackoutDismiss({ threshold: v }) }
 async function toggleWake() {
   waking.value = await setScreenWake(!waking.value)
   if (!waking.value) flash('当前浏览器不支持屏幕唤醒锁', true)
 }
-function setBrightnessPreview() {
-  setScreenBrightness(testBrightness.value, 60)
+function setBrightnessPreview(v) {
+  setScreenBrightness(Number(v), 60) // 拖到最暗（0）即为全黑，此时双击屏幕可恢复全亮
 }
 
 // ---- 用户管理（仅管理员） ----
@@ -1101,7 +1147,7 @@ async function setUserHAToken(u) {
 // ---- 偏好加载与保存 ----
 async function loadPrefs() {
   try {
-    const { data } = await api.getPrefs()
+    const { data } = await getPrefs()
     if (!data) return
     if (data.theme) {
       const r = resolveTheme(data.theme)
@@ -1157,7 +1203,7 @@ async function persistPrefs() {
     // 普通用户且「本人 Key」模式：写本人的 Key
     body.map_config = JSON.stringify({ amap_key: map.amap_key.trim() })
   }
-  await api.putPrefs(body)
+  await putPrefs(body)
 }
 
 let saveTimer = null
@@ -1197,8 +1243,14 @@ async function resetDefaults() {
   }
 }
 
-onMounted(() => { loadPrefs(); loadDevices(); loadSensors(); loadUsers() })
-onUnmounted(() => { if (stopMonitor) { stopMonitor(); stopMonitor = null } })
+onMounted(() => {
+  loadPrefs(); loadDevices(); loadSensors(); loadUsers()
+  stopLightWatch = watchAmbientLight() // 面板打开期间持续读环境光，用于「实时值」显示
+})
+onUnmounted(() => {
+  if (stopMonitor) { stopMonitor(); stopMonitor = null }
+  if (stopLightWatch) { stopLightWatch(); stopLightWatch = null }
+})
 </script>
 
 <style scoped>

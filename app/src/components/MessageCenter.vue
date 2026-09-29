@@ -206,6 +206,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import api from '@/api'
 import { auth, imOpen, imRefresher, imConversations, closeIm, bumpIm, store, entityStates, requestEntityRefresh } from '@/store'
 import { dashboardCardCount } from '@/utils/dashboard'
+import { getPrefs } from '@/utils/prefs'
 
 const conversations = imConversations
 const activeUser = ref('')
@@ -440,7 +441,7 @@ async function share() {
   if (!activeUser.value || busy.value) return
   busy.value = true
   try {
-    const { data } = await api.getPrefs()
+    const { data } = await getPrefs()
     if (!data?.dashboard || dashboardCardCount(data.dashboard) === 0) {
       toast('当前仪表盘为空，请先在首页编辑并保存', true)
       return

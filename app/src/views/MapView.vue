@@ -1,10 +1,7 @@
 <template>
   <div class="py-2">
-    <div class="flex items-center gap-2 mb-5">
-      <span class="material-symbols-outlined text-primary text-xl">map</span>
-      <h1 class="font-headline text-xl font-semibold text-on-background">地图定位</h1>
-      <p class="text-muted text-sm font-body ml-2 hidden sm:block">查看家的范围与家人实时位置，可刷新同步定位</p>
-    </div>
+    <!-- 页面标题只保留给屏读器（可见标题行占的垂直空间已省掉） -->
+    <h1 class="sr-only">地图定位</h1>
 
     <div class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5">
       <HomeMap :height="'min(68vh, 620px)'" />

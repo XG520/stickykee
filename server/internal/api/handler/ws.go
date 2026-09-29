@@ -91,8 +91,9 @@ func (h *WS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer h.manager.Hub().Unregister(instanceID, ident.Username, client)
 
 	// 首次连接即推送当前全量快照（统一为 DisplayEntity 富结构，与 REST /entities 一致）。
+	// seq 为增量流当前序号：客户端据此判断之后的推送是否漏帧（漏则回退一次 REST 全量）。
 	if snap := model.ParseDisplays(store.Snapshot()); len(snap) > 0 {
-		if b, merr := json.Marshal(map[string]any{"type": "state", "data": snap}); merr == nil {
+		if b, merr := json.Marshal(map[string]any{"type": "state", "seq": h.manager.Seq(ctx, instanceID), "data": snap}); merr == nil {
 			_ = conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
 			if werr := conn.WriteMessage(websocket.TextMessage, b); werr != nil {
 				conn.Close()

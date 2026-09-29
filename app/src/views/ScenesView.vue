@@ -1,11 +1,9 @@
 <template>
-  <div class="space-y-8 py-2">
-    <!-- Page Title -->
-    <div class="flex items-end justify-between">
-      <div>
-        <h1 class="font-headline text-2xl font-bold text-on-background">场景与自动化</h1>
-        <p class="text-muted font-body text-sm mt-1">点击场景即刻触发，管理您的自动化规则</p>
-      </div>
+  <div class="space-y-4 py-2">
+    <!-- 页面标题只保留给屏读器（可见标题行占的垂直空间已省掉）；右侧同步状态保留并右对齐。
+         标题放在本行内部，避免成为 space-y-4 的多余子项而多出一段间距 -->
+    <div class="flex items-center justify-end">
+      <h1 class="sr-only">场景与自动化</h1>
       <div class="flex items-center gap-2 text-xs text-muted font-body">
         <span class="material-symbols-outlined text-base">schedule</span>
         上次同步：刚刚

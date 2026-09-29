@@ -259,6 +259,7 @@ import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } 
 import CodeCard from './CodeCard.vue'
 import { cardDefaults, computeData, renderTemplate } from './defaults'
 import { useEntities } from '@/composables/useLive'
+import { entityStates } from '@/store'
 import { iconUrl } from '@/utils/hcIcons'
 
 const props = defineProps({
@@ -279,7 +280,7 @@ const entityOptional = computed(() => !!cardDefaults[props.card.type]?.entityOpt
 const TOGGLE_DOMAINS = ['switch', 'light', 'plug', 'valve', 'input_boolean', 'fan', 'humidifier', 'group', 'remote', 'siren']
 const srcEntity = computed(() => {
   const id = props.card.entity_id
-  if (id) return all.value.find((e) => e.entity_id === id) || null
+  if (id) return entityStates[id] || null
   // 未手动指定：与 data.js 一致，天气卡取第一个 weather 实体，开关卡取第一个开关类实体
   if (props.card.type === 'weather') return all.value.find((e) => e.domain === 'weather') || null
   if (props.card.type === 'toggle') return all.value.find((e) => TOGGLE_DOMAINS.includes(e.domain)) || null
@@ -644,7 +645,7 @@ function textIsValue(tpl) {
 }
 const textPop = reactive({ open: false, vid: '', desc: '', value: '', token: '', origTpl: '', node: null, style: {}, fs: 12 })
 const textInputRef = ref(null)
-const popEntity = computed(() => (props.card.entity_id ? all.value.find((e) => e.entity_id === props.card.entity_id) : null))
+const popEntity = computed(() => (props.card.entity_id ? entityStates[props.card.entity_id] || null : null))
 const popData = computed(() =>
   computeData(props.card.type, { all: all.value, hasData: hasData.value, entity: popEntity.value, entityId: props.card.entity_id, now: new Date(), card: props.card }))
 

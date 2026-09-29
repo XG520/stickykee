@@ -1,11 +1,9 @@
 <template>
   <div class="space-y-5">
-    <!-- Page Header -->
-    <div class="flex items-center justify-between gap-4 flex-wrap">
-      <div>
-        <h2 class="font-headline text-on-background font-semibold text-xl leading-tight">能耗总览</h2>
-        <p class="text-muted text-sm mt-0.5">基于实体实时功耗汇总</p>
-      </div>
+    <!-- 页面标题只保留给屏读器（可见标题行占的垂直空间已省掉）；时间范围切换保留并右对齐。
+         标题放在本行内部，避免成为 space-y-5 的多余子项而多出一段间距 -->
+    <div class="flex items-center justify-end gap-4 flex-wrap">
+      <h2 class="sr-only">能耗总览</h2>
       <div class="flex items-center gap-1 p-1 bg-surface rounded-xl border border-border">
         <button
           v-for="r in ranges"

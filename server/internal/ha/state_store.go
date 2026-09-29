@@ -64,3 +64,17 @@ func (s *StateStore) Snapshot() []model.EntityState {
 	}
 	return out
 }
+
+// GetMany 按 id 批量读取（只取一次读锁）；不存在的 id 跳过。
+// 供增量合并器一次取齐一批实体，避免逐个加锁。
+func (s *StateStore) GetMany(ids []string) []model.EntityState {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]model.EntityState, 0, len(ids))
+	for _, id := range ids {
+		if e, ok := s.entities[id]; ok {
+			out = append(out, e)
+		}
+	}
+	return out
+}

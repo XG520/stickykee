@@ -7,13 +7,14 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, createApp } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, onUpdated, nextTick, createApp } from 'vue'
 import { useEntities } from '@/composables/useLive'
+import { count as perfCount } from '@/utils/perf'
 import { renderTemplate, scopeCss, computeData, cardDefaults } from './defaults'
 import { domainColorCls } from '@/utils/entities'
 import { loadIconList, replaceIconsIn } from '@/utils/hcIcons'
 import api from '@/api'
-import { store, requestEntityRefresh } from '@/store'
+import { store, entityStates, requestEntityRefresh } from '@/store'
 import HomeMap from '@/components/map/HomeMap.vue'
 import router from '@/router'
 
@@ -30,6 +31,10 @@ const props = defineProps({
 const { all, hasData } = useEntities()
 const root = ref(null)
 
+// 性能基准：卡片重渲染次数。每次实体写入都会让所有「订阅全表」的卡片重渲染，
+// 这个计数与 state:batches 的比值（perf 报告里的 cardUpdatesPerBatch）就是扇出规模。
+onUpdated(() => perfCount('ui:cardUpdate'))
+
 // 问候卡时间每分钟刷新；其他卡片不需要定时器。
 const now = ref(new Date())
 let clock = null
@@ -42,7 +47,9 @@ const entityIds = computed(() => {
   return props.card.entity_id ? [props.card.entity_id] : []
 })
 const entities = computed(() =>
-  entityIds.value.map((id) => all.value.find((e) => e.entity_id === id)).filter(Boolean))
+  // 直接按 id 取（O(1) + 只订阅这几个实体），原先是在全表数组上 find，
+  // 卡片数 × 实体数 的扫描会随每次状态推送反复发生
+  entityIds.value.map((id) => entityStates[id]).filter(Boolean))
 const entity = computed(() => entities.value[0] || null)
 
 const liveData = computed(() => {

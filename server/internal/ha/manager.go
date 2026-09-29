@@ -39,7 +39,8 @@ type Manager struct {
 	mu          sync.RWMutex
 	clients     map[connKey]*client.Rest
 	runtimes    map[connKey]*runtime
-	seedRT      map[connKey]bool // 已注册 store.onChange 标记（幂等）
+	seedRT      map[connKey]bool         // 已注册 store.onChange 标记（幂等）
+	batchers    map[connKey]*liveBatcher // 增量合并器（惰性创建，随 runtime 一起停止）
 }
 
 // NewManager 构造管理器。
@@ -54,6 +55,7 @@ func NewManager(repo *store.InstanceRepo, userPrefs *store.UserPrefs, h *hub.Hub
 		clients:     map[connKey]*client.Rest{},
 		runtimes:    map[connKey]*runtime{},
 		seedRT:      map[connKey]bool{},
+		batchers:    map[connKey]*liveBatcher{},
 	}
 }
 
@@ -158,26 +160,82 @@ func (m *Manager) Live(ctx context.Context, id int64) (*StateStore, error) {
 	return store, nil
 }
 
-// pushEntityToLive 把单个变化实体（DisplayEntity 富结构）增量广播给该用户在该实例上的订阅者。
+// pushEntityToLive 记录一个变化的实体，交给合并器按窗口批量推送。
+// 这里只做一次 map 写入：本函数在 HA 读取循环里同步调用，不能阻塞（原先在此直接
+// 读取快照 + json.Marshal + 广播，事件密集时会拖慢读取循环）。
 func (m *Manager) pushEntityToLive(key connKey, entityID string) {
+	if b := m.batcherFor(key); b != nil {
+		b.add(entityID)
+	}
+}
+
+// batcherFor 取该连接的增量合并器；首次调用时惰性创建并启动。
+// 没有实时运行时返回 nil（此时没有订阅者，无需推送）。
+func (m *Manager) batcherFor(key connKey) *liveBatcher {
+	m.mu.RLock()
+	b := m.batchers[key]
+	_, live := m.runtimes[key]
+	m.mu.RUnlock()
+	if b != nil {
+		return b
+	}
+	if !live {
+		return nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if b = m.batchers[key]; b != nil {
+		return b
+	}
+	b = newLiveBatcher()
+	m.batchers[key] = b
+	go b.run(func(ids []string) { m.flushEntities(key, ids) })
+	return b
+}
+
+// flushEntities 把一批实体合并成一条消息广播（同实体只发最后值），并带自增序号。
+// 由合并器的单个 goroutine 串行调用，所以序号顺序与广播顺序一致。
+func (m *Manager) flushEntities(key connKey, ids []string) {
 	m.mu.RLock()
 	rt := m.runtimes[key]
+	b := m.batchers[key]
 	m.mu.RUnlock()
-	if rt == nil {
+	if rt == nil || b == nil {
 		return
 	}
-	raw, ok := rt.store.Get(entityID)
-	if !ok {
+	states := rt.store.GetMany(ids)
+	if len(states) == 0 {
 		return
 	}
-	b, err := json.Marshal(map[string]any{
+	displays := make([]model.DisplayEntity, 0, len(states))
+	for _, s := range states {
+		displays = append(displays, model.ParseDisplay(s))
+	}
+	payload, err := json.Marshal(map[string]any{
 		"type": "state",
-		"data": []model.DisplayEntity{model.ParseDisplay(raw)},
+		"seq":  b.nextSeq(),
+		"data": displays,
 	})
 	if err != nil {
 		return
 	}
-	m.hub.Broadcast(hub.Scope{Instance: key.instance, User: key.user}, b)
+	m.hub.Broadcast(hub.Scope{Instance: key.instance, User: key.user}, payload)
+}
+
+// Seq 返回该用户在该实例上增量流的当前序号；无实时连接/尚无增量时返回 0。
+// WS 首帧快照会带上它，客户端据此判断后续推送是否漏帧。
+func (m *Manager) Seq(ctx context.Context, id int64) uint64 {
+	key, _, err := m.resolveKey(ctx, id)
+	if err != nil {
+		return 0
+	}
+	m.mu.RLock()
+	b := m.batchers[key]
+	m.mu.RUnlock()
+	if b == nil {
+		return 0
+	}
+	return b.Seq()
 }
 
 // Hub 返回全局前端连接中心。
@@ -198,11 +256,9 @@ func (m *Manager) SendCommand(key connKey, deviceID string, payload []byte) {
 func (m *Manager) Invalidate(id int64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	for key, rt := range m.runtimes {
+	for key := range m.runtimes {
 		if key.instance == id {
-			rt.cancel()
-			delete(m.runtimes, key)
-			delete(m.seedRT, key)
+			m.dropRuntime(key)
 		}
 	}
 	for key := range m.clients {
@@ -220,12 +276,22 @@ func (m *Manager) InvalidateUser(id int64, user string) {
 	key := connKey{instance: id, user: user}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.dropRuntime(key)
+	delete(m.clients, key)
+}
+
+// dropRuntime 停止并清理某条连接的实时运行态与增量合并器（调用方需持有写锁）。
+// 合并器的 goroutine 必须一并停掉，否则连接重建后会留下泄漏的定时器。
+func (m *Manager) dropRuntime(key connKey) {
 	if rt, ok := m.runtimes[key]; ok {
 		rt.cancel()
 		delete(m.runtimes, key)
-		delete(m.seedRT, key)
 	}
-	delete(m.clients, key)
+	delete(m.seedRT, key)
+	if b, ok := m.batchers[key]; ok {
+		b.stop()
+		delete(m.batchers, key)
+	}
 }
 
 // InvalidateActive 使某用户在 active 实例上失效（个人 token 写入后，按 active 实例即时重建）。

@@ -58,7 +58,7 @@ import { useAutoHide } from '@/composables/useAutoHide'
 import { applyTheme, resolveTheme, loadThemeFromCache } from '@/themes'
 import { startAutoSync, stopAutoSync } from '@/utils/autoSync'
 import { startProximityScreenWake } from '@/utils/sensors'
-import api from '@/api'
+import { getPrefs } from '@/utils/prefs'
 
 const route = useRoute()
 const isPublic = computed(() => !!route.meta.public)
@@ -70,7 +70,7 @@ const { visible: exitShow, enter: exitEnter, leave: exitLeave } = useAutoHide(30
 // 后端离线或未登录时静默失败，此时保留本地缓存主题。
 async function restoreTheme() {
   try {
-    const { data } = await api.getPrefs()
+    const { data } = await getPrefs()
     const r = resolveTheme(data && data.theme)
     applyTheme(r.themeKey, r.themeKey === 'custom' && r.colors ? r.colors : r.customHex)
   } catch { /* 无会话/离线：保持本地缓存主题 */ }

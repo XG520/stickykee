@@ -65,6 +65,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import api from '@/api'
 import { store } from '@/store'
 import { loadAMap } from '@/utils/amap'
+import { getPrefs } from '@/utils/prefs'
 import { syncCurrentLocation } from '@/utils/location'
 import { wgs84ToGcj02 } from '@/utils/gcj02'
 import { usePersonMarkers, useZones } from '@/composables/useLive'
@@ -102,7 +103,7 @@ let firstFitDone = false // 首次有数据后自动 fitView 一次，之后不�
 
 async function loadConfig() {
   try {
-    const { data } = await api.getPrefs()
+    const { data } = await getPrefs()
     let mc = {}
     if (data?.map_config) { try { mc = JSON.parse(data.map_config) } catch {} }
     cfg.value = {

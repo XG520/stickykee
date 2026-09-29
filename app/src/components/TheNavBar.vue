@@ -14,6 +14,11 @@
       <span class="material-symbols-outlined inline-flex items-center justify-center w-5 h-5 text-xl leading-none">{{ item.icon }}</span>
       {{ item.label }}
     </router-link>
+
+    <!-- 首页顶部工具条（页签 + 操作按钮）的挂载槽：由 HomeView 用 Teleport 注入。
+         导航栏本身是 hidden md:flex，只在桌面端存在；移动端与沉浸模式下 HomeView 会
+         回落到原地渲染，因此手机端的页签与编辑入口不受影响。 -->
+    <div id="hc-nav-slot" class="flex-1 min-w-0 flex items-center justify-end gap-2"></div>
   </nav>
 </template>
 

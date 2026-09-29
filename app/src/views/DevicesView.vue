@@ -1,14 +1,7 @@
 <template>
   <div>
-    <!-- Page Header + search -->
-    <div class="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
-      <div class="flex items-center gap-3 flex-wrap">
-        <h1 class="font-headline text-2xl font-bold text-on-background">设备管理</h1>
-        <span v-if="backendOnline" class="font-body text-sm text-muted self-start mt-0.5">
-          共 {{ devices.length }} 台设备 · {{ onDeviceCount }} 台在线
-        </span>
-      </div>
-    </div>
+    <!-- 页面标题只保留给屏读器：可见标题行占的垂直空间已省掉，文档大纲与无障碍不受影响 -->
+    <h1 class="sr-only">设备管理</h1>
 
     <p v-if="!backendOnline" class="mb-4 text-error text-sm font-body">后端不可达，无法加载设备数据。请先启动 Go 后端并在「设置」中配置 Home Assistant 实例。</p>
     <p v-else-if="loading" class="mb-4 text-muted text-sm font-body">正在加载设备注册表…</p>
@@ -29,6 +22,10 @@
             <span class="material-symbols-outlined text-base">close</span>
           </button>
         </div>
+        <!-- 设备计数从已删除的标题行移到搜索行右侧，不额外占一行高度 -->
+        <span v-if="backendOnline" class="hidden sm:inline shrink-0 font-body text-xs text-muted whitespace-nowrap">
+          共 {{ devices.length }} 台 · {{ onDeviceCount }} 在线
+        </span>
       </div>
       <div class="flex items-center gap-2 overflow-x-auto pb-1">
         <button
@@ -43,11 +40,15 @@
       </div>
     </div>
 
-    <!-- 主从布局：左侧设备分组列表 | 右侧设备详情（桌面并排；手机端列表 + 全屏详情） -->
-    <div class="lg:grid lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)] lg:gap-6 lg:items-start">
+    <!-- 主从布局：左侧设备分组列表 | 右侧设备详情（桌面并排；手机端列表 + 全屏详情）。
+         桌面端用 flex + 视口高度约束：两栏等高且随窗口尺寸变化，列表与详情各自内部滚动，页面不滚。
+         18rem ≈ 网格之上的固定占用（顶部栏 60 + 导航 54 + main pt-5 20 + 搜索筛选 106 + 底部留白 40），
+         页面标题行已删除故不再计入；窗口过矮时由 min-h 兜底 -->
+    <div class="lg:flex lg:gap-6 lg:h-[calc(100vh-18rem)] lg:min-h-[22rem]">
 
-      <!-- 左列：按房间分组的设备列表 -->
-      <div>
+      <!-- 左列：按房间分组的设备列表。桌面端高度由父级 flex 决定（与右侧详情严格等高、随窗口变化），
+           自身成为独立滚动区：滚轮落在列表上只滚动列表，不带动页面与右侧详情（overscroll-contain 阻止滚动链） -->
+      <div class="hc-hide-bar lg:w-80 lg:shrink-0 lg:overflow-y-auto lg:overscroll-contain">
         <div v-for="room in rooms" :key="room.id" v-show="room.visible" class="mb-5">
           <!-- 房间头：点击整块折叠 -->
           <button
@@ -126,10 +127,10 @@
       <!-- 右列：选定设备详情（手机=全屏抽屉，桌面=静态面板） -->
       <div
         v-if="detail"
-        class="fixed inset-0 z-[60] lg:relative lg:inset-auto lg:z-auto lg:rounded-2xl lg:border lg:border-border lg:bg-surface-alt/60 lg:overflow-hidden lg:min-h-[55vh] lg:shadow-sm"
+        class="fixed inset-0 z-[60] lg:relative lg:inset-auto lg:z-auto lg:flex-1 lg:min-w-0 lg:rounded-2xl lg:border lg:border-border lg:bg-surface-alt/60 lg:overflow-hidden lg:shadow-sm"
       >
         <div class="absolute inset-0 bg-black/40 lg:hidden" @click="detail = null"></div>
-        <aside class="absolute top-0 right-0 h-full w-full max-w-lg sm:max-w-xl bg-background shadow-2xl flex flex-col lg:static lg:h-auto lg:w-auto lg:max-w-none lg:shadow-none">
+        <aside class="absolute top-0 right-0 h-full w-full max-w-lg sm:max-w-xl bg-background shadow-2xl flex flex-col lg:static lg:h-full lg:w-auto lg:max-w-none lg:shadow-none">
           <!-- 顶栏：手机端带返回，桌面端仅标题 -->
           <div class="shrink-0 flex items-center gap-2 px-4 py-3 border-b border-border bg-background/95 lg:bg-transparent">
             <button
@@ -157,8 +158,8 @@
             </button>
           </div>
 
-          <!-- 滚动主体 -->
-          <div class="flex-1 overflow-y-auto lg:overflow-visible">
+          <!-- 滚动主体：桌面端同样在面板内部滚动（面板高度固定，避免内容撑高整页） -->
+          <div class="hc-hide-bar flex-1 overflow-y-auto">
             <!-- 设备概览 chips -->
             <div class="px-4 py-3 border-b border-border flex flex-wrap items-center gap-2">
               <span class="font-body text-xs px-2.5 py-1 rounded-lg bg-surface-alt border border-border text-on-surface">{{ domainLabel(detail.domain) || '通用设备' }}</span>
@@ -226,8 +227,8 @@
         </aside>
       </div>
 
-      <!-- 桌面：未选中设备时的空态占位（手机端不显示） -->
-      <div v-else class="hidden lg:flex flex-col items-center justify-center rounded-2xl border border-dashed border-faint/60 bg-surface-alt/40 p-10 text-center lg:min-h-[55vh]">
+      <!-- 桌面：未选中设备时的空态占位（手机端不显示）。与左列等高，撑满右栏 -->
+      <div v-else class="hidden lg:flex lg:flex-1 lg:min-w-0 flex-col items-center justify-center rounded-2xl border border-dashed border-faint/60 bg-surface-alt/40 p-10 text-center">
         <span class="material-symbols-outlined text-5xl text-faint mb-3">devices</span>
         <p class="font-body text-muted">从左侧选择一个设备，查看其实体与实时状态</p>
       </div>
@@ -556,4 +557,12 @@ onUnmounted(() => { if (off) off(); window.removeEventListener('keydown', onEsc)
 </script>
 
 <style scoped>
+/* 独立滚动区隐藏滚动条（可见滚动条会占掉内容横向空间），滚动能力不变 */
+.hc-hide-bar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.hc-hide-bar::-webkit-scrollbar {
+  display: none;
+}
 </style>

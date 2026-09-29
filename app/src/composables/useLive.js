@@ -1,11 +1,13 @@
 // 实时实体组合式：各卡片复用，避免重复订阅逻辑。
 import { computed } from 'vue'
-import { store, backendOnline, entityStates, refreshEntities } from '@/store'
+import { store, backendOnline, entityList, refreshEntities } from '@/store'
 import { attr } from '@/utils/entities'
 
 export function useEntities() {
-  // entityStates 是 reactive 对象，WS 更新后 computed 自动重算。
-  const all = computed(() => Object.values(entityStates))
+  // 列表视图用 store 维护的 entityList（shallowRef）：只有实体集合增删时才变，
+  // 单条状态推送不会让所有遍历全表的组件重算。
+  // 需要「按实体细粒度订阅」的场景请直接读 entityStates[id]。
+  const all = computed(() => entityList.value)
   const hasData = computed(() => backendOnline.value && all.value.length > 0)
 
   // 首次进入视图时兜底拉取一次实体。返回 resolve 便于调用方 await。

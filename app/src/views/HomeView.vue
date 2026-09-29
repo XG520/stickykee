@@ -7,8 +7,9 @@
       <span class="min-w-0">{{ locMsg }}</span>
     </div>
 
-    <!-- 未配置个人 HA Token 提示 -->
-    <div v-if="!haTokenConfigured && auth.user"
+    <!-- 未配置个人 HA Token 提示：只在确实取到后端权威值（haTokenKnown）且为否时才提示，
+         否则刷新时首帧会误报 -->
+    <div v-if="haTokenKnown && !haTokenConfigured && auth.user"
       class="mb-4 flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-body bg-warning/10 border border-warning/30 text-warning animate-slide-in">
       <span class="material-symbols-outlined text-lg shrink-0">key_off</span>
       <span class="min-w-0">尚未配置你的 Home Assistant 个人 Token，HA 实体访问已禁用。请到「设置 → Home Assistant 连接 → 我的 HA Token」填写后立即生效。</span>
@@ -16,103 +17,107 @@
 
     <!-- 顶部工具条：左侧是固定宽度的「页签框」（页多了在框内左右滑动选择），右侧是操作按钮。
          非编辑态按钮感应式自动隐藏（鼠标移到本行即弹出）；页签框在有多个页时始终可见
-         （沉浸模式也保留，否则无法切页）。窄屏自动换行：页签框占满一行，按钮换行到下一行右对齐。 -->
-    <div v-if="!immersive || (loaded && pages.length > 1)"
-      class="relative z-20 mb-4 flex flex-wrap items-center gap-2"
-      @mouseenter="toolbarEnter" @mouseleave="toolbarLeave">
+         （沉浸模式也保留，否则无法切页）。桌面端整条工具条 Teleport 进顶部导航栏（TheNavBar
+         的 #hc-nav-slot）；窄屏与沉浸模式下回落到此处原地渲染，页签框占满一行、按钮换行右对齐。 -->
+    <Teleport to="#hc-nav-slot" :disabled="!teleportToNav">
+      <div v-if="!immersive || (loaded && pages.length > 1)"
+        class="relative z-20 flex flex-wrap items-center gap-2"
+        :class="teleportToNav ? '' : 'mb-4'"
+        @mouseenter="toolbarEnter" @mouseleave="toolbarLeave">
 
-      <!-- 页签区：外层不加边框/底色（只保留固定宽度与横向滚动），页签自身是胶囊样式 -->
-      <div v-if="loaded && (editing || pages.length > 1)"
-        class="flex w-full sm:w-80 shrink-0 items-center gap-1 min-w-0">
-        <div ref="tabsEl" class="hc-tabs flex flex-1 min-w-0 items-center gap-1.5 overflow-x-auto">
-          <div v-for="(p, i) in pages" :key="p.id"
-            :data-active="i === currentPageIndex ? '1' : null"
-            class="flex shrink-0 items-center gap-0.5 rounded-full border px-1 py-0.5 transition-colors"
-            :class="i === currentPageIndex ? 'bg-primary/15 border-primary/40' : 'bg-surface border-border'">
-            <input v-if="editing && renamingIndex === i" :value="p.name"
-              :ref="focusEl"
-              aria-label="页面名称"
-              name="hc-page-name"
-              autocomplete="off"
-              spellcheck="false"
-              @blur="commitRename(i, $event.target.value)"
-              @keydown.enter="$event.target.blur()"
-              @keydown.esc="renamingIndex = -1"
-              class="w-20 px-1.5 py-1 rounded-lg bg-surface border border-primary/40 text-sm text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40" />
-            <button v-else @click="switchPage(i)"
-              :aria-current="i === currentPageIndex ? 'true' : undefined"
-              class="px-2.5 py-1 rounded-full text-sm transition-colors truncate max-w-[8rem] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-              :class="i === currentPageIndex ? 'text-primary font-semibold' : 'text-muted hover:text-on-surface'"
-              :title="p.name">{{ p.name }}</button>
-            <button v-if="editing && renamingIndex !== i" @click="renamingIndex = i"
-              class="p-0.5 rounded-full text-muted hover:text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-              title="重命名" aria-label="重命名本页">
-              <span class="material-symbols-outlined text-sm" aria-hidden="true">edit</span>
-            </button>
-            <button v-if="editing" @click="movePage(i, -1)" :disabled="i === 0"
-              class="p-0.5 rounded-full text-muted hover:text-on-surface transition-colors disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-              title="左移" aria-label="本页左移">
-              <span class="material-symbols-outlined text-sm" aria-hidden="true">chevron_left</span>
-            </button>
-            <button v-if="editing" @click="movePage(i, 1)" :disabled="i === pages.length - 1"
-              class="p-0.5 rounded-full text-muted hover:text-on-surface transition-colors disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-              title="右移" aria-label="本页右移">
-              <span class="material-symbols-outlined text-sm" aria-hidden="true">chevron_right</span>
-            </button>
-            <button v-if="editing" @click="removePage(i)" :disabled="pages.length <= 1"
-              class="p-0.5 rounded-full text-muted hover:text-error transition-colors disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-              title="删除本页" aria-label="删除本页">
-              <span class="material-symbols-outlined text-sm" aria-hidden="true">close</span>
-            </button>
+        <!-- 页签区：外层不加边框/底色（只保留固定宽度与横向滚动），页签自身是胶囊样式 -->
+        <div v-if="loaded && (editing || pages.length > 1)"
+          class="flex w-full sm:w-80 shrink-0 items-center gap-1 min-w-0">
+          <div ref="tabsEl" class="hc-tabs flex flex-1 min-w-0 items-center gap-1.5 overflow-x-auto">
+            <div v-for="(p, i) in pages" :key="p.id"
+              :data-active="i === currentPageIndex ? '1' : null"
+              class="flex shrink-0 items-center gap-0.5 rounded-full border px-1 py-0.5 transition-colors"
+              :class="i === currentPageIndex ? 'bg-primary/15 border-primary/40' : 'bg-surface border-border'">
+              <input v-if="editing && renamingIndex === i" :value="p.name"
+                :ref="focusEl"
+                aria-label="页面名称"
+                name="hc-page-name"
+                autocomplete="off"
+                spellcheck="false"
+                @blur="commitRename(i, $event.target.value)"
+                @keydown.enter="$event.target.blur()"
+                @keydown.esc="renamingIndex = -1"
+                class="w-20 px-1.5 py-1 rounded-lg bg-surface border border-primary/40 text-sm text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40" />
+              <button v-else @click="switchPage(i)"
+                :aria-current="i === currentPageIndex ? 'true' : undefined"
+                class="px-2.5 py-1 rounded-full text-sm transition-colors truncate max-w-[8rem] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                :class="i === currentPageIndex ? 'text-primary font-semibold' : 'text-muted hover:text-on-surface'"
+                :title="p.name">{{ p.name }}</button>
+              <button v-if="editing && renamingIndex !== i" @click="renamingIndex = i"
+                class="p-0.5 rounded-full text-muted hover:text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                title="重命名" aria-label="重命名本页">
+                <span class="material-symbols-outlined text-sm" aria-hidden="true">edit</span>
+              </button>
+              <button v-if="editing" @click="movePage(i, -1)" :disabled="i === 0"
+                class="p-0.5 rounded-full text-muted hover:text-on-surface transition-colors disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                title="左移" aria-label="本页左移">
+                <span class="material-symbols-outlined text-sm" aria-hidden="true">chevron_left</span>
+              </button>
+              <button v-if="editing" @click="movePage(i, 1)" :disabled="i === pages.length - 1"
+                class="p-0.5 rounded-full text-muted hover:text-on-surface transition-colors disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                title="右移" aria-label="本页右移">
+                <span class="material-symbols-outlined text-sm" aria-hidden="true">chevron_right</span>
+              </button>
+              <button v-if="editing" @click="removePage(i)" :disabled="pages.length <= 1"
+                class="p-0.5 rounded-full text-muted hover:text-error transition-colors disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                title="删除本页" aria-label="删除本页">
+                <span class="material-symbols-outlined text-sm" aria-hidden="true">close</span>
+              </button>
+            </div>
           </div>
+          <button v-if="editing" @click="addPage"
+            class="shrink-0 flex items-center gap-0.5 px-1.5 py-1 rounded-full text-primary hover:bg-primary/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+            title="新增页" aria-label="新增页">
+            <span class="material-symbols-outlined text-base" aria-hidden="true">add</span>
+            <span class="hidden sm:inline text-sm">新增页</span>
+          </button>
         </div>
-        <button v-if="editing" @click="addPage"
-          class="shrink-0 flex items-center gap-0.5 px-1.5 py-1 rounded-full text-primary hover:bg-primary/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-          title="新增页" aria-label="新增页">
-          <span class="material-symbols-outlined text-base" aria-hidden="true">add</span>
-          <span class="hidden sm:inline text-sm">新增页</span>
-        </button>
-      </div>
 
-      <!-- 操作按钮：编辑态常显，非编辑态感应式自动隐藏；
-           键盘 Tab 进入本组按钮时（focus-within）强制显示，避免焦点落在不可见按钮上 -->
-      <div v-if="!immersive"
-        class="ml-auto flex flex-wrap items-center gap-2 transition-opacity duration-300"
-        :class="(editing || toolbarShow) ? 'opacity-100' : 'opacity-0 pointer-events-none focus-within:opacity-100 focus-within:pointer-events-auto'">
-        <template v-if="editing">
-          <button @click="onExport" class="px-3 py-2 rounded-lg bg-surface-alt border border-border text-muted hover:text-on-surface text-sm transition-colors flex items-center gap-1.5" title="把当前仪表盘导出为 JSON 文件">
-            <span class="material-symbols-outlined text-base" aria-hidden="true">download</span> 导出
-          </button>
-          <button @click="pickImportFile" class="px-3 py-2 rounded-lg bg-surface-alt border border-border text-muted hover:text-on-surface text-sm transition-colors flex items-center gap-1.5" title="从 JSON 文件导入仪表盘">
-            <span class="material-symbols-outlined text-base" aria-hidden="true">upload</span> 导入
-          </button>
-          <button @click="resetLayout" class="px-3 py-2 rounded-lg bg-surface-alt border border-border text-muted hover:text-on-surface text-sm transition-colors">重置</button>
-          <button @click="saveLayout" class="px-4 py-2 rounded-lg bg-primary hover:bg-primary-hover text-on-primary text-sm font-semibold transition-colors flex items-center gap-1.5">
-            <span class="material-symbols-outlined text-base" aria-hidden="true">check</span> 完成
-          </button>
-        </template>
-        <template v-else>
-          <button
-            @click="manualLocate"
-            :disabled="locating"
-            class="px-3.5 py-2 rounded-lg bg-primary/10 text-primary hover:bg-primary/15 border border-primary/25 text-sm font-semibold transition-colors flex items-center gap-1.5 disabled:opacity-60"
-            title="获取当前设备定位并同步到 Home Assistant"
-          >
-            <span v-if="locating" class="w-3.5 h-3.5 border-2 border-primary/30 border-t-primary rounded-full animate-spin" aria-hidden="true"></span>
-            <span v-else class="material-symbols-outlined text-base" aria-hidden="true">my_location</span>
-            {{ locating ? '定位中…' : '更新位置' }}
-          </button>
-          <button @click="editing = true" class="px-4 py-2 rounded-lg bg-surface-alt border border-border hover:border-primary/40 text-sm text-on-surface transition-colors flex items-center gap-1.5">
-            <span class="material-symbols-outlined text-base" aria-hidden="true">edit_square</span> 编辑仪表盘
-          </button>
-          <button @click="enterImmersive"
-            class="px-3 py-2 rounded-lg bg-surface-alt border border-border hover:border-primary/40 text-sm text-on-surface transition-colors flex items-center gap-1.5"
-            title="全屏显示：折叠导航栏、隐藏编辑按钮">
-            <span class="material-symbols-outlined text-base" aria-hidden="true">fullscreen</span> 全屏
-          </button>
-        </template>
+        <!-- 操作按钮：编辑态常显，非编辑态感应式自动隐藏；
+             键盘 Tab 进入本组按钮时（focus-within）强制显示，避免焦点落在不可见按钮上 -->
+        <div v-if="!immersive"
+          class="ml-auto flex flex-wrap items-center gap-2 transition-opacity duration-300"
+          :class="(editing || toolbarShow) ? 'opacity-100' : 'opacity-0 pointer-events-none focus-within:opacity-100 focus-within:pointer-events-auto'">
+          <template v-if="editing">
+            <button @click="onExport" class="px-3 py-2 rounded-lg bg-surface-alt border border-border text-muted hover:text-on-surface text-sm transition-colors flex items-center gap-1.5" title="把当前仪表盘导出为 JSON 文件">
+              <span class="material-symbols-outlined text-base" aria-hidden="true">download</span> 导出
+            </button>
+            <button @click="pickImportFile" class="px-3 py-2 rounded-lg bg-surface-alt border border-border text-muted hover:text-on-surface text-sm transition-colors flex items-center gap-1.5" title="从 JSON 文件导入仪表盘">
+              <span class="material-symbols-outlined text-base" aria-hidden="true">upload</span> 导入
+            </button>
+            <button @click="resetLayout" class="px-3 py-2 rounded-lg bg-surface-alt border border-border text-muted hover:text-on-surface text-sm transition-colors">重置</button>
+            <button @click="saveLayout" class="px-4 py-2 rounded-lg bg-primary hover:bg-primary-hover text-on-primary text-sm font-semibold transition-colors flex items-center gap-1.5">
+              <span class="material-symbols-outlined text-base" aria-hidden="true">check</span> 完成
+            </button>
+          </template>
+          <template v-else>
+            <button
+              @click="manualLocate"
+              :disabled="locating"
+              class="px-3.5 py-2 rounded-lg bg-primary/10 text-primary hover:bg-primary/15 border border-primary/25 text-sm font-semibold transition-colors flex items-center gap-1.5 disabled:opacity-60"
+              title="获取当前设备定位并同步到 Home Assistant"
+            >
+              <span v-if="locating" class="w-3.5 h-3.5 border-2 border-primary/30 border-t-primary rounded-full animate-spin" aria-hidden="true"></span>
+              <span v-else class="material-symbols-outlined text-base" aria-hidden="true">my_location</span>
+              {{ locating ? '定位中…' : '更新位置' }}
+            </button>
+            <button @click="editing = true" class="px-4 py-2 rounded-lg bg-surface-alt border border-border hover:border-primary/40 text-sm text-on-surface transition-colors flex items-center gap-1.5">
+              <span class="material-symbols-outlined text-base" aria-hidden="true">edit_square</span> 编辑仪表盘
+            </button>
+            <button @click="enterImmersive"
+              class="px-3 py-2 rounded-lg bg-surface-alt border border-border hover:border-primary/40 text-sm text-on-surface transition-colors flex items-center gap-1.5"
+              title="全屏显示：折叠导航栏、隐藏编辑按钮">
+              <span class="material-symbols-outlined text-base" aria-hidden="true">fullscreen</span> 全屏
+            </button>
+          </template>
+        </div>
       </div>
-    </div>
+    </Teleport>
 
     <!-- 沉浸模式由全局浮动退出按钮接管（App.vue） -->
 
@@ -211,11 +216,13 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import api from '@/api'
-import { ui, entityStates, haTokenConfigured, auth } from '@/store'
+import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, onUpdated, nextTick } from 'vue'
+import { ui, entityStates, haTokenConfigured, haTokenKnown, auth } from '@/store'
 import { useEntities } from '@/composables/useLive'
 import { useAutoHide } from '@/composables/useAutoHide'
+import { mark, count, measure as perfMeasure } from '@/utils/perf'
+import { saveKV, loadKV } from '@/utils/snapshotCache'
+import { getPrefs, putPrefs } from '@/utils/prefs'
 import { syncCurrentLocation } from '@/utils/location'
 import CodeCard from '@/components/cards/CodeCard.vue'
 import CardEditor from '@/components/cards/CardEditor.vue'
@@ -355,35 +362,65 @@ function moveCard(card, dir) {
 const isFirst = (c) => cards.value.indexOf(c) === 0
 const isLast = (c) => cards.value.indexOf(c) === cards.value.length - 1
 
+// 首页布局的本地缓存键：存与后端 dashboard 字段同格式的 JSON 字符串
+const LAYOUT_CACHE_KEY = 'dashboard-layout'
+
+// 解析并应用一份布局 JSON（后端权威值与本地缓存走同一条路径：迁移 → 应用）。
+// 返回 { migrated } 表示应用成功，null 表示结构不可用。
+function applyDashboardJson(json, mapJson) {
+  let applied = null
+  try {
+    const r = migrateDashboard(JSON.parse(json))
+    if (r && r.pages.length) {
+      pages.value = r.pages
+      currentPageIndex.value = 0
+      applied = r
+    }
+  } catch { /* 结构损坏：忽略 */ }
+  if (mapJson) {
+    try { cfg.map_config = JSON.parse(mapJson) } catch { cfg.map_config = null }
+  }
+  return applied
+}
+
+function cacheLayout(dashboardJson, mapJson) {
+  saveKV(LAYOUT_CACHE_KEY, { at: Date.now(), dashboard: dashboardJson, map_config: mapJson || '' })
+    .catch(() => { /* 配额/隐私模式：忽略 */ })
+}
+
 async function loadLayout() {
+  // 布局请求先发出去，再读本地缓存——两条线并行，缓存读取不会推迟网络请求
+  const prefsPromise = getPrefs().catch(() => null)
+  // 1) 本地缓存布局：先出画面，不等 /prefs 往返（与实体快照同一策略）。
+  //    这一步决定「网格就绪」的时刻——原先它必须等布局请求回来才开始渲染。
+  const cached = await loadKV(LAYOUT_CACHE_KEY).catch(() => null)
+  if (cached?.dashboard && !pages.value.length) {
+    if (applyDashboardJson(cached.dashboard, cached.map_config)) mark('boot:layoutCached')
+  }
+  // 2) 后端权威值：到达后覆盖（正在编辑时不覆盖，避免打断操作）
+  const res = await prefsPromise
+  const data = res?.data || {}
+  const dash = data.dashboard || ''
+  const mapJson = data.map_config || ''
   let has = false
   let migrated = false
-  try {
-    const { data } = await api.getPrefs()
-    if (data?.dashboard) {
-      try {
-        const r = migrateDashboard(JSON.parse(data.dashboard))
-        if (r && r.pages.length) {
-          pages.value = r.pages
-          currentPageIndex.value = 0
-          has = true
-          migrated = r.migrated
-        }
-      } catch { /* 用默认 */ }
-    }
-    if (data?.map_config) {
-      try { cfg.map_config = JSON.parse(data.map_config) } catch { cfg.map_config = null }
-    }
-  } catch { /* 后端离线静默 */ }
-  // 无保存布局时填充默认仪表盘；加载完成前不渲染，避免闪现
-  if (!has) { pages.value = [defaultPage()]; currentPageIndex.value = 0 }
+  if (dash && !editing.value) {
+    const r = applyDashboardJson(dash, mapJson)
+    if (r) { has = true; migrated = r.migrated }
+  }
+  // 后端没有布局且本地也没有（首次使用）：填充默认仪表盘；加载完成前不渲染，避免闪现
+  if (!has && !pages.value.length) { pages.value = [defaultPage()]; currentPageIndex.value = 0 }
   loaded.value = true
+  // 后端确有布局：落一份本地缓存，供下次打开即时绘制
+  if (has) cacheLayout(dash, mapJson)
   // 旧结构迁移后落库一次（只在确实迁移过时写，避免与「完成」保存竞争）
-  if (migrated) api.putPrefs({ dashboard: serializeDashboard(pages.value) }).catch(() => {})
+  if (migrated) putPrefs({ dashboard: serializeDashboard(pages.value) }).catch(() => {})
 }
 async function saveLayout() {
+  const json = serializeDashboard(pages.value)
   try {
-    await api.putPrefs({ dashboard: serializeDashboard(pages.value) })
+    await putPrefs({ dashboard: json })
+    cacheLayout(json)
     editing.value = false
   } catch { /* 静默 */ }
 }
@@ -499,7 +536,9 @@ async function applyImport(nextPages, nextIndex, okMsg) {
   pages.value = nextPages
   currentPageIndex.value = nextIndex
   try {
-    await api.putPrefs({ dashboard: serializeDashboard(pages.value) })
+    const json = serializeDashboard(pages.value)
+    await putPrefs({ dashboard: json })
+    cacheLayout(json)
     importInfo.value = null
     editing.value = false
     nextTick(measure)
@@ -562,9 +601,24 @@ async function enterImmersive() {
 }
 function onFsChange() { if (!document.fullscreenElement) ui.immersive = false }
 
+// 顶部工具条落位：桌面端（≥768px，与导航栏的 hidden md:flex 同断点）Teleport 进导航栏右侧槽位；
+// 窄屏时导航栏不渲染、沉浸模式下导航栏整体折叠，两种情况都回落为原地渲染，自动隐藏行为不变。
+// 初始值同步取一次，避免首帧先原地渲染再跳进导航栏。
+const isDesktop = ref(window.matchMedia('(min-width: 768px)').matches)
+let mqDesktop = null
+function onMqDesktop(e) { isDesktop.value = e.matches }
+const teleportToNav = computed(() => isDesktop.value && !ui.immersive)
+
 // 沉浸/编辑状态改变会改变网格可用高度，重新测量
 watch(() => ui.immersive, () => nextTick(measure))
 watch(() => editing.value, () => nextTick(measure))
+
+// ---- 性能基准：首屏网格就绪时刻 + 本组件重渲染次数（与卡片重渲染次数对比可看出扇出规模）----
+watch(loaded, (v) => {
+  if (!v) return
+  nextTick(() => { mark('boot:gridReady'); perfMeasure('boot:gridReady', 'boot:js') })
+})
+onUpdated(() => count('ui:homeUpdate'))
 
 // 首次进入确保实体已加载
 const { ensureLoaded } = useEntities()
@@ -576,6 +630,9 @@ onMounted(async () => {
   measure()
   window.addEventListener('resize', measure)
   document.addEventListener('fullscreenchange', onFsChange)
+  mqDesktop = window.matchMedia('(min-width: 768px)')
+  isDesktop.value = mqDesktop.matches
+  mqDesktop.addEventListener('change', onMqDesktop)
   // 自动定位：每会话一次
   if (!autoLocateRan()) {
     markAutoLocateRan()
@@ -586,6 +643,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   window.removeEventListener('resize', measure)
   document.removeEventListener('fullscreenchange', onFsChange)
+  if (mqDesktop) mqDesktop.removeEventListener('change', onMqDesktop)
 })
 </script>
 
