@@ -5,7 +5,7 @@
 import { attr, numVal, isOn, iconFor, domainGlyph, domainColorCls } from '@/utils/entities'
 import { buildControls, renderControlsHtml } from '@/utils/entityControls'
 import api from '@/api'
-import { store } from '@/store'
+import { store, registryDevices, registryLoaded, entityStates } from '@/store'
 
 // Tailwind 类 → 十六进制色值（模板内联样式与 --hc-color 使用）
 const hex = {
@@ -713,14 +713,25 @@ function dateData(now) {
 }
 
 // ================= 基础卡：设备概览（自动统计） =================
-function overviewData({ all, hasData }) {
-  if (!hasData || !all.length) {
+// 按「物理设备」统计（与设备抽屉同一数据源 registryDevices），
+// 保证卡片数字与抽屉列出的设备数量一致；在线判定读 entityStates 实时状态。
+function overviewData({ all }) {
+  const devs = registryDevices.value
+  if (!registryLoaded.value && !devs.length) {
     return { total: '—', online: '—', offline: '—', lightsOn: '—', domains: '—' }
   }
-  const total = all.length
-  const online = all.filter((e) => !['unavailable', 'unknown'].includes(String(e.state))).length
+  const total = devs.length
+  const liveState = (e) => {
+    const live = entityStates[e.entity_id]
+    return live && live.state !== undefined ? live.state : e.state
+  }
+  const online = devs.filter((d) => (d.entities || []).some((e) => {
+    if (e.disabled) return false
+    const s = String(liveState(e) || '').toLowerCase()
+    return s !== '' && s !== 'unavailable' && s !== 'unknown'
+  })).length
   const lightsOn = all.filter((e) => e.domain === 'light' && String(e.state) === 'on').length
-  const domains = new Set(all.map((e) => e.domain)).size
+  const domains = new Set(devs.map((d) => d.domain).filter(Boolean)).size
   return { total, online, offline: total - online, lightsOn, domains }
 }
 

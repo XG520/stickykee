@@ -121,24 +121,40 @@
 
     <!-- 沉浸模式由全局浮动退出按钮接管（App.vue） -->
 
-    <!-- 添加卡片（编辑态） -->
-    <div v-if="editing" class="mb-4 bg-surface-alt border border-border rounded-2xl p-4 animate-slide-in">
-      <p class="text-muted text-xs font-body uppercase tracking-wider mb-3">添加卡片</p>
-      <div v-for="g in addGroups" :key="g.name" class="mb-3">
-        <p class="text-muted text-[11px] font-body mb-1.5">{{ g.name }}</p>
-        <div class="flex flex-wrap gap-2">
-          <button
-            v-for="opt in g.items"
-            :key="opt.type"
-            @click="addCard(opt)"
-            class="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-surface border border-dashed border-border hover:border-primary/50 hover:bg-primary/5 transition-all text-sm text-on-surface"
-          >
-            <span class="material-symbols-outlined text-lg" :class="opt.colorCls">{{ opt.icon }}</span>
-            {{ opt.label }}
-            <span class="material-symbols-outlined text-base text-primary">add</span>
-          </button>
+    <!-- 添加卡片：右下角悬浮 FAB，展开为浮层面板（不占用画布纵向空间，画布始终贴合视口） -->
+    <div v-if="editing" class="fixed bottom-5 right-5 z-40">
+      <Transition name="hc-panel">
+        <div v-if="addPanel" class="absolute bottom-14 right-0 w-[20rem] max-w-[calc(100vw-2.5rem)] bg-surface-alt border border-border rounded-2xl shadow-2xl p-3">
+          <div class="flex items-center justify-between px-1 mb-2">
+            <p class="text-muted text-xs font-body uppercase tracking-wider">添加卡片</p>
+            <button @click="addPanel = false" class="p-0.5 rounded-full text-muted hover:text-on-surface transition-colors" title="收起">
+              <span class="material-symbols-outlined text-lg">close</span>
+            </button>
+          </div>
+          <div class="max-h-[55vh] overflow-y-auto -mr-1 pr-1">
+            <div v-for="g in addGroups" :key="g.name" class="mb-2.5">
+              <p class="text-muted text-[11px] font-body mb-1">{{ g.name }}</p>
+              <div class="flex flex-col gap-1">
+                <button
+                  v-for="opt in g.items"
+                  :key="opt.type"
+                  @click="addCard(opt)"
+                  class="flex items-center gap-2.5 px-2.5 py-2 rounded-xl bg-surface border border-border hover:border-primary/50 hover:bg-primary/5 transition-all text-sm text-on-surface text-left"
+                >
+                  <span class="material-symbols-outlined text-lg shrink-0" :class="opt.colorCls">{{ opt.icon }}</span>
+                  <span class="min-w-0 flex-1 truncate">{{ opt.label }}</span>
+                  <span class="material-symbols-outlined text-base text-primary shrink-0">add</span>
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
+      </Transition>
+      <button @click="addPanel = !addPanel"
+        class="flex items-center gap-1.5 px-4 pl-3.5 py-3 rounded-full bg-primary hover:bg-primary-hover text-on-primary shadow-lg shadow-primary/30 transition-all active:scale-95">
+        <span class="material-symbols-outlined" :class="addPanel ? 'arrow_downward' : 'add'">add</span>
+        <span class="text-sm font-semibold">{{ addPanel ? '收起' : '添加卡片' }}</span>
+      </button>
     </div>
 
     <!-- 网格仪表盘：卡片从左向右排列，放不下的自动换到下一行；贴合视口不滚动
@@ -172,7 +188,7 @@
 
         <!-- 卡片实际内容：基准尺寸渲染 + zoom 等比缩放（窗口缩放不影响内部布局/换行） -->
         <div class="hc-card-zoom" :style="zoomStyle(card)">
-          <CodeCard :card="card" :scope-id="'card-' + card.uid" />
+          <CodeCard :card="card" :scope-id="'card-' + card.uid" @device-drawer="openDevices" />
         </div>
       </div>
     </div>
@@ -186,6 +202,9 @@
       @close="editorOpen = false"
       @save="onEditorSave"
     />
+
+    <!-- 设备概览抽屉：Overview 卡片点击触发 -->
+    <DeviceDrawer :open="devicesOpen" @close="devicesOpen = false" />
 
     <!-- 导入文件选择 -->
     <input ref="fileEl" type="file" accept="application/json,.json" class="hidden" @change="onImportFile" />
@@ -226,6 +245,7 @@ import { getPrefs, putPrefs } from '@/utils/prefs'
 import { syncCurrentLocation } from '@/utils/location'
 import CodeCard from '@/components/cards/CodeCard.vue'
 import CardEditor from '@/components/cards/CardEditor.vue'
+import DeviceDrawer from '@/components/DeviceDrawer.vue'
 import { cardDefaults } from '@/components/cards/defaults'
 import { newCard, newPage, migrateDashboard, serializeDashboard, downloadDashboard, parseImportPayload } from '@/utils/dashboard'
 
@@ -241,6 +261,11 @@ const currentPageIndex = ref(0)
 const cards = computed(() => pages.value[currentPageIndex.value]?.cards ?? [])
 const loaded = ref(false)
 const editing = ref(false)
+// 添加卡片悬浮面板开关：默认收起为右下角 FAB，展开为浮层面板（不占用画布纵向空间）
+const addPanel = ref(false)
+// 设备概览抽屉：Overview 卡片点击触发
+const devicesOpen = ref(false)
+function openDevices() { devicesOpen.value = true }
 // 折叠工具栏：初始隐藏（折叠在导航栏下方），鼠标移到该行自动弹出，移开 3 秒后收起
 const { visible: toolbarShow, enter: toolbarEnter, leave: toolbarLeave } = useAutoHide(3000, false)
 // 页签框内的横向滚动容器：切页后把当前页 chip 滚进可视区
@@ -611,7 +636,7 @@ const teleportToNav = computed(() => isDesktop.value && !ui.immersive)
 
 // 沉浸/编辑状态改变会改变网格可用高度，重新测量
 watch(() => ui.immersive, () => nextTick(measure))
-watch(() => editing.value, () => nextTick(measure))
+watch(() => editing.value, () => { if (!editing.value) addPanel.value = false; nextTick(measure) })
 
 // ---- 性能基准：首屏网格就绪时刻 + 本组件重渲染次数（与卡片重渲染次数对比可看出扇出规模）----
 watch(loaded, (v) => {
@@ -676,4 +701,8 @@ onBeforeUnmount(() => {
   flex: none;
   transform-origin: top left;
 }
+/* 添加卡片悬浮面板展开/收起动画 */
+.hc-panel-enter-active { transition: opacity .16s ease, transform .16s cubic-bezier(.2,.8,.2,1); }
+.hc-panel-leave-active { transition: opacity .12s ease, transform .12s ease; }
+.hc-panel-enter-from, .hc-panel-leave-to { opacity: 0; transform: translateY(6px) scale(.98); }
 </style>

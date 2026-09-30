@@ -630,10 +630,11 @@ export function tplDate() {
 
 // ================= 30. 基础设备概览卡片（自动统计） =================
 export function tplOverview() {
-  const html = `<div class="hc">
+  const html = `<div class="hc" data-hc="device-drawer" title="点击查看设备并控制">
   <div class="h-head">
     <span class="h-ic material-symbols-outlined" style="color:var(--hc-success)">{{glyph}}</span>
     <span class="h-t">设备概览</span>
+    <span class="h-go material-symbols-outlined">chevron_right</span>
   </div>
   <div class="h-fill h-mid" style="gap:5px">
     <div class="o-cell"><b>{{total}}</b><i>设备总数</i></div>
@@ -643,10 +644,12 @@ export function tplOverview() {
     <div class="o-cell"><b style="color:var(--hc-info)">{{domains}}</b><i>类型</i></div>
   </div>
 </div>`
-  const css = `.hc{flex:1;min-height:0;display:flex;flex-direction:column;gap:5px;overflow:hidden;padding:8px}
+  const css = `.hc{flex:1;min-height:0;display:flex;flex-direction:column;gap:5px;overflow:hidden;padding:8px;cursor:pointer;transition:background .15s ease}
+.hc:hover{background:var(--hc-bg2)}
 .h-head{display:flex;align-items:center;gap:4px}
 .h-ic{font-size:12px}
 .h-t{font-size:10px;font-weight:600;color:var(--hc-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
+.h-go{font-size:12px;color:var(--hc-sub);opacity:.6}
 .h-fill{flex:1;min-height:0}
 .h-mid{display:flex;align-items:center;justify-content:center}
 .o-cell{flex:1;min-width:0;text-align:center;background:var(--hc-bg2);border:1px solid var(--hc-border);border-radius:8px;padding:5px 0 4px}

@@ -75,7 +75,7 @@
             >
               <div class="flex items-start gap-3">
                 <div class="relative w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-                  :class="d.active_count > 0 ? iconBox(d) : 'bg-faint border border-border'">
+                  :class="d.active_count > 0 ? iconBox(d) : 'bg-faint/15 border border-border'">
                   <span class="material-symbols-outlined text-xl" :class="d.active_count > 0 ? iconColor(d) : 'text-faint'">{{ deviceGlyph(d) }}</span>
                   <span
                     class="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full ring-2 ring-background"
@@ -109,7 +109,7 @@
           </div>
           <div v-show="showUnassigned" class="bg-surface-alt border rounded-xl divide-y divide-border/60 overflow-hidden">
             <div v-for="e in visibleUnassigned" :key="e.entity_id" class="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-surface transition-colors" @click="openEntityQuick(e)">
-              <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-faint border border-border">
+              <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-faint/15 border border-border">
                 <span class="material-symbols-outlined text-base text-faint">{{ glyph(e.domain) }}</span>
               </div>
               <div class="flex-1 min-w-0">
@@ -142,7 +142,7 @@
             </button>
             <div class="flex items-center gap-2.5 flex-1 min-w-0">
               <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-                :class="detail.active_count > 0 ? iconBox(detail) : 'bg-faint border border-border'">
+                :class="detail.active_count > 0 ? iconBox(detail) : 'bg-faint/15 border border-border'">
                 <span class="material-symbols-outlined text-xl" :class="detail.active_count > 0 ? iconColor(detail) : 'text-faint'">{{ deviceGlyph(detail) }}</span>
               </div>
               <div class="min-w-0">
@@ -183,12 +183,12 @@
                 v-for="e in visibleEntities"
                 :key="e.entity_id"
                 class="flex items-center gap-3 bg-surface-alt border rounded-xl p-3 min-w-0 transition-colors duration-200 cursor-pointer hover:border-primary/60"
-                :class="isOn(e.state) ? 'border-primary/40' : 'border-border'"
+                :class="isOn(e) ? 'border-primary/40' : 'border-border'"
                 @click="openMore(e)"
               >
                 <div class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
-                  :class="isOn(e.state) ? iconBox(detail) : 'bg-faint border border-border'">
-                  <span class="material-symbols-outlined text-xl" :class="isOn(e.state) ? iconColor(detail) : 'text-faint'">{{ glyph(e.domain) || 'widgets' }}</span>
+                  :class="isOn(e) ? iconBox(detail) : 'bg-faint/15 border border-border'">
+                  <span class="material-symbols-outlined text-xl" :class="isOn(e) ? iconColor(detail) : 'text-faint'">{{ glyph(e.domain) || 'widgets' }}</span>
                 </div>
                 <div class="flex-1 min-w-0">
                   <div class="flex items-center gap-1.5 min-w-0">
@@ -198,19 +198,19 @@
                   <span class="block font-body text-[11px] text-muted truncate">{{ e.entity_id }}</span>
                 </div>
                 <div class="shrink-0 flex items-center gap-1 pl-1">
-                  <span v-if="sensorValue(e)" class="font-body text-sm font-semibold whitespace-nowrap" :class="isOn(e.state) ? iconColor(detail) : 'text-on-surface'">{{ sensorValue(e) }}</span>
+                  <span v-if="sensorValue(e)" class="font-body text-sm font-semibold whitespace-nowrap" :class="isOn(e) ? iconColor(detail) : 'text-on-surface'">{{ sensorValue(e) }}</span>
                   <button
                     v-if="canToggle(e) && !e.disabled"
                     class="relative w-10 h-6 rounded-full shrink-0 cursor-pointer transition-colors duration-200"
-                    :class="isOn(e.state) ? accentToggle(detail) : 'bg-faint'"
+                    :class="isOn(e) ? accentToggle(detail) : 'bg-faint'"
                     @click.stop="onToggleEntity(e)"
                   >
                     <span
                       class="absolute top-1 left-1 w-4 h-4 rounded-full bg-on-primary shadow transition-transform duration-200"
-                      :class="isOn(e.state) ? 'translate-x-4' : ''"
+                      :class="isOn(e) ? 'translate-x-4' : ''"
                     ></span>
                   </button>
-                  <span v-if="canToggle(e)" class="font-body text-[11px] font-medium shrink-0" :class="isOn(e.state) ? iconColor(detail) : 'text-faint'">{{ isOn(e.state) ? '开' : '关' }}</span>
+                  <span v-if="canToggle(e)" class="font-body text-[11px] font-medium shrink-0" :class="isOn(e) ? iconColor(detail) : 'text-faint'">{{ isOn(e) ? '开' : '关' }}</span>
                   <button
                     v-if="hasMore(e) && !e.disabled"
                     class="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-muted hover:text-primary hover:bg-primary/10 transition-colors"
@@ -317,9 +317,10 @@ function glyph(domain) { return domainGlyph[domain] || 'widgets' }
 function deviceGlyph(d) { return iconFor({ icon: d && d.main_icon }, glyph(d && d.domain)) }
 // 设备在线：至少一个实体可用（不是 unavailable/unknown），与 HA 的可用性语义一致。
 // 不能用 active_count（"开启"的实体数）——传感器等领域永远不会是 on，全关的灯其实也在线。
+// liveEntityOf 使在线计数随 WS 实时状态联动（toggle 后设备绿点/房间计数即时更新）。
 function deviceOnline(d) {
   if (!d || d.disabled) return false
-  return (d.entities || []).some(isAvailable)
+  return (d.entities || []).some((e) => isAvailable(liveEntityOf(e)))
 }
 function domainFilterMatch(d) {
   if (filter.value === 'all') return true
@@ -367,8 +368,9 @@ const visibleUnassigned = computed(() => {
 
 const visibleEntities = computed(() => {
   // 抽屉内实体列表展示设备下全部实体，不受页面搜索框关键字影响（页面关键字只筛外层卡片）。
+  // 用 liveEntityOf 取全局 entityStates 的实时状态（WS 通道保持最新），使 toggle 后按钮/开关即时联动。
   if (!detail.value) return []
-  return detail.value.entities || []
+  return (detail.value.entities || []).map(liveEntityOf)
 })
 
 const onDeviceCount = computed(() => devices.value.filter(deviceOnline).length)
@@ -484,15 +486,22 @@ function openDetail(d) {
 }
 
 function openEntityQuick(e) {
-  const stub = { device: {}, display_name: e.friendly_name || e.entity_id, domain: e.domain, area_name: '', active_count: isOn(e.state) ? 1 : 0, entity_count: 1, entities: [e] }
+  const stub = { device: {}, display_name: e.friendly_name || e.entity_id, domain: e.domain, area_name: '', active_count: isOn(e) ? 1 : 0, entity_count: 1, entities: [e] }
   detail.value = stub
 }
 
 function onToggleEntity(e) {
-  const prev = e.state
-  const optimistic = isOn(e.state) ? 'off' : 'on'
-  e.state = optimistic
-  api.toggle(store.activeID, e.entity_id).catch(() => { e.state = prev })
+  // 乐观更新：直接写全局 entityStates 的实时字段，visibleEntities 经 liveEntityOf 合并后即时联动。
+  // 若实体尚未被 WS 收录，就地补一条实时记录，否则乐观翻转会静默丢失（UI 不刷新）。
+  const live = entityStates[e.entity_id]
+  const prev = live ? live.state : e.state
+  const optimistic = isOn(e) ? 'off' : 'on'
+  if (live) live.state = optimistic
+  else entityStates[e.entity_id] = { ...e, state: optimistic, domain: e.domain }
+  // 强制触发 visibleEntities 重算：实体可能尚未被 WS 收录，新增 entityStates key 的依赖追踪
+  // 不一定可靠，替换 detail 引用可保证 computed 即时读取到乐观状态。
+  if (detail.value) detail.value = { ...detail.value }
+  api.toggle(store.activeID, e.entity_id).catch(() => { if (live) live.state = prev; else entityStates[e.entity_id].state = prev })
 }
 
 // 加载注册表。重连/瞬时错误时自动重试（后端心跳会重建停滞的 HA 连接）。

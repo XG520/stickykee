@@ -27,6 +27,7 @@ const props = defineProps({
   // interactive=false 时屏蔽所有 HA 交互（设计模式下点击/拖动只用于编辑，不触发服务调用）
   interactive: { type: Boolean, default: true },
 })
+const emit = defineEmits(['device-drawer'])
 
 const { all, hasData } = useEntities()
 const root = ref(null)
@@ -238,6 +239,8 @@ function onClick(e) {
     doSvc(el)
   } else if (hc === 'link') {
     router.push(el.dataset.href || '/')
+  } else if (hc === 'device-drawer') {
+    emit('device-drawer')
   }
 }
 

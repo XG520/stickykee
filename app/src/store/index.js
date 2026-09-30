@@ -108,6 +108,39 @@ export const entityList = shallowRef([])
 const watchers = new Set()
 export function onEntityChange(fn) { watchers.add(fn); return () => watchers.delete(fn) }
 
+// ---- 设备注册表共享缓存 ----
+// 概览卡片与设备抽屉共用同一份数据源，保证「卡片显示的设备数量」与
+// 「抽屉列出的设备」口径一致（按物理设备统计，而非按实体）。
+export const registryDevices = shallowRef([])
+export const registryUnassigned = shallowRef([])
+export const registryLoaded = ref(false)
+let registryPromise = null
+let registryAt = 0
+const REGISTRY_TTL = 60000
+
+// 拉取设备注册表（60s TTL 复用；并发调用合并为一次请求）。
+export function loadRegistry(force = false) {
+  if (!store.ready || store.activeID <= 0) return Promise.resolve([])
+  if (registryPromise) return registryPromise
+  if (!force && registryLoaded.value && Date.now() - registryAt < REGISTRY_TTL) return Promise.resolve(registryDevices.value)
+  registryPromise = (async () => {
+    try {
+      const { data } = await api.registryDevices(store.activeID)
+      registryDevices.value = data?.devices || []
+      registryUnassigned.value = data?.unassigned || []
+      registryLoaded.value = true
+      registryAt = Date.now()
+      return registryDevices.value
+    } catch {
+      registryLoaded.value = false
+      return registryDevices.value
+    } finally {
+      registryPromise = null
+    }
+  })()
+  return registryPromise
+}
+
 // 单次写入的分片阈值。缓存回填/首帧快照可能一次上千实体，实测单帧耗时峰值 14.4ms，
 // 会在启动瞬间占满主线程掉帧（移动端更明显）。超过阈值就拆片、块间让出主线程。
 // 小批次仍同步写入，不牺牲实时性。
@@ -241,6 +274,11 @@ function persistSoon(force = false) {
 function dropEntityStates() {
   for (const id of Object.keys(entityStates)) delete entityStates[id]
   entityList.value = []
+  // 注册表缓存同属旧实例：一并清空，避免切换后展示错实例设备
+  registryDevices.value = []
+  registryUnassigned.value = []
+  registryLoaded.value = false
+  registryAt = 0
 }
 
 // 操作设备（开关/服务/滑条）后的兜底刷新：WS 推送是主通道，
