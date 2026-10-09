@@ -213,12 +213,12 @@ func (r *Realtime) run(ctx context.Context) error {
 		}
 	}
 
-	// HA 系统通知：2022.3 起 persistent_notification 不再是实体，只能经 WS API
-	// 获取（拉取 + 订阅更新事件）。旧版 HA 无此命令，失败静默降级——旧版通知
-	// 本身以实体形式出现在 get_states 里，无需合成。
-	r.refreshNotifications(ctx)
+	// HA 系统通知：专用订阅命令 persistent_notification/subscribe（HA 2022.3 起
+	// 通知不再是实体，这是唯一获取途径）。响应成功后 HA 立即推送一次 current
+	// 全量，之后每次变更推送全量通知 dict（handleEvent 的 notifications 分支消费）。
+	// 旧版 HA 无此命令，失败静默降级——旧版通知本身以实体形式出现在 get_states 里。
 	opCtxN, opCancelN := context.WithTimeout(ctx, connectOp)
-	_, err = r.call(opCtxN, "subscribe_events", map[string]any{"event_type": "persistent_notifications_updated"})
+	_, err = r.call(opCtxN, "persistent_notification/subscribe", nil)
 	opCancelN()
 	if err != nil && r.log != nil {
 		r.log.Warn("persistent notification subscription unsupported", "instance", r.cfg.InstanceID, "err", err)
@@ -351,10 +351,13 @@ func (r *Realtime) handleEvent(ev map[string]any) {
 		}
 		return
 	}
-	// HA 系统通知更新：重新拉取全量。不能在读取 goroutine 里同步 call——
-	// 响应由本 goroutine 投递，会死锁；丢给独立 goroutine 执行。
-	if eventType == "persistent_notifications_updated" {
-		go r.refreshNotifications(context.Background())
+	// persistent_notification/subscribe 推送：载荷形如
+	// {"type":"current|added|removed|updated","notifications":{<id>: {...}, ...}}，
+	// notifications 恒为当前全量，直接全量替换合成实体。
+	if notifs, ok := ev["notifications"].(map[string]any); ok {
+		if raw, err := json.Marshal(notifs); err == nil {
+			r.store.SetNotifications(notificationEntities(raw))
+		}
 		return
 	}
 	// Browser_mod 风格命令：data 即 event_data，含 device_id / command / data。
@@ -380,18 +383,6 @@ func (r *Realtime) handleEvent(ev map[string]any) {
 		}
 		return
 	}
-}
-
-// refreshNotifications 拉取 HA 系统通知全量并注入 StateStore（合成为实体）。
-// HA 无此命令（旧版）或权限不足时静默跳过。
-func (r *Realtime) refreshNotifications(ctx context.Context) {
-	cctx, cancel := context.WithTimeout(ctx, connectOp)
-	res, err := r.call(cctx, "persistent_notifications/get", nil)
-	cancel()
-	if err != nil {
-		return
-	}
-	r.store.SetNotifications(notificationEntities(res.Result))
 }
 
 // notificationEntities 把 HA 通知 map（{notification_id: {title, message, ...}}）

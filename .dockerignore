@@ -1,0 +1,11 @@
+.git
+**/node_modules
+**/dist
+**/.trae*
+server/data
+*.db
+*.db-wal
+*.db-shm
+apk
+Dockerfile
+.dockerignore

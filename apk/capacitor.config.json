@@ -1,0 +1,8 @@
+{
+  "appId": "cn.stickynuo.app",
+  "appName": "归栖",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "http"
+  }
+}

@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>归栖</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(165deg, #0e0f12 0%, #131418 60%, #17130e 100%);
+    color: #e7e5e1; font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    padding: 24px; -webkit-tap-highlight-color: transparent;
+  }
+  .card { width: 100%; max-width: 360px; text-align: center; }
+  .logo {
+    width: 72px; height: 72px; margin: 0 auto 14px; border-radius: 22px;
+    background: linear-gradient(145deg, #2a2c33, #1b1d22);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 34px; box-shadow: 0 8px 28px rgb(0 0 0 / .45), inset 0 1px 0 rgb(255 255 255 / .06);
+  }
+  h1 { font-size: 22px; font-weight: 700; letter-spacing: .5px; }
+  .sub { margin: 6px 0 26px; font-size: 13px; color: #8b8a86; }
+  label { display: block; text-align: left; font-size: 12px; color: #8b8a86; margin: 0 0 6px 2px; }
+  input {
+    width: 100%; padding: 13px 14px; font-size: 15px; border-radius: 12px;
+    border: 1px solid #2e3038; background: #17181c; color: #e7e5e1; outline: none;
+  }
+  input:focus { border-color: #5a7dff; box-shadow: 0 0 0 3px rgb(90 125 255 / .18); }
+  button {
+    width: 100%; margin-top: 14px; padding: 13px; font-size: 15px; font-weight: 600;
+    border: 0; border-radius: 12px; background: #4a6cf7; color: #fff; cursor: pointer;
+  }
+  button:disabled { opacity: .55; }
+  .msg { min-height: 34px; margin-top: 12px; font-size: 13px; color: #e5484d; word-break: break-all; }
+  .msg.ok { color: #46a758; }
+  .hint { margin-top: 18px; font-size: 11.5px; color: #63625e; line-height: 1.6; }
+  .spin {
+    display: inline-block; width: 15px; height: 15px; margin-right: 6px; vertical-align: -2px;
+    border: 2px solid rgb(255 255 255 / .25); border-top-color: #fff; border-radius: 50%;
+    animation: r .8s linear infinite;
+  }
+  @keyframes r { to { transform: rotate(360deg); } }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">🏠</div>
+    <h1>归栖</h1>
+    <p class="sub">Sticky Nuo · 智能家居画布</p>
+
+    <div id="connecting">
+      <p class="msg ok"><span class="spin"></span>正在连接服务器…</p>
+    </div>
+
+    <div id="form" class="hidden">
+      <label for="url">后端服务器地址</label>
+      <input id="url" type="url" inputmode="url" autocapitalize="off" autocomplete="off"
+             spellcheck="false" placeholder="例如 http://192.168.1.100:8080" />
+      <button id="go">连 接</button>
+      <p class="msg" id="msg"></p>
+      <p class="hint">填写部署归栖后端的地址（含端口），<br>手机需与服务器处于同一局域网。</p>
+    </div>
+  </div>
+
+<script>
+(function () {
+  var KEY = 'sn_server_url';
+  var $connecting = document.getElementById('connecting');
+  var $form = document.getElementById('form');
+  var $url = document.getElementById('url');
+  var $go = document.getElementById('go');
+  var $msg = document.getElementById('msg');
+
+  function norm(u) {
+    u = (u || '').trim().replace(/\/+$/, '');
+    if (u && !/^https?:\/\//i.test(u)) u = 'http://' + u;
+    return u;
+  }
+
+  function showForm(prev, msg) {
+    $connecting.classList.add('hidden');
+    $form.classList.remove('hidden');
+    $url.value = prev || '';
+    if (msg) { $msg.textContent = msg; $msg.className = 'msg'; }
+  }
+
+  function showMsg(text, ok) {
+    $msg.textContent = text;
+    $msg.className = 'msg' + (ok ? ' ok' : '');
+  }
+
+  // 探测：no-cors 模式——能收到任何 HTTP 响应即视为服务器可达
+  // （壳页为 http origin，无混合内容限制；响应内容不可读，无需 CORS 头）
+  function probe(u) {
+    return new Promise(function (resolve) {
+      var done = false;
+      var ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+      var timer = setTimeout(function () {
+        if (!done) { done = true; resolve(false); }
+        if (ctrl) ctrl.abort();
+      }, 3500);
+      fetch(u + '/healthz', { mode: 'no-cors', cache: 'no-store', signal: ctrl ? ctrl.signal : undefined })
+        .then(function () { if (!done) { done = true; clearTimeout(timer); resolve(true); } })
+        .catch(function () { if (!done) { done = true; clearTimeout(timer); resolve(false); } });
+    });
+  }
+
+  async function connect(u) {
+    if (!u) { showForm($url.value, '请填写服务器地址'); return; }
+    if (!/^https?:\/\/.+/.test(u)) { showForm($url.value, '地址需以 http:// 或 https:// 开头'); return; }
+    $go.disabled = true;
+    showMsg('正在探测服务器…');
+    var ok = await probe(u);
+    $go.disabled = false;
+    if (!ok) { showMsg('无法连接到 ' + u + '，请检查地址与网络'); return; }
+    try { localStorage.setItem(KEY, u); } catch (e) {}
+    showMsg('连接成功，正在进入…', true);
+    // replace 避免返回键回到本页形成回跳循环
+    setTimeout(function () { location.replace(u + '/'); }, 350);
+  }
+
+  $go.addEventListener('click', function () { connect(norm($url.value)); });
+  $url.addEventListener('keydown', function (e) { if (e.key === 'Enter') connect(norm($url.value)); });
+
+  var saved = '';
+  try { saved = norm(localStorage.getItem(KEY)); } catch (e) {}
+  if (saved) {
+    probe(saved).then(function (ok) {
+      if (ok) {
+        // replace 避免返回键回到本页形成回跳循环
+        location.replace(saved + '/');
+      } else {
+        showForm(saved, '上次的服务器 ' + saved + ' 无法连接，可修改后重试');
+      }
+    });
+  } else {
+    showForm('', '');
+  }
+})();
+</script>
+</body>
+</html>

@@ -20,5 +20,7 @@ export default defineConfig({
       },
     },
   },
-  base: './',
+  // 绝对根路径：后端在根路径托管 dist（Docker 同源）；'./' 相对基址在
+  // history 深层路由（如 /instances/1）刷新时会把资源错误解析到子路径导致白屏。
+  base: '/',
 })

@@ -1,0 +1,17 @@
+{
+  "name": "stickynuo-apk",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "cap:sync": "cap sync android",
+    "cap:apk": "cd android && gradlew.bat assembleDebug",
+    "cap:open": "cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/core": "^6.2.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.2.0"
+  }
+}
