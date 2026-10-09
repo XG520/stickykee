@@ -3,6 +3,7 @@
   "appName": "归栖",
   "webDir": "www",
   "server": {
-    "androidScheme": "http"
+    "androidScheme": "http",
+    "allowNavigation": ["*"]
   }
 }
