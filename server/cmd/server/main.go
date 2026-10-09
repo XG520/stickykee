@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -49,12 +50,14 @@ func main() {
 	}
 
 	manager := ha.NewManager(repo, uprefs, hb, slog.Default(), cfg.TLSInsecure)
+	// 聊天图片与数据库同级存放：<data>/uploads/im/
+	uploadDir := filepath.Join(filepath.Dir(cfg.DBPath), "uploads")
 	handler := api.Router(repo, urepo, uprefs, mrepo, hb, manager, auth.Option{
 		Authenticate: func(token string) (auth.Identity, bool) {
 			u, isAdmin, ok := urepo.IdentityByToken(context.Background(), token)
 			return auth.Identity{Username: u, IsAdmin: isAdmin}, ok
 		},
-	})
+	}, uploadDir)
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,

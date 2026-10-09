@@ -59,17 +59,42 @@ let watcherActive = false
 
 // 全局兜底：监听 body 子树变化，把新出现/重建的字体图标也替换为后端 SVG，
 // 并移除对打包字体文件的依赖（避免字体未加载时图标退化成英文文本）。
+// 性能要点：
+//  1. 跳过 [data-hc-self] 子树——卡片（CodeCard）自管理图标替换，多卡场景下
+//     每次实体刷新都会重建卡片 DOM，若全局兜底再逐卡重扫，代价为 O(卡片数²)/批；
+//  2. rAF 合并同一帧内的多次变更，只按根节点去重扫描一次。
 export function initIconWatcher() {
   if (watcherActive) return
   watcherActive = true
   loadIconList().then(() => {
     replaceIconsIn(document.body)
+    let scheduled = false
+    const targets = new Set()
+    const inCard = (n) => {
+      const el = n && n.nodeType === 1 ? n : n && n.parentElement
+      return !!(el && el.closest && el.closest('[data-hc-self]'))
+    }
+    const flush = () => {
+      scheduled = false
+      for (const t of targets) replaceIconsIn(t)
+      targets.clear()
+    }
     new MutationObserver((muts) => {
       for (const m of muts) {
-        replaceIconsIn(m.target)
+        if (inCard(m.target)) continue
+        let added = false
         for (const n of m.addedNodes) {
-          if (n.nodeType === 1) replaceIconsIn(n)
+          if (n.nodeType === 1 && !inCard(n)) { targets.add(n); added = true }
         }
+        // 没有元素级新增时（如纯文本/属性变更），退回扫描变更目标本身
+        if (!added && !inCard(m.target)) {
+          const el = m.target.nodeType === 1 ? m.target : m.target.parentElement
+          if (el) targets.add(el)
+        }
+      }
+      if (targets.size && !scheduled) {
+        scheduled = true
+        requestAnimationFrame(flush)
       }
     }).observe(document.body, { childList: true, subtree: true })
   })

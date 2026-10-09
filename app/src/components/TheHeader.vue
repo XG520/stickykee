@@ -21,14 +21,18 @@
           class="w-9 h-9 rounded-full bg-surface-alt border border-border flex items-center justify-center hover:bg-surface-hover transition-colors duration-200">
           <span class="material-symbols-outlined text-on-surface text-base">{{ isFullscreen ? 'fullscreen_exit' : 'fullscreen' }}</span>
         </button>
-        <button @click="toggleIm" title="消息中心"
+        <button @click="notifyOpen = !notifyOpen" title="系统通知（Home Assistant 原生通知）"
           class="relative w-9 h-9 rounded-full bg-surface-alt border border-border flex items-center justify-center hover:bg-surface-hover transition-colors duration-200">
           <span class="material-symbols-outlined text-on-surface text-base">notifications</span>
-          <span v-if="imUnread > 0" class="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-error text-background text-[10px] font-semibold flex items-center justify-center">{{ imUnread > 99 ? '99+' : imUnread }}</span>
+          <span v-if="notifyCount > 0"
+            class="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-error text-background text-[10px] font-semibold flex items-center justify-center">{{ notifyCount > 9 ? '9+' : notifyCount }}</span>
         </button>
-        <div class="w-9 h-9 rounded-full bg-primary/20 border border-primary/40 flex items-center justify-center">
+        <button @click="toggleIm" title="聊天与共享（消息中心）"
+          class="relative w-9 h-9 rounded-full bg-primary/20 border border-primary/40 flex items-center justify-center hover:bg-primary/30 transition-colors duration-200">
           <span class="material-symbols-outlined text-primary text-sm">person</span>
-        </div>
+          <span v-if="imUnread > 0"
+            class="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-error text-background text-[10px] font-semibold flex items-center justify-center">{{ imUnread > 99 ? '99+' : imUnread }}</span>
+        </button>
         <button @click="logout" title="退出登录"
           class="w-9 h-9 rounded-full bg-surface-alt border border-border flex items-center justify-center hover:bg-error/10 hover:text-error text-on-surface transition-colors duration-200">
           <span class="material-symbols-outlined text-base">logout</span>
@@ -37,14 +41,22 @@
     </div>
   </header>
   <MessageCenter />
+  <HANotifyCenter :open="notifyOpen" @close="notifyOpen = false" />
 </template>
 
 <script setup>
-import { auth, authLogout, imUnread, toggleIm } from '@/store'
+import { ref, computed } from 'vue'
+import { auth, authLogout, imUnread, toggleIm, entityList } from '@/store'
 import { useFullscreen } from '@/composables/useFullscreen'
 import MessageCenter from './MessageCenter.vue'
+import HANotifyCenter from './HANotifyCenter.vue'
 
 const { isFullscreen, toggle: toggleFullscreen } = useFullscreen()
+
+// 系统通知面板开关 + 角标计数（persistent_notification 实体数）
+const notifyOpen = ref(false)
+const notifyCount = computed(() =>
+  entityList.value.filter((e) => e && e.domain === 'persistent_notification').length)
 
 let redirecting = false
 async function logout() {

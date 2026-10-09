@@ -573,41 +573,293 @@ function imageData(entity, hasData) {
   return { ...b, imageUrl: st.startsWith('/api/') ? api.pictureUrl(store.activeID, entity.entity_id) : '' }
 }
 
-function genericData(entities, hasData) {
+// ================= 设备类型设计系统 =================
+// 每种设备类型有专属：大图标 / 主题色 / 类型标签。卡片视觉随类型变化。
+const DEVICE_KIND = {
+  climate: { icon: 'thermostat', color: '#6BAED9', label: '空调温控' },
+  lock: { icon: 'lock', color: '#7CC98C', label: '智能门锁' },
+  alarm_control_panel: { icon: 'shield', color: '#7CC98C', label: '安防报警' },
+  media_player: { icon: 'smart_display', color: '#8E92E8', label: '影音娱乐' },
+  vacuum: { icon: 'vacuum', color: '#5EC4B0', label: '扫地机器人' },
+  lawn_mower: { icon: 'grass', color: '#7CC98C', label: '割草机器人' },
+  cover: { icon: 'curtains', color: '#AC8FE0', label: '窗帘遮阳' },
+  fan: { icon: 'air', color: '#6BC5D9', label: '风扇' },
+  humidifier: { icon: 'humidity_low', color: '#6BC5D9', label: '加湿除湿' },
+  light: { icon: 'lightbulb', color: '#F5B04C', label: '照明灯光' },
+  switch: { icon: 'toggle_on', color: '#E8A84C', label: '智能开关' },
+  plug: { icon: 'outlet', color: '#E8A84C', label: '智能插座' },
+  valve: { icon: 'water_drop', color: '#6BAED9', label: '智能水阀' },
+  siren: { icon: 'campaign', color: '#E88C7C', label: '声光报警' },
+  sensor: { icon: 'sensors', color: '#7CC98C', label: '环境监测' },
+  binary_sensor: { icon: 'sensor_check', color: '#7CC98C', label: '状态监测' },
+  input_boolean: { icon: 'toggle_on', color: '#8E92E8', label: '辅助开关' },
+  select: { icon: 'tune', color: '#8E92E8', label: '下拉选项' },
+  button: { icon: 'touch_app', color: '#E8A84C', label: '一键按钮' },
+  input_button: { icon: 'touch_app', color: '#E8A84C', label: '一键按钮' },
+  script: { icon: 'code', color: '#8E92E8', label: '脚本' },
+  scene: { icon: 'auto_awesome', color: '#AC8FE0', label: '场景模式' },
+}
+// 主实体域优先级：设备的核心控制实体排在最前（决定卡片主状态区展示什么）
+const HERO_PRIORITY = ['climate', 'lock', 'alarm_control_panel', 'media_player', 'vacuum', 'lawn_mower',
+  'cover', 'fan', 'humidifier', 'light', 'siren', 'switch', 'plug', 'valve', 'input_boolean',
+  'script', 'scene', 'button', 'input_button', 'select', 'sensor', 'binary_sensor']
+
+function hexRgb(h) {
+  const s = String(h).replace('#', '')
+  const full = s.length === 3 ? s.split('').map((c) => c + c).join('') : s
+  const n = parseInt(full, 16)
+  return `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`
+}
+function pickHeroEntity(list) {
+  for (const dom of HERO_PRIORITY) {
+    const e = list.find((x) => x.domain === dom)
+    if (e) return e
+  }
+  return list[0]
+}
+
+// 二值传感器的语义文案（按 device_class 区分，两字短词）
+function binaryStateText(e) {
+  const on = isOn(e)
+  const dc = String(e.device_class || '').toLowerCase()
+  const map = {
+    door: ['打开', '关闭'], window: ['打开', '关闭'], opening: ['打开', '关闭'],
+    motion: ['有人', '无人'], occupancy: ['有人', '无人'], presence: ['有人', '无人'],
+    problem: ['异常', '正常'], smoke: ['报警', '正常'], gas: ['报警', '正常'],
+    carbon_monoxide: ['报警', '正常'], moisture: ['潮湿', '干燥'], leak: ['漏水', '正常'],
+    sound: ['有声', '安静'], vibration: ['震动', '静止'], battery: ['低电', '正常'],
+    power: ['通电', '断电'], running: ['运行', '停止'], connectivity: ['在线', '离线'],
+  }
+  return (map[dc] || ['开启', '关闭'])[on ? 0 : 1]
+}
+
+// 按实体类型提取主状态：{ mode:'num'|'icon'|'text', big, unit, bigIcon, bigText, sub, state, stateCls, active, click }
+function heroFor(e) {
+  const d = e.domain
+  const st = String(e.state)
+  const on = isOn(e)
+
+  if (d === 'climate') {
+    const cur = numVal(attr(e, 'current_temperature'))
+    const modes = { off: '已关闭', cool: '制冷中', heat: '制热中', auto: '自动模式', heat_cool: '冷暖模式', fan_only: '送风模式', dry: '除湿中', idle: '待机' }
+    const running = st !== 'off' && st !== 'idle'
+    return { mode: 'num', big: cur != null ? String(Math.round(cur * 10) / 10) : '—', unit: '°C',
+      sub: modes[st] || st, state: running ? '运行中' : '已关闭', stateCls: running ? 'is-on' : '',
+      active: running, click: { kind: 'toggle' } }
+  }
+  if (d === 'light') {
+    const br = numVal(attr(e, 'brightness'))
+    const pct = br != null ? Math.round(br / 255 * 100) : on ? 100 : 0
+    return { mode: 'num', big: String(pct), unit: '%',
+      sub: on ? '亮度 ' + pct + '%' : '已关闭',
+      state: on ? '已开启' : '已关闭', stateCls: on ? 'is-on' : '',
+      active: on, click: { kind: 'toggle' } }
+  }
+  if (d === 'cover') {
+    let pct = numVal(attr(e, 'current_position'))
+    if (pct == null) pct = st === 'open' ? 100 : st === 'closed' ? 0 : null
+    const subs = { open: '已打开', closed: '已关闭', opening: '正在打开', closing: '正在关闭' }
+    return { mode: 'num', big: pct == null ? '—' : String(Math.round(pct)), unit: '%',
+      sub: subs[st] || st, state: on ? '已打开' : '已关闭', stateCls: on ? 'is-on' : '',
+      active: on, click: { kind: 'svc', svc: 'cover.toggle' } }
+  }
+  if (d === 'lock') {
+    const locked = st === 'locked'
+    return { mode: 'icon', bigIcon: locked ? 'lock' : 'lock_open',
+      sub: locked ? '安全 · 已锁定' : '注意 · 未锁定',
+      state: locked ? '已锁定' : '未锁定', stateCls: locked ? 'is-ok' : 'is-warn',
+      active: !locked, click: { kind: 'svc', svc: locked ? 'lock.unlock' : 'lock.lock' } }
+  }
+  if (d === 'alarm_control_panel') {
+    const armed = st.startsWith('armed')
+    const subs = { disarmed: '已撤防', armed_away: '外出布防中', armed_home: '在家布防中', armed_night: '夜间布防中', triggered: '报警触发！' }
+    return { mode: 'icon', bigIcon: st === 'triggered' ? 'crisis_alert' : armed ? 'verified_user' : 'shield',
+      sub: subs[st] || st, state: armed ? '已布防' : '已撤防', stateCls: armed ? 'is-on' : '',
+      active: armed, click: { kind: 'svc', svc: armed ? 'alarm_control_panel.alarm_disarm' : 'alarm_control_panel.alarm_arm_away' } }
+  }
+  if (d === 'media_player') {
+    const playing = st === 'playing'
+    const title = attr(e, 'media_title')
+    const artist = attr(e, 'media_artist')
+    return { mode: 'icon', bigIcon: playing ? 'pause' : 'play_arrow',
+      sub: title ? title + (artist ? ' · ' + artist : '') : ({ paused: '已暂停', idle: '待机', off: '已关闭', buffering: '缓冲中' }[st] || st),
+      state: { playing: '播放中', paused: '已暂停', idle: '待机', off: '已关闭' }[st] || st,
+      stateCls: playing ? 'is-on' : '', active: playing,
+      click: { kind: 'svc', svc: 'media_player.media_play_pause' } }
+  }
+  if (d === 'vacuum') {
+    const subs = { cleaning: '清扫中', docked: '已回充', idle: '待机', paused: '已暂停', returning: '回充中', error: '异常需处理' }
+    const working = ['cleaning', 'returning'].includes(st)
+    const svc = st === 'cleaning' ? 'vacuum.pause' : st === 'returning' ? 'vacuum.pause' : 'vacuum.start'
+    return { mode: 'icon', bigIcon: st === 'cleaning' ? 'pause' : st === 'returning' ? 'autorenew' : st === 'error' ? 'error' : 'play_arrow',
+      sub: subs[st] || st, state: subs[st] || st,
+      stateCls: st === 'error' ? 'is-warn' : working ? 'is-on' : 'is-ok',
+      active: working, click: { kind: 'svc', svc } }
+  }
+  if (d === 'lawn_mower') {
+    const subs = { mowing: '割草中', docked: '已回充', idle: '待机', paused: '已暂停', error: '异常需处理' }
+    const working = st === 'mowing'
+    return { mode: 'icon', bigIcon: working ? 'pause' : st === 'error' ? 'error' : 'play_arrow',
+      sub: subs[st] || st, state: subs[st] || st,
+      stateCls: st === 'error' ? 'is-warn' : working ? 'is-on' : 'is-ok',
+      active: working, click: { kind: 'svc', svc: working ? 'lawn_mower.pause' : 'lawn_mower.start_mowing' } }
+  }
+  if (d === 'fan' || d === 'humidifier') {
+    const pct = numVal(attr(e, 'percentage'))
+    return { mode: 'num', big: pct != null ? String(Math.round(pct)) : on ? '100' : '0', unit: '%',
+      sub: on ? (attr(e, 'preset_mode') || '运行中') : '已关闭',
+      state: on ? '运行中' : '已关闭', stateCls: on ? 'is-on' : '',
+      active: on, click: { kind: 'toggle' } }
+  }
+  if (['switch', 'plug', 'valve', 'input_boolean', 'group', 'remote'].includes(d)) {
+    const bigIcon = d === 'valve' ? 'water_drop' : 'toggle_' + (on ? 'on' : 'off')
+    return { mode: 'icon', bigIcon, sub: on ? '已开启' : '已关闭',
+      state: on ? '已开启' : '已关闭', stateCls: on ? 'is-on' : '',
+      active: on, click: { kind: 'toggle' } }
+  }
+  if (d === 'siren') {
+    return { mode: 'icon', bigIcon: 'campaign', sub: on ? '警报响起' : '已关闭',
+      state: on ? '报警中' : '已关闭', stateCls: on ? 'is-warn' : '',
+      active: on, click: { kind: 'toggle' } }
+  }
+  if (d === 'button' || d === 'input_button') {
+    return { mode: 'icon', bigIcon: 'touch_app', sub: '点击执行',
+      state: '待触发', stateCls: '', active: false, click: { kind: 'svc', svc: d + '.press' } }
+  }
+  if (d === 'script') {
+    return { mode: 'icon', bigIcon: 'play_arrow', sub: '点击运行脚本',
+      state: '待运行', stateCls: '', active: false, click: { kind: 'svc', svc: 'script.turn_on' } }
+  }
+  if (d === 'scene') {
+    return { mode: 'icon', bigIcon: 'auto_awesome', sub: '点击切换场景',
+      state: '场景', stateCls: '', active: false, click: { kind: 'svc', svc: 'scene.turn_on' } }
+  }
+  if (d === 'select') {
+    return { mode: 'text', bigText: st, sub: '当前选项', state: '选项', stateCls: '', active: false, click: null }
+  }
+  if (d === 'sensor') {
+    const n = numVal(e.state)
+    const unit = e.unit || attr(e, 'unit_of_measurement', '')
+    const dc = String(e.device_class || '').toLowerCase()
+    const subs = { temperature: '室内温度', humidity: '空气湿度', power: '实时功率', energy: '累计电量',
+      pm25: 'PM2.5', pm10: 'PM10', co2: 'CO2 浓度', illuminance: '光照强度', pressure: '大气压力',
+      battery: '电池电量', aqi: '空气质量', formaldehyde: '甲醛浓度' }
+    return { mode: 'num', big: n != null ? String(Math.round(n * 10) / 10) : '—', unit,
+      sub: subs[dc] ? '当前' + subs[dc] : (e.friendly_name || ''),
+      state: subs[dc] || '传感', stateCls: '', active: false, click: null }
+  }
+  if (d === 'binary_sensor') {
+    const dc = String(e.device_class || '').toLowerCase()
+    const subs = { door: '门窗状态', window: '门窗状态', opening: '门窗状态', motion: '人体感应',
+      occupancy: '存在感应', presence: '存在感应', problem: '设备状态', smoke: '烟雾报警', gas: '燃气报警',
+      moisture: '水浸状态', leak: '漏水检测', battery: '电池状态', power: '供电状态', running: '运行状态' }
+    const warnDc = new Set(['door', 'window', 'opening', 'smoke', 'gas', 'moisture', 'leak', 'problem', 'carbon_monoxide', 'tampering', 'safety'])
+    return { mode: 'text', bigText: binaryStateText(e), sub: subs[dc] || e.friendly_name || '',
+      state: binaryStateText(e),
+      stateCls: !on ? 'is-ok' : warnDc.has(dc) ? 'is-warn' : 'is-on',
+      active: on && !warnDc.has(dc), click: null }
+  }
+  return { mode: 'text', bigText: st, sub: e.friendly_name || '', state: '—', stateCls: '', active: false, click: null }
+}
+
+// 设备卡行内动作：按实体域返回 { icon, kind:'toggle'|'svc', svc?, on, tip }，无动作返回 null。
+// 让一台物理设备的所有可控实体在同一张卡片内直接操作，无需逐个实体翻找。
+function rowAction(e) {
+  const d = e.domain
+  const st = String(e.state)
+  const on = isOn(e)
+  const toggleSet = new Set(['light', 'switch', 'fan', 'input_boolean', 'humidifier', 'siren', 'valve', 'remote', 'group'])
+  if (toggleSet.has(d)) return { icon: 'power_settings_new', kind: 'toggle', on, tip: '开关' }
+  if (d === 'cover') return { icon: 'swap_vert', kind: 'svc', svc: 'cover.toggle', on, tip: '打开/关闭' }
+  if (d === 'lock') {
+    return st === 'locked'
+      ? { icon: 'lock_open', kind: 'svc', svc: 'lock.unlock', on: false, tip: '解锁' }
+      : { icon: 'lock', kind: 'svc', svc: 'lock.lock', on: true, tip: '锁定' }
+  }
+  if (d === 'media_player') return { icon: 'play_pause', kind: 'svc', svc: 'media_player.media_play_pause', on, tip: '播放/暂停' }
+  if (d === 'scene') return { icon: 'play_arrow', kind: 'svc', svc: 'scene.turn_on', on: false, tip: '执行场景' }
+  if (d === 'script') return { icon: 'play_arrow', kind: 'svc', svc: 'script.turn_on', on: false, tip: '运行脚本' }
+  if (d === 'button' || d === 'input_button') return { icon: 'touch_app', kind: 'svc', svc: `${d}.press`, on: false, tip: '按下' }
+  if (d === 'vacuum') {
+    return ['cleaning', 'paused', 'returning', 'error'].includes(st)
+      ? { icon: 'pause', kind: 'svc', svc: 'vacuum.pause', on: true, tip: '暂停清扫' }
+      : { icon: 'play_arrow', kind: 'svc', svc: 'vacuum.start', on: false, tip: '开始清扫' }
+  }
+  if (d === 'lawn_mower') {
+    return ['mowing', 'paused', 'error'].includes(st)
+      ? { icon: 'pause', kind: 'svc', svc: 'lawn_mower.pause', on: true, tip: '暂停' }
+      : { icon: 'play_arrow', kind: 'svc', svc: 'lawn_mower.start_mowing', on: false, tip: '开始割草' }
+  }
+  return null
+}
+
+function genericData(entities, hasData, card) {
   const list = Array.isArray(entities) ? entities : entities ? [entities] : []
   const first = list[0] || null
   const b = base(first, hasData, 'widgets')
-  if (!first) return { ...b, count: '', rowsHtml: '', stateText: '', onCls: 'b-off', attrsHtml: '' }
+  if (!first) return { ...b, rowsHtml: '', rowsHideCls: 'is-empty', bigHtml: '', sub: '', state: '', stateCls: '',
+    kindColor: '#8A8986', kindColorRgb: '138,137,134', kindLabel: '设备', kindIcon: 'widgets',
+    activeCls: '', shortCls: 'is-short', heroBtnCls: '', heroClickAttrs: '' }
 
-  const map = { on: '开启', off: '关闭', open: '已打开', closed: '已关闭', home: '在家', not_home: '离家', away: '离家', playing: '播放中', paused: '已暂停', idle: '待机', unavailable: '不可用', unknown: '未知' }
-  // 可直接开关的域：行尾渲染开关按钮，点击调用对应域的 toggle
-  const toggleDomains = new Set(['light', 'switch', 'fan', 'input_boolean', 'humidifier', 'siren', 'valve', 'remote', 'group'])
+  // 1) 选主实体（按设备类型优先级），决定卡片类型视觉
+  const heroEntity = pickHeroEntity(list)
+  const cfg = DEVICE_KIND[heroEntity.domain] || { icon: 'widgets', color: '#8A8986', label: '通用设备' }
+  // 2) 主状态字段
+  const hero = heroFor(heroEntity)
+  const name = card?.title || b.name
 
-  const rows = list.map((e) => {
-    const on = isOn(e)
+  // 主状态区点击属性：toggle 走 /toggle，svc 走服务转发
+  let heroClickAttrs = ''
+  if (hero.click) {
+    heroClickAttrs = hero.click.kind === 'toggle'
+      ? `data-hc="toggle" data-entity="${escHtml(heroEntity.entity_id)}"`
+      : `data-hc="svc" data-svc="${escHtml(hero.click.svc)}" data-entity="${escHtml(heroEntity.entity_id)}"`
+  }
+  // 大字区三种模式：数字（值+单位）/ 图标 / 短文本
+  let bigHtml
+  if (hero.mode === 'num') bigHtml = `${escHtml(hero.big)}<small>${escHtml(hero.unit)}</small>`
+  else if (hero.mode === 'icon') bigHtml = `<span class="material-symbols-outlined">${escHtml(hero.bigIcon)}</span>`
+  else bigHtml = escHtml(hero.bigText)
+
+  // 3) 其余实体行（主实体已在主状态区展示，不再重复）
+  const restList = list.filter((e) => e !== heroEntity)
+  const stateMap = { on: '开启', off: '关闭', open: '已打开', closed: '已关闭', home: '在家', not_home: '离家', playing: '播放中', paused: '已暂停', idle: '待机' }
+  const rowsHtml = restList.map((e) => {
     const color = colorOf(e)
     const glyph = iconFor(e, domainGlyph[e.domain] || 'widgets')
     const nm = escHtml(e.friendly_name || e.entity_id)
-    let st
     const n = numVal(e.state)
     const unit = e.unit || attr(e, 'unit_of_measurement', '') || ''
-    if (n != null) st = `${Math.round(n * 10) / 10}${unit}`
-    else st = map[String(e.state)] || String(e.state)
-    const tg = toggleDomains.has(e.domain)
-      ? `<button type="button" class="g-tg${on ? ' on' : ''}" style="--gc:${color}" data-hc="toggle" data-entity="${escHtml(e.entity_id)}" title="开关"><span class="material-symbols-outlined">power_settings_new</span></button>`
-      : ''
-    return `<div class="grow"><span class="g-ic material-symbols-outlined" style="color:${color}">${glyph}</span><span class="g-nm">${nm}</span><span class="g-st">${escHtml(st)}</span>${tg}</div>`
+    const st = n != null ? `${Math.round(n * 10) / 10}${unit}` : (stateMap[String(e.state)] || String(e.state))
+    let actHtml = ''
+    const a = rowAction(e)
+    if (a) {
+      const actionAttrs = a.kind === 'toggle'
+        ? 'data-hc="toggle"'
+        : `data-hc="svc" data-svc="${escHtml(a.svc)}"`
+      actHtml = `<button type="button" class="g-tg${a.on ? ' on' : ''}" style="--gc:${color}" ${actionAttrs} data-entity="${escHtml(e.entity_id)}" title="${a.tip}"><span class="material-symbols-outlined">${a.icon}</span></button>`
+    }
+    return `<div class="grow"><span class="g-ic material-symbols-outlined" style="color:${color}">${glyph}</span><span class="g-nm">${nm}</span><span class="g-st">${escHtml(st)}</span>${actHtml}</div>`
   }).join('')
 
-  // 兼容旧模板中的单实体占位符（stateText/onCls/attrsHtml 仍按首个实体提供）
-  const s0 = String(first.state)
   return {
     ...b,
-    count: list.length > 1 ? String(list.length) : '',
-    rowsHtml: rows,
-    stateText: map[s0] || s0,
-    onCls: isOn(first) ? 'b-on' : 'b-off',
-    attrsHtml: attrsBlock(first, 3),
+    name,
+    glyph: cfg.icon,
+    kindIcon: cfg.icon,
+    kindColor: cfg.color,
+    kindColorRgb: hexRgb(cfg.color),
+    kindLabel: cfg.label,
+    activeCls: hero.active ? 'is-active' : '',
+    shortCls: card?.h === 1 ? 'is-short' : 'is-tall',
+    heroBtnCls: hero.click ? 'is-btn' : '',
+    heroClickAttrs,
+    bigHtml,
+    sub: hero.sub,
+    state: hero.state,
+    stateCls: hero.stateCls,
+    rowsHtml,
+    rowsHideCls: restList.length ? '' : 'is-empty',
   }
 }
 
@@ -714,7 +966,9 @@ function dateData(now) {
 
 // ================= 基础卡：设备概览（自动统计） =================
 // 按「物理设备」统计（与设备抽屉同一数据源 registryDevices），
-// 保证卡片数字与抽屉列出的设备数量一致；在线判定读 entityStates 实时状态。
+// 保证卡片数字与抽屉列出的设备数量一致。
+// online/offline 字段语义为「开启/关闭」的设备数（至少一个实体 isOn）：
+// 原先按可用性统计的在线/离线在 HA 里几乎恒为「全部/零」，点击格子没有过滤感。
 function overviewData({ all }) {
   const devs = registryDevices.value
   if (!registryLoaded.value && !devs.length) {
@@ -725,14 +979,10 @@ function overviewData({ all }) {
     const live = entityStates[e.entity_id]
     return live && live.state !== undefined ? live.state : e.state
   }
-  const online = devs.filter((d) => (d.entities || []).some((e) => {
-    if (e.disabled) return false
-    const s = String(liveState(e) || '').toLowerCase()
-    return s !== '' && s !== 'unavailable' && s !== 'unknown'
-  })).length
+  const active = devs.filter((d) => (d.entities || []).some((e) => !e.disabled && isOn({ state: liveState(e), domain: e.domain }))).length
   const lightsOn = all.filter((e) => e.domain === 'light' && String(e.state) === 'on').length
   const domains = new Set(devs.map((d) => d.domain).filter(Boolean)).size
-  return { total, online, offline: total - online, lightsOn, domains }
+  return { total, online: active, offline: total - active, lightsOn, domains }
 }
 
 // 基础卡默认头部图标（可被卡片自定义图标 card.icon 覆盖）
@@ -776,7 +1026,7 @@ export function computeData(type, ctx) {
     case 'plant': d = plantData(entity, hasData); break
     case 'lawn_mower': d = lawnMowerData(entity, hasData); break
     case 'image': d = imageData(entity, hasData); break
-    default: d = genericData(entities && entities.length ? entities : (entity ? [entity] : []), hasData); break
+    default: d = genericData(entities && entities.length ? entities : (entity ? [entity] : []), hasData, ctx.card); break
   }
   // 基础卡头部图标默认值（领域卡的 base() 已自带 glyph，不会被覆盖）
   if (d && typeof d === 'object' && !d.glyph && DEF_GLYPH[type]) d.glyph = DEF_GLYPH[type]

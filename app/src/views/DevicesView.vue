@@ -4,9 +4,7 @@
     <h1 class="sr-only">设备管理</h1>
 
     <p v-if="!backendOnline" class="mb-4 text-error text-sm font-body">后端不可达，无法加载设备数据。请先启动 Go 后端并在「设置」中配置 Home Assistant 实例。</p>
-    <p v-else-if="loading" class="mb-4 text-muted text-sm font-body">正在加载设备注册表…</p>
-    <p v-else-if="!devices.length" class="mb-4 text-muted text-sm font-body">暂无设备数据。请确认 Home Assistant 实例可访问且设备注册表非空。</p>
-
+    <p v-else-if="loadedOnce && !devices.length" class="mb-4 text-muted text-sm font-body">暂无设备数据。请确认 Home Assistant 实例可访问且设备注册表非空。</p>
     <!-- 搜索 + 类型筛选 -->
     <div class="flex flex-col gap-3 mb-5">
       <div class="flex items-center gap-2 w-full">
@@ -249,7 +247,6 @@ import EntityMoreInfo from '@/components/EntityMoreInfo.vue'
 
 const filter = ref('all')
 const keyword = ref('')
-const loading = ref(false)
 const detail = ref(null)
 const showUnassigned = ref(true)
 // 被折叠的房间 id 集合
@@ -507,7 +504,6 @@ function onToggleEntity(e) {
 // 加载注册表。重连/瞬时错误时自动重试（后端心跳会重建停滞的 HA 连接）。
 async function load(attempt = 0) {
   if (!store.ready || store.activeID <= 0) return
-  loading.value = true
   try {
     const { data } = await api.registryDevices(store.activeID)
     areas.value = data?.areas || []
@@ -522,8 +518,6 @@ async function load(attempt = 0) {
       await new Promise((res) => setTimeout(res, 1500 * (attempt + 1)))
       return load(attempt + 1)
     }
-  } finally {
-    loading.value = false
   }
 }
 

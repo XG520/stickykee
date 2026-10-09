@@ -293,16 +293,11 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-/* 高德 SDK 注入的 Logo / 版权元素默认 z-index 极高，会盖在卡片内容上层；
-   此处压低层级并缩小淡化，保留合规标识但不干扰内容。 */
+/* 隐藏高德 SDK 注入的「高德地图」Logo 文字（按需求完全隐藏）。 */
 .map-shell :deep(.amap-logo) {
-  left: 4px !important;
-  bottom: 4px !important;
-  z-index: 10 !important;
-  opacity: 0.55;
-  transform: scale(0.8);
-  transform-origin: left bottom;
+  display: none !important;
 }
+/* 版权标识压低层级并缩小淡化，保留但不干扰内容。 */
 .map-shell :deep(.amap-copyright) {
   z-index: 10 !important;
   opacity: 0.45;

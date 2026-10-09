@@ -155,10 +155,39 @@ func (c *Rest) CallService(ctx context.Context, domain, service, entityID string
 	return nil
 }
 
-// Toggle 快捷开关（调用 domain 的 toggle 服务）。
+// Toggle 快捷开关：按域映射到实际存在的 HA 服务。
+// 多数域（light/switch/fan/cover/media_player 等）提供 toggle 服务，
+// 但 lock（仅 lock/unlock/open）、script（run）、scene（turn_on）、
+// button/input_button（press）没有 toggle，直接调用会被 HA 以 404 拒绝。
 func (c *Rest) Toggle(ctx context.Context, entityID string) error {
 	domain := model.DomainOf(entityID)
-	return c.CallService(ctx, domain, "toggle", entityID, nil)
+	switch domain {
+	case "lock":
+		return c.toggleLock(ctx, entityID)
+	case "script":
+		return c.CallService(ctx, domain, "run", entityID, nil)
+	case "scene":
+		return c.CallService(ctx, domain, "turn_on", entityID, nil)
+	case "button", "input_button":
+		return c.CallService(ctx, domain, "press", entityID, nil)
+	default:
+		return c.CallService(ctx, domain, "toggle", entityID, nil)
+	}
+}
+
+// toggleLock 按当前状态选择服务：locked / unlocking → unlock，其余 → lock。
+func (c *Rest) toggleLock(ctx context.Context, entityID string) error {
+	var st struct {
+		State string `json:"state"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/api/states/"+url.PathEscape(entityID), nil, &st); err != nil {
+		return err
+	}
+	svc := "lock"
+	if st.State == "locked" || st.State == "unlocking" {
+		svc = "unlock"
+	}
+	return c.CallService(ctx, "lock", svc, entityID, nil)
 }
 
 // GetHistory 拉取某个实体的状态历史（HA 默认最多 1 天，可传 start）。

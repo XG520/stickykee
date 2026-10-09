@@ -2,7 +2,9 @@
   <!-- 代码驱动卡片：DOM/CSS/JS 三段代码全部封装在卡片内部（独立自包含）。
        html 由 {{占位符}} 绑定动态数据；css 以 #scopeId 作用域自注入；js 渲染后执行。
        交互通过事件委托 + data-hc 属性体系分发（见下方 onClick/onInput/onChange）。 -->
-  <div ref="root" class="hc-code-card" :style="hcVars" v-html="renderedHtml"
+  <!-- data-hc-self：标记「卡片自管理图标替换」，全局图标兜底观察器跳过该子树，
+       避免多卡场景下每次实体刷新触发 O(卡片数) 的重复扫描（见 hcIcons.initIconWatcher） -->
+  <div ref="root" class="hc-code-card" data-hc-self="1" :style="hcVars" v-html="renderedHtml"
     @click="onClick" @input="onInput" @change="onChange"></div>
 </template>
 
@@ -146,39 +148,38 @@ function applyCss() {
 
 // 文本溢出自动右向左循环滚动：渲染后扫描常见文本元素，
 // 内容宽度超出容器时包一层 .hc-mq-in 并设置位移/时长变量，循环显示完整文本。
+// 单次合并查询（原为 5 次遍历），scrollWidth 读取会强制回流，属于热路径。
 function applyMarquee() {
   const r = root.value
   if (!r) return
-  for (const sel of ['.h-t', '.h-mut', '.h-nm', '.h-big', '.c-sec', '.h-sub-v']) {
-    r.querySelectorAll(sel).forEach((el) => {
-      if (el.querySelector('.hc-mq-in, [data-hc]')) return
-      if (el.scrollWidth <= el.clientWidth + 2) return
-      // 保证单行 + 溢出裁剪（模板一般已设置，缺失时补齐，避免动画溢出）
-      el.style.whiteSpace = 'nowrap'
-      el.style.overflow = 'hidden'
-      const text = el.textContent || ''
-      const inner = document.createElement('span')
-      inner.className = 'hc-mq-in'
-      // 复制两份内容，中间夹一个间隙；位移距离 = 单份宽 + 间隙宽，
-      // 循环到尽头时第二份恰好处于第一份的起点 → 首尾相连、无缝循环。
-      const c1 = document.createElement('span')
-      c1.className = 'hc-mq-copy'
-      c1.textContent = text
-      const gap = document.createElement('span')
-      gap.className = 'hc-mq-gap'
-      const c2 = document.createElement('span')
-      c2.className = 'hc-mq-copy'
-      c2.textContent = text
-      inner.append(c1, gap, c2)
-      el.textContent = ''
-      el.appendChild(inner)
-      const copyW = c1.scrollWidth
-      const gapW = gap.offsetWidth || 24
-      const dx = Math.max(30, copyW + gapW)
-      const dur = Math.max(3, Math.round(dx / 22))
-      el.style.setProperty('--hc-mq-dx', dx + 'px')
-      el.style.setProperty('--hc-mq-dur', dur + 's')
-    })
+  for (const el of r.querySelectorAll('.h-t,.h-mut,.h-nm,.h-big,.c-sec,.h-sub-v')) {
+    if (el.querySelector('.hc-mq-in, [data-hc]')) continue
+    if (el.scrollWidth <= el.clientWidth + 2) continue
+    // 保证单行 + 溢出裁剪（模板一般已设置，缺失时补齐，避免动画溢出）
+    el.style.whiteSpace = 'nowrap'
+    el.style.overflow = 'hidden'
+    const text = el.textContent || ''
+    const inner = document.createElement('span')
+    inner.className = 'hc-mq-in'
+    // 复制两份内容，中间夹一个间隙；位移距离 = 单份宽 + 间隙宽，
+    // 循环到尽头时第二份恰好处于第一份的起点 → 首尾相连、无缝循环。
+    const c1 = document.createElement('span')
+    c1.className = 'hc-mq-copy'
+    c1.textContent = text
+    const gap = document.createElement('span')
+    gap.className = 'hc-mq-gap'
+    const c2 = document.createElement('span')
+    c2.className = 'hc-mq-copy'
+    c2.textContent = text
+    inner.append(c1, gap, c2)
+    el.textContent = ''
+    el.appendChild(inner)
+    const copyW = c1.scrollWidth
+    const gapW = gap.offsetWidth || 24
+    const dx = Math.max(30, copyW + gapW)
+    const dur = Math.max(3, Math.round(dx / 22))
+    el.style.setProperty('--hc-mq-dx', dx + 'px')
+    el.style.setProperty('--hc-mq-dur', dur + 's')
   }
 }
 
@@ -240,7 +241,27 @@ function onClick(e) {
   } else if (hc === 'link') {
     router.push(el.dataset.href || '/')
   } else if (hc === 'device-drawer') {
-    emit('device-drawer')
+    // 概览卡按点击的统计格过滤抽屉：新模板格子上带 data-filter；
+    // 旧卡片保存的 HTML 没有该属性，退化为按格子文字识别（同一批标签）。
+    let filter = el.dataset.filter || ''
+    if (!filter) {
+      const cell = e.target.closest('.o-cell')
+      if (cell) {
+        // 旧卡片保存的 HTML 没有 data-filter：先按格子文字识别，再按格子位置兜底
+        // （位置对应模板固定顺序：总数/开启中/已关闭/灯光/类型），避免用户改过标签文字后失效
+        // 文字提取兼容跑马灯：溢出时文本被复制成两份，取第一份再匹配
+        const iEl = cell.querySelector('i')
+        const label = iEl ? ((iEl.querySelector('.hc-mq-copy')?.textContent || iEl.textContent || '').trim()) : ''
+        const byLabel = { 在线: 'active', 离线: 'inactive', 开启中: 'active', 已关闭: 'inactive', 灯光开启: 'lights_on' }[label]
+        const cells = [...(cell.parentElement ? cell.parentElement.querySelectorAll('.o-cell') : [])]
+        const byIndex = ['all', 'active', 'inactive', 'lights_on', 'all'][cells.indexOf(cell)] || 'all'
+        filter = byLabel || byIndex
+      }
+    }
+    emit('device-drawer', filter || 'all')
+  } else if (!el && props.card.type === 'greeting') {
+    // 问候卡整体可点：旧卡片保存的 HTML 没有 data-hc 标记，按卡类型兜底
+    emit('device-drawer', 'all')
   }
 }
 
@@ -319,6 +340,23 @@ function unmountMap() {
   }
 }
 
+// ---- 视口门控：图标替换 / 跑马灯扫描都含强制回流（scrollWidth / getComputedStyle），
+// 卡片很多时对「视口外卡片」逐次执行会造成布局抖动累积卡顿。
+// 用 IntersectionObserver 跟踪可见性：不可见时只记脏标记，滚入视口（含 300px 余量）再补做。
+const rootVisible = ref(false)
+let io = null
+let postPending = false
+function runPostRender() {
+  postPending = false
+  if (!root.value) return
+  applyIcons()
+  applyMarquee()
+}
+function schedulePostRender() {
+  if (!rootVisible.value) { postPending = true; return }
+  nextTick(runPostRender)
+}
+
 // 代码变化 → 重渲染、重注入样式、重执行 JS、重挂地图
 watch(
   () => [props.card.html, props.card.css, props.card.js],
@@ -326,8 +364,7 @@ watch(
     nextTick(() => {
       unmountMap()
       applyCss()
-      applyIcons()
-      applyMarquee()
+      schedulePostRender()
       applyJs()
       mountMap()
     })
@@ -336,7 +373,7 @@ watch(
 )
 
 // 实时数据（实体状态）变化会导致 v-html 重渲染、DOM 重建，需重新应用图标替换与文本滚动。
-watch(renderedHtml, () => nextTick(() => { applyIcons(); applyMarquee() }))
+watch(renderedHtml, () => schedulePostRender())
 
 // 图标替换：确保后端图标列表就绪后替换本卡图标（依赖已知集合，幂等）。
 function applyIcons() {
@@ -354,14 +391,20 @@ onMounted(() => {
   updateScheme()
   schemeObs = new MutationObserver(updateScheme)
   schemeObs.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
+  // 视口门控：首帧 IO 回调会给出真实可见性；可见卡片立即做图标/跑马灯，不可见的滚入时补做
+  io = new IntersectionObserver((entries) => {
+    rootVisible.value = entries.some((e) => e.isIntersecting)
+    if (rootVisible.value && postPending) runPostRender()
+  }, { rootMargin: '300px 0px' })
+  io.observe(root.value)
   applyCss()
   applyJs()
   mountMap()
-  applyIcons()
-  applyMarquee()
+  schedulePostRender()
 })
 onBeforeUnmount(() => {
   if (clock) clearInterval(clock)
+  if (io) { io.disconnect(); io = null }
   if (schemeObs) { schemeObs.disconnect(); schemeObs = null }
   rangeTimers.forEach((t) => clearTimeout(t))
   rangeTimers.clear()
@@ -393,5 +436,9 @@ onBeforeUnmount(() => {
   gap: 4px;
   font-size: 9px;
   color: var(--hc-sub);
+  border-radius: 14px;
+  background: linear-gradient(165deg, rgb(255 255 255 / .05), rgb(255 255 255 / 0) 46%), color-mix(in srgb, var(--hc-bg2) 55%, var(--hc-bg));
+  border: 1px dashed color-mix(in srgb, var(--hc-border) 80%, transparent);
+  box-shadow: 0 1px 2px rgb(0 0 0 / .05), 0 6px 16px -6px rgb(0 0 0 / .1);
 }
 </style>

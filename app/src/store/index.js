@@ -441,6 +441,16 @@ export default store
 // 首页同时隐藏仪表盘编辑按钮，进入全屏显示。
 export const ui = reactive({ immersive: false })
 
+// 全局设备抽屉：概览卡/统计卡/房间概览点击后按条件过滤展示设备。
+// 挂在 App.vue 外壳内，任何页面都能通过 openDeviceDrawer(filter) 打开。
+// seq 自增保证「已打开时再次点击同一条件」也能触发同步（watch 依赖值变化）。
+export const deviceDrawer = reactive({ open: false, filter: 'all', seq: 0 })
+export function openDeviceDrawer(filter) {
+  deviceDrawer.filter = filter || 'all'
+  deviceDrawer.open = true
+  deviceDrawer.seq++
+}
+
 // ===== 用户间消息中心（顶栏铃铛） =====
 export const imOpen = ref(false)          // 消息面板开关
 export const imUnread = ref(0)            // 未读总角标

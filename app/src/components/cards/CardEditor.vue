@@ -221,6 +221,20 @@
                   </div>
                 </div>
 
+                <div v-if="meta.needEntity" class="ce-field ce-field-title">
+                  <label class="ce-label">
+                    卡片标题
+                    <span class="ce-label-sub">设备卡建议用物理设备名，留空取首个实体名</span>
+                  </label>
+                  <input
+                    class="ce-icon-input ce-title-input"
+                    type="text"
+                    v-model="draft.title"
+                    placeholder="如 客厅吸顶灯"
+                    spellcheck="false"
+                  />
+                </div>
+
                 <div class="ce-field ce-field-size">
                   <label class="ce-label">卡片尺寸</label>
                   <div class="ce-sizepick">
@@ -464,7 +478,7 @@ const emit = defineEmits(['close', 'save'])
 const baseCell = 120
 
 // ================= 草稿与脏状态 =================
-const draft = reactive({ type: '', uid: '', entity_id: '', entity_ids: [], w: 1, h: 1, html: '', css: '', js: '', icon: '', avatar: '' })
+const draft = reactive({ type: '', uid: '', entity_id: '', entity_ids: [], w: 1, h: 1, html: '', css: '', js: '', icon: '', avatar: '', title: '' })
 let snapshot = ''
 const dirty = computed(() => JSON.stringify(pickDraft()) !== snapshot)
 
@@ -475,6 +489,7 @@ function pickDraft() {
     entity_ids: ['generic', 'person'].includes(draft.type) ? [...draft.entity_ids] : [],
     icon: draft.icon,
     avatar: draft.avatar,
+    title: draft.title || '',
   }
 }
 // 通用卡与人员位置卡为多实体卡（不限数量）；其余卡仍为单实体
@@ -501,6 +516,7 @@ watch(
       draft.icon = props.card.icon || ''
       iconInput.value = draft.icon
       draft.avatar = props.card.avatar || ''
+      draft.title = props.card.title || ''
       tab.value = 'html'
       banner.value = null
       entityQuery.value = ''
@@ -1008,7 +1024,8 @@ const holderStyle = computed(() => ({
 const zoomStyle = computed(() => {
   const factor = cellPx() / baseCell
   return {
-    zoom: factor,
+    // transform:scale 替代 zoom：zoom 触发同步重排且与 container-type/content-visibility 组合会反复失效重排
+    transform: `scale(${factor})`,
     width: Math.min(draft.w, props.cols) * baseCell + 'px',
     height: Math.min(3, draft.h) * baseCell + 'px',
     display: 'flex',

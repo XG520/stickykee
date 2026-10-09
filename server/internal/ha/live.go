@@ -171,17 +171,16 @@ func (r *Realtime) run(ctx context.Context) error {
 	// 防止 HA 认证后沉默的僵尸连接把 run 卡死在这里（进而让后续所有 WS 命令超时）。
 	// 先记录当前用户 admin 权限，用于判断命令事件订阅授权。
 	if r.log != nil {
-		if uctx, uc := context.WithTimeout(ctx, connectOp); true {
-			u, uerr := r.call(uctx, "auth/current_user", nil)
-			uc()
-			if uerr == nil {
-				var up struct {
-					Username string `json:"name"`
-					IsAdmin  bool   `json:"is_admin"`
-				}
-				_ = json.Unmarshal(u.Result, &up)
-				r.log.Info("ha current user", "instance", r.cfg.InstanceID, "name", up.Username, "is_admin", up.IsAdmin)
+		uctx, uc := context.WithTimeout(ctx, connectOp)
+		u, uerr := r.call(uctx, "auth/current_user", nil)
+		uc()
+		if uerr == nil {
+			var up struct {
+				Username string `json:"name"`
+				IsAdmin  bool   `json:"is_admin"`
 			}
+			_ = json.Unmarshal(u.Result, &up)
+			r.log.Info("ha current user", "instance", r.cfg.InstanceID, "name", up.Username, "is_admin", up.IsAdmin)
 		}
 	}
 	opCtx, opCancel := context.WithTimeout(ctx, connectOp)

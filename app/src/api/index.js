@@ -37,6 +37,29 @@ function err(code, message, status) {
   return e
 }
 
+// FormData 上传：不做 JSON 序列化，浏览器自动携带 multipart 边界与鉴权头。
+async function postForm(path, form) {
+  const token = sessionStorage.getItem('hc_token')
+  let res
+  try {
+    res = await fetch(BASE + path, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    })
+  } catch {
+    throw err('network', '无法连接到后端服务，请确认 server 已启动')
+  }
+  let payload = {}
+  try { payload = await res.json() } catch { /* 空响应 */ }
+  if (!res.ok) {
+    const code = payload?.error?.code || 'http_' + res.status
+    const message = payload?.error?.message || `请求失败 (${res.status})`
+    throw err(code, message, res.status)
+  }
+  return { data: payload.data, meta: payload.meta }
+}
+
 // 通用的实例路径：缺省用 active（url 空时后端走 active）。
 function insPath(id) {
   return id && id > 0 ? `/instances/${id}` : '/instances'
@@ -129,8 +152,11 @@ export const api = {
   // 用户间 IM & 仪表盘共享
   listConversations: () => api.get('/messages/conversations'),
   listContacts: () => api.get('/messages/contacts'),
-  getMessages: (user, limit = 50) => api.get(`/messages/${encodeURIComponent(user)}?limit=${limit}`),
+  getMessages: (user, limit = 50, before = 0) =>
+    api.get(`/messages/${encodeURIComponent(user)}?limit=${limit}${before > 0 ? `&before=${before}` : ''}`),
   sendMessage: (user, content) => api.post(`/messages/${encodeURIComponent(user)}`, { content }),
+  sendImage: (user, form) => postForm(`/messages/${encodeURIComponent(user)}/image`, form),
+  recallMessage: (id) => api.post(`/messages/${id}/recall`),
   sendShare: (user, dashboard) => api.post(`/messages/${encodeURIComponent(user)}/share`, { dashboard }),
   sendDevice: (user, device) => api.post(`/messages/${encodeURIComponent(user)}/device`, { device }),
   markMessageRead: (user) => api.post(`/messages/${encodeURIComponent(user)}/read`),

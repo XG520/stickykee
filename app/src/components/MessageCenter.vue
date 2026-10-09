@@ -64,11 +64,25 @@
                 </button>
                 <span class="material-symbols-outlined text-accent text-lg">account_circle</span>
                 <h3 class="text-on-background font-semibold text-sm">{{ activeUser }}</h3>
-                <span class="hidden sm:inline ml-auto text-muted text-xs font-body">可发文本 / 表情 / 共享仪表盘 / 设备控制</span>
+                <span class="hidden sm:inline ml-auto text-muted text-xs font-body">可发文本 / 表情 / 图片 / 共享仪表盘 / 设备控制</span>
               </div>
 
               <div ref="listEl" class="flex-1 overflow-y-auto px-4 py-3 space-y-3 bg-background/40">
-                <div v-for="m in messages" :key="m.id" class="flex" :class="m.from === auth.user ? 'justify-end' : 'justify-start'">
+                <!-- 向上加载更早消息（游标分页） -->
+                <div v-if="hasMore" class="text-center pb-1">
+                  <button @click="loadOlder" :disabled="loadingOlder"
+                    class="px-3 py-1 rounded-full border border-border text-muted hover:text-primary hover:border-primary/40 text-xs transition-colors disabled:opacity-60">
+                    {{ loadingOlder ? '加载中…' : '加载更早消息' }}
+                  </button>
+                </div>
+                <template v-for="m in messages" :key="m.id">
+                  <!-- 撤回占位 -->
+                  <div v-if="m.status === 'recalled'" class="flex" :class="m.from === auth.user ? 'justify-end' : 'justify-start'">
+                    <p class="px-3 py-1 rounded-full bg-surface-alt border border-border text-muted text-xs italic font-body">
+                      {{ m.from === auth.user ? '你撤回了一条消息' : `${m.from} 撤回了一条消息` }}
+                    </p>
+                  </div>
+                  <div v-else class="flex group" :class="m.from === auth.user ? 'justify-end' : 'justify-start'">
                   <!-- 共享卡片 -->
                   <div v-if="m.type === 'share'" class="max-w-[85%] sm:max-w-[300px] w-full">
                     <div class="rounded-xl border border-border bg-surface-alt p-3 shadow-sm">
@@ -122,15 +136,37 @@
                     <p class="mt-1 px-1 text-muted text-[10px] font-body">{{ fmtTime(m.created_at) }}</p>
                   </div>
 
+                  <!-- 图片消息 -->
+                  <div v-else-if="m.type === 'image'" class="max-w-[85%] sm:max-w-[300px]">
+                    <img :src="m.image?.url" :alt="m.image?.name || '图片'" loading="lazy"
+                      @click="lightbox = m.image?.url || ''"
+                      class="block max-h-64 w-auto rounded-2xl cursor-zoom-in border border-border shadow-sm bg-surface-alt"
+                      :class="m.from === auth.user ? 'rounded-br-sm' : 'rounded-bl-sm'">
+                    <p class="mt-1 px-1 text-muted text-[10px] font-body flex items-center gap-1" :class="m.from === auth.user ? 'justify-end' : ''">
+                      {{ fmtTime(m.created_at) }}
+                      <span v-if="m.from === auth.user" :class="m.read ? 'text-primary' : ''">{{ m.read ? '· 已读' : '· 已送达' }}</span>
+                    </p>
+                  </div>
+
                   <!-- 文本气泡（含表情） -->
                   <div v-else class="max-w-[85%]">
                     <div class="px-3.5 py-2 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-words"
                       :class="m.from === auth.user ? 'bg-primary text-on-primary rounded-br-sm' : 'bg-surface-alt border border-border text-on-surface rounded-bl-sm'">
                       {{ m.content }}
                     </div>
-                    <p class="mt-1 px-1 text-muted text-[10px] font-body" :class="m.from === auth.user ? 'text-right' : ''">{{ fmtTime(m.created_at) }}</p>
+                    <p class="mt-1 px-1 text-muted text-[10px] font-body flex items-center gap-1" :class="m.from === auth.user ? 'justify-end' : ''">
+                      {{ fmtTime(m.created_at) }}
+                      <span v-if="m.from === auth.user" :class="m.read ? 'text-primary' : ''">{{ m.read ? '· 已读' : '· 已送达' }}</span>
+                    </p>
                   </div>
-                </div>
+
+                  <!-- 撤回按钮（自己的文本/图片消息，悬停行内显示） -->
+                  <button v-if="m.from === auth.user && (m.type === 'text' || m.type === 'image')" @click="doRecall(m)" title="撤回"
+                    class="self-center w-7 h-7 rounded-full text-muted hover:text-error hover:bg-error/10 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all shrink-0">
+                    <span class="material-symbols-outlined text-sm">undo</span>
+                  </button>
+                  </div>
+                </template>
                 <p v-if="!messages.length" class="text-muted text-center text-xs py-8 font-body">没有消息，打个招呼吧</p>
               </div>
 
@@ -171,6 +207,11 @@
                     :class="showEmoji ? 'text-primary border-primary/40' : ''">
                     <span class="material-symbols-outlined text-base">mood</span>
                   </button>
+                  <button @click="pickImage" :disabled="busy" title="发送图片"
+                    class="px-2.5 py-2 rounded-xl border border-border text-muted hover:text-primary hover:border-primary/40 transition-colors">
+                    <span class="material-symbols-outlined text-base">image</span>
+                  </button>
+                  <input ref="imgInput" type="file" accept="image/jpeg,image/png,image/gif,image/webp" class="hidden" @change="onPickImage">
                   <button @click="openDevicePicker" :disabled="busy" title="发送设备（可控制）"
                     class="px-2.5 py-2 rounded-xl border border-border text-muted hover:text-primary hover:border-primary/40 transition-colors"
                     :class="showDevicePicker ? 'text-primary border-primary/40' : ''">
@@ -198,6 +239,12 @@
         </div>
       </div>
     </Transition>
+    <!-- 图片灯箱预览 -->
+    <Transition name="im-fade">
+      <div v-if="lightbox" class="fixed inset-0 z-[90] bg-black/85 flex items-center justify-center p-6 sm:p-10 cursor-zoom-out" @click="lightbox = ''">
+        <img :src="lightbox" alt="预览" class="max-w-full max-h-full object-contain rounded-lg shadow-2xl">
+      </div>
+    </Transition>
   </Teleport>
 </template>
 
@@ -221,6 +268,12 @@ const showEmoji = ref(false)
 const showDevicePicker = ref(false)
 const deviceCandidates = ref([])
 const debrief = ref('')
+// 图片消息 / 分页 / 撤回
+const imgInput = ref(null)
+const lightbox = ref('')
+const hasMore = ref(false)
+const loadingOlder = ref(false)
+const PAGE = 50
 
 // 移动端视口检测：<768px 视为手机，列表与消息线程互斥切换。
 const isMobile = ref(false)
@@ -288,11 +341,13 @@ function fmtTime(s) {
 }
 
 function lastPreview(c) {
+  if (c.last?.status === 'recalled') return '消息已撤回'
   if (c.last?.type === 'share') return `🖥 ${c.card_count || '?'} 张卡片的仪表盘 · ${shareLabel(c.last.status)}`
   if (c.last?.type === 'device') {
     const name = c.last.device?.name || c.last.device?.entity_id || '设备'
     return `📟 ${name}`
   }
+  if (c.last?.type === 'image') return '🖼 图片'
   return c.last?.content || '新消息'
 }
 
@@ -401,10 +456,61 @@ function insertEmoji(e) {
 async function loadMessages(user) {
   if (!user) return messages.value = []
   try {
-    const { data } = await api.getMessages(user)
-    messages.value = Array.isArray(data) ? data : []
+    const { data } = await api.getMessages(user, PAGE)
+    const list = Array.isArray(data) ? data : []
+    messages.value = list
+    hasMore.value = list.length >= PAGE
     scrollBottom()
   } catch { messages.value = [] }
+}
+
+// 向上加载更早消息：以当前最旧一条的 id 为游标；prepend 后保持视口停在原消息处
+async function loadOlder() {
+  if (loadingOlder.value || !activeUser.value || !messages.value.length) return
+  loadingOlder.value = true
+  const el = listEl.value
+  const prevTop = el ? el.scrollTop : 0
+  const prevHeight = el ? el.scrollHeight : 0
+  try {
+    const { data } = await api.getMessages(activeUser.value, PAGE, messages.value[0]?.id || 0)
+    const older = Array.isArray(data) ? data : []
+    if (older.length) messages.value = [...older, ...messages.value]
+    hasMore.value = older.length >= PAGE
+    requestAnimationFrame(() => {
+      if (listEl.value) listEl.value.scrollTop = listEl.value.scrollHeight - prevHeight + prevTop
+    })
+  } catch (e) { toast(e.message || '加载失败', true) }
+  finally { loadingOlder.value = false }
+}
+
+// 图片发送：本地预校验大小 → FormData 上传 → 刷新线程
+function pickImage() { imgInput.value?.click() }
+async function onPickImage(e) {
+  const file = e.target.files?.[0]
+  e.target.value = ''
+  if (!file || !activeUser.value) return
+  if (file.size > 8 * 1024 * 1024) { toast('图片不能超过 8MB', true); return }
+  const form = new FormData()
+  form.append('file', file)
+  busy.value = true
+  try {
+    await api.sendImage(activeUser.value, form)
+    await loadMessages(activeUser.value)
+    bumpIm()
+  } catch (err2) { toast(err2.message || '图片发送失败', true) }
+  finally { busy.value = false }
+}
+
+// 撤回自己的文本/图片消息
+async function doRecall(m) {
+  if (busy.value) return
+  busy.value = true
+  try {
+    await api.recallMessage(m.id)
+    await loadMessages(activeUser.value)
+    bumpIm()
+  } catch (e) { toast(e.message || '撤回失败', true) }
+  finally { busy.value = false }
 }
 
 function scrollBottom() {

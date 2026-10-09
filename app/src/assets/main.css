@@ -228,7 +228,7 @@ html.theme-tech body::before {
   --c-on-primary: 255 251 240;
   --c-background: 248 242 230; /* 米黄纸感 */
   --c-surface: 255 252 244;
-  --c-surface-alt: 250 244 230;
+  --c-surface-alt: 255 254 247; /* 比 surface 更亮：卡片壳底色需与米黄背景拉开层次 */
   --c-surface-hover: 243 235 218;
   --c-on-background: 56 46 32;
   --c-on-surface: 62 52 38;
@@ -461,13 +461,14 @@ html::-webkit-scrollbar {
   animation: pulse-ring 1.8s ease-out infinite;
 }
 
-/* 路由切换淡入 */
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.18s ease;
+/* 路由切换：仅新页面淡入，旧页面立即卸载。
+   交叉淡出会让旧页面（含首页仪表盘与 Teleport 进导航栏的工具条）
+   与新页面同帧共存 0.18s：淡出期间旧页面半透明滞留、布局被撑开，
+   表现为「闪现没有样式的首页」；重型页面同时挂载/卸载也放大掉帧。 */
+.fade-enter-active {
+  transition: opacity 0.15s ease;
 }
-.fade-enter-from,
-.fade-leave-to {
+.fade-enter-from {
   opacity: 0;
 }
 

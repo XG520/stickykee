@@ -8,7 +8,13 @@
           <div class="flex items-center gap-3 px-5 py-3.5 border-b border-border">
             <span class="material-symbols-outlined text-primary text-xl">devices</span>
             <h3 class="font-headline text-on-background font-semibold text-base">设备</h3>
-            <span class="text-muted text-xs font-body">共 {{ totalCount }} 台 · {{ onlineCount }} 在线</span>
+            <span v-if="activeFilter !== 'all'" class="flex items-center gap-1 text-[11px] font-body px-2 py-0.5 rounded-full bg-primary/15 border border-primary/40 text-primary">
+              {{ filterLabel(activeFilter) }}
+              <button @click="activeFilter = 'all'" title="清除筛选" class="hover:text-on-surface transition-colors">
+                <span class="material-symbols-outlined text-xs">close</span>
+              </button>
+            </span>
+            <span class="text-muted text-xs font-body">共 {{ totalCount }} 台<template v-if="activeFilter === 'all'"> · {{ onlineCount }} 在线</template></span>
             <button @click="reload" title="刷新" class="ml-auto w-8 h-8 rounded-full hover:bg-surface-hover flex items-center justify-center text-muted hover:text-on-surface transition-colors">
               <span class="material-symbols-outlined text-base" :class="{ 'animate-spin': loading }">refresh</span>
             </button>
@@ -25,7 +31,7 @@
                 <div v-if="loading && !loadedOnce" class="py-12 text-center">
                   <span class="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin inline-block"></span>
                 </div>
-                <div v-else-if="!devices.length" class="py-12 text-center text-muted text-sm font-body">未获取到设备</div>
+                <div v-else-if="!devices.length" class="py-12 text-center text-muted text-sm font-body">{{ activeFilter === 'all' ? '未获取到设备' : '没有符合条件的设备' }}</div>
                 <div v-for="room in rooms" :key="room.id" class="border-b border-border/50 last:border-b-0">
                   <button class="w-full flex items-center gap-2 px-4 py-2.5 hover:bg-surface-hover/60 transition-colors" @click="toggleRoom(room)">
                     <span class="material-symbols-outlined text-base text-muted" :class="isRoomCollapsed(room) ? 'chevron_right' : 'expand_more'">expand_more</span>
@@ -114,21 +120,58 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import api from '@/api'
-import { store, entityStates, refreshEntities, loadRegistry, registryDevices as regDevices, registryUnassigned as regUnassigned, registryLoaded } from '@/store'
-import { isOn, isAvailable, iconFor, domainGlyph } from '@/utils/entities'
+import { store, entityStates, refreshEntities, loadRegistry, registryDevices as regDevices, registryUnassigned as regUnassigned, registryLoaded, deviceDrawer } from '@/store'
+import { isOn, isAvailable, iconFor, domainGlyph, powerOf } from '@/utils/entities'
 import { buildControls } from '@/utils/entityControls'
 
-const props = defineProps({ open: { type: Boolean, default: false } })
 const emit = defineEmits(['close'])
+
+// 打开状态与过滤条件来自全局 store（deviceDrawer），任何页面调用 openDeviceDrawer(filter) 即可打开。
+const open = computed(() => deviceDrawer.open)
+const FILTER_LABELS = { active: '开启的设备', inactive: '关闭的设备', lights_on: '开启的灯光', power: '有功耗设备' }
+const DOMAIN_CN = { light: '灯光', climate: '空调', switch: '开关', media_player: '影音', cover: '窗帘', lock: '门锁', camera: '摄像头', sensor: '传感器', fan: '风扇', humidifier: '加湿', vacuum: '扫地' }
+// 过滤条件：all / active / inactive / lights_on / power / area:房间名 / domain:领域
+function filterLabel(f) {
+  if (!f || f === 'all') return ''
+  if (f.startsWith('area:')) return `房间 · ${f.slice(5)}`
+  if (f.startsWith('domain:')) { const d = f.slice(7); return `${DOMAIN_CN[d] || d}设备` }
+  return FILTER_LABELS[f] || ''
+}
 
 const loading = ref(false)
 const loadedOnce = ref(false)
+// 打开时同步外部过滤条件；抽屉内可清除过滤回到全量列表
+const activeFilter = ref('all')
+watch(() => [open.value, deviceDrawer.filter, deviceDrawer.seq], ([o, f]) => {
+  if (o) { activeFilter.value = f || 'all'; detail.value = null }
+})
 // 设备列表改用全局共享缓存（与概览卡片同一数据源，保证数量口径一致）。
 // 不在此处合并实时状态：抽屉常驻挂载，避免每次 WS 推送都重算整个设备列表；
 // 实时状态由渲染路径上的 liveEntityOf / activeCount / deviceOnline 按需读取。
-const devices = computed(() => regDevices.value)
+// 带过滤条件时例外：online/offline/lights_on 需读实时状态，列表小、代价可控。
+const devices = computed(() => {
+  const f = activeFilter.value
+  const list = regDevices.value
+  let out = list
+  if (f === 'active') out = list.filter(deviceActive)
+  else if (f === 'inactive') out = list.filter((d) => !deviceActive(d))
+  else if (f === 'lights_on') out = list.filter(deviceLightOn)
+  else if (f === 'power') out = list.filter(devicePower)
+  else if (f.startsWith('domain:')) {
+    const dom = f.slice(7)
+    out = list.filter((d) => (d.entities || []).some((e) => !e.disabled && e.domain === dom))
+  }
+  else if (f.startsWith('area:')) {
+    const target = f.slice(5).trim()
+    out = list.filter((d) => {
+      const a = (d.area_name || '').trim()
+      return a === target || (target && a.includes(target)) || (a && target.includes(a))
+    })
+  }
+  return out
+})
 const unassigned = computed(() => regUnassigned.value)
 const detail = ref(null)
 const collapsed = ref(new Set())
@@ -140,7 +183,7 @@ const liveEntities = computed(() => {
   return detail.value.entities.map(liveEntityOf)
 })
 
-function close() { detail.value = null; moreEntityId.value = ''; emit('close') }
+function close() { detail.value = null; moreEntityId.value = ''; deviceDrawer.open = false; emit('close') }
 function reload() { load(1) }
 function isRoomCollapsed(room) { return collapsed.value.has(room.id) }
 function toggleRoom(room) {
@@ -166,6 +209,10 @@ const rooms = computed(() => {
 })
 
 function deviceOnline(d) { return (d.entities || []).some((e) => { const l = liveEntityOf(e); return !e.disabled && isAvailable(l) }) }
+// 设备「开启」：至少一个未禁用实体处于 on/open/playing 等开启态（与概览卡格子同口径）
+function deviceActive(d) { return (d.entities || []).some((e) => !e.disabled && isOn(liveEntityOf(e))) }
+function deviceLightOn(d) { return (d.entities || []).some((e) => !e.disabled && e.domain === 'light' && isOn(liveEntityOf(e))) }
+function devicePower(d) { return (d.entities || []).some((e) => { const l = liveEntityOf(e); return !e.disabled && (powerOf(l) ?? 0) > 0 }) }
 function deviceVia(e) { return e }
 function domainBadge(d) {
   if (d.disabled || !d.domain) return ''
@@ -271,6 +318,8 @@ onMounted(() => {
   refreshEntities()
   load()
 })
+// 抽屉现在挂在 App 外壳（登录后即挂载），可能早于 store.ready；就绪后补一次加载
+watch(() => store.ready, (r) => { if (r) load() })
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', onEsc)
   window.removeEventListener('resize', onResize)

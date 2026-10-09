@@ -25,7 +25,7 @@ func NewPrefs(repo *store.InstanceRepo, userPrefs *store.UserPrefs, manager *ha.
 }
 
 // 用户级偏好 key：按登录用户隔离；无值回退全局 prefs。
-var userScoped = []string{"theme", "font", "icons", "floorplan", "animation", "wakeWord", "dashboard"}
+var userScoped = []string{"theme", "font", "icons", "floorplan", "floorplan_doc", "animation", "wakeWord", "dashboard"}
 
 // 设备级偏好 key：按登录用户隔离（设备/传感器均属个人），无全局回退。
 var deviceScoped = []string{"devices", "sensor_config"}

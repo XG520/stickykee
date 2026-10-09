@@ -21,9 +21,9 @@
       </div>
     </div>
 
-    <!-- Overview Cards -->
+    <!-- Overview Cards（点击打开设备抽屉，按对应条件过滤；温湿度为环境读数，不可点） -->
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
-      <div class="bg-surface border border-border rounded-2xl p-4 transition-colors duration-200">
+      <button class="text-left bg-surface border border-border rounded-2xl p-4 transition-colors duration-200 hover:border-primary/50" @click="openDeviceDrawer('power')" title="点击查看有功耗的设备">
         <div class="flex items-center justify-between mb-3">
           <div class="w-9 h-9 rounded-xl bg-primary/15 flex items-center justify-center">
             <span class="material-symbols-outlined text-primary text-lg">bolt</span>
@@ -31,19 +31,19 @@
         </div>
         <p class="font-headline text-on-background font-semibold text-2xl leading-none">{{ hasData ? totalPowerKW.toFixed(2) : '—' }}<span class="text-base font-normal text-muted ml-1">kW</span></p>
         <p class="text-muted font-body text-sm mt-1">当前功率</p>
-      </div>
+      </button>
 
-      <div class="bg-surface border border-border rounded-2xl p-4 transition-colors duration-200">
+      <button class="text-left bg-surface border border-border rounded-2xl p-4 transition-colors duration-200 hover:border-primary/50" @click="openDeviceDrawer('active')" title="点击查看开启中的设备">
         <div class="flex items-center justify-between mb-3">
           <div class="w-9 h-9 rounded-xl bg-accent/15 flex items-center justify-center">
             <span class="material-symbols-outlined text-accent text-lg">devices</span>
           </div>
         </div>
-        <p class="font-headline text-on-background font-semibold text-2xl leading-none">{{ onCount }}<span class="text-base font-normal text-muted ml-1">台</span></p>
-        <p class="text-muted font-body text-sm mt-1">设备在线</p>
-      </div>
+        <p class="font-headline text-on-background font-semibold text-2xl leading-none">{{ activeDeviceCount }}<span class="text-base font-normal text-muted ml-1">台</span></p>
+        <p class="text-muted font-body text-sm mt-1">设备开启</p>
+      </button>
 
-      <div class="bg-surface border border-border rounded-2xl p-4 transition-colors duration-200">
+      <button class="text-left bg-surface border border-border rounded-2xl p-4 transition-colors duration-200 hover:border-primary/50" @click="openDeviceDrawer('all')" title="点击查看全部设备">
         <div class="flex items-center justify-between mb-3">
           <div class="w-9 h-9 rounded-xl bg-info/15 flex items-center justify-center">
             <span class="material-symbols-outlined text-info text-lg">category</span>
@@ -51,7 +51,7 @@
         </div>
         <p class="font-headline text-on-background font-semibold text-2xl leading-none">{{ all.length }}<span class="text-base font-normal text-muted ml-1">台</span></p>
         <p class="text-muted font-body text-sm mt-1">接入实体</p>
-      </div>
+      </button>
 
       <div class="bg-surface border border-border rounded-2xl p-4 transition-colors duration-200">
         <div class="flex items-center justify-between mb-3">
@@ -174,7 +174,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { store, backendOnline, entityStates, refreshEntities, onEntityChange } from '@/store'
+import { store, backendOnline, entityStates, refreshEntities, onEntityChange, registryDevices, loadRegistry, openDeviceDrawer } from '@/store'
 import { iconFor, isOn, attr, numVal, powerOf, totalPower } from '@/utils/entities'
 
 const ranges = ['今日', '本周', '本月', '自定义']
@@ -183,6 +183,13 @@ const activeRange = ref('今日')
 const all = computed(() => Object.values(entityStates))
 const hasData = computed(() => backendOnline.value && all.value.length > 0)
 const onCount = computed(() => (hasData.value ? all.value.filter((e) => isOn(e)).length : 0))
+// 开启中的「设备」数：至少一个未禁用实体处于开启态（与设备抽屉 active 过滤同口径）
+const activeDeviceCount = computed(() => registryDevices.value.filter((d) =>
+  (d.entities || []).some((e) => {
+    if (e.disabled) return false
+    const live = entityStates[e.entity_id]
+    return isOn({ state: live && live.state !== undefined ? live.state : e.state, domain: e.domain })
+  }))).length
 
 const totalPowerW = computed(() => totalPower(all.value))
 const totalPowerKW = computed(() => totalPowerW.value / 1000)
@@ -270,7 +277,7 @@ const stats = computed(() => [
 
 let off = null
 onMounted(async () => {
-  if (store.ready && store.activeID > 0) await refreshEntities(store.activeID)
+  if (store.ready && store.activeID > 0) { await refreshEntities(store.activeID); loadRegistry() }
   off = onEntityChange(() => {})
 })
 </script>

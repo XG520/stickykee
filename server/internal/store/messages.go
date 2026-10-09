@@ -11,12 +11,13 @@ type Message struct {
 	ID        int64          `json:"id"`
 	From      string         `json:"from"`
 	To        string         `json:"to"`
-	Type      string         `json:"type"`    // text | share
+	Type      string         `json:"type"`    // text | image | device | share
 	Content   string         `json:"content"` // text 消息文本（share 为空）
-	Status    string         `json:"status"`  // share: '' | pending | accepted | declined
+	Status    string         `json:"status"`  // share: '' | pending | accepted | declined；撤回：recalled
 	Read      bool           `json:"read"`
 	CreatedAt string         `json:"created_at"`
 	Device    map[string]any `json:"device,omitempty"` // device 类型：{entity_id,name,icon,domain,device_class,...}
+	Image     map[string]any `json:"image,omitempty"`  // image 类型：{url,name}
 }
 
 // Conversation 表示一个对话的聚合视图。
@@ -36,13 +37,19 @@ func NewMessageRepo(db *sql.DB) *MessageRepo { return &MessageRepo{db: db} }
 
 const msgCols = `id, from_user, to_user, msg_type, status, read, created_at`
 
-// fillMessage 依据类型回填 Content/Device（share 不返回 payload 全文）。
+// fillMessage 依据类型回填 Content/Device/Image（share 不返回 payload 全文；
+// 已撤回消息清空载荷，历史记录只留占位）。
 func fillMessage(m *Message, msgType, payload string) {
 	m.Type = msgType
+	if m.Status == "recalled" {
+		return
+	}
 	if msgType == "text" {
 		m.Content = payload
 	} else if msgType == "device" {
 		_ = json.Unmarshal([]byte(payload), &m.Device)
+	} else if msgType == "image" {
+		_ = json.Unmarshal([]byte(payload), &m.Image)
 	}
 }
 
@@ -78,15 +85,22 @@ func (r *MessageRepo) GetFull(ctx context.Context, id int64) (Message, string, e
 	return m, payload, err
 }
 
-// History 返回 me 与 other 之间最近的 limit 条消息（升序），text 含内容、share 不含 payload 全文。
-func (r *MessageRepo) History(ctx context.Context, me, other string, limit int) ([]Message, error) {
+// History 返回 me 与 other 之间最近的 limit 条消息（升序），text/image 含内容、share 不含 payload 全文。
+// before>0 时只取 id<before 的更早消息（向上翻页游标）。
+func (r *MessageRepo) History(ctx context.Context, me, other string, limit int, before int64) ([]Message, error) {
 	if limit <= 0 {
 		limit = 50
 	}
-	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, from_user, to_user, msg_type, payload, status, read, created_at FROM messages
-		 WHERE (from_user=? AND to_user=?) OR (from_user=? AND to_user=?)
-		 ORDER BY id DESC LIMIT ?`, me, other, other, me, limit)
+	q := `SELECT id, from_user, to_user, msg_type, payload, status, read, created_at FROM messages
+		 WHERE (from_user=? AND to_user=?) OR (from_user=? AND to_user=?)`
+	args := []any{me, other, other, me}
+	if before > 0 {
+		q += ` AND id < ?`
+		args = append(args, before)
+	}
+	q += ` ORDER BY id DESC LIMIT ?`
+	args = append(args, limit)
+	rows, err := r.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -158,8 +172,8 @@ func (r *MessageRepo) Conversations(ctx context.Context, me string) ([]*Conversa
 			agg[other] = c
 			order = append(order, other)
 		}
-		// 未读：对端 → 我 且 read=0
-		if raw.msg.To == me && !raw.msg.Read {
+		// 未读：对端 → 我 且 read=0（撤回占位不计未读）
+		if raw.msg.To == me && !raw.msg.Read && raw.msg.Status != "recalled" {
 			c.Unread++
 		}
 		// 待处理共享：对端 → 我 且 status=pending

@@ -10,11 +10,19 @@
 //      data-hc="link"  data-href="#/map"     跳转
 
 // 公共外壳样式（每张卡的 CSS 都以此为基底）
-const SHELL_BASE = `.hc{flex:1;min-height:0;display:flex;flex-direction:column;gap:4px;overflow:hidden}
-.h-head{display:flex;align-items:center;gap:4px;min-width:0}
-.h-ic{font-size:13px;color:var(--hc-color,var(--hc-primary));flex-shrink:0}
+// 设计语言：统一卡片壳（细边框 + 顶光渐变 + 柔和落影）、头部图标升级为类型色芯片、
+// 徽章/按钮/大数字统一排版节奏——与设备聚合卡 .dk 保持同一视觉体系。
+const SHELL_BASE = `.hc{flex:1;min-height:0;display:flex;flex-direction:column;gap:4px;overflow:hidden;padding:8px;border-radius:14px;
+  background:linear-gradient(165deg,rgb(255 255 255 / .05),rgb(255 255 255 / 0) 46%),color-mix(in srgb,var(--hc-bg2) 55%,var(--hc-bg));
+  border:1px solid var(--hc-border);
+  box-shadow:0 1px 3px rgb(0 0 0 / .07),0 8px 20px -8px rgb(0 0 0 / .16)}
+.h-head{display:flex;align-items:center;gap:5px;min-width:0}
+.h-ic{width:18px;height:18px;font-size:11px;flex:none;display:flex;align-items:center;justify-content:center;border-radius:6px;
+  color:var(--hc-color,var(--hc-primary));
+  background:color-mix(in srgb,var(--hc-color,var(--hc-primary)) 13%,transparent);
+  border:1px solid color-mix(in srgb,var(--hc-color,var(--hc-primary)) 26%,transparent)}
 .h-t{font-size:10px;font-weight:600;color:var(--hc-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
-.h-badge{font-size:8px;padding:1px 6px;border-radius:99px;flex-shrink:0;white-space:nowrap}
+.h-badge{font-size:8px;font-weight:600;padding:1.5px 7px;border-radius:99px;flex-shrink:0;white-space:nowrap}
 .b-on{background:rgb(var(--hc-success-rgb) / .15);color:var(--hc-success)}
 .b-off{background:var(--hc-bg2);border:1px solid var(--hc-border);color:var(--hc-sub)}
 .b-warn{background:rgb(var(--hc-warn-rgb) / .15);color:var(--hc-warn)}
@@ -22,14 +30,15 @@ const SHELL_BASE = `.hc{flex:1;min-height:0;display:flex;flex-direction:column;g
 .h-fill{flex:1;min-height:0}
 .h-mid{display:flex;align-items:center;justify-content:center}
 .h-btn{display:flex;align-items:center;justify-content:center;border:1px solid var(--hc-color,var(--hc-primary));background:rgb(var(--hc-primary-rgb) / .12);color:var(--hc-color,var(--hc-primary));border-radius:99px;cursor:pointer;transition:all .15s}
+.h-btn:hover{background:rgb(var(--hc-primary-rgb) / .22);box-shadow:0 0 0 3px rgb(var(--hc-primary-rgb) / .08)}
 .h-btn:active{transform:scale(.9)}
 .h-btn[disabled]{opacity:.4;cursor:default}
 .h-btn:empty{display:none}
 .h-btn-ghost{background:var(--hc-bg2);border-color:var(--hc-border);color:var(--hc-sub)}
 .h-cell{background:var(--hc-bg2);border:1px solid var(--hc-border);border-radius:8px;padding:3px 5px;text-align:center;min-width:0}
 .h-row{display:flex;align-items:center;gap:4px;min-width:0}
-.h-big{font-size:20px;font-weight:600;color:var(--hc-text);line-height:1}
-.h-num{font-size:13px;font-weight:600;color:var(--hc-text);line-height:1}
+.h-big{font-size:20px;font-weight:700;color:var(--hc-text);line-height:1;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.h-num{font-size:13px;font-weight:600;color:var(--hc-text);line-height:1;font-variant-numeric:tabular-nums}
 .h-cap{font-size:7px;color:var(--hc-sub);font-style:normal}
 .h-bar{width:100%;height:3px;accent-color:var(--hc-color,var(--hc-primary));cursor:pointer}`
 
@@ -237,32 +246,88 @@ export function tplAction() {
   return { html, css }
 }
 
-// ================= 11. 通用卡片（多实体） =================
-// 一张卡可绑定任意数量实体：头部显示首个实体，下方逐行列出所有实体，
-// 开关类域行尾自带开关按钮（data-entity 定向到对应实体）。
+// ================= 11. 设备聚合卡（generic）：按设备类型定制视觉 =================
 export function tplGeneric() {
-  const html = `<div class="hc">
-  <div class="h-head">
-    <span class="h-ic material-symbols-outlined">{{glyph}}</span>
-    <span class="h-t">{{name}}</span>
-    <span class="g-cnt">{{count}}</span>
+  const html = `<div class="dk {{activeCls}} {{shortCls}}" style="--dk:{{kindColor}};--dk-rgb:{{kindColorRgb}}">
+  <div class="dk-glow"></div>
+  <div class="dk-head">
+    <span class="dk-logo"><span class="material-symbols-outlined">{{kindIcon}}</span></span>
+    <span class="dk-name">{{name}}</span>
+    <span class="dk-tag">{{kindLabel}}</span>
   </div>
-  <div class="g-rows">{{rowsHtml}}</div>
+  <div class="dk-hero {{heroBtnCls}}" {{heroClickAttrs}}>
+    <div class="dk-info">
+      <span class="dk-big">{{bigHtml}}</span>
+      <span class="dk-sub">{{sub}}</span>
+    </div>
+    <span class="dk-state {{stateCls}}">{{state}}</span>
+  </div>
+  <div class="g-rows dk-rows {{rowsHideCls}}">{{rowsHtml}}</div>
 </div>`
-  const css = shell + `
-.hc{padding:6px}
-.g-cnt{margin-left:auto;font-size:8px;color:var(--hc-sub);background:var(--hc-bg2);border:1px solid var(--hc-border);border-radius:99px;padding:0 6px;line-height:14px}
-.g-cnt:empty{display:none}
-.g-rows{flex:1;min-height:0;display:flex;flex-direction:column;gap:2px;overflow-y:auto;padding-top:2px;scrollbar-width:thin}
+  const css = `
+.dk{flex:1;min-height:0;display:flex;flex-direction:column;gap:4px;padding:7px;position:relative;overflow:hidden;border-radius:14px;
+  background:linear-gradient(165deg,rgb(255 255 255 / .05),rgb(255 255 255 / 0) 46%),color-mix(in srgb,var(--hc-bg2) 55%,var(--hc-bg));
+  border:1px solid var(--hc-border);
+  box-shadow:0 1px 3px rgb(0 0 0 / .07),0 8px 20px -8px rgb(0 0 0 / .16)}
+/* 顶部类型色光晕：默认隐于背景，激活态显现 */
+.dk-glow{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .25s;
+  background:radial-gradient(135% 58% at 50% -28%, rgb(var(--dk-rgb) / .17), transparent 68%)}
+.dk.is-active .dk-glow{opacity:1}
+.dk.is-active{box-shadow:inset 0 0 0 1px rgb(var(--dk-rgb) / .4), 0 2px 14px rgb(var(--dk-rgb) / .14), 0 8px 20px -8px rgb(0 0 0 / .16)}
+/* 头部：渐变 Logo + 设备名 + 类型标签 */
+.dk-head{display:flex;align-items:center;gap:5px;min-width:0;position:relative;z-index:1}
+.dk-logo{width:20px;height:20px;flex:none;border-radius:7px;display:flex;align-items:center;justify-content:center;
+  background:rgb(var(--dk-rgb) / .13);color:var(--dk);border:1px solid rgb(var(--dk-rgb) / .28);transition:all .2s}
+.dk-logo .material-symbols-outlined{font-size:12px;line-height:1}
+.dk.is-active .dk-logo{background:linear-gradient(140deg,var(--dk),color-mix(in srgb,var(--dk) 55%,#000));
+  color:#fff;border-color:transparent;box-shadow:0 1px 5px rgb(var(--dk-rgb) / .45)}
+.dk-name{flex:1;min-width:0;font-size:9.5px;font-weight:600;color:var(--hc-text);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dk-tag{flex:none;font-size:7px;line-height:14px;color:var(--dk);
+  background:rgb(var(--dk-rgb) / .1);border:1px solid rgb(var(--dk-rgb) / .2);border-radius:5px;padding:0 5px}
+/* 主状态区：左列大字+副文本，右侧状态徽章；可控制时整块可点 */
+.dk-hero{position:relative;z-index:1;display:flex;align-items:center;gap:6px;min-width:0;
+  padding:5px 7px;border-radius:8px;cursor:default;border:1px solid var(--hc-border);
+  background:linear-gradient(180deg,rgb(var(--dk-rgb) / .07),transparent),var(--hc-bg2);transition:all .15s}
+.dk-hero.is-btn{cursor:pointer}
+.dk-hero.is-btn:hover{border-color:rgb(var(--dk-rgb) / .55);background:rgb(var(--dk-rgb) / .1)}
+.dk-hero.is-btn:active{transform:scale(.985)}
+.dk-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.dk-big{display:flex;align-items:center;gap:2px;min-width:0;
+  font-size:18px;font-weight:700;line-height:1.05;color:var(--hc-text)}
+.dk-big small{font-size:8px;font-weight:500;color:var(--hc-sub)}
+.dk-big .material-symbols-outlined{font-size:20px;line-height:1;color:var(--dk)}
+.dk-sub{font-size:7.5px;line-height:1.25;color:var(--hc-sub);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dk-state{flex:none;font-size:7px;line-height:15px;padding:0 7px;border-radius:99px;white-space:nowrap;
+  background:rgb(var(--dk-rgb) / .12);color:var(--dk);border:1px solid rgb(var(--dk-rgb) / .22)}
+.dk-state.is-on{background:rgb(var(--dk-rgb) / .2);border-color:rgb(var(--dk-rgb) / .45)}
+.dk-state.is-ok{background:rgb(var(--hc-success-rgb) / .15);color:var(--hc-success);border-color:rgb(var(--hc-success-rgb) / .3)}
+.dk-state.is-warn{background:rgb(var(--hc-warn-rgb) / .17);color:var(--hc-warn);border-color:rgb(var(--hc-warn-rgb) / .35)}
+/* 其余实体行：无边框轻列表，hover 类型色高亮；有内容时以细分隔线与主状态区分隔 */
+.g-rows{position:relative;z-index:1;flex:1;min-height:0;display:flex;flex-direction:column;gap:1px;
+  overflow-y:auto;padding:0;scrollbar-width:thin}
+.g-rows.is-empty{display:none}
+.g-rows:not(.is-empty){border-top:1px solid color-mix(in srgb,var(--hc-border) 55%,transparent);margin-top:2px;padding-top:3px}
 .g-rows::-webkit-scrollbar{width:3px}
 .g-rows::-webkit-scrollbar-thumb{background:var(--hc-border);border-radius:3px}
-.grow{display:flex;align-items:center;gap:4px;min-width:0;flex:none;padding:2px 5px;border-radius:6px;background:var(--hc-bg2);border:1px solid var(--hc-border)}
+.grow{display:flex;align-items:center;gap:5px;min-width:0;padding:2px 5px;border-radius:6px;border:1px solid transparent}
+.grow:hover{background:rgb(var(--dk-rgb) / .08);border-color:rgb(var(--dk-rgb) / .16)}
 .g-ic{font-size:11px;line-height:1;flex:none}
-.g-nm{flex:1;min-width:0;font-size:8px;color:var(--hc-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.g-st{flex:none;max-width:84px;font-size:8px;color:var(--hc-sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.g-tg{flex:none;width:18px;height:18px;padding:0;border-radius:99px;border:1px solid var(--hc-border);background:var(--hc-bg2);color:var(--hc-sub);display:flex;align-items:center;justify-content:center;cursor:pointer}
+.g-nm{flex:1;min-width:0;font-size:8px;color:var(--hc-text);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.g-st{flex:none;max-width:80px;font-size:8px;color:var(--hc-sub);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.g-tg{flex:none;width:18px;height:18px;padding:0;border-radius:99px;border:1px solid var(--hc-border);
+  background:var(--hc-bg2);color:var(--hc-sub);display:flex;align-items:center;justify-content:center;cursor:pointer}
 .g-tg .material-symbols-outlined{font-size:10px;line-height:1}
-.g-tg.on{background:color-mix(in srgb,var(--gc,var(--hc-primary)) 18%,var(--hc-bg2));border-color:var(--gc,var(--hc-primary));color:var(--gc,var(--hc-primary))}`
+.g-tg.on{background:color-mix(in srgb,var(--gc,var(--dk)) 18%,var(--hc-bg2));
+  border-color:var(--gc,var(--dk));color:var(--gc,var(--dk))}
+/* 高卡（h=2）：主状态放大，给大字区更多呼吸空间 */
+.dk.is-tall .dk-big{font-size:26px}
+.dk.is-tall .dk-big .material-symbols-outlined{font-size:28px}
+.dk.is-tall .dk-hero{padding:7px 9px}
+`
   return { html, css }
 }
 
@@ -517,17 +582,17 @@ export function tplGreeting() {
     <span class="h-mut">智能家庭控制中心</span>
   </div>
   <h1 class="g-title">{{greeting}}</h1>
-  <p class="g-sub">{{subtitle}}</p>
+  <p class="g-sub" data-hc="device-drawer" data-filter="all" title="点击查看全部设备">{{subtitle}}</p>
   <div class="g-m">
     <div class="g-cell"><b>{{time}}</b><i>时间</i></div>
     <div class="g-cell"><b>{{indoorTemp}}</b><i>室内</i></div>
     <div class="g-cell"><b>{{indoorHumidity}}</b><i>湿度</i></div>
   </div>
 </div>`
-  const css = `.hc{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:space-between;gap:3px;position:relative;overflow:hidden;padding:8px}
+  const css = shell + `.hc{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:space-between;gap:3px;position:relative;overflow:hidden;padding:8px}
 .deco{position:absolute;top:-14px;right:-14px;width:64px;height:64px;border-radius:50%;background:var(--hc-primary);opacity:.1;filter:blur(14px)}
 .h-head{display:flex;align-items:center;gap:4px}
-.h-ic{font-size:12px}
+.h-ic{font-size:11px}
 .h-mut{font-size:8px;color:var(--hc-sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .g-title{font-size:17px;font-weight:600;margin:0;line-height:1.1;color:var(--hc-text)}
 .g-sub{font-size:9px;color:var(--hc-sub);margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -559,14 +624,11 @@ export function tplWeather() {
   </div>
   <div class="h-fill" style="display:flex;flex-direction:column;justify-content:flex-end;gap:2px">{{forecastHtml}}</div>
 </div>`
-  const css = `.hc{flex:1;min-height:0;display:flex;flex-direction:column;gap:5px;overflow:hidden;padding:8px}
+  const css = shell + `.hc{flex:1;min-height:0;display:flex;flex-direction:column;gap:5px;overflow:hidden;padding:8px}
 .h-head{display:flex;align-items:center;gap:5px}
-.h-ic{font-size:14px}
+.h-ic{font-size:12px}
 .h-t{font-size:11px;font-weight:600;color:var(--hc-text)}
-.h-fill{flex:1;min-height:0}
-.h-mid{display:flex;align-items:center;justify-content:center}
-.h-cell{background:var(--hc-bg2);border:1px solid var(--hc-border);border-radius:8px;padding:3px 0;text-align:center;min-width:0}
-.h-cap{font-size:7px;color:var(--hc-sub);font-style:normal}
+.h-cell{padding:3px 0}
 .h-row{display:flex;align-items:center;gap:4px}
 .fc{display:flex;align-items:center;gap:4px;font-size:8px;background:var(--hc-bg2);border:1px solid var(--hc-border);border-radius:6px;padding:1px 5px}
 .fc span.d{width:36px;flex-shrink:0;color:var(--hc-sub)}
@@ -590,12 +652,10 @@ export function tplClock() {
     <span class="h-mut">{{week}} · {{date}}</span>
   </div>
 </div>`
-  const css = `.hc{flex:1;min-height:0;display:flex;flex-direction:column;gap:3px;overflow:hidden;padding:7px}
+  const css = shell + `.hc{flex:1;min-height:0;display:flex;flex-direction:column;gap:3px;overflow:hidden;padding:7px}
 .h-head{display:flex;align-items:center;gap:4px}
-.h-ic{font-size:12px}
+.h-ic{font-size:11px}
 .h-mut{font-size:8px;color:var(--hc-sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.h-fill{flex:1;min-height:0}
-.h-mid{display:flex;align-items:center;justify-content:center}
 .h-row{display:flex;align-items:center;gap:4px}
 .c-time{font-size:26px;font-weight:600;color:var(--hc-text);line-height:1;font-variant-numeric:tabular-nums}
 .c-sec{font-size:11px;font-weight:600;color:var(--hc-info);line-height:1;font-variant-numeric:tabular-nums;align-self:flex-end;padding-bottom:3px}`
@@ -617,12 +677,10 @@ export function tplDate() {
     <span class="h-mut">{{week}}</span>
   </div>
 </div>`
-  const css = `.hc{flex:1;min-height:0;display:flex;flex-direction:column;gap:3px;overflow:hidden;padding:7px}
+  const css = shell + `.hc{flex:1;min-height:0;display:flex;flex-direction:column;gap:3px;overflow:hidden;padding:7px}
 .h-head{display:flex;align-items:center;gap:4px}
-.h-ic{font-size:12px}
+.h-ic{font-size:11px}
 .h-mut{font-size:8px;color:var(--hc-sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.h-fill{flex:1;min-height:0}
-.h-mid{display:flex;align-items:center;justify-content:center}
 .h-row{display:flex;align-items:center;gap:4px}
 .d-day{font-size:30px;font-weight:600;color:var(--hc-text);line-height:1;font-variant-numeric:tabular-nums}`
   return { html, css }
@@ -637,21 +695,19 @@ export function tplOverview() {
     <span class="h-go material-symbols-outlined">chevron_right</span>
   </div>
   <div class="h-fill h-mid" style="gap:5px">
-    <div class="o-cell"><b>{{total}}</b><i>设备总数</i></div>
-    <div class="o-cell"><b style="color:var(--hc-success)">{{online}}</b><i>在线</i></div>
-    <div class="o-cell"><b style="color:var(--hc-sub)">{{offline}}</b><i>离线</i></div>
-    <div class="o-cell"><b style="color:var(--hc-primary)">{{lightsOn}}</b><i>灯光开启</i></div>
-    <div class="o-cell"><b style="color:var(--hc-info)">{{domains}}</b><i>类型</i></div>
+    <div class="o-cell" data-hc="device-drawer" data-filter="all" title="查看全部设备"><b>{{total}}</b><i>设备总数</i></div>
+    <div class="o-cell" data-hc="device-drawer" data-filter="active" title="查看开启中的设备"><b style="color:var(--hc-success)">{{online}}</b><i>开启中</i></div>
+    <div class="o-cell" data-hc="device-drawer" data-filter="inactive" title="查看已关闭的设备"><b style="color:var(--hc-sub)">{{offline}}</b><i>已关闭</i></div>
+    <div class="o-cell" data-hc="device-drawer" data-filter="lights_on" title="查看开启的灯光"><b style="color:var(--hc-primary)">{{lightsOn}}</b><i>灯光开启</i></div>
+    <div class="o-cell" data-hc="device-drawer" data-filter="all" title="查看全部设备"><b style="color:var(--hc-info)">{{domains}}</b><i>类型</i></div>
   </div>
 </div>`
-  const css = `.hc{flex:1;min-height:0;display:flex;flex-direction:column;gap:5px;overflow:hidden;padding:8px;cursor:pointer;transition:background .15s ease}
-.hc:hover{background:var(--hc-bg2)}
+  const css = shell + `.hc{flex:1;min-height:0;display:flex;flex-direction:column;gap:5px;overflow:hidden;padding:8px;cursor:pointer}
 .h-head{display:flex;align-items:center;gap:4px}
-.h-ic{font-size:12px}
+.h-ic{font-size:11px}
 .h-t{font-size:10px;font-weight:600;color:var(--hc-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
 .h-go{font-size:12px;color:var(--hc-sub);opacity:.6}
-.h-fill{flex:1;min-height:0}
-.h-mid{display:flex;align-items:center;justify-content:center}
+.h-row{display:flex;align-items:center;gap:4px}
 .o-cell{flex:1;min-width:0;text-align:center;background:var(--hc-bg2);border:1px solid var(--hc-border);border-radius:8px;padding:5px 0 4px}
 .o-cell b{display:block;font-size:15px;font-weight:600;color:var(--hc-text);line-height:1;font-variant-numeric:tabular-nums}
 .o-cell i{font-style:normal;font-size:7px;color:var(--hc-sub);display:block;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}`
@@ -661,7 +717,9 @@ export function tplOverview() {
 // ================= 27. 地图卡片 =================
 export function tplMap() {
   const html = `<div class="hcm" data-map></div>`
-  const css = `.hcm{flex:1;min-height:0}`
+  const css = `.hcm{flex:1;min-height:0;border-radius:14px;overflow:hidden;
+  border:1px solid var(--hc-border);
+  box-shadow:0 1px 3px rgb(0 0 0 / .07),0 8px 20px -8px rgb(0 0 0 / .16)}`
   return { html, css }
 }
 

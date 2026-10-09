@@ -362,7 +362,8 @@ const holderStyle = computed(() => ({
   transform: `scale(${props.scale})`,
 }))
 const zoomStyle = computed(() => ({
-  zoom: cellPx() / baseCell,
+  // transform:scale 替代 zoom：zoom 触发同步重排且与 container-type/content-visibility 组合会反复失效重排
+  transform: `scale(${cellPx() / baseCell})`,
   width: effW.value * baseCell + 'px',
   height: effH.value * baseCell + 'px',
   display: 'flex',

@@ -16,8 +16,8 @@ import (
 	"stickynuo/server/internal/icons"
 )
 
-// Router 组装全部 HTTP 路由。
-func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store.UserPrefs, msgRepo *store.MessageRepo, hb *hub.Hub, manager *ha.Manager, authOpt auth.Option) http.Handler {
+// Router 组装全部 HTTP 路由。uploadDir 为聊天图片存储根目录（空串禁用图片功能）。
+func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store.UserPrefs, msgRepo *store.MessageRepo, hb *hub.Hub, manager *ha.Manager, authOpt auth.Option, uploadDir string) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
@@ -42,6 +42,12 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 	r.Get("/api/v1/icons/", http.HandlerFunc(icons.ListHandler))
 	r.Get("/api/v1/icons/{name}", http.HandlerFunc(icons.Handler))
 
+	// 聊天图片（公开读取：同 <img> 鉴权限制；安全性依赖上传时生成的
+	// 128-bit 随机文件名不可枚举，读取路径限定在 uploads 目录内防穿越）。
+	im := handler.NewIm(msgRepo, userPrefs, userRepo, hb, uploadDir)
+	r.Get("/api/v1/im-files/", im.ImageFiles)
+	r.Get("/api/v1/im-files/*", im.ImageFiles)
+
 	// 资源 handlers
 	authHandler := handler.NewAuth(userRepo)
 	instances := handler.NewInstances(repo, manager)
@@ -59,7 +65,6 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 	// device_tracker 实体经官方 update_location 命令自动绑定到注册设备。
 	location := handler.NewLocation(manager, sensors)
 	media := handler.NewMedia(manager)
-	im := handler.NewIm(msgRepo, userPrefs, userRepo, hb)
 
 	r.Route("/api/v1", func(r chi.Router) {
 		// 认证：status/register/login 公开，me/logout/change-password 需登录。
@@ -131,9 +136,11 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 			r.Post("/messages/{user}", im.SendText)
 			r.Post("/messages/{user}/share", im.SendShare)
 			r.Post("/messages/{user}/device", im.SendDevice)
+			r.Post("/messages/{user}/image", im.SendImage)
 			r.Post("/messages/{user}/read", im.MarkRead)
 			r.Post("/messages/{id}/accept", im.Accept)
 			r.Post("/messages/{id}/decline", im.Decline)
+			r.Post("/messages/{id}/recall", im.Recall)
 
 			// 用户管理（仅管理员可用，handler 内部校验）
 			r.Route("/users", func(r chi.Router) {

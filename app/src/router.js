@@ -32,4 +32,21 @@ router.afterEach((to) => {
   document.title = to.meta.title ? `${to.meta.title} · Sticky Nuo` : 'Sticky Nuo'
 })
 
+// 首次导航完成后，在浏览器空闲时预取其余路由的懒加载 chunk（Vite 会缓存模块解析结果，
+// 重复调用同一 loader 不会再次下载）。切页时组件代码已在内存，消除点击后
+// 「等 chunk 下载 → 白屏/卡顿」的空窗期。
+let prefetched = false
+router.afterEach(() => {
+  if (prefetched) return
+  prefetched = true
+  const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 1500))
+  idle(() => {
+    for (const r of routes) {
+      if (typeof r.component === 'function') {
+        try { r.component() } catch { /* 预取失败不影响正常导航 */ }
+      }
+    }
+  })
+})
+
 export default router

@@ -31,17 +31,25 @@
         </div>
       </div>
 
-      <!-- 主内容：宽度与顶部导航保持一致 -->
+      <!-- 主内容：宽度与顶部导航保持一致。
+           不加 <transition>：切换时同步卸载旧页再挂载新页。若包 transition，
+           旧首页 DOM 会滞留至少一帧，而期间 CodeCard 已移除动态注入的 <style>，
+           表现为「闪现无样式的首页」；同步交换还能避免新旧重型页同帧挂载掉帧。
+           keep-alive 缓存首页：仪表盘卡片数多（含地图卡），移动端切走再切回
+           重新挂载+重新拉布局耗时过长；缓存后秒回，HA 实时数据仍经 store 推送保持新鲜。 -->
       <main class="max-w-screen-2xl mx-auto px-6 pt-5 pb-10">
-        <router-view v-slot="{ Component, route }">
-          <transition name="fade" appear>
-            <component :is="Component" :key="route.fullPath" />
-          </transition>
+        <router-view v-slot="{ Component }">
+          <keep-alive include="HomeView">
+            <component :is="Component" />
+          </keep-alive>
         </router-view>
       </main>
 
       <!-- 移动端底部 Tab（沉浸模式折叠，保留桌面导航用处有限，故同样隐藏） -->
       <MobileTabBar v-if="!ui.immersive" />
+
+      <!-- 全局设备抽屉：概览卡/统计卡/房间概览点击后按条件过滤展示设备（store.deviceDrawer 驱动） -->
+      <DeviceDrawer />
     </template>
   </div>
 </template>
@@ -52,6 +60,7 @@ import { useRoute } from 'vue-router'
 import TheHeader from '@/components/TheHeader.vue'
 import TheNavBar from '@/components/TheNavBar.vue'
 import MobileTabBar from '@/components/MobileTabBar.vue'
+import DeviceDrawer from '@/components/DeviceDrawer.vue'
 import { auth, loadInstances, ui } from '@/store'
 import { useFullscreen } from '@/composables/useFullscreen'
 import { useAutoHide } from '@/composables/useAutoHide'

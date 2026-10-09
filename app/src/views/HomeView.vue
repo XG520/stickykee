@@ -90,6 +90,9 @@
             <button @click="pickImportFile" class="px-3 py-2 rounded-lg bg-surface-alt border border-border text-muted hover:text-on-surface text-sm transition-colors flex items-center gap-1.5" title="从 JSON 文件导入仪表盘">
               <span class="material-symbols-outlined text-base" aria-hidden="true">upload</span> 导入
             </button>
+            <button @click="smartArrange" class="px-3 py-2 rounded-lg bg-surface-alt border border-border text-muted hover:text-on-surface text-sm transition-colors flex items-center gap-1.5" title="按当前 HA 实体自动设计并摆放卡片">
+              <span class="material-symbols-outlined text-base" aria-hidden="true">auto_awesome_mosaic</span> 智能排版
+            </button>
             <button @click="resetLayout" class="px-3 py-2 rounded-lg bg-surface-alt border border-border text-muted hover:text-on-surface text-sm transition-colors">重置</button>
             <button @click="saveLayout" class="px-4 py-2 rounded-lg bg-primary hover:bg-primary-hover text-on-primary text-sm font-semibold transition-colors flex items-center gap-1.5">
               <span class="material-symbols-outlined text-base" aria-hidden="true">check</span> 完成
@@ -188,7 +191,7 @@
 
         <!-- 卡片实际内容：基准尺寸渲染 + zoom 等比缩放（窗口缩放不影响内部布局/换行） -->
         <div class="hc-card-zoom" :style="zoomStyle(card)">
-          <CodeCard :card="card" :scope-id="'card-' + card.uid" @device-drawer="openDevices" />
+          <CodeCard :card="card" :scope-id="'card-' + card.uid" @device-drawer="openDeviceDrawer" />
         </div>
       </div>
     </div>
@@ -202,9 +205,6 @@
       @close="editorOpen = false"
       @save="onEditorSave"
     />
-
-    <!-- 设备概览抽屉：Overview 卡片点击触发 -->
-    <DeviceDrawer :open="devicesOpen" @close="devicesOpen = false" />
 
     <!-- 导入文件选择 -->
     <input ref="fileEl" type="file" accept="application/json,.json" class="hidden" @change="onImportFile" />
@@ -235,8 +235,8 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, onUpdated, nextTick } from 'vue'
-import { ui, entityStates, haTokenConfigured, haTokenKnown, auth } from '@/store'
+import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, onUpdated, onActivated, nextTick } from 'vue'
+import { ui, entityStates, entityList, registryDevices, loadRegistry, haTokenConfigured, haTokenKnown, auth, openDeviceDrawer } from '@/store'
 import { useEntities } from '@/composables/useLive'
 import { useAutoHide } from '@/composables/useAutoHide'
 import { mark, count, measure as perfMeasure } from '@/utils/perf'
@@ -245,9 +245,8 @@ import { getPrefs, putPrefs } from '@/utils/prefs'
 import { syncCurrentLocation } from '@/utils/location'
 import CodeCard from '@/components/cards/CodeCard.vue'
 import CardEditor from '@/components/cards/CardEditor.vue'
-import DeviceDrawer from '@/components/DeviceDrawer.vue'
 import { cardDefaults } from '@/components/cards/defaults'
-import { newCard, newPage, migrateDashboard, serializeDashboard, downloadDashboard, parseImportPayload } from '@/utils/dashboard'
+import { newCard, newPage, migrateDashboard, serializeDashboard, downloadDashboard, parseImportPayload, autoComposeHomepage } from '@/utils/dashboard'
 
 function meta(type) { return cardDefaults[type] || cardDefaults.greeting }
 
@@ -263,9 +262,7 @@ const loaded = ref(false)
 const editing = ref(false)
 // 添加卡片悬浮面板开关：默认收起为右下角 FAB，展开为浮层面板（不占用画布纵向空间）
 const addPanel = ref(false)
-// 设备概览抽屉：Overview 卡片点击触发
-const devicesOpen = ref(false)
-function openDevices() { devicesOpen.value = true }
+// 设备概览抽屉：Overview 卡片点击触发，携带点击格子的过滤条件（全局抽屉，见 App.vue）
 // 折叠工具栏：初始隐藏（折叠在导航栏下方），鼠标移到该行自动弹出，移开 3 秒后收起
 const { visible: toolbarShow, enter: toolbarEnter, leave: toolbarLeave } = useAutoHide(3000, false)
 // 页签框内的横向滚动容器：切页后把当前页 chip 滚进可视区
@@ -318,7 +315,9 @@ const zoomFactor = computed(() => (cellSize.value > 0 ? cellSize.value / baseCel
 function zoomStyle(card) {
   const cw = Math.min(Math.max(1, card.w || 1), cols.value)
   return {
-    zoom: zoomFactor.value,
+    // 用 transform:scale 而非 zoom：zoom 会触发同步重排，且与卡片的
+    // container-type/content-visibility 组合在窄屏下产生反复失效重排（画面跳动）
+    transform: `scale(${zoomFactor.value})`,
     width: cw * baseCell + 'px',
     height: Math.min(3, card.h || 1) * baseCell + 'px',
     display: 'flex',
@@ -453,6 +452,37 @@ function resetLayout() {
   pages.value = [defaultPage()]
   currentPageIndex.value = 0
   editing.value = false
+}
+
+// 智能排版：用当前真实实体自动设计当前页（不直接落库，用户点「完成」才保存）
+const arranging = ref(false)
+async function smartArrange() {
+  if (!entityList.value.length) { toast('暂未读取到实体，请先连接 Home Assistant', true); return }
+  if (arranging.value) return
+  arranging.value = true
+  try {
+    // 拉取设备注册表（物理设备 → 实体归属），失败则退化为无设备聚合（仅质量筛选）
+    let devices = registryDevices.value
+    if (!devices.length) {
+      try { devices = (await loadRegistry(true)) || [] } catch { devices = [] }
+    }
+    const { page, stats } = autoComposeHomepage(entityList.value, devices)
+    const cur = pages.value[currentPageIndex.value]
+    if (cur) cur.cards = page.cards
+    else { pages.value.push(page); currentPageIndex.value = pages.value.length - 1 }
+    nextTick(measure)
+    // 反馈：聚合了多少设备卡 + 质量筛选剔除明细
+    const reasonName = { unavailable: '不可用', domain: '内部实体', hidden: '已隐藏', diagnostic: '诊断信息', offline: '离线', duplicate: '重复', stale: '长期失联' }
+    const parts = Object.entries(stats.rejected)
+      .filter(([, n]) => n > 0)
+      .map(([k, n]) => `${reasonName[k] || k} ${n}`)
+    const tail = parts.length ? `；剔除：${parts.join('、')}` : ''
+    toast(`智能编排：${stats.total} 个可用实体聚合为 ${stats.devices} 张设备卡片${tail}，点「完成」保存`)
+  } catch (e) {
+    toast('智能排版失败：' + (e?.message || '未知错误'), true)
+  } finally {
+    arranging.value = false
+  }
 }
 
 // ---- 页级操作 ----
@@ -653,20 +683,36 @@ onMounted(async () => {
   await loadLayout()
   await nextTick()
   measure()
-  window.addEventListener('resize', measure)
+  // resize 用 rAF 合帧：devtools 拖拽手机视口/旋转屏幕时连续 resize 事件
+  // 每次都全网格重测重排，节流到每帧一次避免抖动
+  window.addEventListener('resize', onResize)
   document.addEventListener('fullscreenchange', onFsChange)
   mqDesktop = window.matchMedia('(min-width: 768px)')
   isDesktop.value = mqDesktop.matches
   mqDesktop.addEventListener('change', onMqDesktop)
   // 自动定位：每会话一次
-  if (!autoLocateRan()) {
+  if (autoLocateRan()) {
     markAutoLocateRan()
     toast('正在自动定位，请允许浏览器位置授权…')
     locate(false)
   }
 })
+
+// keep-alive 缓存本页（App.vue include="HomeView"）：切回时 DOM 被重新插入，
+// 视口可能在缓存期间变化（旋转/缩放），重新测量网格；隐藏期间 resize 事件仍会
+// 到达但 clientWidth 为 0，测量无意义且会写入错误的 cols，直接跳过。
+defineOptions({ name: 'HomeView' })
+onActivated(() => { nextTick(measure) })
+let measurePending = false
+function onResize() {
+  if (measurePending) return
+  const el = gridEl.value
+  if (!el || el.clientWidth === 0) return // 页面被 keep-alive 缓存（隐藏）时不测量
+  measurePending = true
+  requestAnimationFrame(() => { measurePending = false; measure() })
+}
 onBeforeUnmount(() => {
-  window.removeEventListener('resize', measure)
+  window.removeEventListener('resize', onResize)
   document.removeEventListener('fullscreenchange', onFsChange)
   if (mqDesktop) mqDesktop.removeEventListener('change', onMqDesktop)
 })
@@ -695,6 +741,21 @@ onBeforeUnmount(() => {
   position: relative;
   overflow: hidden;
   container-type: inline-size;
+  border-radius: 16px;
+  transition: transform .16s ease, box-shadow .16s ease;
+}
+/* 悬停微抬升：暗示卡片可交互（编辑模式下同样生效，操作条随卡移动） */
+@media (hover: hover) {
+  .hc-card-holder:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 28px -8px rgb(0 0 0 / .22);
+  }
+}
+/* 卡片过多时跳过视口外卡片的布局与绘制（滚入视口才渲染，滚出即回收渲染开销）。
+   地图卡除外：其内部按容器尺寸测量定位，初始隐藏会导致尺寸为 0 */
+.hc-card-holder:not([data-type="map"]) {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 150px;
 }
 .hc-card-zoom {
   position: relative;
