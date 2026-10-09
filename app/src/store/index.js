@@ -425,7 +425,9 @@ export async function switchInstance(id) {
 export async function refreshEntities(instanceID) {
   try {
     const { data } = await api.entities({ instance: instanceID || store.activeID })
-    applyStates(data || [])
+    // 权威全量（无过滤参数）：未出现的实体视为已删除，一并清掉——
+    // 否则被 HA 侧移除的实体（如 dismiss 后的通知）会残留到下次 WS 重连。
+    applyStates(data || [], { replace: true })
     return data || []
   } catch { return [] }
 }

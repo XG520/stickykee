@@ -10,12 +10,16 @@ import (
 type StateStore struct {
 	mu       sync.RWMutex
 	entities map[string]model.EntityState
+	notifs   map[string]model.EntityState // 合成的 persistent_notification 实体（见 SetNotifications）
 	onChange func(entityID string)
 }
 
 // NewStateStore 构造缓存。
 func NewStateStore() *StateStore {
-	return &StateStore{entities: map[string]model.EntityState{}}
+	return &StateStore{
+		entities: map[string]model.EntityState{},
+		notifs:   map[string]model.EntityState{},
+	}
 }
 
 // SetOnChange 设置实体变更回调（幂等覆盖）。回调不得阻塞 HA 读取循环。
@@ -25,14 +29,59 @@ func (s *StateStore) SetOnChange(fn func(string)) {
 	s.mu.Unlock()
 }
 
-// Replace 全量替换快照。
+// Replace 全量替换快照。合成通知独立于 get_states，重灌进新快照避免被清掉。
 func (s *StateStore) Replace(all []model.EntityState) {
 	s.mu.Lock()
-	s.entities = make(map[string]model.EntityState, len(all))
+	s.entities = make(map[string]model.EntityState, len(all)+len(s.notifs))
 	for _, e := range all {
 		s.entities[e.EntityID] = e
 	}
+	for id, e := range s.notifs {
+		s.entities[id] = e
+	}
 	s.mu.Unlock()
+}
+
+// SetNotifications 全量更新合成通知集合。HA 2022.3 起 persistent_notification
+// 不再是实体，由 Realtime 经 HA WS API（persistent_notifications/get）拉取后
+// 合成为实体注入，使其像普通实体一样进入快照与增量推送，前端零改动。
+// 新增/变化触发 onChange（驱动前端增量）；被清除的直接移除（前端 dismiss 后
+// 的全量刷新会感知，HA 侧他途清除依赖下次全量同步）。
+func (s *StateStore) SetNotifications(list []model.EntityState) {
+	s.mu.Lock()
+	newMap := make(map[string]model.EntityState, len(list))
+	for _, e := range list {
+		newMap[e.EntityID] = e
+	}
+	changed := make([]string, 0, len(newMap))
+	for id, e := range newMap {
+		if prev, ok := s.notifs[id]; !ok || !sameState(prev, e) {
+			changed = append(changed, id)
+		}
+	}
+	for id := range s.notifs {
+		if _, ok := newMap[id]; !ok {
+			delete(s.notifs, id)
+			delete(s.entities, id)
+		}
+	}
+	for id, e := range newMap {
+		s.notifs[id] = e
+		s.entities[id] = e
+	}
+	fn := s.onChange
+	s.mu.Unlock()
+	if fn != nil {
+		for _, id := range changed {
+			fn(id)
+		}
+	}
+}
+
+// sameState 判定两个实体状态是否等价（通知重灌时避免无谓的推送）。
+func sameState(a, b model.EntityState) bool {
+	return a.EntityID == b.EntityID && a.State == b.State &&
+		a.LastUpdated.Equal(b.LastUpdated) && string(a.Attributes) == string(b.Attributes)
 }
 
 // Apply 应用单实体状态。

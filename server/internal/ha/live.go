@@ -213,6 +213,17 @@ func (r *Realtime) run(ctx context.Context) error {
 		}
 	}
 
+	// HA 系统通知：2022.3 起 persistent_notification 不再是实体，只能经 WS API
+	// 获取（拉取 + 订阅更新事件）。旧版 HA 无此命令，失败静默降级——旧版通知
+	// 本身以实体形式出现在 get_states 里，无需合成。
+	r.refreshNotifications(ctx)
+	opCtxN, opCancelN := context.WithTimeout(ctx, connectOp)
+	_, err = r.call(opCtxN, "subscribe_events", map[string]any{"event_type": "persistent_notifications_updated"})
+	opCancelN()
+	if err != nil && r.log != nil {
+		r.log.Warn("persistent notification subscription unsupported", "instance", r.cfg.InstanceID, "err", err)
+	}
+
 	// 心跳保活：周期性发送 ping，HA 应答 pong，维持读取超时判定所需的流量。
 	keepAliveCtx, stopKeepAlive := context.WithCancel(ctx)
 	defer stopKeepAlive()
@@ -340,6 +351,12 @@ func (r *Realtime) handleEvent(ev map[string]any) {
 		}
 		return
 	}
+	// HA 系统通知更新：重新拉取全量。不能在读取 goroutine 里同步 call——
+	// 响应由本 goroutine 投递，会死锁；丢给独立 goroutine 执行。
+	if eventType == "persistent_notifications_updated" {
+		go r.refreshNotifications(context.Background())
+		return
+	}
 	// Browser_mod 风格命令：data 即 event_data，含 device_id / command / data。
 	for _, et := range commandEventTypes {
 		if eventType != et || data == nil {
@@ -363,6 +380,91 @@ func (r *Realtime) handleEvent(ev map[string]any) {
 		}
 		return
 	}
+}
+
+// refreshNotifications 拉取 HA 系统通知全量并注入 StateStore（合成为实体）。
+// HA 无此命令（旧版）或权限不足时静默跳过。
+func (r *Realtime) refreshNotifications(ctx context.Context) {
+	cctx, cancel := context.WithTimeout(ctx, connectOp)
+	res, err := r.call(cctx, "persistent_notifications/get", nil)
+	cancel()
+	if err != nil {
+		return
+	}
+	r.store.SetNotifications(notificationEntities(res.Result))
+}
+
+// notificationEntities 把 HA 通知 map（{notification_id: {title, message, ...}}）
+// 转换为合成的 persistent_notification 实体状态，与旧版 HA 的实体形态对齐：
+// state=消息正文，attributes 携带 title/message/notification_id。
+func notificationEntities(raw json.RawMessage) []model.EntityState {
+	var src map[string]struct {
+		NotificationID string `json:"notification_id"`
+		Title          string `json:"title"`
+		Message        string `json:"message"`
+		CreationDate   int64  `json:"creationDate"` // 毫秒时间戳（旧字段）
+		CreatedAt      string `json:"created_at"`   // ISO 时间（新字段）
+	}
+	if err := json.Unmarshal(raw, &src); err != nil {
+		return nil
+	}
+	out := make([]model.EntityState, 0, len(src))
+	for _, n := range src {
+		id := n.NotificationID
+		if id == "" {
+			continue
+		}
+		updated := time.Now()
+		if n.CreatedAt != "" {
+			if t, err := time.Parse(time.RFC3339, n.CreatedAt); err == nil {
+				updated = t
+			}
+		} else if n.CreationDate > 0 {
+			updated = time.UnixMilli(n.CreationDate)
+		}
+		title := n.Title
+		if title == "" {
+			title = id
+		}
+		attrs, err := json.Marshal(map[string]string{
+			"title":           title,
+			"message":         n.Message,
+			"notification_id": id,
+			"friendly_name":   title,
+		})
+		if err != nil {
+			continue
+		}
+		out = append(out, model.EntityState{
+			EntityID:    "persistent_notification." + slug(id),
+			State:       n.Message,
+			Attributes:  attrs,
+			LastUpdated: updated,
+			LastChanged: updated,
+		})
+	}
+	return out
+}
+
+// slug 把通知 id 清洗为实体 id 后缀允许的字符（小写字母/数字/下划线）。
+// 合成实体仅供本系统展示，不受 HA 命名校验约束，清洗只为避免诡异字符注入前端。
+func slug(s string) string {
+	b := make([]byte, 0, len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c >= 'A' && c <= 'Z':
+			b = append(b, c+('a'-'A'))
+		case (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_':
+			b = append(b, c)
+		default:
+			b = append(b, '_')
+		}
+	}
+	if len(b) == 0 {
+		return "notification"
+	}
+	return string(b)
 }
 
 // wsURL 从 baseURL 推导 WS 地址。

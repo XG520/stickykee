@@ -13,7 +13,7 @@
 // 设计语言：统一卡片壳（细边框 + 顶光渐变 + 柔和落影）、头部图标升级为类型色芯片、
 // 徽章/按钮/大数字统一排版节奏——与设备聚合卡 .dk 保持同一视觉体系。
 const SHELL_BASE = `.hc{flex:1;min-height:0;display:flex;flex-direction:column;gap:4px;overflow:hidden;padding:8px;border-radius:14px;
-  background:linear-gradient(165deg,rgb(255 255 255 / .05),rgb(255 255 255 / 0) 46%),color-mix(in srgb,var(--hc-bg2) 55%,var(--hc-bg));
+  background:linear-gradient(165deg,rgb(255 255 255 / .05),rgb(255 255 255 / 0) 46%),color-mix(in srgb,var(--hc-bg2) 72%,var(--hc-bg));
   border:1px solid var(--hc-border);
   box-shadow:0 1px 3px rgb(0 0 0 / .07),0 8px 20px -8px rgb(0 0 0 / .16)}
 .h-head{display:flex;align-items:center;gap:5px;min-width:0}
@@ -266,7 +266,7 @@ export function tplGeneric() {
 </div>`
   const css = `
 .dk{flex:1;min-height:0;display:flex;flex-direction:column;gap:4px;padding:7px;position:relative;overflow:hidden;border-radius:14px;
-  background:linear-gradient(165deg,rgb(255 255 255 / .05),rgb(255 255 255 / 0) 46%),color-mix(in srgb,var(--hc-bg2) 55%,var(--hc-bg));
+  background:linear-gradient(165deg,rgb(255 255 255 / .05),rgb(255 255 255 / 0) 46%),color-mix(in srgb,var(--hc-bg2) 72%,var(--hc-bg));
   border:1px solid var(--hc-border);
   box-shadow:0 1px 3px rgb(0 0 0 / .07),0 8px 20px -8px rgb(0 0 0 / .16)}
 /* 顶部类型色光晕：默认隐于背景，激活态显现 */

@@ -234,7 +234,7 @@ html.theme-tech body::before {
   --c-on-surface: 62 52 38;
   --c-muted: 138 120 98;
   --c-faint: 178 162 140;
-  --c-border: 216 202 176;
+  --c-border: 205 189 158; /* 加深一档：浅色纸面上 1px 边框需可辨 */
   --c-border-focus: 217 119 6;
   --c-accent: 176 92 46; /* 赭陶红 */
   --c-error: 190 62 42;
@@ -250,10 +250,11 @@ html.theme-retro body::before {
   inset: 0;
   z-index: -1;
   pointer-events: none;
+  /* 顶部白晕不可过强：过强会把背景提亮到与纯白卡片同色，卡片融底（手机首屏尤甚） */
   background:
-    radial-gradient(ellipse 70% 50% at 50% 0%, rgb(255 255 255 / 0.55), transparent 60%),
+    radial-gradient(ellipse 70% 50% at 50% 0%, rgb(255 255 255 / 0.22), transparent 60%),
     radial-gradient(ellipse 60% 45% at 50% 110%, rgb(196 150 90 / 0.14), transparent 60%),
-    linear-gradient(180deg, rgb(250 246 236 / 1) 0%, rgb(244 236 220 / 1) 100%);
+    linear-gradient(180deg, rgb(247 240 226 / 1) 0%, rgb(240 231 212 / 1) 100%);
 }
 html.theme-retro body::after {
   content: '';

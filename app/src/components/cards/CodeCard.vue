@@ -437,7 +437,7 @@ onBeforeUnmount(() => {
   font-size: 9px;
   color: var(--hc-sub);
   border-radius: 14px;
-  background: linear-gradient(165deg, rgb(255 255 255 / .05), rgb(255 255 255 / 0) 46%), color-mix(in srgb, var(--hc-bg2) 55%, var(--hc-bg));
+  background: linear-gradient(165deg, rgb(255 255 255 / .05), rgb(255 255 255 / 0) 46%), color-mix(in srgb, var(--hc-bg2) 72%, var(--hc-bg));
   border: 1px dashed color-mix(in srgb, var(--hc-border) 80%, transparent);
   box-shadow: 0 1px 2px rgb(0 0 0 / .05), 0 6px 16px -6px rgb(0 0 0 / .1);
 }

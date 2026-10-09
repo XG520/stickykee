@@ -109,7 +109,7 @@
               <span v-else class="material-symbols-outlined text-base" aria-hidden="true">my_location</span>
               {{ locating ? '定位中…' : '更新位置' }}
             </button>
-            <button @click="editing = true" class="px-4 py-2 rounded-lg bg-surface-alt border border-border hover:border-primary/40 text-sm text-on-surface transition-colors flex items-center gap-1.5">
+            <button v-if="canEdit" @click="editing = true" class="px-4 py-2 rounded-lg bg-surface-alt border border-border hover:border-primary/40 text-sm text-on-surface transition-colors flex items-center gap-1.5">
               <span class="material-symbols-outlined text-base" aria-hidden="true">edit_square</span> 编辑仪表盘
             </button>
             <button @click="enterImmersive"
@@ -664,6 +664,16 @@ let mqDesktop = null
 function onMqDesktop(e) { isDesktop.value = e.matches }
 const teleportToNav = computed(() => isDesktop.value && !ui.immersive)
 
+// 手机与平板（<1024px）禁用仪表盘编辑：触屏拖拽排版体验差，且窄屏下编辑工具条
+// 回落布局拥挤错位。桌面缩窗到平板宽度同样禁用，与响应式断点语义一致；
+// 断点跨越时强制退出编辑态，避免残留编辑 UI（FAB/编辑页签等均由 editing 门控）。
+const canEdit = ref(window.matchMedia('(min-width: 1024px)').matches)
+let mqCanEdit = null
+function onMqCanEdit(e) {
+  canEdit.value = e.matches
+  if (!e.matches) { editing.value = false; addPanel.value = false }
+}
+
 // 沉浸/编辑状态改变会改变网格可用高度，重新测量
 watch(() => ui.immersive, () => nextTick(measure))
 watch(() => editing.value, () => { if (!editing.value) addPanel.value = false; nextTick(measure) })
@@ -690,6 +700,9 @@ onMounted(async () => {
   mqDesktop = window.matchMedia('(min-width: 768px)')
   isDesktop.value = mqDesktop.matches
   mqDesktop.addEventListener('change', onMqDesktop)
+  mqCanEdit = window.matchMedia('(min-width: 1024px)')
+  canEdit.value = mqCanEdit.matches
+  mqCanEdit.addEventListener('change', onMqCanEdit)
   // 自动定位：每会话一次
   if (autoLocateRan()) {
     markAutoLocateRan()
@@ -715,6 +728,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', onResize)
   document.removeEventListener('fullscreenchange', onFsChange)
   if (mqDesktop) mqDesktop.removeEventListener('change', onMqDesktop)
+  if (mqCanEdit) mqCanEdit.removeEventListener('change', onMqCanEdit)
 })
 </script>
 
