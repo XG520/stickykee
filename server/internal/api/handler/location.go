@@ -41,7 +41,7 @@ type locationPayload struct {
 //
 // 流程：
 //  1. 解析 device_id（必填），获取实例 REST 客户端；
-//  2. 查/创建 Sticky Nuo 设备记录（用于稳定 dev_id 与 mobile_app 注册缓存键）；
+//  2. 查/创建 Sticky Kee 设备记录（用于稳定 dev_id 与 mobile_app 注册缓存键）；
 //  3. 经 sensors.ensureRegistration 获取/复用 mobile_app webhook（含 get_config 探测失效）；
 //  4. 用官方 update_location 命令经 webhook 上报 gps，HA 自动绑定到设备；
 //  5. webhook 失效（设备被 HA 删除/集成不可用）→ 清缓存重注册后重试一次。
@@ -65,7 +65,7 @@ func (h *Location) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 查/创建 Sticky Nuo 设备记录（沿用 sensors.lookupDevice 以保证 dev_id 稳定）。
+	// 查/创建 Sticky Kee 设备记录（沿用 sensors.lookupDevice 以保证 dev_id 稳定）。
 	dev := h.sensors.lookupDevice(ctx, username, p.DeviceID)
 	if dev == nil {
 		d, err := (&Devices{repo: h.sensors.repo, userPrefs: h.sensors.userPrefs}).upsert(ctx, username, p.DeviceID, "")

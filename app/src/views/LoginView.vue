@@ -10,7 +10,7 @@
         <div class="w-14 h-14 rounded-2xl bg-primary flex items-center justify-center shadow-lg shadow-primary/30 mb-4">
           <span class="material-symbols-outlined text-on-primary text-3xl">home</span>
         </div>
-        <h1 class="font-headline text-2xl font-bold">Sticky Nuo</h1>
+        <h1 class="font-headline text-2xl font-bold">Sticky Kee</h1>
         <p class="text-muted text-sm mt-1 font-body">{{ registerMode ? '创建管理员账号' : '智能家庭控制中心' }}</p>
       </div>
 

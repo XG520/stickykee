@@ -1,4 +1,4 @@
-# 归栖 Sticky Nuo
+# 归祺 Sticky Kee
 
 基于 Home Assistant 的智能家画布应用：酷家乐式户型图编辑器（2D 绘制 + 3D 渲染）、智能仪表盘卡片、聊天与系统通知、移动端适配。前端 Vue 3 + Vite + Tailwind，后端 Go（chi + modernc SQLite，纯 Go 免 CGO），WebSocket 实时同步 HA 实体状态。
 

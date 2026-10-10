@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# 归栖 Sticky Nuo —— 前后端单镜像（Go 直接托管前端静态产物，同源免代理）。
+# 归祺 Sticky Kee —— 前后端单镜像（Go 直接托管前端静态产物，同源免代理）。
 # 在仓库根（本文件所在目录）执行：
 #   docker build -t stickynuo:latest .
 #   docker run -d --name stickynuo -p 8080:8080 -v stickynuo-data:/data \

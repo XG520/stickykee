@@ -997,7 +997,7 @@ async function loadSensors() {
     }
   } catch { /* 忽略坏配置 */ }
   syncMonitor()
-  // 无论是否启用传感器都上报一次：注册 mobile_app 设备（HA 中立即出现 Sticky Nuo 设备）。
+  // 无论是否启用传感器都上报一次：注册 mobile_app 设备（HA 中立即出现 Sticky Kee 设备）。
   // activeID 由实例列表异步加载，尚未就绪时等待其变化后触发。
   if (sensorDefs.value.length) {
     if (store.activeID) reportNow(false)
@@ -1073,7 +1073,7 @@ async function grantNotify() {
   catch (e) { flash(e.message, true) }
 }
 function testNotify() {
-  showNotify({ title: 'Sticky Nuo 测试通知', message: '这条通知来自浏览器命令面板。', actions: [{ label: '知道了', type: 'none' }] })
+  showNotify({ title: 'Sticky Kee 测试通知', message: '这条通知来自浏览器命令面板。', actions: [{ label: '知道了', type: 'none' }] })
 }
 async function toggleBlackout() {
   setBlackout(!blackout.active, 200) // 状态由 browserCommands 的 blackout 持有（手势/接近解除也会改它）

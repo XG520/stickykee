@@ -1,4 +1,4 @@
-// Package ha 管理 Sticky Nuo 与多个 Home Assistant 实例的连接。
+// Package ha 管理 Sticky Kee 与多个 Home Assistant 实例的连接。
 package ha
 
 import (

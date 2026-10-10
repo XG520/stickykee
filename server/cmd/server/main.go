@@ -1,4 +1,4 @@
-// Command server 启动 Sticky Nuo 后端服务。
+// Command server 启动 Sticky Kee 后端服务。
 package main
 
 import (
@@ -87,7 +87,7 @@ func main() {
 		_ = srv.Shutdown(ctx)
 	}()
 
-	slog.Info("Sticky Nuo server started", "addr", cfg.HTTPAddr, "db", cfg.DBPath)
+	slog.Info("Sticky Kee server started", "addr", cfg.HTTPAddr, "db", cfg.DBPath)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		slog.Error("server", "err", err)
 		os.Exit(1)

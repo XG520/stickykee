@@ -29,7 +29,7 @@ router.beforeEach(async (to) => {
 })
 
 router.afterEach((to) => {
-  document.title = to.meta.title ? `${to.meta.title} · Sticky Nuo` : 'Sticky Nuo'
+  document.title = to.meta.title ? `${to.meta.title} · Sticky Kee` : 'Sticky Kee'
 })
 
 // 首次导航完成后，在浏览器空闲时预取其余路由的懒加载 chunk（Vite 会缓存模块解析结果，

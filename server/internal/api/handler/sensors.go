@@ -39,7 +39,7 @@ var SENSOR_DEFS = []SensorDef{
 	{Key: "public_ip", Name: "Public IP", Icon: "mdi:ip-network", Category: "diagnostic", Label: "公网 IP", Desc: "设备的公网 IP 地址"},
 	{Key: "current_time_zone", Name: "Current Time Zone", Icon: "mdi:clock-outline", Category: "diagnostic", Label: "时区", Desc: "设备当前时区"},
 	{Key: "last_update_trigger", Name: "Last Update Trigger", Icon: "mdi:update", Category: "diagnostic", Label: "更新触发原因", Desc: "本次传感器上报的触发原因（手动 / 事件 / 周期）"},
-	{Key: "app_version", Name: "App Version", Icon: "mdi:cellphone-information", Category: "diagnostic", Label: "应用版本", Desc: "Sticky Nuo 应用版本"},
+	{Key: "app_version", Name: "App Version", Icon: "mdi:cellphone-information", Category: "diagnostic", Label: "应用版本", Desc: "Sticky Kee 应用版本"},
 	{Key: "bssid", Name: "BSSID", Icon: "mdi:access-point", Category: "diagnostic", Label: "Wi-Fi 接入点 MAC", Desc: "当前连接的无线接入点 MAC 地址"},
 	{Key: "geocoded_location", Name: "Geocoded Location", Icon: "mdi:map-marker", Category: "diagnostic", Label: "所在位置", Desc: "基于定位解析的地址（需浏览器授权定位）"},
 }

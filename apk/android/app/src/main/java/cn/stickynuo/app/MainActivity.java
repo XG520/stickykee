@@ -1,4 +1,4 @@
-package cn.stickynuo.app;
+package cn.stickykee.app;
 
 import com.getcapacitor.BridgeActivity;
 

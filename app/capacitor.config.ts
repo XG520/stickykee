@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli'
 
 const config: CapacitorConfig = {
   appId: 'com.luminahome.app',
-  appName: 'Sticky Nuo',
+  appName: 'Sticky Kee',
   webDir: 'dist',
   server: {
     androidScheme: 'https',

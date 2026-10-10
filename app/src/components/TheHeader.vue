@@ -6,8 +6,8 @@
           <span class="material-symbols-outlined text-on-primary text-lg">bolt</span>
         </div>
         <div>
-          <h1 class="font-headline text-on-background font-semibold text-base leading-tight">归栖</h1>
-          <p class="text-muted text-xs leading-tight">Sticky Nuo</p>
+          <h1 class="font-headline text-on-background font-semibold text-base leading-tight">归祺</h1>
+          <p class="text-muted text-xs leading-tight">Sticky Kee</p>
         </div>
       </router-link>
 
