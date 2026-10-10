@@ -1,6 +1,6 @@
 # 归祺 Sticky Kee
 
-基于 Home Assistant 的智能家画布应用：酷家乐式户型图编辑器（2D 绘制 + 3D 渲染）、智能仪表盘卡片、聊天与系统通知、移动端适配。前端 Vue 3 + Vite + Tailwind，后端 Go（chi + modernc SQLite，纯 Go 免 CGO），WebSocket 实时同步 HA 实体状态。
+基于 Home Assistant 的智能家画布应用：酷家乐式户型图编辑器（2D 绘制 + 3D 渲染）、智能仪表盘卡片、聊天与系统通知（文本/图片/语音消息/一对一及多人语音通话/内置 HA 智家助手）、移动端适配。前端 Vue 3 + Vite + Tailwind，后端 Go（chi + modernc SQLite，纯 Go 免 CGO），WebSocket 实时同步 HA 实体状态。
 
 ## 目录结构
 
@@ -85,12 +85,53 @@ docker run -d --name stickynuo-server \
 
 ## Android APK
 
-产物：`apk/dist/*.apk`（debug 签名，可直接安装）。
+产物：`apk/android/app/build/outputs/apk/debug/app-debug.apk`（debug 签名，可直接安装）。
 
-- **首次打开**：显示「后端服务器地址」输入框，填 `http://<服务器IP>:8080` → 自动探测可达后整页进入应用。
-- **地址变更**：服务器不可达时自动回到配置页重新填写；地址存于 WebView 本地存储。
+- **首次打开**：显示服务器地址配置页，可手动填写或点「自动识别内网服务器」；支持保存多个地址（内网/外网），WiFi 时优先内网、移动数据时优先外网，自动探测后整页进入应用。
+- **地址变更**：所有地址均不可达时自动回到地址列表；可随时添加、编辑、删除地址。
+- **保持登录**：登录页勾选「保持登录」后，关闭 APP 再打开无需重新登录（令牌持久化 30 天）；不勾选则仅本次会话有效。
 - **前端更新**：APK 只是壳，页面在服务器上——重新 `docker build` 镜像后 APK 内自动生效，无需重装。
-- **重新打包**：`cd apk && npm install && npx cap sync android`，再在 `apk/android` 下执行 `gradlew.bat assembleDebug`（需 JDK 17 与 Android SDK，依赖走阿里云/腾讯云镜像）。
+- **语音功能**：聊天内可发语音消息（按住说话、上滑取消），并支持一对一及多人语音通话（WebRTC mesh，建议 ≤6 人）。首次录音时系统弹麦克风授权，Manifest 已声明 RECORD_AUDIO。
+- **智家助手**：消息列表置顶的「智家助手」即 HA Assist（conversation/process），可用自然语言问天气、控设备、闲聊；多轮上下文由 HA conversation_id 保持。需要在设置中配置 HA 地址与个人 Token，且 HA 已配置助手（默认 Assist 即可）。
+
+### 打包命令（自行打包）
+
+前置：JDK 17、Android SDK（环境变量 `JAVA_HOME` 指向 JDK；Android SDK 可通过 Android Studio 或命令行工具安装）。
+
+```powershell
+# 1. 安装壳工程依赖（仅首次或依赖变更时）
+cd apk
+npm install
+
+# 2. 同步壳页（www/）与配置到 Android 工程
+npx cap sync android
+
+# 3. 构建 APK
+$env:JAVA_HOME = "C:\path\to\jdk-17"   # 若未全局配置
+cd android
+.\gradlew.bat assembleDebug            # Debug 包
+# .\gradlew.bat assembleRelease        # Release 包（需自行配置签名 keystore）
+
+# 4. 产物路径
+# app\build\outputs\apk\debug\app-debug.apk
+```
+
+依赖与 Gradle 发行版均走阿里云/腾讯云国内镜像，无需代理。壳页 `apk/www/index.html` 有改动时，重新执行第 2、3 步即可；仅 `app/` 前端改动（语音、卡片等）无需 sync，更新服务器镜像后直接生效。
+
+### 语音通话网络说明
+
+- 通话语音走 **WebRTC P2P**，服务器只中继信令（经现有 /ws，反向代理按 WebSocket 配置即可）。
+- 同一直局域网无需 STUN 直连；跨网（如外网拨入）依赖 STUN 打洞（已内置腾讯/小米公共 STUN）。
+- 对称型 NAT 打洞失败时需自备 **TURN** 中继（coturn），在 [call.js](app/src/utils/call.js) 的 ICE_SERVERS 中加入 `turn:` 配置。
+
+## 安全与加密
+
+聊天数据采用**应用层加密**（在 TLS 之外再加一层，内网 http 部署同样生效）：
+
+- 登录后客户端与服务端经 **ECDH P-256** 协商共享密钥（临时密钥，每次握手轮换；纯 JS 实现 [@noble](https://github.com/paulmillr/noble) ，兼容 APK WebView 的 http 非安全上下文）。
+- **HKDF-SHA256** 派生会话密钥，**AES-256-GCM** 密封消息体（带完整性校验，密钥仅存服务端内存，重启即重新握手）。
+- 加密范围：文本消息（含智家助手会话）、会话列表、历史消息。图片/语音文件经鉴权接口 + 不可枚举随机名传输，公网部署建议同时启用 HTTPS（见下）。
+- 服务重启或改密导致密钥失效时，客户端自动重新握手并重试一次。
 
 ## 反向代理（可选）
 
@@ -114,3 +155,12 @@ location / {
 - **端口占用**：`bind: Only one usage of each socket address` 表示 8080 已被旧实例占用，先停掉旧进程再启动。
 - **数据库锁**：同一 `SN_DB_PATH` 不要被多个后端实例同时使用。
 - **镜像源**：项目默认配置国内源（npm npmmirror、Go goproxy.cn、Gradle 阿里云/腾讯云），无需额外设置。
+
+docker run -d --name stickynuo \
+  --restart unless-stopped \
+  -p 8080:8080 \
+  -v /vol2/homecanvas/data:/data \
+  -e SN_JWT_SECRET=b34d8b52f4f4988e5b1fe3980ae1551f307f2f29f400d60414c7900ebc33c6a3 \
+  -e TZ=Asia/Shanghai \
+  --restart unless-stopped \
+  stickynuo:latest

@@ -14,29 +14,31 @@
     color: #e7e5e1; font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
     padding: 24px; -webkit-tap-highlight-color: transparent;
   }
-  .card { width: 100%; max-width: 360px; text-align: center; }
+  .card { width: 100%; max-width: 400px; }
   .logo {
     width: 72px; height: 72px; margin: 0 auto 14px; border-radius: 22px;
     background: linear-gradient(145deg, #2a2c33, #1b1d22);
     display: flex; align-items: center; justify-content: center;
     font-size: 34px; box-shadow: 0 8px 28px rgb(0 0 0 / .45), inset 0 1px 0 rgb(255 255 255 / .06);
   }
-  h1 { font-size: 22px; font-weight: 700; letter-spacing: .5px; }
-  .sub { margin: 6px 0 26px; font-size: 13px; color: #8b8a86; }
+  h1 { font-size: 22px; font-weight: 700; letter-spacing: .5px; text-align: center; }
+  .sub { margin: 6px 0 20px; font-size: 13px; color: #8b8a86; text-align: center; }
   label { display: block; text-align: left; font-size: 12px; color: #8b8a86; margin: 0 0 6px 2px; }
-  input {
+  input, select {
     width: 100%; padding: 13px 14px; font-size: 15px; border-radius: 12px;
     border: 1px solid #2e3038; background: #17181c; color: #e7e5e1; outline: none;
   }
-  input:focus { border-color: #5a7dff; box-shadow: 0 0 0 3px rgb(90 125 255 / .18); }
+  input:focus, select:focus { border-color: #5a7dff; box-shadow: 0 0 0 3px rgb(90 125 255 / .18); }
   button {
-    width: 100%; margin-top: 14px; padding: 13px; font-size: 15px; font-weight: 600;
+    width: 100%; margin-top: 12px; padding: 13px; font-size: 15px; font-weight: 600;
     border: 0; border-radius: 12px; background: #4a6cf7; color: #fff; cursor: pointer;
   }
   button:disabled { opacity: .55; }
+  button.secondary { background: #2a2c33; color: #e7e5e1; }
+  button.danger { background: #e5484d; color: #fff; }
   .msg { min-height: 34px; margin-top: 12px; font-size: 13px; color: #e5484d; word-break: break-all; }
   .msg.ok { color: #46a758; }
-  .hint { margin-top: 18px; font-size: 11.5px; color: #63625e; line-height: 1.6; }
+  .hint { margin-top: 18px; font-size: 11.5px; color: #63625e; line-height: 1.6; text-align: center; }
   .spin {
     display: inline-block; width: 15px; height: 15px; margin-right: 6px; vertical-align: -2px;
     border: 2px solid rgb(255 255 255 / .25); border-top-color: #fff; border-radius: 50%;
@@ -44,6 +46,49 @@
   }
   @keyframes r { to { transform: rotate(360deg); } }
   .hidden { display: none; }
+
+  /* 地址列表 */
+  .addr-list { margin-top: 16px; }
+  .addr-item {
+    display: flex; align-items: center; gap: 12px; padding: 14px;
+    background: #17181c; border: 1px solid #2e3038; border-radius: 12px;
+    margin-bottom: 10px; cursor: pointer; transition: border-color .2s;
+  }
+  .addr-item:active { border-color: #5a7dff; }
+  .addr-item .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .addr-item .dot.lan { background: #46a758; }
+  .addr-item .dot.wan { background: #5a7dff; }
+  .addr-item .dot.offline { background: #63625e; }
+  .addr-item .info { flex: 1; min-width: 0; }
+  .addr-item .name { font-size: 14px; font-weight: 600; margin-bottom: 2px; }
+  .addr-item .url { font-size: 12px; color: #8b8a86; word-break: break-all; }
+  .addr-item .tag {
+    font-size: 10px; padding: 2px 8px; border-radius: 999px; flex-shrink: 0;
+  }
+  .addr-item .tag.lan { background: rgb(70 167 88 / .15); color: #46a758; }
+  .addr-item .tag.wan { background: rgb(90 125 255 / .15); color: #5a7dff; }
+  .addr-item .actions { display: flex; gap: 6px; flex-shrink: 0; }
+  .addr-item .actions button {
+    width: auto; margin: 0; padding: 6px 10px; font-size: 12px; border-radius: 8px;
+  }
+  .addr-item .actions .edit { background: #2a2c33; }
+  .addr-item .actions .del { background: rgb(229 72 77 / .15); color: #e5484d; }
+
+  /* 编辑弹层 */
+  .modal-mask {
+    position: fixed; inset: 0; background: rgb(0 0 0 / .6);
+    display: flex; align-items: center; justify-content: center; z-index: 100;
+    padding: 24px;
+  }
+  .modal {
+    width: 100%; max-width: 360px; background: #1b1d22; border-radius: 16px;
+    padding: 20px; border: 1px solid #2e3038;
+  }
+  .modal h3 { font-size: 16px; font-weight: 600; margin-bottom: 14px; }
+  .modal .row { margin-bottom: 12px; }
+  .modal .row:last-child { margin-bottom: 0; }
+  .modal .actions { display: flex; gap: 10px; margin-top: 16px; }
+  .modal .actions button { margin: 0; flex: 1; }
 </style>
 </head>
 <body>
@@ -56,45 +101,106 @@
       <p class="msg ok"><span class="spin"></span>正在连接服务器…</p>
     </div>
 
-    <div id="form" class="hidden">
-      <label for="url">后端服务器地址</label>
-      <input id="url" type="url" inputmode="url" autocapitalize="off" autocomplete="off"
-             spellcheck="false" placeholder="例如 http://192.168.1.100:8080" />
-      <button id="go">连 接</button>
+    <!-- 地址列表（有保存地址时显示） -->
+    <div id="listView" class="hidden">
+      <div class="addr-list" id="addrList"></div>
+      <button class="secondary" id="btnAdd">+ 添加服务器地址</button>
+      <p class="hint">点击地址卡片直接连接；左滑或点击编辑可修改</p>
+    </div>
+
+    <!-- 添加/编辑表单 -->
+    <div id="formView" class="hidden">
+      <div class="row">
+        <label for="fName">名称（如：家里内网）</label>
+        <input id="fName" type="text" autocomplete="off" placeholder="例如 家里内网" />
+      </div>
+      <div class="row">
+        <label for="fUrl">服务器地址（含端口）</label>
+        <input id="fUrl" type="url" inputmode="url" autocapitalize="off" autocomplete="off"
+               spellcheck="false" placeholder="例如 http://192.168.1.100:8080" />
+      </div>
+      <div class="row">
+        <label for="fType">类型</label>
+        <select id="fType">
+          <option value="lan">内网（局域网）</option>
+          <option value="wan">外网（互联网）</option>
+        </select>
+      </div>
+      <button id="btnSave">保存并连接</button>
+      <button class="secondary" id="btnCancel">取消</button>
+      <button class="secondary" id="btnAuto">自动识别内网服务器</button>
       <p class="msg" id="msg"></p>
-      <p class="hint">填写部署归祺后端的地址（含端口），<br>手机需与服务器处于同一局域网。</p>
+      <p class="hint">填写部署归祺后端的地址（含端口）；<br>内网地址用于家中 WiFi，外网地址用于移动数据。</p>
+    </div>
+  </div>
+
+  <!-- 编辑弹层 -->
+  <div id="modal" class="modal-mask hidden">
+    <div class="modal">
+      <h3 id="modalTitle">编辑地址</h3>
+      <div class="row">
+        <label for="mName">名称</label>
+        <input id="mName" type="text" autocomplete="off" />
+      </div>
+      <div class="row">
+        <label for="mUrl">地址</label>
+        <input id="mUrl" type="url" inputmode="url" autocapitalize="off" autocomplete="off" />
+      </div>
+      <div class="row">
+        <label for="mType">类型</label>
+        <select id="mType">
+          <option value="lan">内网（局域网）</option>
+          <option value="wan">外网（互联网）</option>
+        </select>
+      </div>
+      <div class="actions">
+        <button class="secondary" id="mCancel">取消</button>
+        <button id="mSave">保存</button>
+      </div>
     </div>
   </div>
 
 <script>
 (function () {
-  var KEY = 'sn_server_url';
+  var KEY = 'sn_server_config';
+  var LEGACY_KEY = 'sn_server_url';
+
   var $connecting = document.getElementById('connecting');
-  var $form = document.getElementById('form');
-  var $url = document.getElementById('url');
-  var $go = document.getElementById('go');
+  var $listView = document.getElementById('listView');
+  var $formView = document.getElementById('formView');
+  var $addrList = document.getElementById('addrList');
   var $msg = document.getElementById('msg');
+  var $modal = document.getElementById('modal');
 
-  function norm(u) {
-    u = (u || '').trim().replace(/\/+$/, '');
-    if (u && !/^https?:\/\//i.test(u)) u = 'http://' + u;
-    return u;
+  // ---- 数据 ----
+  function loadConfig() {
+    try {
+      var raw = localStorage.getItem(KEY);
+      if (raw) return JSON.parse(raw);
+    } catch (e) {}
+    // 迁移旧数据
+    try {
+      var legacy = localStorage.getItem(LEGACY_KEY);
+      if (legacy) {
+        var cfg = {
+          addresses: [{ id: 'default', name: '默认服务器', url: legacy, type: 'lan' }],
+          activeId: 'default',
+          lastConnectedId: 'default'
+        };
+        localStorage.setItem(KEY, JSON.stringify(cfg));
+        return cfg;
+      }
+    } catch (e) {}
+    return { addresses: [], activeId: null, lastConnectedId: null };
   }
 
-  function showForm(prev, msg) {
-    $connecting.classList.add('hidden');
-    $form.classList.remove('hidden');
-    $url.value = prev || '';
-    if (msg) { $msg.textContent = msg; $msg.className = 'msg'; }
+  function saveConfig(cfg) {
+    try { localStorage.setItem(KEY, JSON.stringify(cfg)); } catch (e) {}
   }
 
-  function showMsg(text, ok) {
-    $msg.textContent = text;
-    $msg.className = 'msg' + (ok ? ' ok' : '');
-  }
+  function genId() { return 'srv_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6); }
 
-  // 探测：no-cors 模式——能收到任何 HTTP 响应即视为服务器可达
-  // （壳页为 http origin，无混合内容限制；响应内容不可读，无需 CORS 头）
+  // ---- 探测 ----
   function probe(u) {
     return new Promise(function (resolve) {
       var done = false;
@@ -109,37 +215,313 @@
     });
   }
 
-  async function connect(u) {
-    if (!u) { showForm($url.value, '请填写服务器地址'); return; }
-    if (!/^https?:\/\/.+/.test(u)) { showForm($url.value, '地址需以 http:// 或 https:// 开头'); return; }
-    $go.disabled = true;
-    showMsg('正在探测服务器…');
-    var ok = await probe(u);
-    $go.disabled = false;
-    if (!ok) { showMsg('无法连接到 ' + u + '，请检查地址与网络'); return; }
-    try { localStorage.setItem(KEY, u); } catch (e) {}
-    showMsg('连接成功，正在进入…', true);
-    // replace 避免返回键回到本页形成回跳循环
-    setTimeout(function () { location.replace(u + '/'); }, 350);
+  // ---- 网络类型感知 ----
+  function getNetworkType() {
+    var c = navigator.connection || {};
+    var t = c.type || '';
+    if (t === 'wifi' || t === 'ethernet') return 'lan';
+    if (t === 'cellular') return 'wan';
+    return 'unknown';
   }
 
-  $go.addEventListener('click', function () { connect(norm($url.value)); });
-  $url.addEventListener('keydown', function (e) { if (e.key === 'Enter') connect(norm($url.value)); });
+  // ---- 智能选择最佳地址 ----
+  async function resolveBestAddress(cfg) {
+    if (!cfg.addresses.length) return null;
+    var netType = getNetworkType();
+    var isWifi = netType === 'lan';
 
-  var saved = '';
-  try { saved = norm(localStorage.getItem(KEY)); } catch (e) {}
-  if (saved) {
-    probe(saved).then(function (ok) {
-      if (ok) {
-        // replace 避免返回键回到本页形成回跳循环
-        location.replace(saved + '/');
-      } else {
-        showForm(saved, '上次的服务器 ' + saved + ' 无法连接，可修改后重试');
+    // 按网络类型排序：WiFi 时 LAN 优先，蜂窝时 WAN 优先
+    var sorted = cfg.addresses.slice().sort(function (a, b) {
+      if (isWifi) return a.type === 'lan' ? -1 : 1;
+      return a.type === 'wan' ? -1 : 1;
+    });
+
+    // 先探测 activeId
+    var active = sorted.find(function (a) { return a.id === cfg.activeId; });
+    if (active) {
+      var ok = await probe(active.url);
+      if (ok) return active;
+    }
+
+    // 并行探测前 5 个
+    var batch = sorted.slice(0, 5);
+    var results = await Promise.all(batch.map(function (a) {
+      return probe(a.url).then(function (ok) { return { addr: a, ok: ok }; });
+    }));
+    var best = results.find(function (r) { return r.ok; });
+    return best ? best.addr : null;
+  }
+
+  // ---- 跳转 ----
+  function go(url) {
+    location.replace(url + '/');
+  }
+
+  // ---- 视图切换 ----
+  function showConnecting() {
+    $connecting.classList.remove('hidden');
+    $listView.classList.add('hidden');
+    $formView.classList.add('hidden');
+  }
+
+  function showList() {
+    $connecting.classList.add('hidden');
+    $listView.classList.remove('hidden');
+    $formView.classList.add('hidden');
+    renderList();
+  }
+
+  function showForm(editAddr) {
+    $connecting.classList.add('hidden');
+    $listView.classList.add('hidden');
+    $formView.classList.remove('hidden');
+    $msg.textContent = '';
+    $msg.className = 'msg';
+    document.getElementById('fName').value = editAddr ? editAddr.name : '';
+    document.getElementById('fUrl').value = editAddr ? editAddr.url : '';
+    document.getElementById('fType').value = editAddr ? editAddr.type : 'lan';
+    document.getElementById('btnSave').textContent = editAddr ? '保存并连接' : '保存并连接';
+    document.getElementById('btnSave').dataset.editId = editAddr ? editAddr.id : '';
+  }
+
+  // ---- 渲染地址列表 ----
+  function renderList() {
+    var cfg = loadConfig();
+    $addrList.innerHTML = '';
+    cfg.addresses.forEach(function (a) {
+      var div = document.createElement('div');
+      div.className = 'addr-item';
+      div.innerHTML =
+        '<span class="dot ' + a.type + '"></span>' +
+        '<div class="info">' +
+          '<div class="name">' + escapeHtml(a.name) + '</div>' +
+          '<div class="url">' + escapeHtml(a.url) + '</div>' +
+        '</div>' +
+        '<span class="tag ' + a.type + '">' + (a.type === 'lan' ? '内网' : '外网') + '</span>' +
+        '<div class="actions">' +
+          '<button class="edit" data-id="' + a.id + '">编辑</button>' +
+          '<button class="del" data-id="' + a.id + '">删除</button>' +
+        '</div>';
+      div.querySelector('.edit').addEventListener('click', function (e) {
+        e.stopPropagation();
+        openEditModal(a);
+      });
+      div.querySelector('.del').addEventListener('click', function (e) {
+        e.stopPropagation();
+        if (confirm('删除「' + a.name + '」？')) {
+          deleteAddr(a.id);
+        }
+      });
+      div.addEventListener('click', function () {
+        connectTo(a);
+      });
+      $addrList.appendChild(div);
+    });
+  }
+
+  function escapeHtml(s) {
+    var d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  // ---- 编辑弹层 ----
+  var editingId = null;
+  function openEditModal(addr) {
+    editingId = addr.id;
+    document.getElementById('mName').value = addr.name;
+    document.getElementById('mUrl').value = addr.url;
+    document.getElementById('mType').value = addr.type;
+    $modal.classList.remove('hidden');
+  }
+
+  document.getElementById('mCancel').addEventListener('click', function () {
+    $modal.classList.add('hidden');
+    editingId = null;
+  });
+
+  document.getElementById('mSave').addEventListener('click', function () {
+    var name = document.getElementById('mName').value.trim();
+    var url = norm(document.getElementById('mUrl').value);
+    var type = document.getElementById('mType').value;
+    if (!name || !url) { alert('请填写完整'); return; }
+    var cfg = loadConfig();
+    var idx = cfg.addresses.findIndex(function (a) { return a.id === editingId; });
+    if (idx >= 0) {
+      cfg.addresses[idx] = { id: editingId, name: name, url: url, type: type };
+      saveConfig(cfg);
+    }
+    $modal.classList.add('hidden');
+    editingId = null;
+    renderList();
+  });
+
+  // ---- 删除地址 ----
+  function deleteAddr(id) {
+    var cfg = loadConfig();
+    cfg.addresses = cfg.addresses.filter(function (a) { return a.id !== id; });
+    if (cfg.activeId === id) cfg.activeId = cfg.addresses[0] ? cfg.addresses[0].id : null;
+    if (cfg.lastConnectedId === id) cfg.lastConnectedId = null;
+    saveConfig(cfg);
+    if (cfg.addresses.length === 0) {
+      showForm(null);
+    } else {
+      renderList();
+    }
+  }
+
+  // ---- 连接到指定地址 ----
+  async function connectTo(addr) {
+    showConnecting();
+    var ok = await probe(addr.url);
+    if (ok) {
+      var cfg = loadConfig();
+      cfg.activeId = addr.id;
+      cfg.lastConnectedId = addr.id;
+      saveConfig(cfg);
+      go(addr.url);
+    } else {
+      showList();
+      alert('无法连接到 ' + addr.name + '（' + addr.url + '）');
+    }
+  }
+
+  // ---- 添加/编辑表单提交 ----
+  function norm(u) {
+    u = (u || '').trim().replace(/\/+$/, '');
+    if (u && !/^https?:\/\//i.test(u)) u = 'http://' + u;
+    return u;
+  }
+
+  document.getElementById('btnSave').addEventListener('click', async function () {
+    var name = document.getElementById('fName').value.trim();
+    var url = norm(document.getElementById('fUrl').value);
+    var type = document.getElementById('fType').value;
+    var editId = document.getElementById('btnSave').dataset.editId;
+
+    if (!name) { showMsg('请填写名称'); return; }
+    if (!url || !/^https?:\/\/.+/.test(url)) { showMsg('地址需以 http:// 或 https:// 开头'); return; }
+
+    var btn = this;
+    btn.disabled = true;
+    showMsg('正在探测服务器…');
+    var ok = await probe(url);
+    btn.disabled = false;
+    if (!ok) { showMsg('无法连接到 ' + url + '，请检查地址与网络'); return; }
+
+    var cfg = loadConfig();
+    var addr;
+    if (editId) {
+      var idx = cfg.addresses.findIndex(function (a) { return a.id === editId; });
+      if (idx >= 0) {
+        cfg.addresses[idx] = { id: editId, name: name, url: url, type: type };
+        addr = cfg.addresses[idx];
+      }
+    } else {
+      addr = { id: genId(), name: name, url: url, type: type };
+      cfg.addresses.push(addr);
+    }
+    cfg.activeId = addr.id;
+    cfg.lastConnectedId = addr.id;
+    saveConfig(cfg);
+
+    showMsg('连接成功，正在进入…', true);
+    setTimeout(function () { go(addr.url); }, 350);
+  });
+
+  document.getElementById('btnCancel').addEventListener('click', function () {
+    var cfg = loadConfig();
+    if (cfg.addresses.length) showList();
+    else showForm(null);
+  });
+
+  document.getElementById('btnAdd').addEventListener('click', function () {
+    showForm(null);
+  });
+
+  // ---- 自动识别 ----
+  document.getElementById('btnAuto').addEventListener('click', async function () {
+    var btn = this;
+    btn.disabled = true;
+    showMsg('正在识别内网服务器…');
+
+    // 从当前页面推断子网（APK 壳页为本地 file:// 或 capacitor://，无法推断）
+    // 尝试常见内网网段
+    var prefixes = ['192.168.1', '192.168.0', '192.168.1', '10.0.0', '172.16.0'];
+    var ports = [8080, 8123, 80];
+    var candidates = [];
+    prefixes.forEach(function (p) {
+      for (var i = 1; i <= 254; i += 25) { // 抽样探测
+        ports.forEach(function (port) {
+          candidates.push('http://' + p + '.' + i + ':' + port);
+        });
       }
     });
-  } else {
-    showForm('', '');
+
+    // 限制并发，避免卡顿
+    var found = null;
+    for (var i = 0; i < candidates.length && !found; i += 5) {
+      var batch = candidates.slice(i, i + 5);
+      var results = await Promise.all(batch.map(function (u) {
+        return probe(u).then(function (ok) { return ok ? u : null; });
+      }));
+      found = results.find(function (u) { return u; });
+    }
+
+    btn.disabled = false;
+    if (found) {
+      document.getElementById('fUrl').value = found;
+      document.getElementById('fType').value = 'lan';
+      showMsg('发现服务器：' + found + '，请填写名称后保存', true);
+    } else {
+      showMsg('未识别到内网服务器，请手动填写地址');
+    }
+  });
+
+  function showMsg(text, ok) {
+    $msg.textContent = text;
+    $msg.className = 'msg' + (ok ? ' ok' : '');
   }
+
+  // ---- 启动逻辑 ----
+  async function boot() {
+    showConnecting();
+    var cfg = loadConfig();
+
+    // 无地址：显示添加表单
+    if (!cfg.addresses.length) {
+      showForm(null);
+      return;
+    }
+
+    // 单地址：直接探测并跳转
+    if (cfg.addresses.length === 1) {
+      var a = cfg.addresses[0];
+      var ok = await probe(a.url);
+      if (ok) {
+        cfg.activeId = a.id;
+        cfg.lastConnectedId = a.id;
+        saveConfig(cfg);
+        go(a.url);
+      } else {
+        showList();
+      }
+      return;
+    }
+
+    // 多地址：智能选择
+    var best = await resolveBestAddress(cfg);
+    if (best) {
+      cfg.activeId = best.id;
+      cfg.lastConnectedId = best.id;
+      saveConfig(cfg);
+      go(best.url);
+    } else {
+      showList();
+    }
+  }
+
+  boot();
 })();
 </script>
 </body>

@@ -260,23 +260,37 @@ export function autoComposeHomepage(list, devices = []) {
     if (!dev || dev.disabled) continue
     const ids = (dev.entities || []).map((e) => e.entity_id).filter((id) => usefulIds.has(id))
     if (!ids.length) continue
-    const score = Math.max(...ids.map((id) => entityScore(stateById.get(id))))
-    deviceGroups.push({ ids, name: dev.display_name || ids[0], score })
+    // 主控实体 = 组内评分最高者（控制类域基础分远高于传感器，自然代表设备类型）
+    let primaryId = ids[0]
+    let best = -1
+    for (const id of ids) {
+      const s = entityScore(stateById.get(id))
+      if (s > best) { best = s; primaryId = id }
+    }
+    deviceGroups.push({ ids, primaryId, name: dev.display_name || ids[0], score: best })
   }
   deviceGroups.sort((a, b) => (b.score - a.score) || a.name.localeCompare(b.name, 'zh'))
   stats.devices = deviceGroups.length
 
-  const smallCards = [] // 1-2 实体：2×1
-  const tallCards = []  // 3+ 实体：2×2（行内滚动）
-  for (const dg of deviceGroups) {
-    const h = dg.ids.length >= 3 ? 2 : 1
-    const card = newCard('generic', { title: dg.name, entity_ids: dg.ids, entity_id: dg.ids[0], w: 2, h })
-    ;(h === 2 ? tallCards : smallCards).push(card)
-  }
-
-  // 被设备卡消费的实体
+  const smallCards = [] // h=1
+  const tallCards = []  // h=2（行内滚动的通用卡或空调/媒体等高类型卡）
+  // 被卡片消费的实体：无论类型卡还是通用卡，都消费整组（保持原有聚合排版规则）
   const usedIds = new Set()
-  deviceGroups.forEach((dg) => dg.ids.forEach((id) => usedIds.add(id)))
+  for (const dg of deviceGroups) {
+    // 新增规则：优先按设备类型（主控实体的域）使用对应类型卡片模板；
+    // 无对应模板（域未映射或注册表缺类型）时才退回 generic 通用卡
+    const primary = stateById.get(dg.primaryId)
+    const typed = primary ? DOMAIN_CARD[primary.domain] : null
+    let card
+    if (typed && typed !== 'generic' && cardDefaults[typed]) {
+      card = newCard(typed, { entity_id: dg.primaryId })
+    } else {
+      const h = dg.ids.length >= 3 ? 2 : 1
+      card = newCard('generic', { title: dg.name, entity_ids: dg.ids, entity_id: dg.ids[0], w: 2, h })
+    }
+    ;(card.h >= 2 ? tallCards : smallCards).push(card)
+    dg.ids.forEach((id) => usedIds.add(id))
+  }
 
   // ===== 2) 头部状态行（h=1）：问候 + 概览 + 时钟 + 日期 + 2 格填充 =====
   // 头部 2 格：从未被设备消费的实体里挑——太阳/人员优先，其次高分传感器

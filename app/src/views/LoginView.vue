@@ -35,6 +35,14 @@
               class="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
           </div>
 
+          <!-- 保持登录：仅登录模式显示；勾选后令牌持久化，关闭 APP/浏览器后仍保持登录 -->
+          <label v-if="!registerMode" class="flex items-center gap-2 cursor-pointer select-none">
+            <input v-model="remember" type="checkbox"
+              class="w-4 h-4 accent-primary rounded cursor-pointer">
+            <span class="text-on-surface text-sm">保持登录</span>
+            <span class="text-muted text-xs">（在此设备上记住登录状态）</span>
+          </label>
+
           <p v-if="msg" class="text-xs font-body" :class="msgErr ? 'text-error' : 'text-success'">{{ msg }}</p>
 
           <button type="submit" class="w-full py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-on-primary text-sm font-semibold transition-all duration-200 flex items-center justify-center gap-2 shadow-lg shadow-primary/20">
@@ -60,6 +68,7 @@ const route = useRoute()
 
 const registerMode = ref(false)
 const form = reactive({ username: '', password: '', confirm: '' })
+const remember = ref(true) // 默认勾选：移动端 APP 场景下免重复登录
 const msg = ref('')
 const msgErr = ref(false)
 
@@ -89,7 +98,7 @@ async function submit() {
     if (registerMode.value) {
       await authRegister(u, form.password)
     } else {
-      await authLogin(u, form.password)
+      await authLogin(u, form.password, remember.value)
     }
     const target = route.query.redirect || '/'
     router.replace(target)

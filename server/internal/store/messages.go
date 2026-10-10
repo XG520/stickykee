@@ -18,6 +18,7 @@ type Message struct {
 	CreatedAt string         `json:"created_at"`
 	Device    map[string]any `json:"device,omitempty"` // device 类型：{entity_id,name,icon,domain,device_class,...}
 	Image     map[string]any `json:"image,omitempty"`  // image 类型：{url,name}
+	Audio     map[string]any `json:"audio,omitempty"`  // audio 类型：{url,name,duration}
 }
 
 // Conversation 表示一个对话的聚合视图。
@@ -50,6 +51,8 @@ func fillMessage(m *Message, msgType, payload string) {
 		_ = json.Unmarshal([]byte(payload), &m.Device)
 	} else if msgType == "image" {
 		_ = json.Unmarshal([]byte(payload), &m.Image)
+	} else if msgType == "audio" {
+		_ = json.Unmarshal([]byte(payload), &m.Audio)
 	}
 }
 

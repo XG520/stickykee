@@ -314,12 +314,17 @@ const baseCell = 120
 const zoomFactor = computed(() => (cellSize.value > 0 ? cellSize.value / baseCell : 1))
 function zoomStyle(card) {
   const cw = Math.min(Math.max(1, card.w || 1), cols.value)
+  const rh = Math.min(3, card.h || 1)
+  const z = zoomFactor.value
+  // 用 transform:scale 而非 zoom：zoom 会触发同步重排，且与卡片的
+  // container-type/content-visibility 组合在窄屏下产生反复失效重排（画面跳动）
+  // holder 跨 cw 列/rh 行，其盒尺寸含轨道间距（cw*cellSize+(cw-1)*gap）；
+  // zoom 盒缩放后必须恰好覆盖 holder，否则右侧/底部会残留空白条
+  // （悬停空白条也触发 hover，阴影盒大于可见卡片，出现「宽高不是卡片边界」）
   return {
-    // 用 transform:scale 而非 zoom：zoom 会触发同步重排，且与卡片的
-    // container-type/content-visibility 组合在窄屏下产生反复失效重排（画面跳动）
-    transform: `scale(${zoomFactor.value})`,
-    width: cw * baseCell + 'px',
-    height: Math.min(3, card.h || 1) * baseCell + 'px',
+    transform: `scale(${z})`,
+    width: cw * baseCell + (cw - 1) * gridGap / z + 'px',
+    height: rh * baseCell + (rh - 1) * gridGap / z + 'px',
     display: 'flex',
     flexDirection: 'column',
     flex: 'none',
@@ -448,10 +453,16 @@ async function saveLayout() {
     editing.value = false
   } catch { /* 静默 */ }
 }
-function resetLayout() {
+// 重置为默认仪表盘：必须立即落库，否则刷新后又从后端读到旧布局
+async function resetLayout() {
   pages.value = [defaultPage()]
   currentPageIndex.value = 0
   editing.value = false
+  const json = serializeDashboard(pages.value)
+  try {
+    await putPrefs({ dashboard: json })
+    cacheLayout(json)
+  } catch { /* 离线：仅本次重置生效 */ }
 }
 
 // 智能排版：用当前真实实体自动设计当前页（不直接落库，用户点「完成」才保存）

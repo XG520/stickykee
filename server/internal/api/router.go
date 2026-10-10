@@ -5,8 +5,10 @@ import (
 	"time"
 
 	"stickynuo/server/internal/auth"
+	"stickynuo/server/internal/call"
 	"stickynuo/server/internal/ha"
 	"stickynuo/server/internal/hub"
+	"stickynuo/server/internal/secure"
 	"stickynuo/server/internal/store"
 
 	"github.com/go-chi/chi/v5"
@@ -44,7 +46,14 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 
 	// 聊天图片（公开读取：同 <img> 鉴权限制；安全性依赖上传时生成的
 	// 128-bit 随机文件名不可枚举，读取路径限定在 uploads 目录内防穿越）。
-	im := handler.NewIm(msgRepo, userPrefs, userRepo, hb, uploadDir)
+	// 会话密钥存储（进程内存）+ ECDH 握手 handler
+	keyStore := secure.NewStore()
+	cryptoHandler, err := handler.NewCrypto(keyStore)
+	if err != nil {
+		panic(err)
+	}
+
+	im := handler.NewIm(msgRepo, userPrefs, userRepo, hb, keyStore, manager, uploadDir)
 	r.Get("/api/v1/im-files/", im.ImageFiles)
 	r.Get("/api/v1/im-files/*", im.ImageFiles)
 
@@ -66,6 +75,10 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 	location := handler.NewLocation(manager, sensors)
 	media := handler.NewMedia(manager)
 
+	// 语音通话：内存房间 + WebRTC 信令中继
+	callManager := call.NewManager()
+	callHandler := handler.NewCall(callManager, hb, userRepo)
+
 	r.Route("/api/v1", func(r chi.Router) {
 		// 认证：status/register/login 公开，me/logout/change-password 需登录。
 		r.Route("/auth", func(r chi.Router) {
@@ -75,13 +88,19 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 			r.Group(func(pr chi.Router) {
 				pr.Use(auth.Middleware(authOpt))
 				pr.Get("/me", authHandler.Me)
-				pr.Post("/logout", authHandler.Logout)
+				pr.Post("/logout", func(w http.ResponseWriter, r *http.Request) {
+					authHandler.Logout(w, r)
+					cryptoHandler.Drop(r)
+				})
 				pr.Post("/change-password", authHandler.ChangePassword)
 			})
 		})
 
 		// WebSocket：浏览器无法携带 Header，改用 query token 自行鉴权。
 		r.Get("/ws", ws.ServeHTTP)
+
+		// 加密：公钥公开下发（公钥本就可公开）；握手需登录，在下方鉴权组内。
+		r.Get("/crypto/pubkey", cryptoHandler.PubKey)
 
 		// 以下接口均要求登录（Group 创建独立子路由，先注册中间件再注册路由）。
 		r.Group(func(r chi.Router) {
@@ -130,6 +149,7 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 			r.Delete("/devices/{device_id}", devices.Delete)
 
 			// 用户间消息 & 仪表盘共享（全部登录可见，action 端做归属校验）
+			r.Post("/crypto/handshake", cryptoHandler.Handshake)
 			r.Get("/messages/conversations", im.Conversations)
 			r.Get("/messages/contacts", im.Contacts)
 			r.Get("/messages/{user}", im.History)
@@ -137,10 +157,20 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 			r.Post("/messages/{user}/share", im.SendShare)
 			r.Post("/messages/{user}/device", im.SendDevice)
 			r.Post("/messages/{user}/image", im.SendImage)
+			r.Post("/messages/{user}/audio", im.SendAudio)
 			r.Post("/messages/{user}/read", im.MarkRead)
 			r.Post("/messages/{id}/accept", im.Accept)
 			r.Post("/messages/{id}/decline", im.Decline)
 			r.Post("/messages/{id}/recall", im.Recall)
+
+			// 语音通话信令（一对一/多人 mesh）
+			r.Route("/call", func(r chi.Router) {
+				r.Post("/start", callHandler.Start)
+				r.Post("/signal", callHandler.Signal)
+				r.Post("/join", callHandler.Join)
+				r.Post("/leave", callHandler.Leave)
+				r.Post("/reject", callHandler.Reject)
+			})
 
 			// 用户管理（仅管理员可用，handler 内部校验）
 			r.Route("/users", func(r chi.Router) {

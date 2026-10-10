@@ -6,6 +6,7 @@ import { dispatchCommand, registerService } from '@/utils/browserCommands'
 import { mark, measure, count, record, autoReportOnce } from '@/utils/perf'
 import { saveSnapshot, loadSnapshot, clearSnapshot, clearAll } from '@/utils/snapshotCache'
 import { getPrefs, putPrefs } from '@/utils/prefs'
+import { handshake, openEnvelope, withCrypto } from '@/utils/crypto'
 
 mark('boot:store')
 
@@ -30,7 +31,18 @@ export const auth = reactive({
   checked: false, // 是否已执行过登录态探测
 })
 
-function setToken(t) { if (t) sessionStorage.setItem('hc_token', t) }
+// remember=true（「保持登录」）：令牌写入 localStorage，关闭浏览器/APP 后仍保持登录；
+// 否则写入 sessionStorage，仅当前会话有效。写入前清掉另一处的残留，避免两份令牌不一致。
+function setToken(t, remember = false) {
+  if (!t) return
+  if (remember) {
+    localStorage.setItem('hc_token', t)
+    sessionStorage.removeItem('hc_token')
+  } else {
+    sessionStorage.setItem('hc_token', t)
+    localStorage.removeItem('hc_token')
+  }
+}
 function setAuth(u) {
   auth.user = u?.username ?? null
   auth.isAdmin = !!u?.is_admin
@@ -38,10 +50,11 @@ function setAuth(u) {
 }
 
 // 登录/注册：成功后写入 token 与用户态。
-export async function authLogin(username, password) {
+export async function authLogin(username, password, remember = false) {
   const { data } = await api.login({ username, password })
-  setToken(data.token)
+  setToken(data.token, remember)
   setAuth(data)
+  await handshake().catch(() => { /* 握手失败不阻塞登录，读消息时会重试 */ })
   return data
 }
 
@@ -49,6 +62,7 @@ export async function authRegister(username, password) {
   const { data } = await api.register({ username, password })
   setToken(data.token)
   setAuth(data)
+  await handshake().catch(() => {})
   return data
 }
 
@@ -56,6 +70,7 @@ export async function authRegister(username, password) {
 export async function authLogout() {
   try { await api.logout() } catch { /* 后端离线也能退出 */ }
   sessionStorage.removeItem('hc_token')
+  localStorage.removeItem('hc_token')
   setAuth(null)
   store.ready = false
   // 清掉实体缓存与本地快照/布局缓存：下一个登录用户不该看到上一位用户的数据
@@ -72,6 +87,7 @@ export async function loadMe() {
   try {
     const { data } = await api.me()
     setAuth(data)
+    await handshake().catch(() => {})
   } catch {
     setAuth(null)
   }
@@ -79,10 +95,12 @@ export async function loadMe() {
   return auth.user
 }
 
-// 修改密码：成功后替换本地 token。
+// 修改密码：成功后替换本地 token（沿用当前「保持登录」状态）。
 export async function changePassword(old_password, new_password) {
   const { data } = await api.changePassword({ old_password, new_password })
-  setToken(data.token)
+  const remember = !!localStorage.getItem('hc_token')
+  setToken(data.token, remember)
+  await handshake(true).catch(() => {})
   return data
 }
 
@@ -342,6 +360,8 @@ function connectWS() {
       }
       else if (m.type === 'cmd') dispatchCommand(m.cmd, m.data)
       else if (m.type === 'im') refreshIm()
+      // 通话信令：动态 import 避免 store ↔ call 模块循环依赖
+      else if (m.type === 'call') import('@/utils/call').then((c) => c.handleCallEvent(m))
     } catch { /* 忽略坏帧 */ }
   }
   ws.onclose = () => {
@@ -463,8 +483,9 @@ export const imRefresher = ref(0)         // 自增信号：通知面板重新�
 export async function refreshIm() {
   if (!auth.user) return
   try {
-    const { data } = await api.listConversations()
-    const list = Array.isArray(data) ? data : []
+    const { data } = await withCrypto(() => api.listConversations())
+    const plain = await openEnvelope(data)
+    const list = Array.isArray(plain) ? plain : []
     imConversations.value = list
     imUnread.value = list.reduce((s, c) => s + (c.unread || 0), 0)
   } catch { /* 保持现值 */ }

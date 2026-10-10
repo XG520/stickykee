@@ -56,6 +56,10 @@ func (h *Auth) Register(w http.ResponseWriter, r *http.Request) {
 		WriteErr(w, 400, "bad_request", "username and password (>="+strconv.Itoa(minPasswordLen)+" chars) required")
 		return
 	}
+	if strings.EqualFold(p.Username, AssistantUser) {
+		WriteErr(w, 400, "reserved", "该用户名为系统保留（智家助手）")
+		return
+	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(p.Password), bcrypt.DefaultCost)
 	if err != nil {
 		WriteErr(w, 500, "internal", "hash failed")

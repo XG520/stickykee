@@ -1,10 +1,18 @@
 // 统一的 API 客户端：封装 /api/v1 前缀、鉴权头、数据解包与错误规范化。
+import { sealJSON } from '@/utils/crypto'
+
 const BASE = '/api/v1'
+
+// 读取会话令牌：优先 sessionStorage（未勾「保持登录」的会话级令牌），
+// 其次 localStorage（勾了「保持登录」的持久令牌）
+export function getToken() {
+  return sessionStorage.getItem('hc_token') || localStorage.getItem('hc_token') || ''
+}
 
 // 后端返回统一结构 { data, meta }；错误结构 { error: { code, message } }。
 async function request(method, path, body) {
   const opts = { method, headers: {} }
-  const token = sessionStorage.getItem('hc_token')
+  const token = getToken()
   if (token) opts.headers.Authorization = `Bearer ${token}`
   if (body !== undefined) {
     opts.headers['Content-Type'] = 'application/json'
@@ -39,7 +47,7 @@ function err(code, message, status) {
 
 // FormData 上传：不做 JSON 序列化，浏览器自动携带 multipart 边界与鉴权头。
 async function postForm(path, form) {
-  const token = sessionStorage.getItem('hc_token')
+  const token = getToken()
   let res
   try {
     res = await fetch(BASE + path, {
@@ -154,14 +162,25 @@ export const api = {
   listContacts: () => api.get('/messages/contacts'),
   getMessages: (user, limit = 50, before = 0) =>
     api.get(`/messages/${encodeURIComponent(user)}?limit=${limit}${before > 0 ? `&before=${before}` : ''}`),
-  sendMessage: (user, content) => api.post(`/messages/${encodeURIComponent(user)}`, { content }),
+  sendMessage: async (user, content) => {
+    const env = await sealJSON({ content })
+    return api.post(`/messages/${encodeURIComponent(user)}`, env)
+  },
   sendImage: (user, form) => postForm(`/messages/${encodeURIComponent(user)}/image`, form),
+  sendAudio: (user, form) => postForm(`/messages/${encodeURIComponent(user)}/audio`, form),
   recallMessage: (id) => api.post(`/messages/${id}/recall`),
   sendShare: (user, dashboard) => api.post(`/messages/${encodeURIComponent(user)}/share`, { dashboard }),
   sendDevice: (user, device) => api.post(`/messages/${encodeURIComponent(user)}/device`, { device }),
   markMessageRead: (user) => api.post(`/messages/${encodeURIComponent(user)}/read`),
   acceptShare: (id) => api.post(`/messages/${id}/accept`),
   declineShare: (id) => api.post(`/messages/${id}/decline`),
+
+  // 语音通话信令
+  callStart: (members) => api.post('/call/start', { members }),
+  callSignal: (room, to, data) => api.post('/call/signal', { room, to, data }),
+  callJoin: (room) => api.post('/call/join', { room }),
+  callLeave: (room) => api.post('/call/leave', { room }),
+  callReject: (room) => api.post('/call/reject', { room }),
 }
 
 // WS 也能提供封装的路径拼接（供实时连接使用）。
@@ -172,7 +191,7 @@ export const wsUrl = (instanceId, deviceId) => {
   // device_id 供后端将 Browser_mod 命令按设备定向路由到本连接。
   const params = new URLSearchParams()
   if (instanceId) params.set('instance', instanceId)
-  const token = sessionStorage.getItem('hc_token') || ''
+  const token = getToken()
   if (token) params.set('token', token)
   if (deviceId) params.set('device', deviceId)
   return `${p}://${host}/api/v1/ws?${params.toString()}`

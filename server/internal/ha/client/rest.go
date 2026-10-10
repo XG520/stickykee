@@ -299,3 +299,60 @@ func (c *Rest) UpdateAutomation(ctx context.Context, automationID string, cfg ma
 func (c *Rest) DeleteAutomation(ctx context.Context, automationID string) error {
 	return c.do(ctx, http.MethodDelete, "/api/config/automation/config/"+automationID, nil, nil)
 }
+
+// Conversation 调用 HA Assist：POST /api/conversation/process。
+// conversationID 为空时由 HA 开新会话；返回 (中文回复, conversation_id)。
+// 动作类意图常不返回语音文本，按 data.success/failed 生成中文回执。
+func (c *Rest) Conversation(ctx context.Context, text, conversationID string) (string, string, error) {
+	req := map[string]any{"text": text, "language": "zh-CN"}
+	if conversationID != "" {
+		req["conversation_id"] = conversationID
+	}
+	var out struct {
+		ConversationID string `json:"conversation_id"`
+		Response       struct {
+			ConversationID string `json:"conversation_id"`
+			ResponseType   string `json:"response_type"`
+			Speech         struct {
+				Plain struct {
+					Speech string `json:"speech"`
+				} `json:"plain"`
+			} `json:"speech"`
+			Data struct {
+				Success []struct {
+					Name    string `json:"name"`
+					Success bool   `json:"success"`
+				} `json:"success"`
+				Failed []struct {
+					Path string `json:"path"`
+				} `json:"failed"`
+			} `json:"data"`
+		} `json:"response"`
+	}
+	if err := c.do(ctx, http.MethodPost, "/api/conversation/process", req, &out); err != nil {
+		return "", "", err
+	}
+	cid := out.Response.ConversationID
+	if cid == "" {
+		cid = out.ConversationID
+	}
+	if speech := strings.TrimSpace(out.Response.Speech.Plain.Speech); speech != "" {
+		return speech, cid, nil
+	}
+	if len(out.Response.Data.Failed) > 0 {
+		return "有设备没能控制成功，要不要看看设备状态？", cid, nil
+	}
+	if len(out.Response.Data.Success) > 0 {
+		names := make([]string, 0, len(out.Response.Data.Success))
+		for _, s := range out.Response.Data.Success {
+			if s.Success && s.Name != "" {
+				names = append(names, s.Name)
+			}
+		}
+		if len(names) > 0 {
+			return "好的，已执行：" + strings.Join(names, "、"), cid, nil
+		}
+		return "好的，已执行", cid, nil
+	}
+	return "我没太理解，可以再说清楚一些吗？", cid, nil
+}

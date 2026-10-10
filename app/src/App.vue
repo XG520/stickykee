@@ -50,6 +50,9 @@
 
       <!-- 全局设备抽屉：概览卡/统计卡/房间概览点击后按条件过滤展示设备（store.deviceDrawer 驱动） -->
       <DeviceDrawer />
+
+      <!-- 全局语音通话覆盖层（来电/通话中界面，WebRTC mesh） -->
+      <CallOverlay />
     </template>
   </div>
 </template>
@@ -61,6 +64,7 @@ import TheHeader from '@/components/TheHeader.vue'
 import TheNavBar from '@/components/TheNavBar.vue'
 import MobileTabBar from '@/components/MobileTabBar.vue'
 import DeviceDrawer from '@/components/DeviceDrawer.vue'
+import CallOverlay from '@/components/CallOverlay.vue'
 import { auth, loadInstances, ui } from '@/store'
 import { useFullscreen } from '@/composables/useFullscreen'
 import { useAutoHide } from '@/composables/useAutoHide'

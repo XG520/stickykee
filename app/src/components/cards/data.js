@@ -87,6 +87,19 @@ const condMap = {
 }
 function weatherIcon(state) { return (condMap[String(state)] || ['partly_cloudy_day', String(state)])[0] }
 function weatherCond(state) { return (condMap[String(state)] || [null, String(state)])[1] }
+
+// 非有效天气状态：实体存在但无数据（天气集成离线/初始化中），
+// 不能按真实天气渲染，否则会出现「晴转多云图标 + unavailable 文案 + 数据全空」的矛盾画面
+const WEATHER_BAD = { unavailable: '不可用', unknown: '未知' }
+function weatherBadData(entity) {
+  return {
+    icon: '❔',
+    temp: '—',
+    unit: (entity.unit || '°C').replace('°C', '°'),
+    condition: WEATHER_BAD[String(entity.state)] || String(entity.state),
+    feels: '—', humidity: '—', wind: '—', forecastHtml: '',
+  }
+}
 function forecastHtml(entity) {
   const arr = attr(entity, 'forecast', [])
   if (!Array.isArray(arr)) return ''
@@ -362,6 +375,7 @@ function personData(entities, hasData, ctx) {
 function weatherEntityData(entity, hasData) {
   const b = base(entity, hasData, 'partly_cloudy_day')
   if (!entity) return { ...b, icon: '🌤️', temp: '—', unit: '°', condition: '—', feels: '—', humidity: '—', wind: '—', forecastHtml: '' }
+  if (WEATHER_BAD[String(entity.state)]) return { ...b, ...weatherBadData(entity) }
   const unit = (entity.unit || '°C').replace('°C', '°')
   const hum = numVal(attr(entity, 'humidity'))
   const wind = fmtNum(attr(entity, 'wind_speed'))
@@ -908,6 +922,7 @@ function weatherData({ all, hasData, entityId }) {
     : null
   const empty = { icon: '🌤️', temp: '—', unit: '°', condition: hasData ? '暂无天气数据' : '等待 Home Assistant 连接…', feels: '—', humidity: '—', wind: '—', forecastHtml: '' }
   if (!w) return empty
+  if (WEATHER_BAD[String(w.state)]) return weatherBadData(w)
   const unit = (w.unit || '°C').replace('°C', '°')
   const hum = numVal(attr(w, 'humidity'))
   const kmh = numVal(attr(w, 'wind_speed'))

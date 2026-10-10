@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"mime"
 	"net/http"
@@ -13,19 +14,43 @@ import (
 	"strconv"
 	"strings"
 
+	"stickynuo/server/internal/ha"
 	"stickynuo/server/internal/hub"
+	"stickynuo/server/internal/secure"
 	"stickynuo/server/internal/store"
 
 	"github.com/go-chi/chi/v5"
 )
 
-// imMaxUpload 聊天图片大小上限（8MB）。
+// imMaxUpload 聊天文件大小上限（图片/语音 8MB）。
 const imMaxUpload = 8 << 20
 
 // imExts 允许的图片扩展名（配合 MIME 嗅探双重校验）。
 var imExts = map[string]bool{
 	".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true,
 }
+
+// imAudioExts 允许的语音扩展名。
+// webm/opus：安卓 Chrome 与多数桌面浏览器；m4a/mp4(aac)：iOS Safari/WebView；ogg：部分安卓。
+var imAudioExts = map[string]bool{
+	".webm": true, ".m4a": true, ".mp4": true, ".aac": true, ".ogg": true, ".wav": true,
+}
+
+func init() {
+	// 确保语音文件读取时 Content-Type 正确（部分平台 mime 表缺这些映射）
+	_ = mime.AddExtensionType(".webm", "audio/webm")
+	_ = mime.AddExtensionType(".m4a", "audio/mp4")
+	_ = mime.AddExtensionType(".aac", "audio/aac")
+	_ = mime.AddExtensionType(".ogg", "audio/ogg")
+	_ = mime.AddExtensionType(".wav", "audio/wav")
+}
+
+// AssistantUser 是 Home Assistant 语音助手在聊天系统中的保留虚拟用户名。
+// 不允许注册同名真实用户；消息线程与普通用户一致地落库。
+const AssistantUser = "ha-assistant"
+
+// AssistantName 助手在 UI 上的显示名。
+const AssistantName = "智家助手"
 
 // Im 提供用户间消息与仪表盘共享。
 // 会话/文本/共享均按登录用户隔离；接受/拒绝等动作强校验归属（仅接收方可执行）。
@@ -34,12 +59,14 @@ type Im struct {
 	userPrefs *store.UserPrefs
 	users     *store.UserRepo
 	hub       *hub.Hub
-	uploadDir string // 聊天图片落盘根目录（空串禁用图片发送）
+	keys      *secure.Store // 会话密钥（信封加解密）
+	ha        *ha.Manager   // 助手线程：调用 active 实例的 conversation/process
+	uploadDir string        // 聊天图片落盘根目录（空串禁用图片发送）
 }
 
 // NewIm 构造 handler。uploadDir 为空时图片上传/读取不可用。
-func NewIm(msgs *store.MessageRepo, userPrefs *store.UserPrefs, users *store.UserRepo, hb *hub.Hub, uploadDir string) *Im {
-	return &Im{msgs: msgs, userPrefs: userPrefs, users: users, hub: hb, uploadDir: uploadDir}
+func NewIm(msgs *store.MessageRepo, userPrefs *store.UserPrefs, users *store.UserRepo, hb *hub.Hub, keys *secure.Store, haMgr *ha.Manager, uploadDir string) *Im {
+	return &Im{msgs: msgs, userPrefs: userPrefs, users: users, hub: hb, keys: keys, ha: haMgr, uploadDir: uploadDir}
 }
 
 // requireTarget 校验目标用户存在；不存在返回 404 并写错误响应。
@@ -86,7 +113,7 @@ func (h *Im) Conversations(w http.ResponseWriter, r *http.Request) {
 		WriteErr(w, 500, "internal", err.Error())
 		return
 	}
-	WriteJSON(w, 200, list)
+	_ = writeEnvelope(h.keys, w, r, list)
 }
 
 // History GET /messages/{user}
@@ -104,7 +131,7 @@ func (h *Im) History(w http.ResponseWriter, r *http.Request) {
 		WriteErr(w, 500, "internal", err.Error())
 		return
 	}
-	WriteJSON(w, 200, list)
+	_ = writeEnvelope(h.keys, w, r, list)
 }
 
 // MarkRead POST /messages/{user}/read  把 other 发给我的消息全部标已读。
@@ -135,12 +162,21 @@ func (h *Im) SendText(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Content string `json:"content"`
 	}
-	if err := DecodeBody(r, &body); err != nil {
+	if err := decodeEnvelope(h.keys, r, &body); err != nil {
+		if errors.Is(err, errNoSessionKey) {
+			WriteErr(w, 400, "no_session_key", "会话密钥不存在，请重新握手")
+			return
+		}
 		WriteErr(w, 400, "bad_request", "bad payload")
 		return
 	}
 	if strings.TrimSpace(body.Content) == "" {
 		WriteErr(w, 400, "bad_request", "content required")
+		return
+	}
+	// 虚拟会话：HA 语音助手（不走用户存在性校验）
+	if to == AssistantUser {
+		h.chatAssistant(w, r, me, body.Content)
 		return
 	}
 	if !h.requireTarget(w, r, to) {
@@ -152,7 +188,39 @@ func (h *Im) SendText(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.notify(to)
-	WriteJSON(w, 200, map[string]any{"id": id})
+	_ = writeEnvelope(h.keys, w, r, map[string]any{"id": id})
+}
+
+// chatAssistant 处理与 HA Assist 的会话：
+// 用户消息先落库 → 调 active 实例 /api/conversation/process（携带上次 conversation_id 保持上下文）
+// → 助手回复落库 → 实时通知本人 → 密文返回两条消息 id。
+func (h *Im) chatAssistant(w http.ResponseWriter, r *http.Request, me, text string) {
+	id1, err := h.msgs.Create(r.Context(), me, AssistantUser, "text", text, "")
+	if err != nil {
+		WriteErr(w, 500, "internal", err.Error())
+		return
+	}
+	rest, err := h.ha.Rest(r.Context(), 0) // 0 = active 实例，使用本人 token
+	if err != nil {
+		haErr(w, err)
+		return
+	}
+	cid := h.userPrefs.Get(r.Context(), me, "ha_chat_cid")
+	reply, newCID, err := rest.Conversation(r.Context(), text, cid)
+	if err != nil {
+		WriteErr(w, 502, "assistant_error", "助手暂不可用："+err.Error())
+		return
+	}
+	if newCID != "" && newCID != cid {
+		_ = h.userPrefs.Set(r.Context(), me, "ha_chat_cid", newCID)
+	}
+	id2, err := h.msgs.Create(r.Context(), AssistantUser, me, "text", reply, "")
+	if err != nil {
+		WriteErr(w, 500, "internal", err.Error())
+		return
+	}
+	h.notify(me)
+	_ = writeEnvelope(h.keys, w, r, map[string]any{"id": id1, "reply_id": id2})
 }
 
 // SendDevice POST /messages/{user}/device  {device:{entity_id,name,icon,domain,device_class,...}}
@@ -376,6 +444,88 @@ func (h *Im) SendImage(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, 200, map[string]any{"id": id})
 }
 
+// SendAudio POST /messages/{user}/audio  multipart{file, duration}
+// 语音消息：扩展名白名单 + MIME 嗅探（纯音频 webm/mp4 常被嗅探成 video/*，按容器一并接受），
+// 随机名落盘 <uploadDir>/im/，消息 payload 存 {url,name,duration}。
+func (h *Im) SendAudio(w http.ResponseWriter, r *http.Request) {
+	me := rUsername(r)
+	to := chi.URLParam(r, "user")
+	if to == "" || to == me {
+		WriteErr(w, 400, "bad_request", "invalid target")
+		return
+	}
+	if !h.requireTarget(w, r, to) {
+		return
+	}
+	if h.uploadDir == "" {
+		WriteErr(w, 501, "not_implemented", "服务端未启用文件存储目录")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, imMaxUpload)
+	if err := r.ParseMultipartForm(imMaxUpload); err != nil {
+		WriteErr(w, 400, "bad_request", "语音上传失败或超过 8MB 限制")
+		return
+	}
+	f, hdr, err := r.FormFile("file")
+	if err != nil {
+		WriteErr(w, 400, "bad_request", "缺少 file 字段")
+		return
+	}
+	defer f.Close()
+	ext := strings.ToLower(filepath.Ext(hdr.Filename))
+	if !imAudioExts[ext] {
+		WriteErr(w, 400, "bad_request", "仅支持 webm/m4a/aac/ogg/wav 语音")
+		return
+	}
+	// MIME 嗅探：webm/mp4 容器纯音频常被识别为 video/webm、video/mp4，属正常；
+	// 其余必须是 audio/*
+	head := make([]byte, 512)
+	n, _ := f.Read(head)
+	ctype := http.DetectContentType(head[:n])
+	okAudio := strings.HasPrefix(ctype, "audio/") || strings.Contains(ctype, "webm") || ctype == "video/mp4"
+	if !okAudio {
+		WriteErr(w, 400, "bad_request", "文件内容不是受支持的语音")
+		return
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		WriteErr(w, 500, "internal", "读取文件失败")
+		return
+	}
+	dir := filepath.Join(h.uploadDir, "im")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		WriteErr(w, 500, "internal", "创建语音目录失败")
+		return
+	}
+	name := imRandName(ext)
+	dst, err := os.Create(filepath.Join(dir, name))
+	if err != nil {
+		WriteErr(w, 500, "internal", "写入语音失败")
+		return
+	}
+	if _, err := io.Copy(dst, f); err != nil {
+		dst.Close()
+		WriteErr(w, 500, "internal", "写入语音失败")
+		return
+	}
+	dst.Close()
+	duration, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("duration")))
+	if duration < 0 {
+		duration = 0
+	}
+	payload, _ := json.Marshal(map[string]any{
+		"url":      "/api/v1/im-files/im/" + name,
+		"name":     hdr.Filename,
+		"duration": duration,
+	})
+	id, err := h.msgs.Create(r.Context(), me, to, "audio", string(payload), "")
+	if err != nil {
+		WriteErr(w, 500, "internal", err.Error())
+		return
+	}
+	h.notify(to)
+	WriteJSON(w, 200, map[string]any{"id": id})
+}
+
 // ImageFiles GET /im-files/*  已登录用户读取聊天图片。
 // 限定 uploadDir 目录内（清洗路径 + 双重前缀校验防穿越）。
 func (h *Im) ImageFiles(w http.ResponseWriter, r *http.Request) {
@@ -432,7 +582,7 @@ func (h *Im) Recall(w http.ResponseWriter, r *http.Request) {
 		WriteErr(w, 403, "forbidden", "仅发送方可撤回消息")
 		return
 	}
-	if msg.Type != "text" && msg.Type != "image" {
+	if msg.Type != "text" && msg.Type != "image" && msg.Type != "audio" {
 		WriteErr(w, 400, "bad_request", "该类型消息不支持撤回")
 		return
 	}

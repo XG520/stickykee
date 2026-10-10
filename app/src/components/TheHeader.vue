@@ -1,4 +1,8 @@
 <template>
+  <!-- 单一根节点：原先 header + MessageCenter + HANotifyCenter 三个平级根节点
+       （片段组件）。嵌套在条件模板中的片段组件在 vite HMR 热更新时旧根节点可能
+       卸载不净，导致顶栏被重复挂载堆叠；包裹单根后组件边界可被可靠回收。 -->
+  <div>
   <header class="sticky top-0 z-50 bg-background/80 backdrop-blur-xl border-b border-border">
     <div class="max-w-screen-2xl mx-auto px-6 py-3 flex items-center justify-between gap-4">
       <router-link to="/" class="flex items-center gap-3">
@@ -42,6 +46,7 @@
   </header>
   <MessageCenter />
   <HANotifyCenter :open="notifyOpen" @close="notifyOpen = false" />
+  </div>
 </template>
 
 <script setup>

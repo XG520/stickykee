@@ -1,14 +1,17 @@
 <template>
   <Teleport to="body">
     <Transition name="im-fade">
-      <div v-if="imOpen" class="fixed inset-0 z-[80]">
-        <!-- 遮罩 -->
-        <div class="absolute inset-0 bg-black/30 backdrop-blur-[2px]" @click="closeIm"></div>
-
-        <!-- 抽屉 -->
-        <div class="absolute inset-0 right-0 md:inset-y-0 md:max-w-4xl flex flex-col md:flex-row bg-surface shadow-2xl">
+      <!-- 根层 fixed inset-0 但无背景：只是点击捕获层（点浮窗外即关闭），不遮蔽页面 -->
+      <div v-if="imOpen" class="fixed inset-0 z-[80]" @click="closeIm">
+        <!-- 气泡浮窗：
+             手机端——底部浮层，四周留边距（app 仍可见，非全屏覆盖）；
+             桌面端——右上角头像下方弹出的聊天窗，固定 24rem 宽 -->
+        <div class="im-card-in absolute flex flex-col overflow-hidden bg-surface border border-border rounded-2xl shadow-2xl
+                       left-2 right-2 bottom-2 top-auto h-[78dvh]
+                       sm:left-auto sm:right-4 sm:bottom-auto sm:top-[4.5rem] sm:w-[24rem] sm:h-[min(36rem,calc(100vh-6rem))]"
+          @click.stop>
           <!-- 会话列表面板 -->
-          <div :class="['w-full md:w-80 shrink-0 md:flex flex-col border-r border-border bg-surface-alt/60', listVisible ? 'flex' : 'hidden']">
+          <div :class="['flex-1 min-h-0 flex-col bg-surface-alt/60', listVisible ? 'flex' : 'hidden']">
             <div class="flex items-center justify-between px-4 py-3 border-b border-border">
               <h2 class="font-headline text-on-background font-semibold text-base">消息与共享</h2>
               <button @click="closeIm" title="关闭" class="w-8 h-8 rounded-full hover:bg-surface flex items-center justify-center text-muted hover:text-on-surface transition-colors">
@@ -34,14 +37,15 @@
 
             <!-- 会话列表 -->
             <div class="flex-1 overflow-y-auto py-2">
-              <button v-for="c in conversations" :key="c.user"
+              <button v-for="c in convList" :key="c.user"
                 @click="openConv(c.user)"
                 class="w-full flex items-center gap-3 px-4 py-3 hover:bg-surface-hover/70 transition-colors text-left border-b border-border/50"
                 :class="activeUser === c.user ? 'bg-surface-hover/70' : ''">
-                <span class="material-symbols-outlined text-accent text-xl shrink-0">account_circle</span>
+                <span class="material-symbols-outlined text-xl shrink-0"
+                  :class="c.user === ASSISTANT ? 'text-primary' : 'text-accent'">{{ c.user === ASSISTANT ? 'smart_toy' : 'account_circle' }}</span>
                 <div class="flex-1 min-w-0">
                   <div class="flex items-center justify-between">
-                    <p class="text-on-surface text-sm font-medium truncate">{{ c.user }}</p>
+                    <p class="text-on-surface text-sm font-medium truncate">{{ displayName(c.user) }}</p>
                     <span v-if="c.pending && c.pending > 0" class="ml-2 px-1.5 py-0.5 rounded-full bg-error/15 text-error text-[10px] font-semibold shrink-0">共享{{ c.pending > 9 ? '9+' : c.pending }}</span>
                   </div>
                   <p class="text-muted text-xs truncate font-body">{{ lastPreview(c) }}</p>
@@ -56,15 +60,15 @@
           </div>
 
           <!-- 消息线程 -->
-          <div :class="['flex-1 md:flex flex-col min-w-0', threadVisible ? 'flex' : 'hidden']">
+          <div :class="['flex-1 min-h-0 flex-col min-w-0', threadVisible ? 'flex' : 'hidden']">
             <template v-if="activeUser">
               <div class="flex items-center gap-2 px-4 py-3 border-b border-border">
-                <button @click="backToList" title="返回会话列表" class="md:hidden w-9 h-9 rounded-full -ml-1 hover:bg-surface-hover flex items-center justify-center text-muted hover:text-on-surface transition-colors shrink-0">
+                <button @click="backToList" title="返回会话列表" class="w-9 h-9 rounded-full -ml-1 hover:bg-surface-hover flex items-center justify-center text-muted hover:text-on-surface transition-colors shrink-0">
                   <span class="material-symbols-outlined">arrow_back</span>
                 </button>
-                <span class="material-symbols-outlined text-accent text-lg">account_circle</span>
-                <h3 class="text-on-background font-semibold text-sm">{{ activeUser }}</h3>
-                <span class="hidden sm:inline ml-auto text-muted text-xs font-body">可发文本 / 表情 / 图片 / 共享仪表盘 / 设备控制</span>
+                <span class="material-symbols-outlined text-lg"
+                  :class="isAssistant ? 'text-primary' : 'text-accent'">{{ isAssistant ? 'smart_toy' : 'account_circle' }}</span>
+                <h3 class="text-on-background font-semibold text-sm truncate">{{ displayName(activeUser) }}</h3>
               </div>
 
               <div ref="listEl" class="flex-1 overflow-y-auto px-4 py-3 space-y-3 bg-background/40">
@@ -148,6 +152,25 @@
                     </p>
                   </div>
 
+                  <!-- 语音消息 -->
+                  <div v-else-if="m.type === 'audio'" class="max-w-[85%]">
+                    <div class="flex items-center gap-2 pl-3 pr-3.5 py-2 rounded-2xl cursor-pointer active:opacity-80 transition-opacity"
+                      :class="m.from === auth.user ? 'bg-primary text-on-primary rounded-br-sm' : 'bg-surface-alt border border-border text-on-surface rounded-bl-sm'"
+                      @click="playAudio(m)">
+                      <span class="material-symbols-outlined text-xl shrink-0">{{ playingId === m.id ? 'graphic_eq' : 'play_arrow' }}</span>
+                      <div class="flex items-center gap-[2px] h-5">
+                        <span v-for="i in 12" :key="i" class="w-[2px] rounded-full"
+                          :class="m.from === auth.user ? 'bg-on-primary/80' : 'bg-primary/70'"
+                          :style="{ height: waveBar(m, i) + 'px' }"></span>
+                      </div>
+                      <span class="text-xs tabular-nums shrink-0">{{ m.audio?.duration || 0 }}″</span>
+                    </div>
+                    <p class="mt-1 px-1 text-muted text-[10px] font-body flex items-center gap-1" :class="m.from === auth.user ? 'justify-end' : ''">
+                      {{ fmtTime(m.created_at) }}
+                      <span v-if="m.from === auth.user" :class="m.read ? 'text-primary' : ''">{{ m.read ? '· 已读' : '· 已送达' }}</span>
+                    </p>
+                  </div>
+
                   <!-- 文本气泡（含表情） -->
                   <div v-else class="max-w-[85%]">
                     <div class="px-3.5 py-2 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-words"
@@ -156,18 +179,18 @@
                     </div>
                     <p class="mt-1 px-1 text-muted text-[10px] font-body flex items-center gap-1" :class="m.from === auth.user ? 'justify-end' : ''">
                       {{ fmtTime(m.created_at) }}
-                      <span v-if="m.from === auth.user" :class="m.read ? 'text-primary' : ''">{{ m.read ? '· 已读' : '· 已送达' }}</span>
+                      <span v-if="m.from === auth.user && m.to !== ASSISTANT" :class="m.read ? 'text-primary' : ''">{{ m.read ? '· 已读' : '· 已送达' }}</span>
                     </p>
                   </div>
 
-                  <!-- 撤回按钮（自己的文本/图片消息，悬停行内显示） -->
-                  <button v-if="m.from === auth.user && (m.type === 'text' || m.type === 'image')" @click="doRecall(m)" title="撤回"
+                  <!-- 撤回按钮（自己的文本/图片/语音消息，悬停行内显示） -->
+                  <button v-if="m.from === auth.user && (m.type === 'text' || m.type === 'image' || m.type === 'audio')" @click="doRecall(m)" title="撤回"
                     class="self-center w-7 h-7 rounded-full text-muted hover:text-error hover:bg-error/10 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all shrink-0">
                     <span class="material-symbols-outlined text-sm">undo</span>
                   </button>
                   </div>
                 </template>
-                <p v-if="!messages.length" class="text-muted text-center text-xs py-8 font-body">没有消息，打个招呼吧</p>
+                <p v-if="!messages.length" class="text-muted text-center text-xs py-8 font-body">{{ isAssistant ? '向智家助手提问，如：打开客厅灯、今天天气怎样' : '没有消息，打个招呼吧' }}</p>
               </div>
 
               <!-- 输入区 -->
@@ -201,40 +224,103 @@
                   </div>
                 </Transition>
 
-                <div class="flex gap-2">
-                  <button @click="showEmoji = !showEmoji; showDevicePicker = false" :disabled="busy" title="表情"
-                    class="px-2.5 py-2 rounded-xl border border-border text-muted hover:text-primary hover:border-primary/40 transition-colors"
-                    :class="showEmoji ? 'text-primary border-primary/40' : ''">
-                    <span class="material-symbols-outlined text-base">mood</span>
+                <!-- 隐藏文件选择：相册 / 拍摄 -->
+                <input ref="imgInput" type="file" accept="image/jpeg,image/png,image/gif,image/webp" class="hidden" @change="onPickImage">
+                <input ref="camInput" type="file" accept="image/*" capture="environment" class="hidden" @change="onPickImage">
+
+                <!-- 多人通话选择面板 -->
+                <Transition name="im-pop">
+                  <div v-if="showGroupPicker" class="mb-2 rounded-xl border border-border bg-background p-2 shadow-lg max-h-60 overflow-y-auto">
+                    <div class="flex items-center justify-between mb-1.5 px-1">
+                      <span class="text-[10px] uppercase tracking-wide text-muted font-semibold font-body">选择群聊成员</span>
+                      <button @click="startGroupCall"
+                        class="px-3 py-1 rounded-full bg-primary text-on-primary text-xs font-semibold">发起 ({{ groupCount }})</button>
+                    </div>
+                    <button v-for="u in candidates" :key="u" @click="toggleGroupUser(u)"
+                      class="w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-surface-hover text-sm text-on-surface transition-colors text-left">
+                      <span class="w-5 h-5 rounded-md border flex items-center justify-center text-[10px]"
+                        :class="groupSel[u] ? 'bg-primary border-primary text-on-primary' : 'border-border text-transparent'">check</span>
+                      <span class="material-symbols-outlined text-accent text-base">account_circle</span> {{ u }}
+                    </button>
+                  </div>
+                </Transition>
+
+                <!-- 加号功能面板（微信式网格） -->
+                <Transition name="im-pop">
+                  <div v-if="showPlus" class="mb-2 grid grid-cols-4 gap-x-2 gap-y-3 rounded-xl border border-border bg-background p-3 shadow-lg">
+                    <button @click="triggerCamera" class="im-plus-item flex flex-col items-center gap-1">
+                      <span class="w-11 h-11 rounded-xl bg-surface flex items-center justify-center shadow-sm"><span class="material-symbols-outlined text-accent">photo_camera</span></span>
+                      <span class="text-[10px] text-muted font-body">拍摄</span>
+                    </button>
+                    <button @click="pickImage" class="im-plus-item flex flex-col items-center gap-1">
+                      <span class="w-11 h-11 rounded-xl bg-surface flex items-center justify-center shadow-sm"><span class="material-symbols-outlined text-accent">image</span></span>
+                      <span class="text-[10px] text-muted font-body">相册</span>
+                    </button>
+                    <button @click="openDevicePicker" class="im-plus-item flex flex-col items-center gap-1">
+                      <span class="w-11 h-11 rounded-xl bg-surface flex items-center justify-center shadow-sm"><span class="material-symbols-outlined text-accent">devices_other</span></span>
+                      <span class="text-[10px] text-muted font-body">设备</span>
+                    </button>
+                    <button @click="share" class="im-plus-item flex flex-col items-center gap-1">
+                      <span class="w-11 h-11 rounded-xl bg-surface flex items-center justify-center shadow-sm"><span class="material-symbols-outlined text-accent">share</span></span>
+                      <span class="text-[10px] text-muted font-body">共享</span>
+                    </button>
+                    <button @click="beginOneCall" class="im-plus-item flex flex-col items-center gap-1">
+                      <span class="w-11 h-11 rounded-xl bg-surface flex items-center justify-center shadow-sm"><span class="material-symbols-outlined text-success">call</span></span>
+                      <span class="text-[10px] text-muted font-body">语音通话</span>
+                    </button>
+                    <button @click="openGroupPicker" class="im-plus-item flex flex-col items-center gap-1">
+                      <span class="w-11 h-11 rounded-xl bg-surface flex items-center justify-center shadow-sm"><span class="material-symbols-outlined text-success">groups</span></span>
+                      <span class="text-[10px] text-muted font-body">语音群聊</span>
+                    </button>
+                  </div>
+                </Transition>
+
+                <!-- 输入行 -->
+                <div class="flex items-center gap-2">
+                  <button v-if="!isAssistant" @click="toggleVoiceMode" :title="voiceMode ? '切换键盘' : '切换语音'"
+                    class="w-9 h-9 shrink-0 rounded-full text-muted hover:text-primary hover:bg-primary/10 flex items-center justify-center transition-colors">
+                    <span class="material-symbols-outlined text-xl">{{ voiceMode ? 'keyboard' : 'mic' }}</span>
                   </button>
-                  <button @click="pickImage" :disabled="busy" title="发送图片"
-                    class="px-2.5 py-2 rounded-xl border border-border text-muted hover:text-primary hover:border-primary/40 transition-colors">
-                    <span class="material-symbols-outlined text-base">image</span>
-                  </button>
-                  <input ref="imgInput" type="file" accept="image/jpeg,image/png,image/gif,image/webp" class="hidden" @change="onPickImage">
-                  <button @click="openDevicePicker" :disabled="busy" title="发送设备（可控制）"
-                    class="px-2.5 py-2 rounded-xl border border-border text-muted hover:text-primary hover:border-primary/40 transition-colors"
-                    :class="showDevicePicker ? 'text-primary border-primary/40' : ''">
-                    <span class="material-symbols-outlined text-base">devices_other</span>
-                  </button>
-                  <button @click="share" :disabled="busy" title="把当前仪表盘共享给对方"
-                    class="px-3 py-2 rounded-xl border border-border text-muted hover:text-primary hover:border-primary/40 text-sm transition-colors">
-                    <span class="material-symbols-outlined text-base">share</span>
-                  </button>
-                  <input v-model="compose" @keyup.enter="send" placeholder="输入消息…"
-                    :disabled="busy"
+
+                  <input v-if="!voiceMode" v-model="compose" @keyup.enter="send" :placeholder="isAssistant ? '问助手：天气、设备、闲聊…' : '输入消息…'"
+                    :disabled="busy" @focus="closePanels"
                     class="flex-1 min-w-0 bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
-                  <button @click="send" :disabled="busy || !compose.trim()"
-                    class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-on-primary text-sm font-semibold transition-all disabled:opacity-60">发送</button>
+
+                  <button v-else
+                    class="flex-1 min-w-0 rounded-xl border border-border bg-background px-3 py-2 text-sm font-semibold text-on-surface active:bg-surface-hover transition-colors"
+                    @touchstart.prevent="recStart" @touchend.prevent="recEnd" @touchmove.prevent="recMove" @touchcancel.prevent="recCancelOnly"
+                    @mousedown="recStart" @mouseup="recEnd" @mouseleave="recEndIfActive">
+                    按住&nbsp;说话
+                  </button>
+
+                  <button @click="toggleEmoji" :disabled="busy" title="表情"
+                    class="w-9 h-9 shrink-0 rounded-full flex items-center justify-center transition-colors"
+                    :class="showEmoji ? 'text-primary bg-primary/10' : 'text-muted hover:text-primary'">
+                    <span class="material-symbols-outlined text-xl">mood</span>
+                  </button>
+
+                  <button v-if="!voiceMode && compose.trim()" @click="send"
+                    class="shrink-0 px-3.5 py-2 rounded-xl bg-primary hover:bg-primary-hover text-on-primary text-sm font-semibold transition-colors">发送</button>
+                  <button v-else-if="!isAssistant" @click="togglePlus" :disabled="busy" title="更多功能"
+                    class="w-9 h-9 shrink-0 rounded-full flex items-center justify-center transition-colors"
+                    :class="showPlus ? 'text-primary bg-primary/10' : 'text-muted hover:text-primary'">
+                    <span class="material-symbols-outlined text-xl">add</span>
+                  </button>
+                </div>
+
+                <!-- 录音中提示（浮窗内居中，微信式） -->
+                <div v-if="recUI" class="absolute inset-0 z-50 flex items-center justify-center pointer-events-none">
+                  <div class="rounded-2xl bg-black/75 px-6 py-5 flex flex-col items-center min-w-[8.5rem]">
+                    <span class="material-symbols-outlined text-5xl" :class="recCancel ? 'text-error' : 'text-white'">
+                      {{ recCancel ? 'mic_off' : 'mic' }}
+                    </span>
+                    <p class="mt-2 text-white text-sm font-semibold tabular-nums">{{ recSeconds }}″</p>
+                    <p class="mt-1 text-white/70 text-[11px] font-body">{{ recCancel ? '松开手指，取消发送' : '松开发送，上滑取消' }}</p>
+                  </div>
                 </div>
                 <p v-if="tip" class="mt-1.5 text-xs font-body" :class="tipErr ? 'text-error' : 'text-success'">{{ tip }}</p>
               </div>
             </template>
-
-            <div v-else :class="['flex-1 flex flex-col items-center justify-center text-muted', listVisible ? 'hidden md:flex' : 'flex']">
-              <span class="material-symbols-outlined text-5xl mb-3 opacity-40">forum</span>
-              <p class="text-sm font-body">选择一个会话，或发起共享</p>
-            </div>
           </div>
         </div>
       </div>
@@ -249,11 +335,32 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import api from '@/api'
-import { auth, imOpen, imRefresher, imConversations, closeIm, bumpIm, store, entityStates, requestEntityRefresh } from '@/store'
+import { auth, imOpen, imRefresher, imConversations, closeIm, bumpIm, store, entityStates, requestEntityRefresh, refreshIm } from '@/store'
 import { dashboardCardCount } from '@/utils/dashboard'
 import { getPrefs } from '@/utils/prefs'
+import { VoiceRecorder } from '@/utils/recorder'
+import { startCall } from '@/utils/call'
+import { openEnvelope, withCrypto } from '@/utils/crypto'
+
+// ASSISTANT 与后端保留虚拟用户名一致（handler.AssistantUser）。
+const ASSISTANT = 'ha-assistant'
+const isAssistant = computed(() => activeUser.value === ASSISTANT)
+function displayName(u) { return u === ASSISTANT ? '智家助手' : u }
+
+// convList 会话列表：智家助手固定置顶——后端已有历史则展示真实条目（含未读），
+// 否则补一条占位，保证入口常显。
+const convList = computed(() => {
+  const list = Array.isArray(conversations.value) ? conversations.value : []
+  const ex = list.find((c) => c.user === ASSISTANT)
+  const rest = list.filter((c) => c.user !== ASSISTANT)
+  const head = ex || {
+    user: ASSISTANT, unread: 0, pending: 0,
+    last: { type: 'text', content: '问天气 · 控设备 · 聊家常' },
+  }
+  return [head, ...rest]
+})
 
 const conversations = imConversations
 const activeUser = ref('')
@@ -275,14 +382,9 @@ const hasMore = ref(false)
 const loadingOlder = ref(false)
 const PAGE = 50
 
-// 移动端视口检测：<768px 视为手机，列表与消息线程互斥切换。
-const isMobile = ref(false)
-function syncViewport() {
-  isMobile.value = window.matchMedia('(max-width: 767px)').matches
-}
-// 会话列表可见：桌面恒显；手机端仅在未进入会话时显示。
-const listVisible = computed(() => !isMobile.value || !activeUser.value)
-// 消息线程可见：进入会话后显示（手机端全屏覆盖列表，桌面端并排显示）。
+// 浮窗为单列结构：列表与线程互斥切换（手机/桌面一致，类似客服气泡）。
+// 会话列表可见：未进入会话时；消息线程可见：进入会话后。
+const listVisible = computed(() => !activeUser.value)
 const threadVisible = computed(() => !!activeUser.value)
 
 function backToList() { activeUser.value = '' }
@@ -348,6 +450,7 @@ function lastPreview(c) {
     return `📟 ${name}`
   }
   if (c.last?.type === 'image') return '🖼 图片'
+  if (c.last?.type === 'audio') return '🎤 语音消息'
   return c.last?.content || '新消息'
 }
 
@@ -414,6 +517,8 @@ async function deviceToggle(m) {
 async function openDevicePicker() {
   showDevicePicker.value = !showDevicePicker.value
   showEmoji.value = false
+  showPlus.value = false
+  showGroupPicker.value = false
   if (showDevicePicker.value && !deviceCandidates.value.length) await reloadDevices()
 }
 async function reloadDevices() {
@@ -456,8 +561,9 @@ function insertEmoji(e) {
 async function loadMessages(user) {
   if (!user) return messages.value = []
   try {
-    const { data } = await api.getMessages(user, PAGE)
-    const list = Array.isArray(data) ? data : []
+    const { data } = await withCrypto(() => api.getMessages(user, PAGE))
+    const plain = await openEnvelope(data)
+    const list = Array.isArray(plain) ? plain : []
     messages.value = list
     hasMore.value = list.length >= PAGE
     scrollBottom()
@@ -472,8 +578,9 @@ async function loadOlder() {
   const prevTop = el ? el.scrollTop : 0
   const prevHeight = el ? el.scrollHeight : 0
   try {
-    const { data } = await api.getMessages(activeUser.value, PAGE, messages.value[0]?.id || 0)
-    const older = Array.isArray(data) ? data : []
+    const { data } = await withCrypto(() => api.getMessages(activeUser.value, PAGE, messages.value[0]?.id || 0))
+    const olderRaw = await openEnvelope(data)
+    const older = Array.isArray(olderRaw) ? olderRaw : []
     if (older.length) messages.value = [...older, ...messages.value]
     hasMore.value = older.length >= PAGE
     requestAnimationFrame(() => {
@@ -484,7 +591,132 @@ async function loadOlder() {
 }
 
 // 图片发送：本地预校验大小 → FormData 上传 → 刷新线程
-function pickImage() { imgInput.value?.click() }
+function pickImage() { showPlus.value = false; imgInput.value?.click() }
+
+// 拍摄：调起相机（桌面端降级为普通选图）
+function triggerCamera() { showPlus.value = false; camInput.value?.click() }
+
+// ================= 微信式面板与语音模式（各面板互斥） =================
+const voiceMode = ref(false)
+const showPlus = ref(false)
+const showGroupPicker = ref(false)
+const groupSel = reactive({})
+const groupCount = computed(() => Object.values(groupSel).filter(Boolean).length)
+
+function closePanels() {
+  showEmoji.value = false
+  showDevicePicker.value = false
+  showPlus.value = false
+  showGroupPicker.value = false
+}
+function toggleVoiceMode() { voiceMode.value = !voiceMode.value; closePanels() }
+function toggleEmoji() {
+  showEmoji.value = !showEmoji.value
+  showDevicePicker.value = false
+  showPlus.value = false
+  showGroupPicker.value = false
+}
+function togglePlus() {
+  showPlus.value = !showPlus.value
+  showEmoji.value = false
+  showDevicePicker.value = false
+  showGroupPicker.value = false
+}
+
+// ================= 语音通话 =================
+function beginOneCall() {
+  if (!activeUser.value) return
+  showPlus.value = false
+  startCall([activeUser.value]).catch(() => {})
+}
+function openGroupPicker() {
+  showGroupPicker.value = true
+  showPlus.value = false
+  showEmoji.value = false
+  showDevicePicker.value = false
+}
+function toggleGroupUser(u) { groupSel[u] = !groupSel[u] }
+async function startGroupCall() {
+  const users = Object.keys(groupSel).filter((k) => groupSel[k])
+  if (!users.length) { toast('请选择通话成员', true); return }
+  showGroupPicker.value = false
+  try { await startCall(users) } catch { /* 错误已提示 */ }
+}
+
+// ================= 按住说话（语音消息） =================
+const recorder = new VoiceRecorder()
+const recUI = ref(false)
+const recCancel = ref(false)
+const recSeconds = ref(0)
+let recActive = false
+let recTimer = null
+let startY = 0
+const CANCEL_PX = 60
+
+async function recStart(e) {
+  if (recActive || busy.value) return
+  try {
+    await recorder.start()
+  } catch (err) { toast('无法访问麦克风：' + (err.message || ''), true); return }
+  recActive = true
+  recUI.value = true
+  recCancel.value = false
+  recSeconds.value = 0
+  let n = 0
+  recTimer = setInterval(() => { n++; recSeconds.value = n }, 1000)
+  const t = e.touches ? e.touches[0] : e
+  startY = t.clientY
+}
+function recMove(e) {
+  if (!recActive) return
+  const t = e.touches ? e.touches[0] : e
+  recCancel.value = (startY - t.clientY) > CANCEL_PX
+}
+async function finishRec(cancel) {
+  if (!recActive) return
+  recActive = false
+  recUI.value = false
+  if (recTimer) { clearInterval(recTimer); recTimer = null }
+  if (cancel) { await recorder.cancel(); return }
+  const r = await recorder.stop()
+  if (!r) return
+  if (r.durationSec < 1) { toast('说话时间太短', true); return }
+  const form = new FormData()
+  form.append('file', r.blob, 'voice' + r.ext)
+  form.append('duration', String(r.durationSec))
+  try {
+    await api.sendAudio(activeUser.value, form)
+    bumpIm()
+    scrollBottom()
+  } catch (err) { toast(err.message || '语音发送失败', true) }
+}
+function recEnd() { finishRec(recCancel.value) }
+function recCancelOnly() { finishRec(true) }
+function recEndIfActive() { if (recActive) finishRec(recCancel.value) }
+
+// ================= 语音消息播放（单例）与波形 =================
+const playingId = ref('')
+let audioEl = null
+function playAudio(m) {
+  if (!audioEl) {
+    audioEl = new Audio()
+    audioEl.onended = () => { playingId.value = '' }
+    audioEl.onerror = () => { playingId.value = ''; toast('语音播放失败', true) }
+  }
+  if (playingId.value === m.id) {
+    audioEl.pause(); audioEl.currentTime = 0; playingId.value = ''
+    return
+  }
+  audioEl.src = m.audio?.url
+  playingId.value = m.id
+  audioEl.play().catch(() => { playingId.value = ''; toast('播放失败', true) })
+}
+// 波形条高度：消息 id + 位置生成稳定伪随机（5~18px）
+function waveBar(m, i) {
+  let h = (Number(m.id) || 0) + i * 7
+  h = (h * 9301 + 49297) % 233280
+  return 5 + (h / 233280) * 13
+}
 async function onPickImage(e) {
   const file = e.target.files?.[0]
   e.target.value = ''
@@ -522,6 +754,7 @@ function scrollBottom() {
 async function openConv(user) {
   activeUser.value = user
   showPicker.value = false
+  if (user === ASSISTANT) voiceMode.value = false
   await loadMessages(user)
   try { await api.markMessageRead(user) } catch {}
   bumpIm()
@@ -586,6 +819,23 @@ watch(imRefresher, async () => {
   if (activeUser.value) await loadMessages(activeUser.value)
 })
 
+// 线程保持打开期间，对方/助手的新消息到达时：store 收到 WS im 事件只刷新会话列表、
+// 不 bump imRefresher，故这里监听「当前会话最后一条消息 id」的变化，自动重载消息并
+// 标记已读，再直接 refreshIm 清角标（不 bump，避免 watcher 循环）。
+// 否则用户正看着新消息（典型：助手问答的回复），顶栏与列表仍提示未读。
+watch(
+  () => imConversations.value.find((c) => c.user === activeUser.value)?.last?.id || 0,
+  async (id, old) => {
+    if (!imOpen.value || !activeUser.value || !id) return
+    if (old == null || id <= old) return
+    await loadMessages(activeUser.value)
+    try {
+      await api.markMessageRead(activeUser.value)
+      await refreshIm()
+    } catch { /* 忽略：下次打开该会话时 openConv 会补标 */ }
+  },
+)
+
 // 打开抽屉时重拉可选用户（用户可能在别处新增过），关闭时收起选择器。
 watch(imOpen, async (open) => {
   if (!open) { showPicker.value = false; return }
@@ -593,15 +843,14 @@ watch(imOpen, async (open) => {
 })
 
 onMounted(async () => {
-  syncViewport()
-  window.addEventListener('resize', syncViewport)
   await loadCandidates()
   bumpIm()
 })
 onBeforeUnmount(() => {
-  window.removeEventListener('resize', syncViewport)
   if (tipTimer) clearTimeout(tipTimer)
   if (debriefTimer) clearTimeout(debriefTimer)
+  if (audioEl) { audioEl.pause(); audioEl.src = '' }
+  if (recActive) recorder.cancel()
 })
 </script>
 
@@ -611,4 +860,17 @@ onBeforeUnmount(() => {
 .im-pop-enter-active { transition: opacity .15s ease, transform .15s ease; }
 .im-pop-leave-active { transition: opacity .12s ease, transform .12s ease; }
 .im-pop-enter-from, .im-pop-leave-to { opacity: 0; transform: translateY(-4px); }
+
+/* 气泡浮窗进场：上浮 + 轻微放大；手机端从右下角弹出，桌面端从头像方向（右上）弹出 */
+@keyframes imCardIn {
+  from { opacity: 0; transform: translateY(12px) scale(.96); }
+  to   { opacity: 1; transform: none; }
+}
+.im-card-in {
+  animation: imCardIn .22s cubic-bezier(.2, .9, .3, 1.15);
+  transform-origin: right bottom;
+}
+@media (min-width: 640px) {
+  .im-card-in { transform-origin: right top; }
+}
 </style>

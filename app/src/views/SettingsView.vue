@@ -55,6 +55,32 @@
       <p v-if="tokMsg" class="mt-2 text-xs font-body" :class="tokMsgErr ? 'text-error' : 'text-success'">{{ tokMsg }}</p>
     </section>
 
+    <!-- 服务器地址（APK 壳页地址簿同步显示） -->
+    <section class="bg-surface-alt border border-border rounded-2xl p-5">
+      <div class="flex items-center gap-2.5 mb-3">
+        <div class="w-8 h-8 rounded-xl bg-accent/20 flex items-center justify-center">
+          <span class="material-symbols-outlined text-accent text-lg">dns</span>
+        </div>
+        <div>
+          <h2 class="font-headline text-on-background text-base font-semibold">服务器地址</h2>
+          <p class="text-muted text-xs mt-0.5">当前连接的后端服务器（内网/外网地址簿）</p>
+        </div>
+      </div>
+      <div v-if="serverAddr" class="rounded-xl bg-background border border-border px-3 py-2.5">
+        <p class="text-on-surface text-xs font-semibold mb-1">{{ serverAddr.name }}</p>
+        <p class="text-muted text-xs font-body leading-relaxed">{{ serverAddr.url }}</p>
+        <p class="text-muted text-xs font-body mt-1.5">
+          <span class="px-1.5 py-0.5 rounded text-[10px]" :class="serverAddr.type === 'lan' ? 'bg-success/15 text-success' : 'bg-primary/15 text-primary'">
+            {{ serverAddr.type === 'lan' ? '内网' : '外网' }}
+          </span>
+        </p>
+      </div>
+      <p v-else class="text-muted text-xs font-body">未检测到服务器地址配置（网页直连模式）</p>
+      <p class="text-muted text-xs font-body mt-2 leading-relaxed">
+        手机端（APK）启动时会根据网络类型自动选择内网或外网地址；如需修改地址，请退出到归祺启动页进行编辑。
+      </p>
+    </section>
+
     <!-- Home Assistant 连接管理（仅管理员可见） -->
     <section v-if="auth.isAdmin" class="bg-surface-alt border border-border rounded-2xl p-5">
       <div class="flex items-center justify-between mb-4">
@@ -755,6 +781,18 @@ const haTokenBadge = computed(() => {
   return haTokenConfigured.value
     ? { cls: 'bg-success/15 text-success', text: '已配置' }
     : { cls: 'bg-error/15 text-error', text: '未配置（HA 访问已禁用）' }
+})
+
+// ---- APK 壳页服务器地址（从 localStorage 读取 sn_server_config） ----
+const serverAddr = computed(() => {
+  try {
+    const raw = localStorage.getItem('sn_server_config')
+    if (!raw) return null
+    const cfg = JSON.parse(raw)
+    if (!cfg.addresses || !cfg.addresses.length) return null
+    const active = cfg.addresses.find(a => a.id === cfg.activeId) || cfg.addresses[0]
+    return active
+  } catch { return null }
 })
 
 async function saveMyToken() {

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"golang.org/x/crypto/bcrypt"
 
@@ -79,6 +80,10 @@ func (h *Users) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	if p.Username == "" || len(p.Password) < minPasswordLen {
 		WriteErr(w, 400, "bad_request", "username and password (>=6 chars) required")
+		return
+	}
+	if strings.EqualFold(p.Username, AssistantUser) {
+		WriteErr(w, 400, "reserved", "该用户名为系统保留（智家助手）")
 		return
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(p.Password), bcrypt.DefaultCost)
