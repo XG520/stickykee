@@ -47,6 +47,19 @@
   @keyframes r { to { transform: rotate(360deg); } }
   .hidden { display: none; }
 
+  /* 协议分段选择 */
+  .seg-wrap { display: flex; gap: 8px; align-items: stretch; }
+  .seg {
+    width: 104px; flex-shrink: 0; display: flex; border: 1px solid #2e3038;
+    border-radius: 12px; overflow: hidden; background: #17181c;
+  }
+  .seg button {
+    margin: 0; padding: 0; border-radius: 0; background: transparent; color: #8b8a86;
+    font-size: 12.5px; font-weight: 600; flex: 1;
+  }
+  .seg button.on { background: #2f4070; color: #fff; }
+  .seg-wrap input { flex: 1; min-width: 0; }
+
   /* 地址列表 */
   .addr-list { margin-top: 16px; }
   .addr-item {
@@ -98,39 +111,47 @@
     <p class="sub">Sticky Kee · 智能家居画布</p>
 
     <div id="connecting">
-      <p class="msg ok"><span class="spin"></span>正在连接服务器…</p>
+      <p class="msg ok"><span class="spin"></span><span id="connectText">正在连接服务器…</span></p>
+      <button class="secondary" id="btnManage">管理服务器地址</button>
     </div>
 
     <!-- 地址列表（有保存地址时显示） -->
     <div id="listView" class="hidden">
       <div class="addr-list" id="addrList"></div>
       <button class="secondary" id="btnAdd">+ 添加服务器地址</button>
-      <p class="hint">点击地址卡片直接连接；左滑或点击编辑可修改</p>
+      <p class="hint">点击地址卡片直接连接；内网、外网地址可同时保存，<br>APP 按当前网络（WiFi / 移动数据）自动选用。</p>
     </div>
 
     <!-- 添加/编辑表单 -->
     <div id="formView" class="hidden">
       <div class="row">
-        <label for="fName">名称（如：家里内网）</label>
+        <label for="fName">名称（如：家里内网 / 外网域名）</label>
         <input id="fName" type="text" autocomplete="off" placeholder="例如 家里内网" />
       </div>
       <div class="row">
-        <label for="fUrl">服务器地址（含端口）</label>
-        <input id="fUrl" type="url" inputmode="url" autocapitalize="off" autocomplete="off"
-               spellcheck="false" placeholder="例如 http://192.168.1.100:8080" />
+        <label for="fUrl">服务器地址（含端口，不用填 http://）</label>
+        <div class="seg-wrap">
+          <div class="seg" id="fSeg">
+            <button type="button" data-s="http" class="on">http://</button>
+            <button type="button" data-s="https">https://</button>
+          </div>
+          <input id="fUrl" type="text" inputmode="url" autocapitalize="off" autocomplete="off"
+                 spellcheck="false" placeholder="192.168.1.100:8080" />
+        </div>
       </div>
       <div class="row">
-        <label for="fType">类型</label>
+        <label for="fType">网络类型</label>
         <select id="fType">
-          <option value="lan">内网（局域网）</option>
-          <option value="wan">外网（互联网）</option>
+          <option value="lan">内网（家中 WiFi / 局域网）</option>
+          <option value="wan">外网（移动数据 / 互联网）</option>
         </select>
       </div>
-      <button id="btnSave">保存并连接</button>
+      <button id="btnSaveConnect">保存并连接</button>
+      <button class="secondary" id="btnSave">仅保存（继续添加另一个地址）</button>
       <button class="secondary" id="btnCancel">取消</button>
       <button class="secondary" id="btnAuto">自动识别内网服务器</button>
       <p class="msg" id="msg"></p>
-      <p class="hint">填写部署归祺后端的地址（含端口）；<br>内网地址用于家中 WiFi，外网地址用于移动数据。</p>
+      <p class="hint">可分别保存内网与外网地址；协议按左侧选择自动补全，<br>手机中文输入请使用半角的冒号和斜杠。</p>
     </div>
   </div>
 
@@ -143,11 +164,17 @@
         <input id="mName" type="text" autocomplete="off" />
       </div>
       <div class="row">
-        <label for="mUrl">地址</label>
-        <input id="mUrl" type="url" inputmode="url" autocapitalize="off" autocomplete="off" />
+        <label for="mUrl">地址（含端口，不用填 http://）</label>
+        <div class="seg-wrap">
+          <div class="seg" id="mSeg">
+            <button type="button" data-s="http" class="on">http://</button>
+            <button type="button" data-s="https">https://</button>
+          </div>
+          <input id="mUrl" type="text" inputmode="url" autocapitalize="off" autocomplete="off" />
+        </div>
       </div>
       <div class="row">
-        <label for="mType">类型</label>
+        <label for="mType">网络类型</label>
         <select id="mType">
           <option value="lan">内网（局域网）</option>
           <option value="wan">外网（互联网）</option>
@@ -200,18 +227,56 @@
 
   function genId() { return 'srv_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6); }
 
+  // ---- URL 归一化 ----
+  // 手机中文输入法常见：全角标点（：／）、误加空格。先全角转半角并清除空白，
+  // 已带协议的保留原协议（同时回传供联动选择器），否则补用户选定的协议。
+  function cleanInput(s) {
+    s = String(s || '');
+    s = s.replace(/[\uFF01-\uFF5E]/g, function (c) {
+      return String.fromCharCode(c.charCodeAt(0) - 0xFEE0);
+    });
+    s = s.replace(/\u3000/g, ' ');
+    return s.replace(/\s+/g, '');
+  }
+
+  function buildURL(raw, scheme) {
+    var s = cleanInput(raw).replace(/\/+$/, '');
+    var m = s.match(/^(https?):\/\/(.+)$/i);
+    if (m) {
+      var sc = m[1].toLowerCase();
+      return { url: sc + '://' + m[2].replace(/^\/+/, '').replace(/\/+$/, ''), scheme: sc };
+    }
+    return { url: scheme + '://' + s.replace(/^\/+/, ''), scheme: scheme };
+  }
+
+  function validHTTPURL(u) {
+    try {
+      var x = new URL(u);
+      if (x.protocol !== 'http:' && x.protocol !== 'https:') return null;
+      if (!x.host) return null;
+      return x;
+    } catch (e) { return null; }
+  }
+
   // ---- 探测 ----
+  // fetch 对非法 URL 会【同步抛错】（不是 rejected promise），executor 必须 try/catch，
+  // 否则 probe 返回 rejected promise，调用方若无 catch 则表现为「点保存无反应」。
   function probe(u) {
     return new Promise(function (resolve) {
       var done = false;
       var ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+      function finish(ok) {
+        if (!done) { done = true; clearTimeout(timer); resolve(ok); }
+      }
       var timer = setTimeout(function () {
-        if (!done) { done = true; resolve(false); }
-        if (ctrl) ctrl.abort();
+        finish(false);
+        if (ctrl) { try { ctrl.abort(); } catch (e) {} }
       }, 3500);
-      fetch(u + '/healthz', { mode: 'no-cors', cache: 'no-store', signal: ctrl ? ctrl.signal : undefined })
-        .then(function () { if (!done) { done = true; clearTimeout(timer); resolve(true); } })
-        .catch(function () { if (!done) { done = true; clearTimeout(timer); resolve(false); } });
+      try {
+        fetch(u + '/healthz', { mode: 'no-cors', cache: 'no-store', signal: ctrl ? ctrl.signal : undefined })
+          .then(function () { finish(true); })
+          .catch(function () { finish(false); });
+      } catch (e) { finish(false); }
     });
   }
 
@@ -232,6 +297,7 @@
 
     // 按网络类型排序：WiFi 时 LAN 优先，蜂窝时 WAN 优先
     var sorted = cfg.addresses.slice().sort(function (a, b) {
+      if (a.type === b.type) return 0;
       if (isWifi) return a.type === 'lan' ? -1 : 1;
       return a.type === 'wan' ? -1 : 1;
     });
@@ -239,8 +305,9 @@
     // 先探测 activeId
     var active = sorted.find(function (a) { return a.id === cfg.activeId; });
     if (active) {
-      var ok = await probe(active.url);
-      if (ok) return active;
+      var ok0 = await probe(active.url);
+      if (cancelled()) return null;
+      if (ok0) return active;
     }
 
     // 并行探测前 5 个
@@ -257,8 +324,13 @@
     location.replace(url + '/');
   }
 
+  // ---- boot 取消（用户点「管理地址」） ----
+  var bootCancelled = false;
+  function cancelled() { return bootCancelled; }
+
   // ---- 视图切换 ----
-  function showConnecting() {
+  function showConnecting(text) {
+    document.getElementById('connectText').textContent = text || '正在连接服务器…';
     $connecting.classList.remove('hidden');
     $listView.classList.add('hidden');
     $formView.classList.add('hidden');
@@ -271,6 +343,35 @@
     renderList();
   }
 
+  // ---- 协议选择器（通用绑定） ----
+  function bindSeg(segId, inputId) {
+    var seg = document.getElementById(segId);
+    var input = document.getElementById(inputId);
+    function setScheme(s) {
+      seg.querySelectorAll('button').forEach(function (b) {
+        b.classList.toggle('on', b.dataset.s === s);
+      });
+    }
+    function getScheme() {
+      var on = seg.querySelector('button.on');
+      return on ? on.dataset.s : 'http';
+    }
+    // 粘贴/输入完整 URL（含协议）时自动联动选择器
+    function syncFromInput() {
+      var s = cleanInput(input.value);
+      var m = s.match(/^(https?):\/\//i);
+      if (m) setScheme(m[1].toLowerCase());
+    }
+    seg.querySelectorAll('button').forEach(function (b) {
+      b.addEventListener('click', function () { setScheme(b.dataset.s); input.focus(); });
+    });
+    input.addEventListener('input', syncFromInput);
+    return { setScheme: setScheme, getScheme: getScheme, syncFromInput: syncFromInput };
+  }
+
+  var fSegCtl = bindSeg('fSeg', 'fUrl');
+  var mSegCtl = bindSeg('mSeg', 'mUrl');
+
   function showForm(editAddr) {
     $connecting.classList.add('hidden');
     $listView.classList.add('hidden');
@@ -278,10 +379,11 @@
     $msg.textContent = '';
     $msg.className = 'msg';
     document.getElementById('fName').value = editAddr ? editAddr.name : '';
-    document.getElementById('fUrl').value = editAddr ? editAddr.url : '';
+    document.getElementById('fUrl').value = editAddr ? editAddr.url.replace(/^https?:\/\//i, '') : '';
     document.getElementById('fType').value = editAddr ? editAddr.type : 'lan';
-    document.getElementById('btnSave').textContent = editAddr ? '保存并连接' : '保存并连接';
-    document.getElementById('btnSave').dataset.editId = editAddr ? editAddr.id : '';
+    var scheme = editAddr && /^https:\/\//i.test(editAddr.url) ? 'https' : 'http';
+    fSegCtl.setScheme(scheme);
+    document.getElementById('btnSaveConnect').dataset.editId = editAddr ? editAddr.id : '';
   }
 
   // ---- 渲染地址列表 ----
@@ -330,8 +432,9 @@
   function openEditModal(addr) {
     editingId = addr.id;
     document.getElementById('mName').value = addr.name;
-    document.getElementById('mUrl').value = addr.url;
+    document.getElementById('mUrl').value = addr.url.replace(/^https?:\/\//i, '');
     document.getElementById('mType').value = addr.type;
+    mSegCtl.setScheme(/^https:\/\//i.test(addr.url) ? 'https' : 'http');
     $modal.classList.remove('hidden');
   }
 
@@ -341,19 +444,31 @@
   });
 
   document.getElementById('mSave').addEventListener('click', function () {
-    var name = document.getElementById('mName').value.trim();
-    var url = norm(document.getElementById('mUrl').value);
-    var type = document.getElementById('mType').value;
-    if (!name || !url) { alert('请填写完整'); return; }
-    var cfg = loadConfig();
-    var idx = cfg.addresses.findIndex(function (a) { return a.id === editingId; });
-    if (idx >= 0) {
-      cfg.addresses[idx] = { id: editingId, name: name, url: url, type: type };
-      saveConfig(cfg);
+    var btn = this;
+    btn.disabled = true;
+    try {
+      var name = document.getElementById('mName').value.trim();
+      var built = buildURL(document.getElementById('mUrl').value, mSegCtl.getScheme());
+      var type = document.getElementById('mType').value;
+      if (!name) { alert('请填写名称'); return; }
+      if (!validHTTPURL(built.url)) {
+        alert('地址格式不正确，请检查（冒号、斜杠用半角，需含端口）');
+        return;
+      }
+      var cfg = loadConfig();
+      var idx = cfg.addresses.findIndex(function (a) { return a.id === editingId; });
+      if (idx >= 0) {
+        cfg.addresses[idx] = { id: editingId, name: name, url: built.url, type: type };
+        saveConfig(cfg);
+      }
+      $modal.classList.add('hidden');
+      editingId = null;
+      renderList();
+    } catch (e) {
+      alert('保存失败：' + (e && e.message ? e.message : e));
+    } finally {
+      btn.disabled = false;
     }
-    $modal.classList.add('hidden');
-    editingId = null;
-    renderList();
   });
 
   // ---- 删除地址 ----
@@ -372,7 +487,7 @@
 
   // ---- 连接到指定地址 ----
   async function connectTo(addr) {
-    showConnecting();
+    showConnecting('正在连接「' + addr.name + '」…');
     var ok = await probe(addr.url);
     if (ok) {
       var cfg = loadConfig();
@@ -386,47 +501,78 @@
     }
   }
 
-  // ---- 添加/编辑表单提交 ----
-  function norm(u) {
-    u = (u || '').trim().replace(/\/+$/, '');
-    if (u && !/^https?:\/\//i.test(u)) u = 'http://' + u;
-    return u;
-  }
-
-  document.getElementById('btnSave').addEventListener('click', async function () {
+  // ---- 添加/编辑表单：收集并写入（connect=true 时探测后跳转） ----
+  function collectForm() {
     var name = document.getElementById('fName').value.trim();
-    var url = norm(document.getElementById('fUrl').value);
+    var built = buildURL(document.getElementById('fUrl').value, fSegCtl.getScheme());
     var type = document.getElementById('fType').value;
-    var editId = document.getElementById('btnSave').dataset.editId;
-
-    if (!name) { showMsg('请填写名称'); return; }
-    if (!url || !/^https?:\/\/.+/.test(url)) { showMsg('地址需以 http:// 或 https:// 开头'); return; }
-
-    var btn = this;
-    btn.disabled = true;
-    showMsg('正在探测服务器…');
-    var ok = await probe(url);
-    btn.disabled = false;
-    if (!ok) { showMsg('无法连接到 ' + url + '，请检查地址与网络'); return; }
-
+    var editId = document.getElementById('btnSaveConnect').dataset.editId;
+    if (!name) return { error: '请填写名称' };
+    if (!built.url || !validHTTPURL(built.url)) {
+      return { error: '地址格式不正确，请检查（冒号、斜杠用半角，需含地址与端口）' };
+    }
     var cfg = loadConfig();
     var addr;
     if (editId) {
       var idx = cfg.addresses.findIndex(function (a) { return a.id === editId; });
       if (idx >= 0) {
-        cfg.addresses[idx] = { id: editId, name: name, url: url, type: type };
-        addr = cfg.addresses[idx];
+        addr = { id: editId, name: name, url: built.url, type: type };
+        cfg.addresses[idx] = addr;
       }
-    } else {
-      addr = { id: genId(), name: name, url: url, type: type };
+    }
+    if (!addr) {
+      addr = { id: genId(), name: name, url: built.url, type: type };
       cfg.addresses.push(addr);
     }
     cfg.activeId = addr.id;
     cfg.lastConnectedId = addr.id;
     saveConfig(cfg);
+    return { addr: addr };
+  }
 
-    showMsg('连接成功，正在进入…', true);
-    setTimeout(function () { go(addr.url); }, 350);
+  function showMsg(text, ok) {
+    $msg.textContent = text;
+    $msg.className = 'msg' + (ok ? ' ok' : '');
+  }
+
+  document.getElementById('btnSaveConnect').addEventListener('click', async function () {
+    var btn = this;
+    btn.disabled = true;
+    try {
+      var r = collectForm();
+      if (r.error) { showMsg(r.error); return; }
+      showMsg('正在探测服务器…');
+      var ok = await probe(r.addr.url);
+      if (!ok) { showMsg('无法连接到 ' + r.addr.url + '，请检查地址、端口与当前网络'); return; }
+      showMsg('连接成功，正在进入…', true);
+      setTimeout(function () { go(r.addr.url); }, 350);
+    } catch (e) {
+      showMsg('保存失败：' + (e && e.message ? e.message : e));
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  document.getElementById('btnSave').addEventListener('click', function () {
+    var btn = this;
+    btn.disabled = true;
+    try {
+      var r = collectForm();
+      if (r.error) { showMsg(r.error); return; }
+      var hasOtherType = loadConfig().addresses.some(function (a) {
+        return a.id !== r.addr.id && a.type !== r.addr.type;
+      });
+      showList();
+      if (!hasOtherType) {
+        setTimeout(function () {
+          alert('已保存。建议继续添加' + (r.addr.type === 'lan' ? '外网' : '内网') + '地址，出门在外也能使用。');
+        }, 100);
+      }
+    } catch (e) {
+      showMsg('保存失败：' + (e && e.message ? e.message : e));
+    } finally {
+      btn.disabled = false;
+    }
   });
 
   document.getElementById('btnCancel').addEventListener('click', function () {
@@ -439,14 +585,19 @@
     showForm(null);
   });
 
+  // 启动期间点管理：取消自动连接，进入列表
+  document.getElementById('btnManage').addEventListener('click', function () {
+    bootCancelled = true;
+    showList();
+  });
+
   // ---- 自动识别 ----
   document.getElementById('btnAuto').addEventListener('click', async function () {
     var btn = this;
     btn.disabled = true;
     showMsg('正在识别内网服务器…');
 
-    // 从当前页面推断子网（APK 壳页为本地 file:// 或 capacitor://，无法推断）
-    // 尝试常见内网网段
+    // APK 壳页为本地 origin，无法从本机 IP 推断子网；抽样探测常见网段与端口
     var prefixes = ['192.168.1', '192.168.0', '192.168.1', '10.0.0', '172.16.0'];
     var ports = [8080, 8123, 80];
     var candidates = [];
@@ -470,23 +621,19 @@
 
     btn.disabled = false;
     if (found) {
-      document.getElementById('fUrl').value = found;
-      document.getElementById('fType').value = 'lan';
+      document.getElementById('fUrl').value = found.replace(/^https?:\/\//i, '');
+      fSegCtl.setScheme('http');
       showMsg('发现服务器：' + found + '，请填写名称后保存', true);
     } else {
       showMsg('未识别到内网服务器，请手动填写地址');
     }
   });
 
-  function showMsg(text, ok) {
-    $msg.textContent = text;
-    $msg.className = 'msg' + (ok ? ' ok' : '');
-  }
-
   // ---- 启动逻辑 ----
   async function boot() {
     showConnecting();
     var cfg = loadConfig();
+    if (cancelled()) return;
 
     // 无地址：显示添加表单
     if (!cfg.addresses.length) {
@@ -494,10 +641,11 @@
       return;
     }
 
-    // 单地址：直接探测并跳转
+    // 单地址：直接探测并跳转（期间可点「管理地址」）
     if (cfg.addresses.length === 1) {
       var a = cfg.addresses[0];
       var ok = await probe(a.url);
+      if (cancelled()) return;
       if (ok) {
         cfg.activeId = a.id;
         cfg.lastConnectedId = a.id;
@@ -511,6 +659,7 @@
 
     // 多地址：智能选择
     var best = await resolveBestAddress(cfg);
+    if (cancelled()) return;
     if (best) {
       cfg.activeId = best.id;
       cfg.lastConnectedId = best.id;
