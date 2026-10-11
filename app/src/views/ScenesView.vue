@@ -1192,6 +1192,7 @@ function closeAllDropdowns(e) {
 }
 
 async function loadEntities() {
+  if (!store.activeID || store.activeID <= 0) { entityOptions.value = []; return }
   try {
     const { data } = await api.entities({ instance: store.activeID })
     entityOptions.value = Array.isArray(data) ? data : []

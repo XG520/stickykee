@@ -27,7 +27,7 @@ func NewPrefs(repo *store.InstanceRepo, userPrefs *store.UserPrefs, manager *ha.
 }
 
 // 用户级偏好 key：按登录用户隔离；无值回退全局 prefs。
-var userScoped = []string{"theme", "font", "icons", "floorplan", "floorplan_doc", "animation", "wakeWord", "dashboard"}
+var userScoped = []string{"theme", "font", "icons", "floorplan", "floorplan_doc", "animation", "wakeWord", "dashboard", "tts_engine"}
 
 // 设备级偏好 key：按登录用户隔离（设备/传感器均属个人），无全局回退。
 var deviceScoped = []string{"devices", "sensor_config"}
@@ -289,9 +289,21 @@ func boolVal(v any) bool {
 // Health 健康检查。
 type Health struct{}
 
-// Healthz 存活探针。
+// PublicCORS 为公开端点附加 CORS 响应头（GET 简单请求无需预检）。
+func PublicCORS(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		next(w, r)
+	}
+}
+
+// Version 后端版本号：随发布递增，经 healthz 暴露，供前端设置页与 APK 壳页
+// 确认当前连接的服务端版本（排查「更新没生效」类问题）。
+const Version = "1.1.0"
+
+// Healthz 存活探针（公开：附带后端版本号）。
 func (Health) Healthz(w http.ResponseWriter, r *http.Request) {
-	WriteJSON(w, 200, map[string]string{"status": "ok"})
+	WriteJSON(w, 200, map[string]string{"status": "ok", "version": Version})
 }
 
 // Readyz 就绪探针。

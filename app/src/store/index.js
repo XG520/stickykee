@@ -472,8 +472,10 @@ export async function switchInstance(id) {
 
 // 手动触发实体查询（供首次/切换实例时兜底）。
 export async function refreshEntities(instanceID) {
+  const id = instanceID || store.activeID
+  if (!id || id <= 0) return []  // 实例未就绪：不发请求（否则拼成 /instances/entities 触发 405）
   try {
-    const { data } = await api.entities({ instance: instanceID || store.activeID })
+    const { data } = await api.entities({ instance: id })
     // 权威全量（无过滤参数）：未出现的实体视为已删除，一并清掉——
     // 否则被 HA 侧移除的实体（如 dismiss 后的通知）会残留到下次 WS 重连。
     applyStates(data || [], { replace: true })

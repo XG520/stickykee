@@ -68,6 +68,29 @@ async function postForm(path, form) {
   return { data: payload.data, meta: payload.meta }
 }
 
+// 获取二进制流（如 TTS 音频）：返回 { blob, contentType }。
+async function fetchBlob(method, path) {
+  const token = getToken()
+  const opts = { method, headers: {} }
+  if (token) opts.headers.Authorization = `Bearer ${token}`
+  let res
+  try {
+    res = await fetch(BASE + path, opts)
+  } catch {
+    throw err('network', '无法连接到后端服务，请确认 server 已启动')
+  }
+  if (!res.ok) {
+    let message = `请求失败 (${res.status})`
+    try {
+      const p = await res.json()
+      message = p?.error?.message || message
+    } catch { /* 非 JSON 错误 */ }
+    throw err('http_' + res.status, message, res.status)
+  }
+  const blob = await res.blob()
+  return { blob, contentType: res.headers.get('content-type') || 'audio/wav' }
+}
+
 // 通用的实例路径：缺省用 active（url 空时后端走 active）。
 function insPath(id) {
   return id && id > 0 ? `/instances/${id}` : '/instances'
@@ -78,6 +101,20 @@ export const api = {
   post: (path, body) => request('POST', path, body ?? {}),
   put: (path, body) => request('PUT', path, body ?? {}),
   del: (path) => request('DELETE', path),
+
+  // 健康检查（公开、无鉴权）：返回 {status, version}，设置页展示后端版本。
+  // 响应走统一信封 {data:{...}}，此处拆包返回 data 部分。
+  health: async () => {
+    let res
+    try {
+      res = await fetch('/healthz', { cache: 'no-store' })
+    } catch {
+      throw err('network', '无法连接到后端服务')
+    }
+    if (!res.ok) throw err('http_' + res.status, `请求失败 (${res.status})`, res.status)
+    const j = await res.json().catch(() => ({}))
+    return (j && j.data) || {}
+  },
 
   // 认证
   authStatus: () => api.get('/auth/status'),
@@ -171,6 +208,7 @@ export const api = {
   },
   sendImage: (user, form) => postForm(`/messages/${encodeURIComponent(user)}/image`, form),
   sendAudio: (user, form) => postForm(`/messages/${encodeURIComponent(user)}/audio`, form),
+  assistantTTS: (text) => fetchBlob('GET', `/messages/assistant/tts?text=${encodeURIComponent(text)}`),
   recallMessage: (id) => api.post(`/messages/${id}/recall`),
   sendShare: (user, dashboard) => api.post(`/messages/${encodeURIComponent(user)}/share`, { dashboard }),
   sendDevice: (user, device) => api.post(`/messages/${encodeURIComponent(user)}/device`, { device }),

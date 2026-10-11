@@ -67,8 +67,13 @@ func (c *Rest) do(ctx context.Context, method, path string, body any, out any) e
 }
 
 // GetRaw 获取 HA 原始资源（如图片/头像）的字节内容与 content-type。
+// path 支持相对路径与绝对 URL（如 TTS proxy 返回的完整地址）。
 func (c *Rest) GetRaw(ctx context.Context, path string) ([]byte, string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
+	addr := path
+	if !strings.HasPrefix(path, "http://") && !strings.HasPrefix(path, "https://") {
+		addr = c.baseURL + path
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, addr, nil)
 	if err != nil {
 		return nil, "", err
 	}
@@ -355,4 +360,54 @@ func (c *Rest) Conversation(ctx context.Context, text, conversationID string) (s
 		return "好的，已执行", cid, nil
 	}
 	return "我没太理解，可以再说清楚一些吗？", cid, nil
+}
+
+// TTS 调用 HA 的 TTS 生成语音，返回音频字节与 MIME。
+// engine 为 TTS 实体 ID（如 tts.piper）；为空时自动发现第一个可用 TTS 实体。
+// 依赖：HA 侧已配置任意 TTS 集成（如 Piper / Edge TTS / 火山引擎 / 阿里云 / XTTS 等）。
+func (c *Rest) TTS(ctx context.Context, engine, text string) ([]byte, string, error) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil, "", fmt.Errorf("empty text")
+	}
+	// 未指定引擎：从实体注册表里找第一个 tts.* 实体
+	if engine == "" {
+		var states []struct {
+			EntityID string `json:"entity_id"`
+		}
+		if err := c.do(ctx, http.MethodGet, "/api/states", nil, &states); err != nil {
+			return nil, "", fmt.Errorf("发现 TTS 引擎失败: %w", err)
+		}
+		for _, st := range states {
+			if strings.HasPrefix(st.EntityID, "tts.") {
+				engine = st.EntityID
+				break
+			}
+		}
+	}
+	if engine == "" {
+		return nil, "", fmt.Errorf("HA 未配置 TTS 引擎，请在 Home Assistant 中安装 TTS 集成（如 Piper / Edge TTS / 火山引擎等）")
+	}
+	// 官方接口：POST /api/tts_get_url {engine_id|platform, message} → {url}
+	var out struct {
+		URL  string `json:"url"`
+		Path string `json:"path"`
+	}
+	req := map[string]any{"engine_id": engine, "message": text, "language": "zh-CN"}
+	if err := c.do(ctx, http.MethodPost, "/api/tts_get_url", req, &out); err != nil {
+		// 兼容旧参数名 platform 再试一次
+		req2 := map[string]any{"platform": engine, "message": text, "language": "zh-CN"}
+		if err2 := c.do(ctx, http.MethodPost, "/api/tts_get_url", req2, &out); err2 != nil {
+			return nil, "", fmt.Errorf("tts_get_url: %w", err)
+		}
+	}
+	// tts_proxy 返回二进制音频（url 可能为绝对地址）
+	audio, ctype, err := c.GetRaw(ctx, out.URL)
+	if err != nil && out.Path != "" {
+		audio, ctype, err = c.GetRaw(ctx, out.Path)
+	}
+	if err != nil {
+		return nil, "", fmt.Errorf("tts fetch: %w", err)
+	}
+	return audio, ctype, nil
 }

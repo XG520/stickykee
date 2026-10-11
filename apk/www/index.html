@@ -80,6 +80,7 @@
   }
   .addr-item .tag.lan { background: rgb(70 167 88 / .15); color: #46a758; }
   .addr-item .tag.wan { background: rgb(90 125 255 / .15); color: #5a7dff; }
+  .addr-item .tag.ver { background: rgb(255 255 255 / .07); color: #a8a6a2; }
   .addr-item .actions { display: flex; gap: 6px; flex-shrink: 0; }
   .addr-item .actions button {
     width: auto; margin: 0; padding: 6px 10px; font-size: 12px; border-radius: 8px;
@@ -280,6 +281,31 @@
     });
   }
 
+  // ---- 版本获取 ----
+  // 读取后端 /healthz 的 {status, version}。旧版后端无 CORS 头或无 version 字段时
+  // 返回 null，界面隐藏版本徽标（向后兼容）。仅用于展示，连接判断仍以 no-cors probe 为准。
+  function fetchVersion(u, timeout) {
+    return new Promise(function (resolve) {
+      var done = false;
+      var timer = setTimeout(function () {
+        if (!done) { done = true; resolve(null); }
+      }, timeout || 3000);
+      function finish(v) {
+        if (!done) { done = true; clearTimeout(timer); resolve(v); }
+      }
+      try {
+        fetch(u + '/healthz', { cache: 'no-store' })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (j) {
+            // 兼容两种响应形态：统一信封 {data:{version}} 与裸 {version}
+            var v = j ? (j.version || (j.data && j.data.version)) : null;
+            finish(v ? String(v).replace(/^v/i, '') : null);
+          })
+          .catch(function () { finish(null); });
+      } catch (e) { finish(null); }
+    });
+  }
+
   // ---- 网络类型感知 ----
   function getNetworkType() {
     var c = navigator.connection || {};
@@ -400,6 +426,7 @@
           '<div class="url">' + escapeHtml(a.url) + '</div>' +
         '</div>' +
         '<span class="tag ' + a.type + '">' + (a.type === 'lan' ? '内网' : '外网') + '</span>' +
+        '<span class="tag ver hidden" data-ver="' + a.id + '"></span>' +
         '<div class="actions">' +
           '<button class="edit" data-id="' + a.id + '">编辑</button>' +
           '<button class="del" data-id="' + a.id + '">删除</button>' +
@@ -418,6 +445,19 @@
         connectTo(a);
       });
       $addrList.appendChild(div);
+      fillVer(a);
+    });
+  }
+
+  // 异步填充地址卡片的版本徽标（旧版后端无版本信息则保持隐藏）
+  function fillVer(addr) {
+    fetchVersion(addr.url, 4000).then(function (v) {
+      if (!v) return;
+      var el = $addrList.querySelector('[data-ver="' + addr.id + '"]');
+      if (el) {
+        el.textContent = 'v' + v;
+        el.classList.remove('hidden');
+      }
     });
   }
 
@@ -488,13 +528,17 @@
   // ---- 连接到指定地址 ----
   async function connectTo(addr) {
     showConnecting('正在连接「' + addr.name + '」…');
+    var vp = fetchVersion(addr.url, 1500);
     var ok = await probe(addr.url);
     if (ok) {
       var cfg = loadConfig();
       cfg.activeId = addr.id;
       cfg.lastConnectedId = addr.id;
       saveConfig(cfg);
-      go(addr.url);
+      var v = await vp;
+      document.getElementById('connectText').textContent =
+        '连接成功' + (v ? '，服务端版本 v' + v : '') + '，正在进入…';
+      setTimeout(function () { go(addr.url); }, 450);
     } else {
       showList();
       alert('无法连接到 ' + addr.name + '（' + addr.url + '）');
@@ -544,8 +588,9 @@
       showMsg('正在探测服务器…');
       var ok = await probe(r.addr.url);
       if (!ok) { showMsg('无法连接到 ' + r.addr.url + '，请检查地址、端口与当前网络'); return; }
-      showMsg('连接成功，正在进入…', true);
-      setTimeout(function () { go(r.addr.url); }, 350);
+      var v = await fetchVersion(r.addr.url, 1500);
+      showMsg('连接成功' + (v ? '，服务端版本 v' + v : '') + '，正在进入…', true);
+      setTimeout(function () { go(r.addr.url); }, 450);
     } catch (e) {
       showMsg('保存失败：' + (e && e.message ? e.message : e));
     } finally {

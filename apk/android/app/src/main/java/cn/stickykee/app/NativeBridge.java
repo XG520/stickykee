@@ -1,28 +1,74 @@
 package cn.stickykee.app;
 
+import android.Manifest;
+import android.content.Context;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.media.AudioFormat;
+import android.media.AudioRecord;
+import android.media.MediaRecorder;
+import android.speech.tts.TextToSpeech;
+import android.util.Base64;
 import android.view.Window;
 import android.view.WindowManager;
 import android.webkit.JavascriptInterface;
+import android.webkit.WebView;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
+
+import org.json.JSONObject;
+
+import java.io.ByteArrayOutputStream;
+import java.util.HashMap;
+import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 极简原生桥：通过 WebView.addJavascriptInterface 注册为 window.StickyKeeNative。
  * JavascriptInterface 对 WebView 中【任意源】（含 allowNavigation 远程页面）可用，
  * 不依赖 Capacitor 的 JS 运行时（其桥 JS 仅注入壳页 localhost 源）。
  *
- * 前端调用：window.StickyKeeNative.setBars('#0E0F12', false)
- * 同时设置状态栏与导航栏底色；darkIcons=true 时系统图标变深色（浅色主题用）。
+ * 前端调用示例：
+ *   window.StickyKeeNative.setBars('#0E0F12', false)
+ *   window.StickyKeeNative.speakEdge('你好', 'zh-CN-XiaoxiaoNeural')  // 同步返回 base64 MP3（旧）
+ *   window.StickyKeeNative.speakEdge2('你好', 'zh-CN-XiaoxiaoNeural', req) // 异步，结果经
+ *     window 事件 stickykee-tts 回传 {req, ok, audio, mime}（新前端用此接口，合成在后台线程，
+ *     不阻塞 WebView JS 线程——旧同步接口合成期间会冻结整页 1~30 秒）
  */
 public class NativeBridge {
 
     private final AppCompatActivity activity;
+    private final EdgeTTS edgeTTS;
+    private final LocalTTS localTTS;
+    private TextToSpeech sysTts;
+    private WebView webView;
+    private final ExecutorService ttsPool = Executors.newSingleThreadExecutor();
+
+    // ---- 原生录音（http 非安全上下文下 WebView 不暴露 navigator.mediaDevices，
+    //      getUserMedia/WebRTC 均不可用，语音消息与助手识别经此原生兜底）----
+    private AudioRecord audioRecord;
+    private Thread recThread;
+    private final AtomicBoolean recActive = new AtomicBoolean(false);
+    private final ByteArrayOutputStream recBuf = new ByteArrayOutputStream();
+    private int recSampleRate = 16000;
+    private static final int REC_REQUEST_CODE = 4101;
 
     public NativeBridge(AppCompatActivity activity) {
         this.activity = activity;
+        this.edgeTTS = new EdgeTTS();
+        this.localTTS = new LocalTTS(activity.getApplicationContext());
+    }
+
+    /** MainActivity 在注册桥后注入 WebView 引用，供异步 TTS 完成时回传 JS 事件。 */
+    public void attachWebView(WebView wv) {
+        this.webView = wv;
     }
 
     private int parseHex(String s) {
@@ -66,5 +112,334 @@ public class NativeBridge {
                 }
             }
         });
+    }
+
+    /**
+     * APK 原生 Edge TTS：直接调用微软免费在线语音合成，不依赖后端服务。
+     * 返回 Base64 编码的 MP3 音频字符串；失败返回空串。
+     *
+     * 前端用法：
+     *   const b64 = window.StickyKeeNative.speakEdge(text, voice)
+     *   if (b64) { const audio = new Audio('data:audio/mpeg;base64,' + b64); audio.play() }
+     *
+     * @param text  要合成的文本
+     * @param voice 微软音色名（如 zh-CN-XiaoxiaoNeural），为空默认晓晓
+     */
+    @JavascriptInterface
+    public String speakEdge(String text, String voice) {
+        try {
+            String b64 = edgeTTS.synth(text, voice);
+            return b64 != null ? b64 : "";
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    /**
+     * APK 本地离线 TTS：使用内置 MeloTTS 中文模型在设备本地推理，完全无需网络。
+     * 返回 Base64 编码的 WAV 音频字符串；失败返回空串。
+     *
+     * 前端用法：
+     *   const b64 = window.StickyKeeNative.speakLocal('你好', 1.0)
+     *   if (b64) { const audio = new Audio('data:audio/wav;base64,' + b64); audio.play() }
+     *
+     * @param text  要合成的文本
+     * @param speed 语速（1.0 = 正常，范围建议 0.5~2.0）
+     */
+    @JavascriptInterface
+    public String speakLocal(String text, float speed) {
+        try {
+            String b64 = localTTS.synth(text, speed > 0 ? speed : 1.0f);
+            return b64 != null ? b64 : "";
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    /**
+     * APK 原生 Edge TTS（异步版）：后台线程合成，立即返回不阻塞 JS 线程。
+     * 完成后派发 window 事件 stickykee-tts：{req, ok, audio(base64|''), mime}。
+     * 与旧同步 speakEdge 并存：旧前端继续用同步版，新前端按 speakEdge2 是否存在选择。
+     *
+     * @param text  要合成的文本
+     * @param voice 微软音色名（如 zh-CN-XiaoxiaoNeural），为空默认晓晓
+     * @param req   前端生成的请求标识，原样回传用于配对
+     */
+    @JavascriptInterface
+    public void speakEdge2(final String text, final String voice, final String req) {
+        ttsPool.execute(new Runnable() {
+            @Override
+            public void run() {
+                String b64 = "";
+                try {
+                    String r = edgeTTS.synth(text, voice);
+                    b64 = r != null ? r : "";
+                } catch (Exception ignored) {
+                }
+                dispatchTTS(req, b64, "audio/mpeg");
+            }
+        });
+    }
+
+    /**
+     * APK 本地离线 TTS（异步版）：后台线程用 MeloTTS 推理，立即返回不阻塞 JS 线程。
+     * 事件协议同 speakEdge2，mime 为 audio/wav。
+     *
+     * @param text  要合成的文本
+     * @param speed 语速（1.0 = 正常，范围建议 0.5~2.0）
+     * @param req   前端生成的请求标识，原样回传用于配对
+     */
+    @JavascriptInterface
+    public void speakLocal2(final String text, final float speed, final String req) {
+        ttsPool.execute(new Runnable() {
+            @Override
+            public void run() {
+                String b64 = "";
+                try {
+                    String r = localTTS.synth(text, speed > 0 ? speed : 1.0f);
+                    b64 = r != null ? r : "";
+                } catch (Exception ignored) {
+                }
+                dispatchTTS(req, b64, "audio/wav");
+            }
+        });
+    }
+
+    /** 合成完成（或失败）后向 JS 派发结果事件；WebView 未就绪时静默丢弃。 */
+    private void dispatchTTS(final String req, final String b64, final String mime) {
+        final WebView wv = webView;
+        if (wv == null) return;
+        final String js = "window.dispatchEvent(new CustomEvent('stickykee-tts',{detail:{"
+                + "req:" + JSONObject.quote(req == null ? "" : req)
+                + ",ok:" + (b64 != null && !b64.isEmpty())
+                + ",audio:" + JSONObject.quote(b64 == null ? "" : b64)
+                + ",mime:" + JSONObject.quote(mime)
+                + "}}))";
+        activity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    wv.evaluateJavascript(js, null);
+                } catch (Exception ignored) {
+                }
+            }
+        });
+    }
+
+    /**
+     * APK 系统 TTS（离线回退）：使用 Android 系统已安装的 TTS 引擎朗读。
+     * 异步播放，不返回音频数据。适合 Edge TTS 不可用时的兜底。
+     *
+     * @param text 要朗读的文本
+     */
+    @JavascriptInterface
+    public void speakSystem(final String text) {
+        if (text == null || text.trim().isEmpty()) return;
+        activity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (sysTts == null) {
+                        sysTts = new TextToSpeech(activity.getApplicationContext(),
+                                new TextToSpeech.OnInitListener() {
+                                    @Override
+                                    public void onInit(int status) {
+                                        if (status == TextToSpeech.SUCCESS) {
+                                            sysTts.setLanguage(Locale.CHINESE);
+                                            HashMap<String, String> params = new HashMap<>();
+                                            sysTts.speak(text, TextToSpeech.QUEUE_FLUSH, params);
+                                        }
+                                    }
+                                });
+                    } else {
+                        sysTts.setLanguage(Locale.CHINESE);
+                        HashMap<String, String> params = new HashMap<>();
+                        sysTts.speak(text, TextToSpeech.QUEUE_FLUSH, params);
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+        });
+    }
+
+    /** 停止系统 TTS 朗读 */
+    @JavascriptInterface
+    public void stopSystem() {
+        activity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (sysTts != null) sysTts.stop();
+                } catch (Exception ignored) {
+                }
+            }
+        });
+    }
+
+    /** 返回支持的中文音色 JSON 字符串（供前端展示选择） */
+    @JavascriptInterface
+    public String edgeVoices() {
+        try {
+            Map<String, String> voices = EdgeTTS.voices();
+            StringBuilder sb = new StringBuilder("{");
+            boolean first = true;
+            for (Map.Entry<String, String> e : voices.entrySet()) {
+                if (!first) sb.append(",");
+                first = false;
+                sb.append("\"").append(e.getKey()).append("\":\"")
+                        .append(e.getValue().replace("\"", "\\\"")).append("\"");
+            }
+            sb.append("}");
+            return sb.toString();
+        } catch (Exception e) {
+            return "{}";
+        }
+    }
+
+    // ================= 原生录音 =================
+
+    /**
+     * 开始原生录音：16kHz 单声道 16-bit PCM 采集，立即返回状态字符串。
+     * 返回 "ok" 成功；"no_permission" 缺麦克风权限（已自动发起系统授权弹窗，授权后重试）；
+     * "busy" 上一段录音未结束；"error:..." 初始化失败。
+     */
+    @JavascriptInterface
+    public String startRec() {
+        if (ContextCompat.checkSelfPermission(activity, Manifest.permission.RECORD_AUDIO)
+                != PackageManager.PERMISSION_GRANTED) {
+            activity.runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    ActivityCompat.requestPermissions(activity,
+                            new String[]{Manifest.permission.RECORD_AUDIO}, REC_REQUEST_CODE);
+                }
+            });
+            return "no_permission";
+        }
+        if (recActive.get()) return "busy";
+        final int sr = 16000;
+        int minBuf = AudioRecord.getMinBufferSize(sr, AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT);
+        if (minBuf <= 0) return "error:minBufferSize " + minBuf;
+        try {
+            audioRecord = new AudioRecord(MediaRecorder.AudioSource.MIC, sr,
+                    AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT,
+                    Math.max(minBuf * 4, 8192));
+            audioRecord.startRecording();
+        } catch (Exception e) {
+            try { if (audioRecord != null) audioRecord.release(); } catch (Exception ignored) {}
+            audioRecord = null;
+            return "error:" + e.getMessage();
+        }
+        synchronized (recBuf) { recBuf.reset(); }
+        recSampleRate = sr;
+        recActive.set(true);
+        recThread = new Thread(new Runnable() {
+            @Override
+            public void run() { captureLoop(); }
+        });
+        recThread.start();
+        return "ok";
+    }
+
+    /** 采集循环：把 PCM 写入缓冲，直到 recActive 置 false。 */
+    private void captureLoop() {
+        final short[] buf = new short[1600]; // 100ms @16kHz
+        while (recActive.get()) {
+            int n = audioRecord == null ? -1 : audioRecord.read(buf, 0, buf.length);
+            if (n > 0) {
+                synchronized (recBuf) {
+                    for (int i = 0; i < n; i++) {
+                        recBuf.write(buf[i] & 0xff);
+                        recBuf.write((buf[i] >> 8) & 0xff);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 结束录音并返回 Base64 编码的 WAV（16kHz 单声道 16-bit）；无数据返回空串。
+     * 编码毫秒级完成，可同步返回。
+     */
+    @JavascriptInterface
+    public String stopRec() {
+        byte[] pcm = endCapture();
+        if (pcm.length == 0) return "";
+        return Base64.encodeToString(wavWrap(pcm, recSampleRate), Base64.NO_WRAP);
+    }
+
+    /** 中途取消：丢弃已采集数据。 */
+    @JavascriptInterface
+    public void cancelRec() {
+        endCapture();
+    }
+
+    /** 停止采集并释放，返回已累积的 PCM 字节。 */
+    private byte[] endCapture() {
+        recActive.set(false);
+        Thread t = recThread;
+        if (t != null) {
+            try { t.join(1000); } catch (InterruptedException ignored) { Thread.currentThread().interrupt(); }
+            recThread = null;
+        }
+        try { if (audioRecord != null) { audioRecord.stop(); audioRecord.release(); } } catch (Exception ignored) {}
+        audioRecord = null;
+        byte[] pcm;
+        synchronized (recBuf) {
+            pcm = recBuf.toByteArray();
+            recBuf.reset();
+        }
+        return pcm;
+    }
+
+    /** 裸 PCM 加 44 字节 WAV 头（单声道 16-bit）。 */
+    private static byte[] wavWrap(byte[] pcm, int sampleRate) {
+        int total = pcm.length;
+        byte[] out = new byte[44 + total];
+        out[0] = 'R'; out[1] = 'I'; out[2] = 'F'; out[3] = 'F';
+        putIntLE(out, 4, 36 + total);
+        out[8] = 'W'; out[9] = 'A'; out[10] = 'V'; out[11] = 'E';
+        out[12] = 'f'; out[13] = 'm'; out[14] = 't'; out[15] = ' ';
+        putIntLE(out, 16, 16);
+        putShortLE(out, 20, (short) 1);            // PCM
+        putShortLE(out, 22, (short) 1);            // 单声道
+        putIntLE(out, 24, sampleRate);
+        putIntLE(out, 28, sampleRate * 2);
+        putShortLE(out, 32, (short) 2);
+        putShortLE(out, 34, (short) 16);
+        out[36] = 'd'; out[37] = 'a'; out[38] = 't'; out[39] = 'a';
+        putIntLE(out, 40, total);
+        System.arraycopy(pcm, 0, out, 44, total);
+        return out;
+    }
+
+    private static void putIntLE(byte[] b, int off, int v) {
+        b[off] = (byte) v; b[off + 1] = (byte) (v >> 8);
+        b[off + 2] = (byte) (v >> 16); b[off + 3] = (byte) (v >> 24);
+    }
+
+    private static void putShortLE(byte[] b, int off, short v) {
+        b[off] = (byte) v; b[off + 1] = (byte) (v >> 8);
+    }
+
+    /** 释放原生 TTS 资源 */
+    public void release() {
+        try {
+            recActive.set(false);
+            if (audioRecord != null) {
+                audioRecord.stop();
+                audioRecord.release();
+                audioRecord = null;
+            }
+            if (sysTts != null) {
+                sysTts.stop();
+                sysTts.shutdown();
+            }
+            ttsPool.shutdownNow();
+            localTTS.release();
+            edgeTTS.shutdown();
+        } catch (Exception ignored) {
+        }
     }
 }

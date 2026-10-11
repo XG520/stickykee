@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"mime"
 	"net/http"
@@ -15,9 +16,11 @@ import (
 	"strings"
 
 	"stickynuo/server/internal/ha"
+	"stickynuo/server/internal/ha/client"
 	"stickynuo/server/internal/hub"
 	"stickynuo/server/internal/secure"
 	"stickynuo/server/internal/store"
+	"stickynuo/server/internal/tts"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -221,6 +224,105 @@ func (h *Im) chatAssistant(w http.ResponseWriter, r *http.Request, me, text stri
 	}
 	h.notify(me)
 	_ = writeEnvelope(h.keys, w, r, map[string]any{"id": id1, "reply_id": id2})
+}
+
+// chatAssistantVoice 处理发给 HA Assist 的语音消息：
+// 用户音频落库 → 经 Assist pipeline WebSocket（STT → intent）得到文字回复
+// → 助手回复落库 → 实时通知本人 → 密文返回两条消息 id。
+// 识别失败时也以助手文字回复收尾，保证线程总能得到应答。
+func (h *Im) chatAssistantVoice(w http.ResponseWriter, r *http.Request, me string, audio []byte, mime, payload string) {
+	id1, err := h.msgs.Create(r.Context(), me, AssistantUser, "audio", payload, "")
+	if err != nil {
+		WriteErr(w, 500, "internal", err.Error())
+		return
+	}
+	rest, err := h.ha.Rest(r.Context(), 0)
+	if err != nil {
+		haErr(w, err)
+		return
+	}
+	cid := h.userPrefs.Get(r.Context(), me, "ha_chat_cid")
+
+	var reply, newCID string
+	if mime == "audio/wav" {
+		reply, newCID, err = rest.PipelineVoice(r.Context(), audio, cid)
+	} else {
+		err = fmt.Errorf("语音识别需要 WAV 格式，请更新客户端后重试")
+	}
+	if err != nil {
+		reply = "这段语音我没听清（" + err.Error() + "）。可以再试一次，或改用文字输入。"
+	}
+	if newCID != "" && newCID != cid {
+		_ = h.userPrefs.Set(r.Context(), me, "ha_chat_cid", newCID)
+	}
+	id2, err := h.msgs.Create(r.Context(), AssistantUser, me, "text", reply, "")
+	if err != nil {
+		WriteErr(w, 500, "internal", err.Error())
+		return
+	}
+	h.notify(me)
+	_ = writeEnvelope(h.keys, w, r, map[string]any{"id": id1, "reply_id": id2})
+}
+
+// mimeFromExt 根据扩展名推断 MIME（HA conversation input.audio 需要）。
+func mimeFromExt(ext string) string {
+	switch strings.ToLower(ext) {
+	case ".webm":
+		return "audio/webm"
+	case ".m4a", ".aac":
+		return "audio/mp4"
+	case ".ogg":
+		return "audio/ogg"
+	case ".wav":
+		return "audio/wav"
+	default:
+		return "audio/webm"
+	}
+}
+
+// AssistantTTS GET /messages/assistant/tts?text=...
+// 合成语音并返回音频流：
+//   - tts_engine 以 "edge" 开头（如 edge / edge:zh-CN-YunxiNeural）→ 微软 Edge TTS（免费、高质量中文）
+//   - 否则 → HA 已配置的 TTS 引擎（留空用 HA 默认）
+func (h *Im) AssistantTTS(w http.ResponseWriter, r *http.Request) {
+	text := strings.TrimSpace(r.URL.Query().Get("text"))
+	if text == "" {
+		WriteErr(w, 400, "bad_request", "text required")
+		return
+	}
+	engine := strings.TrimSpace(h.userPrefs.Get(r.Context(), rUsername(r), "tts_engine"))
+
+	var audio []byte
+	var ctype string
+	var err error
+
+	if strings.HasPrefix(engine, "edge") {
+		// Edge TTS：微软免费在线服务，音色与 Azure TTS 一致，接近豆包质量
+		voice := "zh-CN-XiaoxiaoNeural"
+		if idx := strings.Index(engine, ":"); idx >= 0 {
+			voice = strings.TrimSpace(engine[idx+1:])
+		}
+		edge := tts.NewEdgeTTS()
+		audio, ctype, err = edge.Synth(r.Context(), text, voice)
+	} else {
+		// HA TTS：用 HA 已配置的引擎
+		var rest *client.Rest
+		rest, err = h.ha.Rest(r.Context(), 0)
+		if err == nil {
+			audio, ctype, err = rest.TTS(r.Context(), engine, text)
+		}
+	}
+	if err != nil {
+		WriteErr(w, 502, "tts_error", err.Error())
+		return
+	}
+	if ctype == "" {
+		ctype = "audio/wav"
+	}
+	w.Header().Set("Content-Type", ctype)
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(audio)
 }
 
 // SendDevice POST /messages/{user}/device  {device:{entity_id,name,icon,domain,device_class,...}}
@@ -454,8 +556,11 @@ func (h *Im) SendAudio(w http.ResponseWriter, r *http.Request) {
 		WriteErr(w, 400, "bad_request", "invalid target")
 		return
 	}
-	if !h.requireTarget(w, r, to) {
-		return
+	// 虚拟会话：HA 智家助手（不走用户存在性校验）
+	if to != AssistantUser {
+		if !h.requireTarget(w, r, to) {
+			return
+		}
 	}
 	if h.uploadDir == "" {
 		WriteErr(w, 501, "not_implemented", "服务端未启用文件存储目录")
@@ -517,6 +622,16 @@ func (h *Im) SendAudio(w http.ResponseWriter, r *http.Request) {
 		"name":     hdr.Filename,
 		"duration": duration,
 	})
+	// 发给 HA 智家助手的语音：落库音频消息后走 Assist 语音对话（STT）
+	if to == AssistantUser {
+		audioBytes, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			WriteErr(w, 500, "internal", "读取语音失败")
+			return
+		}
+		h.chatAssistantVoice(w, r, me, audioBytes, mimeFromExt(ext), string(payload))
+		return
+	}
 	id, err := h.msgs.Create(r.Context(), me, to, "audio", string(payload), "")
 	if err != nil {
 		WriteErr(w, 500, "internal", err.Error())

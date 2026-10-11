@@ -55,6 +55,39 @@
       <p v-if="tokMsg" class="mt-2 text-xs font-body" :class="tokMsgErr ? 'text-error' : 'text-success'">{{ tokMsg }}</p>
     </section>
 
+    <!-- 语音合成引擎（TTS）：决定智家助手朗读回复的音色，可指定 HA 中已配置的引擎 -->
+    <section class="bg-surface-alt border border-border rounded-2xl p-5">
+      <div class="flex items-center gap-2.5 mb-3">
+        <div class="w-8 h-8 rounded-xl bg-success/20 flex items-center justify-center">
+          <span class="material-symbols-outlined text-success text-lg">record_voice_over</span>
+        </div>
+        <div>
+          <h2 class="font-headline text-on-background text-base font-semibold">语音合成引擎（TTS）</h2>
+          <p class="text-muted text-xs mt-0.5">智家助手回复的朗读音色，留空使用 HA 默认引擎</p>
+        </div>
+      </div>
+      <p class="text-muted text-xs mb-3 font-body leading-relaxed">
+        决定助手语音回复的音色。支持以下方式：
+        <br>• <code class="px-1 rounded bg-surface">local</code> — APK 本地离线 TTS（MeloTTS 中文模型，完全无需网络，仅 APK 生效）
+        <br>• <code class="px-1 rounded bg-surface">edge</code> — 微软 Edge TTS（免费，豆包级音质，APK 内直连不依赖后端）
+        <br>• <code class="px-1 rounded bg-surface">edge:zh-CN-YunxiNeural</code> — 指定 Edge 音色（云希男声等）
+        <br>• <code class="px-1 rounded bg-surface">kokoro</code> — 浏览器本地推理（Kokoro-82M，离线免费）
+        <br>• <code class="px-1 rounded bg-surface">kokoro:zf_002</code> / <code class="px-1 rounded bg-surface">kokoro:zm_009</code> — 指定 Kokoro 音色
+        <br>• <code class="px-1 rounded bg-surface">tts.piper</code> 等 HA 引擎 ID — 使用 HA 已配置的 TTS 集成
+        <br>• 留空 — APK 内用 Edge TTS，网页用 HA 默认 TTS 引擎
+      </p>
+      <div class="flex gap-2">
+        <input v-model="ttsEngine" type="text" placeholder="local / edge / kokoro / tts.piper"
+          class="flex-1 bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
+        <button @click="saveTTSEngine" :disabled="savingTTS"
+          class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-on-primary text-sm font-semibold transition-all disabled:opacity-70 flex items-center gap-1.5">
+          <span v-if="savingTTS" class="hc-spinner"></span>
+          {{ savingTTS ? '保存中…' : '保存' }}
+        </button>
+      </div>
+      <p v-if="ttsMsg" class="mt-2 text-xs font-body" :class="ttsMsgErr ? 'text-error' : 'text-success'">{{ ttsMsg }}</p>
+    </section>
+
     <!-- 服务器地址（APK 壳页地址簿同步显示） -->
     <section class="bg-surface-alt border border-border rounded-2xl p-5">
       <div class="flex items-center gap-2.5 mb-3">
@@ -656,6 +689,36 @@
       </form>
       <p v-if="pwMsg" class="mt-3 text-xs font-body" :class="pwErr ? 'text-error' : 'text-success'">{{ pwMsg }}</p>
     </section>
+
+    <!-- 系统信息：前后端版本号，用于确认部署是否已更新 -->
+    <section class="bg-surface-alt border border-border rounded-2xl p-5">
+      <div class="flex items-center gap-2.5 mb-3">
+        <div class="w-8 h-8 rounded-xl bg-primary/20 flex items-center justify-center">
+          <span class="material-symbols-outlined text-primary text-lg">info</span>
+        </div>
+        <div>
+          <h2 class="font-headline text-on-background text-base font-semibold">系统信息</h2>
+          <p class="text-muted text-xs mt-0.5">前后端版本号，用于确认部署是否已更新</p>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-2">
+        <div class="rounded-xl bg-background border border-border px-3 py-2.5">
+          <p class="text-muted text-xs mb-1">网页版本</p>
+          <p class="text-on-surface text-sm font-semibold">{{ appVersion || '—' }}</p>
+        </div>
+        <div class="rounded-xl bg-background border border-border px-3 py-2.5">
+          <p class="text-muted text-xs mb-1">服务端版本</p>
+          <p class="text-on-surface text-sm font-semibold">
+            <span v-if="backendVersion === null" class="text-muted">获取中…</span>
+            <span v-else-if="backendVersion === ''" class="text-error">获取失败</span>
+            <template v-else>{{ backendVersion }}</template>
+          </p>
+        </div>
+      </div>
+      <p v-if="versionMismatch" class="mt-2 text-xs font-body text-warning">
+        前后端版本不一致：请先刷新页面（Ctrl+F5）；若仍不一致，说明服务端尚未更新到最新版本。
+      </p>
+    </section>
     </div>
 
     <!-- ===== 用户管理（仅管理员） ===== -->
@@ -805,6 +868,10 @@ function flash(text, err = false) {
 
 // ---- 个人 HA Token ----
 const myToken = ref('')
+const ttsEngine = ref('')
+const savingTTS = ref(false)
+const ttsMsg = ref('')
+const ttsMsgErr = ref(false)
 const savingToken = ref(false)
 const tokMsg = ref('')
 const tokMsgErr = ref(false)
@@ -857,6 +924,21 @@ async function saveMyToken() {
   }
   savingToken.value = false
   setTimeout(() => { tokMsg.value = '' }, 3000)
+}
+
+async function saveTTSEngine() {
+  savingTTS.value = true
+  ttsMsg.value = ''
+  try {
+    await putPrefs({ tts_engine: ttsEngine.value.trim() })
+    ttsMsgErr.value = false
+    ttsMsg.value = ttsEngine.value.trim() ? `已指定 TTS 引擎：${ttsEngine.value.trim()}` : '已切换为 HA 默认 TTS 引擎'
+  } catch (e) {
+    ttsMsgErr.value = true
+    ttsMsg.value = e.message
+  }
+  savingTTS.value = false
+  setTimeout(() => { ttsMsg.value = '' }, 3000)
 }
 
 async function addInstance() {
@@ -1277,6 +1359,7 @@ async function loadPrefs() {
       toggles.value.forEach((t) => { if (t.id in m) t.on = !!m[t.id] })
     }
     if (data.wakeWord) wakeWord.value = data.wakeWord
+    if (data.tts_engine) ttsEngine.value = data.tts_engine
     if (data.map_config) {
       try {
         const mc = JSON.parse(data.map_config)
@@ -1353,7 +1436,21 @@ async function resetDefaults() {
   }
 }
 
+// ===== 版本信息：__APP_VERSION__ 由 vite 构建时从 package.json 注入 =====
+const appVersion = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : ''
+const backendVersion = ref(null) // null=获取中；''=获取失败
+const versionMismatch = computed(() => !!backendVersion.value && backendVersion.value !== appVersion)
+async function loadVersion() {
+  try {
+    const h = await api.health()
+    backendVersion.value = h.version || '未知'
+  } catch {
+    backendVersion.value = ''
+  }
+}
+
 onMounted(() => {
+  loadVersion()
   loadPrefs(); loadDevices(); loadSensors(); loadUsers()
   loadSiteName().then(() => { siteNameDraft.value = siteName.value }) // 同步后端权威值
   stopLightWatch = watchAmbientLight() // 面板打开期间持续读环境光，用于「实时值」显示

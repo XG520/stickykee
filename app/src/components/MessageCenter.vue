@@ -173,9 +173,14 @@
 
                   <!-- 文本气泡（含表情） -->
                   <div v-else class="max-w-[85%]">
-                    <div class="px-3.5 py-2 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-words"
+                    <div class="px-3.5 py-2 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-words relative"
                       :class="m.from === auth.user ? 'bg-primary text-on-primary rounded-br-sm' : 'bg-surface-alt border border-border text-on-surface rounded-bl-sm'">
-                      {{ m.content }}
+                      <template v-for="(s, i) in segOf(m.content).segs" :key="i"><span v-if="s.t === 'e'" :class="segOf(m.content).big ? 'text-[1.6rem] leading-7 mx-px' : ''">{{ s.v }}</span><template v-else>{{ s.v }}</template></template>
+                      <button v-if="m.from === ASSISTANT" @click="speakMessage(m)" :title="ttsPlayingId === m.id ? '停止朗读' : '语音朗读'"
+                        class="ml-2 align-middle inline-flex items-center justify-center w-6 h-6 rounded-full transition-colors"
+                        :class="ttsPlayingId === m.id ? 'text-primary' : 'text-muted hover:text-primary'">
+                        <span class="material-symbols-outlined text-base">{{ ttsPlayingId === m.id ? 'stop' : 'volume_up' }}</span>
+                      </button>
                     </div>
                     <p class="mt-1 px-1 text-muted text-[10px] font-body flex items-center gap-1" :class="m.from === auth.user ? 'justify-end' : ''">
                       {{ fmtTime(m.created_at) }}
@@ -195,16 +200,31 @@
 
               <!-- 输入区 -->
               <div class="border-t border-border px-4 py-3 bg-surface">
-                <!-- 表情面板 -->
+                <!-- 表情面板（微信风格：分类网格 + 底部标签栏） -->
                 <Transition name="im-pop">
-                  <div v-if="showEmoji" class="mb-2 rounded-xl border border-border bg-background p-2 shadow-lg max-h-44 overflow-y-auto">
-                    <div class="flex items-center gap-1 mb-1.5">
-                      <span class="text-[10px] uppercase tracking-wide text-muted font-semibold font-body flex-1">表情</span>
-                      <span class="material-symbols-outlined text-sm text-muted">emoticons</span>
+                  <div v-if="showEmoji" class="mb-2 rounded-xl border border-border bg-background shadow-lg overflow-hidden flex flex-col" style="height:240px">
+                    <div class="flex-1 overflow-y-auto p-2">
+                      <p v-if="emojiCat === 'recent' && !recentEmojis.length" class="text-center text-xs text-muted py-10 font-body">暂无最近使用的表情</p>
+                      <div v-else class="grid grid-cols-7 sm:grid-cols-9 gap-0.5">
+                        <button v-for="(e, i) in panelEmojis" :key="i"
+                          @mousedown.prevent @click="insertEmoji(e)"
+                          class="w-9 h-9 rounded-lg hover:bg-surface-hover text-xl leading-none transition-colors flex items-center justify-center">{{ e }}</button>
+                      </div>
                     </div>
-                    <div class="grid grid-cols-6 sm:grid-cols-8 gap-1">
-                      <button v-for="e in emojis" :key="e" @click="insertEmoji(e)"
-                        class="w-9 h-9 sm:w-8 sm:h-8 rounded-lg hover:bg-surface-hover text-xl leading-none transition-colors flex items-center justify-center">{{ e }}</button>
+                    <!-- 底部分类栏 -->
+                    <div class="border-t border-border bg-surface-alt flex items-center gap-0.5 px-1 py-1 shrink-0">
+                      <button v-for="t in EMOJI_TABS" :key="t.key" @click="emojiCat = t.key"
+                        class="w-8 h-8 rounded-md flex items-center justify-center transition-colors"
+                        :class="emojiCat === t.key ? 'bg-primary/15' : 'hover:bg-surface-hover'">
+                        <span v-if="t.icon" class="material-symbols-outlined text-lg"
+                          :class="emojiCat === t.key ? 'text-primary' : 'text-muted'">{{ t.icon }}</span>
+                        <span v-else class="text-base leading-none">{{ t.glyph }}</span>
+                      </button>
+                      <div class="flex-1"></div>
+                      <button @mousedown.prevent @click="backspaceEmoji" title="删除"
+                        class="w-9 h-8 rounded-md hover:bg-surface-hover flex items-center justify-center text-muted transition-colors">
+                        <span class="material-symbols-outlined text-lg">backspace</span>
+                      </button>
                     </div>
                   </div>
                 </Transition>
@@ -277,12 +297,12 @@
 
                 <!-- 输入行 -->
                 <div class="flex items-center gap-2">
-                  <button v-if="!isAssistant" @click="toggleVoiceMode" :title="voiceMode ? '切换键盘' : '切换语音'"
+                  <button @click="toggleVoiceMode" :title="voiceMode ? '切换键盘' : '切换语音'"
                     class="w-9 h-9 shrink-0 rounded-full text-muted hover:text-primary hover:bg-primary/10 flex items-center justify-center transition-colors">
                     <span class="material-symbols-outlined text-xl">{{ voiceMode ? 'keyboard' : 'mic' }}</span>
                   </button>
 
-                  <input v-if="!voiceMode" v-model="compose" @keyup.enter="send" :placeholder="isAssistant ? '问助手：天气、设备、闲聊…' : '输入消息…'"
+                  <input v-if="!voiceMode" ref="composeInput" v-model="compose" @keyup.enter="send" :placeholder="isAssistant ? '问助手：天气、设备、闲聊…' : '输入消息…'"
                     :disabled="busy" @focus="closePanels"
                     class="flex-1 min-w-0 bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
 
@@ -293,7 +313,7 @@
                     按住&nbsp;说话
                   </button>
 
-                  <button @click="toggleEmoji" :disabled="busy" title="表情"
+                  <button @click="toggleEmoji" @mousedown.prevent :disabled="busy" title="表情"
                     class="w-9 h-9 shrink-0 rounded-full flex items-center justify-center transition-colors"
                     :class="showEmoji ? 'text-primary bg-primary/10' : 'text-muted hover:text-primary'">
                     <span class="material-symbols-outlined text-xl">mood</span>
@@ -335,12 +355,12 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import api from '@/api'
 import { auth, imOpen, imRefresher, imConversations, closeIm, bumpIm, store, entityStates, requestEntityRefresh, refreshIm } from '@/store'
 import { dashboardCardCount } from '@/utils/dashboard'
 import { getPrefs } from '@/utils/prefs'
-import { VoiceRecorder } from '@/utils/recorder'
+import { VoiceRecorder, WavRecorder, NativeWavRecorder } from '@/utils/recorder'
 import { startCall } from '@/utils/call'
 import { openEnvelope, withCrypto } from '@/utils/crypto'
 
@@ -365,13 +385,14 @@ const convList = computed(() => {
 const conversations = imConversations
 const activeUser = ref('')
 const messages = ref([])
+// 助手语音回复自动朗读：记录已朗读的消息 id，避免重复朗读历史
+const lastSpokenId = ref(0)
 const compose = ref('')
 const busy = ref(false)
 const showPicker = ref(false)
 const tip = ref('')
 const tipErr = ref(false)
 const listEl = ref(null)
-const showEmoji = ref(false)
 const showDevicePicker = ref(false)
 const deviceCandidates = ref([])
 const debrief = ref('')
@@ -387,17 +408,155 @@ const PAGE = 50
 const listVisible = computed(() => !activeUser.value)
 const threadVisible = computed(() => !!activeUser.value)
 
-function backToList() { activeUser.value = '' }
+function backToList() {
+  activeUser.value = ''
+  stopTTS()
+}
 let debriefTimer = null
 
-const emojis = [
-  '😀','😁','😂','🤣','😊','😍','😘','😋',
-  '😎','🤔','😴','🤗','🤩','😇','🙂','🥳',
-  '😅','😭','😤','😡','🥺','😳','🤯','😱',
-  '👍','👎','👏','🙌','🤝','💪','👌','✌️',
-  '❤️','🔥','⭐','🎉','🎊','✨','💯','🌹',
-  '❓','❗','✅','❌','🚀','🌙','☕','🍀',
+// ============== 微信风格表情 ==============
+// 微信经典表情短码 -> Unicode emoji（消息里出现 [微笑] 等文本时自动转成 emoji 显示）
+const WX_EMOJI = {
+  '微笑':'🙂','撇嘴':'🙁','色':'😍','发呆':'😳','得意':'😏','流泪':'😢','害羞':'😊',
+  '闭嘴':'🤐','睡':'😴','大哭':'😭','尴尬':'😅','发怒':'😡','调皮':'😜','呲牙':'😁',
+  '惊讶':'😮','难过':'😞','酷':'😎','冷汗':'😓','抓狂':'😫','吐':'🤪','偷笑':'🤭',
+  '可爱':'🥰','白眼':'🙄','傲慢':'😤','饥饿':'😋','困':'🥱','惊恐':'😱','流汗':'😰',
+  '憨笑':'😄','大兵':'🫡','奋斗':'💪','咒骂':'🤬','疑问':'❓','嘘':'🤫','晕':'😵',
+  '折磨':'😣','衰':'😩','骷髅':'💀','敲打':'🔨','再见':'👋','擦汗':'😮‍💨','抠鼻':'👃',
+  '鼓掌':'👏','糗大了':'🫣','坏笑':'😈','左哼哼':'😤','右哼哼':'😠','哈欠':'🥱',
+  '鄙视':'👎','委屈':'🥺','快哭了':'🥹','阴险':'🤨','亲亲':'😘','吓':'😨','可怜':'😔',
+  '菜刀':'🔪','西瓜':'🍉','啤酒':'🍺','篮球':'🏀','乒乓':'🏓','咖啡':'☕','饭':'🍚',
+  '猪头':'🐷','玫瑰':'🌹','凋谢':'🥀','示爱':'❤️','爱心':'💗','心碎':'💔','蛋糕':'🎂',
+  '闪电':'⚡','炸弹':'💣','刀':'🗡️','足球':'⚽','瓢虫':'🐞','便便':'💩','月亮':'🌙',
+  '太阳':'☀️','礼物':'🎁','拥抱':'🤗','强':'👍','弱':'👎','握手':'🤝','胜利':'✌️',
+  '抱拳':'🙏','勾引':'🤙','拳头':'👊','差劲':'🫵','爱你':'💘','NO':'🙅','OK':'🙆',
+}
+const CLASSIC_EMOJIS = Object.values(WX_EMOJI)
+const WX_CODE_RE = new RegExp('\\[(' + Object.keys(WX_EMOJI).join('|') + ')\\]', 'g')
+
+// 其余分类（Unicode emoji，零资源依赖）
+const FACE_EMOJIS = ['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','🙃','🫠','😊','😇','🥰','😍','🤩','😘','😗','☺️','😚','😙','🥲','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🫢','🤫','🤔','🫣','🤨','😐','😑','😶','😏','😒','🙄','😬','🤥','😌','😔','😪','🤤','😴','😷','🤒','🤕','🤢','🤮','🤧','🥵','🥶','🥴','😵','🤯','🤠','🥳','🥸','😎','🤓','🧐','😕','🙁','☹️','😮','😯','😲','😳','🥺','🥹','😦','😧','😨','😰','😥','😢','😭','😱','😖','😣','😞','😓','😩','😫','🥱','😤','😡','😠','🤬','😈','👿','💀','💩','🤡','👹','👺','👻','👽','👾','🤖','😺','😸','😻','😼','😽','🙀','😿','😾']
+const GESTURE_EMOJIS = ['👋','🤚','🖐️','✋','🖖','👌','🤌','🤏','✌️','🤞','🫰','🤟','🤘','🤙','👈','👉','👆','🖕','👇','☝️','🫵','👍','👎','✊','👊','🤛','🤜','👏','🙌','🫶','👐','🤲','🤝','🙏','✍️','💅','🤳','💪','🦾','🦿','🦵','🦶','👂','🦻','👃','🧠','🫀','🫁','🦷','🦴','👀','👁️','👅','👄','❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞','💓','💗','💖','💘','💝','💟']
+const ANIMAL_EMOJIS = ['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐽','🐸','🐵','🙈','🙉','🙊','🐒','🐔','🐧','🐦','🐤','🐣','🐥','🦆','🦅','🦉','🦇','🐺','🐗','🐴','🦄','🐝','🪱','🐛','🦋','🐌','🐞','🐜','🦟','🦗','🕷️','🦂','🐢','🐍','🦎','🦖','🦕','🐙','🦑','🦐','🦞','🦀','🐡','🐠','🐟','🐬','🐳','🐋','🦈','🐊','🐅','🐆','🦓','🦍','🐘','🦛','🦏','🐪','🐫','🦒','🦘','🐃','🐂','🐄','🐎','🐖','🐏','🐑','🦙','🐐','🦌','🐕','🐩','🐈','🐓','🦃','🦚','🦜','🦢','🦩','🕊️','🐇','🦝','🐁','🐀','🐿️','🦔','🌵','🎄','🌲','🌳','🌴','🪴','🌱','🌿','☘️','🍀','🌷','🌹','🥀','🌺','🌸','🌼','🌻','🍄']
+const FOOD_EMOJIS = ['🍏','🍎','🍐','🍊','🍋','🍌','🍉','🍇','🍓','🫐','🍈','🍒','🍑','🥭','🍍','🥥','🥝','🍅','🍆','🥑','🥦','🥬','🥒','🌶️','🫑','🌽','🥕','🫒','🧄','🧅','🥔','🍠','🥐','🥯','🍞','🥖','🥨','🧀','🥚','🍳','🧈','🥞','🧇','🥓','🥩','🍗','🍖','🌭','🍔','🍟','🍕','🥪','🥙','🌮','🌯','🥗','🥘','🥫','🍝','🍜','🍲','🍛','🍣','🍱','🥟','🍤','🍙','🍚','🍘','🍥','🥮','🍢','🍡','🍧','🍨','🍦','🥧','🧁','🍰','🎂','🍮','🍭','🍬','🍫','🍿','🍩','🍪','🌰','🥜','🍯','🥛','🍼','🫖','☕','🍵','🧃','🥤','🧋','🍶','🍺','🍻','🥂','🍷','🥃','🍸','🍹']
+const ACTIVITY_EMOJIS = ['⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🥏','🎱','🪀','🏓','🏸','🏒','🏑','🥍','🏏','🥅','⛳','🏹','🎣','🤿','🥊','🥋','🎿','⛷️','🏂','🪂','🏋️','🤼','🤸','⛹️','🤺','🤾','🏌️','🏇','🧘','🏄','🏊','🤽','🚣','🧗','🚵','🚴','🏆','🥇','🥈','🥉','🏅','🎖️','🏵️','🎗️','🎫','🎟️','🎪','🤹','🎭','🎨','🎬','🎤','🎧','🎼','🎹','🥁','🎷','🎺','🎸','🪕','🎻','🎲','♟️','🎯','🎳','🎮','🎰','🧩']
+const TRAVEL_EMOJIS = ['🚗','🚕','🚙','🚌','🚎','🏎️','🚓','🚑','🚒','🚐','🛻','🚚','🚛','🚜','🛵','🏍️','🛺','🚲','🛴','🛹','🛼','🚏','🛣️','⛽','🚨','🚥','🚦','🚧','⚓','⛵','🚤','🛳️','⛴️','🛥️','🚢','✈️','🛩️','🛫','🛬','🪂','💺','🚁','🚟','🚠','🚡','🛰️','🚀','🛸','🎆','🎇','🌠','🌁','🌃','🏙️','🌄','🌅','🏞️','🌋','⛰️','🏔️','🗻','🏕️','⛺','🏖️','🏜️','🏝️','🗺️','🗾','🧭','🌍','🌎','🌏','🌐','🗽','🗼','🏰','🏯','🏟️','🎡','🎢','🎠','⛲','⛱️','🏖️']
+const OBJECT_EMOJIS = ['⌚','📱','📲','💻','⌨️','🖥️','🖨️','🖱️','💾','💿','📀','📷','📸','📹','🎥','📽️','📞','☎️','📟','📠','📺','📻','🎙️','🎚️','🎛️','🧭','⏱️','⏲️','⏰','🕰️','⌛','⏳','📡','🔋','🔌','💡','🔦','🕯️','🪔','🧯','🛢️','💸','💵','💴','💶','💷','🪙','💰','💳','💎','⚖️','🧰','🔧','🔨','⚒️','🛠️','⛏️','🔩','⚙️','🧱','⛓️','🧲','🔫','💣','🧨','🪓','🔪','🗡️','⚔️','🛡️','🚬','⚰️','🪦','⚱️','🏺','🔮','📿','🧿','💈','⚗️','🔭','🔬','🩹','🩺','💊','💉','🩸','🧬','🦠','🧫','🧪','🌡️','🧹','🪠','🧺','🧻','🚽','🚰','🚿','🛁','🛀','🧼','🪥','🪒','🧽','🪣','🧴','🛎️','🔑','🗝️','🚪','🪑','🛋️','🛏️','🛌','🧸','🪆','🖼️','🪞','🪟','🛍️','🛒','🎁','🎈','🎏','🎀','🪄','🪅','🎊','🎉','🎎','🏮','🎐','🧧','✉️','📩','📨','📧','💌','📥','📤','📦','🏷️','📪','📫','📬','📭','📮','📯','📜','📃','📄','📑','📊','📈','📉','🗒️','🗓️','📆','📅','🗑️','📇','🗃️','🗳️','🗄️','📋','📁','📂','🗂️','📰','📓','📔','📒','📕','📗','📘','📙','📚','🔖','🧷','🔗','📎','🖇️','📐','📏','🧮','📌','📍','✂️','🖊️','🖋️','✒️','🖌️','🖍️','📝','✏️','🔍','🔎','🔏','🔐','🔒','🔓']
+const SYMBOL_EMOJIS = ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞','💓','💗','💖','💘','💝','💟','☮️','✝️','☪️','🕉️','☸️','🔯','🕎','☯️','☦️','🛐','⛎','♈','♉','♊','♋','♌','♍','♎','♏','♐','♑','♒','♓','🆔','⚛️','🉑','☢️','☣️','📴','📳','🈶','🈚','🈸','🈺','🈷️','✴️','🆚','💮','🉐','㊙️','㊗️','🈴','🈵','🈹','🈲','🅰️','🅱️','🆎','🆑','🅾️','🆘','❌','⭕','🛑','⛔','📛','🚫','💯','💢','♨️','🚷','🚯','🚳','🚱','🔞','📵','🚭','❗','❕','❓','❔','‼️','⁉️','🔅','🔆','〽️','⚠️','🚸','🔱','⚜️','🔰','♻️','✅','🈯','💹','❇️','✳️','❎','🌐','💠','Ⓜ️','🌀','💤','🏧','🚾','♿','🅿️','🛗','🈳','🈂️','🚹','🚺','🚼','⚧','🚻','🚮','🎦','📶','🈁','🔣','ℹ️','🔤','🔡','🔠','🆖','🆗','🆙','🆒','🆕','🆓','0️⃣','1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟','🔢','#️⃣','*️⃣','▶️','⏸️','⏯️','⏹️','⏺️','⏭️','⏮️','⏩','⏪','🔀','🔁','🔂','🔼','⏫','🔽','⏬']
+
+const EMOJI_TABS = [
+  { key: 'recent', icon: 'schedule' },
+  { key: 'classic', glyph: '🙂' },
+  { key: 'faces', glyph: '😀' },
+  { key: 'gesture', glyph: '👍' },
+  { key: 'animal', glyph: '🐻' },
+  { key: 'food', glyph: '🍔' },
+  { key: 'activity', glyph: '⚽' },
+  { key: 'travel', glyph: '🚗' },
+  { key: 'object', glyph: '💡' },
+  { key: 'symbol', glyph: '❤️' },
 ]
+const EMOJI_SET = {
+  classic: CLASSIC_EMOJIS, faces: FACE_EMOJIS, gesture: GESTURE_EMOJIS, animal: ANIMAL_EMOJIS,
+  food: FOOD_EMOJIS, activity: ACTIVITY_EMOJIS, travel: TRAVEL_EMOJIS, object: OBJECT_EMOJIS, symbol: SYMBOL_EMOJIS,
+}
+
+const showEmoji = ref(false)
+const emojiCat = ref('classic')
+const composeInput = ref(null)
+const RECENT_KEY = 'im_emoji_recent'
+const recentEmojis = ref([])
+try { recentEmojis.value = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]') } catch { recentEmojis.value = [] }
+const panelEmojis = computed(() =>
+  emojiCat.value === 'recent' ? recentEmojis.value : (EMOJI_SET[emojiCat.value] || CLASSIC_EMOJIS))
+
+function pushRecent(e) {
+  const list = [e, ...recentEmojis.value.filter((x) => x !== e)].slice(0, 24)
+  recentEmojis.value = list
+  try { localStorage.setItem(RECENT_KEY, JSON.stringify(list)) } catch {}
+}
+let suppressFocusClose = false
+function insertEmoji(e) {
+  pushRecent(e)
+  const el = composeInput.value
+  const focused = el && document.activeElement === el
+  const start = focused ? el.selectionStart : compose.value.length
+  const end = focused ? el.selectionEnd : start
+  compose.value = compose.value.slice(0, start) + e + compose.value.slice(end)
+  suppressFocusClose = true
+  nextTick(() => {
+    el?.focus()
+    const pos = start + e.length
+    try { el?.setSelectionRange(pos, pos) } catch {}
+  })
+}
+function backspaceEmoji() {
+  const el = composeInput.value
+  const focused = el && document.activeElement === el
+  const start = focused ? el.selectionStart : compose.value.length
+  const end = focused ? el.selectionEnd : start
+  if (!compose.value || (start === 0 && end === 0)) return
+  let caret
+  if (start !== end) {
+    // 删除选区
+    compose.value = compose.value.slice(0, start) + compose.value.slice(end)
+    caret = start
+  } else {
+    // 删光标前一个完整字符（Array.from 正确处理 emoji 代理对/ZWJ 序列）
+    const before = Array.from(compose.value.slice(0, start))
+    before.pop()
+    const head = before.join('')
+    compose.value = head + compose.value.slice(start)
+    caret = head.length
+  }
+  suppressFocusClose = true
+  nextTick(() => {
+    el?.focus()
+    try { el?.setSelectionRange(caret, caret) } catch {}
+  })
+}
+
+// 文本分段：普通文本 + emoji（识别微信短码 [微笑]）
+function emojiSegments(text) {
+  const src = String(text || '')
+  if (!src) return []
+  const segs = []
+  let last = 0
+  WX_CODE_RE.lastIndex = 0
+  for (const m of src.matchAll(WX_CODE_RE)) {
+    if (m.index > last) segs.push({ t: 't', v: src.slice(last, m.index) })
+    segs.push({ t: 'e', v: WX_EMOJI[m[1]] })
+    last = m.index + m[0].length
+  }
+  if (last < src.length) segs.push({ t: 't', v: src.slice(last) })
+  return segs
+}
+// 整条消息只有 1~3 个 emoji（允许空白/变体符/ZWJ/肤色）时放大显示（同微信）
+function emojiOnlyBig(segs) {
+  if (!segs.length) return false
+  const joined = segs.filter((s) => s.t === 'e').map((s) => s.v).join('')
+  const plain = segs.filter((s) => s.t === 't').map((s) => s.v).join('').replace(/\s/g, '')
+  if (plain) return false
+  const chars = Array.from(joined).filter((ch) =>
+    /\p{Extended_Pictographic}/u.test(ch) || ch === '\u200d' || /\uFE0F/.test(ch) || /[\u{1F3FB}-\u{1F3FF}]/u.test(ch))
+  const pictos = chars.filter((ch) => /\p{Extended_Pictographic}/u.test(ch)).length
+  return pictos >= 1 && pictos <= 3
+}
+const _segCache = new Map()
+function segOf(text) {
+  let r = _segCache.get(text)
+  if (!r) {
+    const segs = emojiSegments(text)
+    r = { segs, big: emojiOnlyBig(segs) }
+    _segCache.set(text, r)
+    if (_segCache.size > 600) _segCache.clear()
+  }
+  return r
+}
+// 纯字符串版（会话列表预览用）
+function plainEmoji(text) {
+  return String(text || '').replace(WX_CODE_RE, (_, n) => WX_EMOJI[n] || '')
+}
 
 const DOMAIN_ICONS = {
   light: 'lightbulb', switch: 'toggle_on', fan: 'mode_fan_off', cover: 'blinds',
@@ -451,7 +610,7 @@ function lastPreview(c) {
   }
   if (c.last?.type === 'image') return '🖼 图片'
   if (c.last?.type === 'audio') return '🎤 语音消息'
-  return c.last?.content || '新消息'
+  return plainEmoji(c.last?.content) || '新消息'
 }
 
 function shareLabel(st) {
@@ -523,7 +682,7 @@ async function openDevicePicker() {
 }
 async function reloadDevices() {
   deviceCandidates.value = []
-  if (!store.ready) return
+  if (!store.ready || !store.activeID || store.activeID <= 0) return
   try {
     const { data } = await api.entities({ instance: store.activeID })
     deviceCandidates.value = Array.isArray(data)
@@ -550,12 +709,6 @@ async function sendDeviceCard(d) {
     flash('done')
   } catch (e) { toast(e.message || '发送失败', true) }
   finally { busy.value = false }
-}
-
-// 表情
-function insertEmoji(e) {
-  compose.value += e
-  showEmoji.value = false
 }
 
 async function loadMessages(user) {
@@ -604,7 +757,8 @@ const groupSel = reactive({})
 const groupCount = computed(() => Object.values(groupSel).filter(Boolean).length)
 
 function closePanels() {
-  showEmoji.value = false
+  // 插入/退格表情后程序重新聚焦输入框，不应因此关掉表情面板
+  if (suppressFocusClose) { suppressFocusClose = false } else { showEmoji.value = false }
   showDevicePicker.value = false
   showPlus.value = false
   showGroupPicker.value = false
@@ -644,7 +798,15 @@ async function startGroupCall() {
 }
 
 // ================= 按住说话（语音消息） =================
-const recorder = new VoiceRecorder()
+let recorder = null
+// 按线程选择录制器：助手线程的语音走 HA Assist pipeline 识别，仅接受 WAV/PCM。
+// http 非安全上下文（APK 内网地址）下 WebView 无 navigator.mediaDevices，
+// MediaRecorder/AudioContext 采集不可用，统一回退原生录音（输出 WAV）。
+function makeRecorder() {
+  if (activeUser.value === ASSISTANT && WavRecorder.supported()) return new WavRecorder()
+  if (VoiceRecorder.supported()) return new VoiceRecorder()
+  return new NativeWavRecorder()
+}
 const recUI = ref(false)
 const recCancel = ref(false)
 const recSeconds = ref(0)
@@ -655,9 +817,10 @@ const CANCEL_PX = 60
 
 async function recStart(e) {
   if (recActive || busy.value) return
+  recorder = makeRecorder()
   try {
     await recorder.start()
-  } catch (err) { toast('无法访问麦克风：' + (err.message || ''), true); return }
+  } catch (err) { recorder = null; toast('无法访问麦克风：' + (err.message || ''), true); return }
   recActive = true
   recUI.value = true
   recCancel.value = false
@@ -677,6 +840,7 @@ async function finishRec(cancel) {
   recActive = false
   recUI.value = false
   if (recTimer) { clearInterval(recTimer); recTimer = null }
+  if (!recorder) return
   if (cancel) { await recorder.cancel(); return }
   const r = await recorder.stop()
   if (!r) return
@@ -711,6 +875,152 @@ function playAudio(m) {
   playingId.value = m.id
   audioEl.play().catch(() => { playingId.value = ''; toast('播放失败', true) })
 }
+// 助手文本回复语音朗读：优先用 HA 已配置的 TTS 引擎（高质量，可与豆包/阿里云等一致），
+// 失败时回退浏览器原生 SpeechSynthesis。
+let ttsSupported = typeof window !== 'undefined' && 'speechSynthesis' in window
+let ttsAudio = null
+const ttsPlayingId = ref(0)
+let ttsSeq = 0 // 朗读代次：stopTTS/新一轮 speak 时递增，丢弃在途的异步合成结果
+function stopTTS() {
+  ttsSeq++
+  if (ttsAudio) { try { ttsAudio.pause(); ttsAudio.currentTime = 0 } catch {} }
+  if (ttsSupported) { try { window.speechSynthesis.cancel() } catch {} }
+  // 停止 APK 原生系统 TTS
+  const native = typeof window !== 'undefined' ? window.StickyKeeNative : null
+  if (native && typeof native.stopSystem === 'function') {
+    try { native.stopSystem() } catch {}
+  }
+  ttsPlayingId.value = 0
+}
+
+// 异步调用 APK 原生 TTS（speakEdge2/speakLocal2）：合成在原生后台线程执行，完成后
+// 经 NativeBridge 派发 window 事件 stickykee-tts（{req, ok, audio, mime}）。避免旧同步
+// 接口在合成期间阻塞 WebView JS 线程（整页冻结 1~30 秒）。超时/失败 resolve null。
+function nativeTTSAsync(native, fnName, args, mime) {
+  return new Promise((resolve) => {
+    if (!native || typeof native[fnName] !== 'function') { resolve(null); return }
+    const req = 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+    let timer = null
+    const cleanup = () => {
+      window.removeEventListener('stickykee-tts', onEvt)
+      if (timer) { clearTimeout(timer); timer = null }
+    }
+    const onEvt = (e) => {
+      if (!e || !e.detail || e.detail.req !== req) return
+      cleanup()
+      resolve(e.detail.ok && e.detail.audio ? { b64: e.detail.audio, mime: e.detail.mime || mime } : null)
+    }
+    timer = setTimeout(() => { cleanup(); resolve(null) }, 60000)
+    window.addEventListener('stickykee-tts', onEvt)
+    try { native[fnName](...args, req) } catch { cleanup(); resolve(null) }
+  })
+}
+
+async function speak(text, msgId = 0) {
+  if (!text) return
+  if (ttsPlayingId.value === msgId && msgId) { stopTTS(); return }
+  stopTTS()
+  const seq = ttsSeq
+  if (msgId) ttsPlayingId.value = msgId
+
+  const native = typeof window !== 'undefined' ? window.StickyKeeNative : null
+  const prefs = getPrefs ? (await getPrefs())?.data : null
+  const engine = String(prefs?.tts_engine || '').trim()
+  if (seq !== ttsSeq) return // 读取设置期间被停止/换新朗读
+  const isApk = !!(native && typeof native.speakEdge === 'function')
+
+  // 播放 Base64 音频的辅助函数
+  const playB64 = (b64, mime) => {
+    if (!ttsAudio) {
+      ttsAudio = new Audio()
+      ttsAudio.onended = () => { ttsPlayingId.value = 0 }
+      ttsAudio.onerror = () => { ttsPlayingId.value = 0 }
+    }
+    ttsAudio.src = `data:${mime};base64,${b64}`
+    return ttsAudio.play()
+  }
+
+  // ---- 路线 B-1：APK 本地离线 TTS（MeloTTS，完全无需网络）----
+  if (isApk && engine.startsWith('local')) {
+    try {
+      const speed = engine.includes(':') ? parseFloat(engine.slice(engine.indexOf(':') + 1)) || 1.0 : 1.0
+      // 优先异步接口（不阻塞 JS 线程）；旧 APK 无 speakLocal2 时回退旧同步调用
+      let r = await nativeTTSAsync(native, 'speakLocal2', [text, speed], 'audio/wav')
+      if (seq !== ttsSeq) return // 等待期间被停止/换新朗读
+      if (!r && typeof native.speakLocal2 !== 'function') {
+        const b64 = native.speakLocal(text, speed)
+        r = b64 ? { b64, mime: 'audio/wav' } : null
+      }
+      if (r) { await playB64(r.b64, r.mime); return }
+    } catch { /* fallthrough */ }
+  }
+
+  // ---- 路线 B-2：APK 原生 Edge TTS（在线、不依赖后端，直连微软）----
+  if (isApk && (engine === '' || engine.startsWith('edge'))) {
+    try {
+      const voice = engine.startsWith('edge:') ? engine.slice(5).trim() : 'zh-CN-XiaoxiaoNeural'
+      let r = await nativeTTSAsync(native, 'speakEdge2', [text, voice || 'zh-CN-XiaoxiaoNeural'], 'audio/mpeg')
+      if (seq !== ttsSeq) return
+      if (!r && typeof native.speakEdge2 !== 'function') {
+        const b64 = native.speakEdge(text, voice || 'zh-CN-XiaoxiaoNeural')
+        r = b64 ? { b64, mime: 'audio/mpeg' } : null
+      }
+      if (r) { await playB64(r.b64, r.mime); return }
+    } catch { /* fallthrough */ }
+  }
+
+  // ---- 路线 A/C：kokoro 浏览器本地推理 或 后端（Edge TTS / HA TTS）----
+  try {
+    let blob
+    if (engine.startsWith('kokoro')) {
+      const voice = engine.includes(':') ? engine.slice(engine.indexOf(':') + 1).trim() : 'zf_001'
+      const { kokoroSynth } = await import('@/utils/kokoro_tts')
+      blob = await kokoroSynth(text, voice || 'zf_001')
+    } else {
+      const res = await api.assistantTTS(text)
+      blob = res?.blob
+    }
+    if (!blob || blob.size === 0) throw new Error('empty audio')
+    if (seq !== ttsSeq) return // 合成期间被停止/换新朗读
+    if (!ttsAudio) {
+      ttsAudio = new Audio()
+      ttsAudio.onended = () => { ttsPlayingId.value = 0 }
+      ttsAudio.onerror = () => { ttsPlayingId.value = 0 }
+    }
+    ttsAudio.src = URL.createObjectURL(blob)
+    await ttsAudio.play()
+  } catch {
+    // 回退 1：APK 系统 TTS（离线，依赖系统已装 TTS 引擎）
+    if (native && typeof native.speakSystem === 'function') {
+      try { native.speakSystem(text); return } catch { /* fallthrough */ }
+    }
+    // 回退 2：浏览器原生 SpeechSynthesis
+    if (ttsSupported) {
+      try {
+        const u = new SpeechSynthesisUtterance(text)
+        u.lang = 'zh-CN'; u.rate = 1.0; u.pitch = 1.0
+        const zh = window.speechSynthesis.getVoices().find((v) => /zh|Chinese|cmn/i.test(v.lang + v.name))
+        if (zh) u.voice = zh
+        u.onend = () => { ttsPlayingId.value = 0 }
+        window.speechSynthesis.speak(u)
+      } catch { ttsPlayingId.value = 0 }
+    } else {
+      ttsPlayingId.value = 0
+    }
+  }
+}
+function speakMessage(m) {
+  if (m && m.content) speak(m.content, Number(m.id))
+}
+// 监听消息：新到的助手文本消息自动朗读
+watch(messages, (list) => {
+  if (activeUser.value !== ASSISTANT) return
+  const last = list[list.length - 1]
+  if (last && last.from === ASSISTANT && last.type === 'text' && Number(last.id) > lastSpokenId.value) {
+    lastSpokenId.value = Number(last.id)
+    speak(last.content, Number(last.id))
+  }
+})
 // 波形条高度：消息 id + 位置生成稳定伪随机（5~18px）
 function waveBar(m, i) {
   let h = (Number(m.id) || 0) + i * 7
@@ -756,6 +1066,9 @@ async function openConv(user) {
   showPicker.value = false
   if (user === ASSISTANT) voiceMode.value = false
   await loadMessages(user)
+  // 进入会话时把 lastSpokenId 设为已有最后一条助手消息 id，避免朗读历史
+  const last = messages.value[messages.value.length - 1]
+  lastSpokenId.value = last && last.from === ASSISTANT ? Number(last.id) : 0
   try { await api.markMessageRead(user) } catch {}
   bumpIm()
 }
@@ -851,6 +1164,7 @@ onBeforeUnmount(() => {
   if (debriefTimer) clearTimeout(debriefTimer)
   if (audioEl) { audioEl.pause(); audioEl.src = '' }
   if (recActive) recorder.cancel()
+  stopTTS()
 })
 </script>
 

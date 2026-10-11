@@ -33,9 +33,10 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 	// 条件请求：GET JSON 命中 If-None-Match 时回 304，重复访问不再传正文。
 	r.Use(etagJSON)
 
-	// 健康探针（跳过鉴权）
+	// 健康探针（跳过鉴权）。healthz 附加 CORS 头：APK 壳页（http://localhost 源）
+	// 需要跨源读取版本号展示；接口无敏感数据。
 	health := handler.Health{}
-	r.Get("/healthz", health.Healthz)
+	r.Get("/healthz", handler.PublicCORS(health.Healthz))
 	r.Get("/readyz", health.Readyz)
 
 	// 结构图标资源（公开：静态资源、浏览器 <img> 无法携带鉴权头）。
@@ -156,6 +157,7 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 			r.Post("/crypto/handshake", cryptoHandler.Handshake)
 			r.Get("/messages/conversations", im.Conversations)
 			r.Get("/messages/contacts", im.Contacts)
+			r.Get("/messages/assistant/tts", im.AssistantTTS)
 			r.Get("/messages/{user}", im.History)
 			r.Post("/messages/{user}", im.SendText)
 			r.Post("/messages/{user}/share", im.SendShare)
