@@ -10,7 +10,10 @@ FROM node:20-alpine AS web
 WORKDIR /web
 RUN npm config set registry https://registry.npmmirror.com
 COPY app/package.json app/package-lock.json ./
-RUN npm ci --no-audit --no-fund
+# --ignore-scripts：跳过 onnxruntime-node 的 postinstall（仅 Node 端推理用，
+# 浏览器构建不需要；其安装脚本需直连国外源下载二进制，国内网络会失败）。
+# esbuild/rollup 的 linux 二进制走 optionalDependencies 预编译包，无需脚本。
+RUN npm ci --no-audit --no-fund --ignore-scripts
 COPY app/ ./
 RUN npm run build
 
