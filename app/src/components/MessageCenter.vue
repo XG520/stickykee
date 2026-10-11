@@ -386,21 +386,30 @@ import { openEnvelope, withCrypto } from '@/utils/crypto'
 // ---- 对话代理选择（智家助手会话头部下拉）----
 const haAgents = ref([])
 const haAgentSel = ref('auto')
-let agentsLoaded = false
+let agentsLoading = false
 
 // agentLabel：下拉项文案——内置代理注明仅设备控制，LLM 代理显示原名
 function agentLabel(a) {
   return a.builtin ? 'Home Assistant（内置·仅设备控制）' : (a.name || a.id)
 }
 
+// 每次进入助手会话都重新拉取：HA 装/删 LLM 集成后列表自动跟随；
+// 已保存的代理若已被删除（不在列表中），自动回退到智能选择并持久化
 async function loadAgents() {
-  if (agentsLoaded) return
+  if (agentsLoading) return
+  agentsLoading = true
   try {
     const { data } = await api.getHaAgents()
     haAgents.value = data?.agents || []
-    haAgentSel.value = data?.selected || 'auto'
-    agentsLoaded = true
-  } catch { haAgents.value = [] } // HA 未配置/不可达：隐藏选择器即可
+    const sel = data?.selected || 'auto'
+    if (sel !== 'auto' && !haAgents.value.some((a) => a.id === sel)) {
+      haAgentSel.value = 'auto'
+      putPrefs({ ha_assist_agent: 'auto' }).catch(() => {})
+    } else {
+      haAgentSel.value = sel
+    }
+  } catch { /* 失败保留旧列表，不打断会话 */ }
+  agentsLoading = false
 }
 
 async function saveHaAgent() {
