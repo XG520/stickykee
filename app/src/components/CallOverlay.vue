@@ -16,8 +16,8 @@
         <!-- ========== 来电 ========== -->
         <template v-if="callState.incoming">
           <div class="relative z-10 flex-1 flex flex-col items-center justify-center px-8">
-            <div class="co-avatar w-24 h-24 rounded-full bg-white/10 border border-white/15 flex items-center justify-center mb-5">
-              <span class="material-symbols-outlined text-5xl text-white/80">account_circle</span>
+            <div class="co-avatar co-ring w-24 h-24 rounded-full bg-white/10 border border-white/15 flex items-center justify-center mb-5">
+              <span class="material-symbols-outlined text-5xl text-white/80">call</span>
             </div>
             <h2 class="text-2xl font-semibold tracking-wide">{{ callState.incoming.from }}</h2>
             <p class="mt-2 text-sm text-white/60 font-body">邀请你语音通话…</p>
@@ -45,6 +45,8 @@
           <div class="relative z-10 pt-10 text-center">
             <p class="text-sm text-white/60 font-body">{{ callState.active.owner === auth.user ? '你发起的通话' : '语音通话' }}</p>
             <p class="mt-1 text-lg font-semibold tabular-nums">{{ elapsed }}</p>
+            <!-- 等待接听提示：除自己外无人建立连接 -->
+            <p v-if="waiting" class="mt-1 text-xs text-white/45 font-body animate-pulse">等待对方接听…</p>
           </div>
 
           <!-- 参与者网格 -->
@@ -94,6 +96,16 @@
         </template>
       </div>
     </Transition>
+
+    <!-- 通话结束提示：独立浮层，短暂展示后由 call.js 自动清空 -->
+    <Transition name="co-fade">
+      <div v-if="callState.ended && !callState.incoming && !callState.active"
+        class="fixed inset-x-0 bottom-24 z-[96] flex justify-center pointer-events-none">
+        <p class="px-5 py-2.5 rounded-full bg-black/70 text-white text-sm shadow-lg backdrop-blur">
+          {{ endText }}
+        </p>
+      </div>
+    </Transition>
   </Teleport>
 </template>
 
@@ -101,7 +113,7 @@
 import { ref, computed, reactive, watch, onBeforeUnmount } from 'vue'
 import { auth } from '@/store'
 import {
-  callState, acceptCall, rejectCall, hangup, toggleMute,
+  callState, acceptCall, rejectCall, hangup, toggleMute, END_TEXT,
 } from '@/utils/call'
 
 // 每个成员的连接状态（由 pc connectionstatechange 更新）
@@ -115,8 +127,9 @@ function fmt(s) {
   return `${m}:${ss}`
 }
 
-watch(() => callState.active, (a, old) => {
-  if (!a) { conn && Object.keys(conn).forEach((k) => delete conn[k]); return }
+watch(() => callState.active, (a) => {
+  if (timer) { clearInterval(timer); timer = null }
+  if (!a) { Object.keys(conn).forEach((k) => delete conn[k]); return }
   let s = 0
   elapsed.value = '00:00'
   timer = setInterval(() => { s += 1; elapsed.value = fmt(s) }, 1000)
@@ -136,6 +149,16 @@ watch(() => callState.active && [...callState.active.peers.keys()], (keys) => {
 }, { deep: true, immediate: true })
 
 onBeforeUnmount(() => { if (timer) clearInterval(timer) })
+
+// 结束原因 → 文案
+const endText = computed(() => END_TEXT[callState.ended?.reason] || '通话已结束')
+
+// 呼叫方仍在等待：除自己外没有任何成员建立连接
+const waiting = computed(() => {
+  const a = callState.active
+  if (!a) return false
+  return [...a.members].some((u) => u !== auth.user && !conn[u])
+})
 
 // 参与者展示列表：自己 + 房间成员（保持顺序稳定）
 const participants = computed(() => {
@@ -166,4 +189,14 @@ const remoteParticipants = computed(() => {
   100% { box-shadow: 0 0 0 0 rgba(52,199,89,0); }
 }
 .animate-co-pulse { animation: coPulse 1.6s infinite; }
+/* 来电头像：左右摆动模拟响铃 */
+@keyframes coRing {
+  0%, 100% { transform: rotate(0deg); }
+  15% { transform: rotate(-14deg); }
+  30% { transform: rotate(12deg); }
+  45% { transform: rotate(-8deg); }
+  60% { transform: rotate(6deg); }
+  75% { transform: rotate(0deg); }
+}
+.co-ring { animation: coRing 1.4s ease-in-out infinite; }
 </style>

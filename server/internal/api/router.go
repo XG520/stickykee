@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"time"
 
@@ -76,8 +77,13 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 	location := handler.NewLocation(manager, sensors)
 	media := handler.NewMedia(manager)
 
-	// 语音通话：内存房间 + WebRTC 信令中继
-	callManager := call.NewManager()
+	// 语音通话：内存房间 + WebRTC 信令中继。
+	// push 回调供房间超时清理时向全员推送 ended 事件（如无人接听自动结束）。
+	callManager := call.NewManager(func(user string, ev map[string]any) {
+		if msg, err := json.Marshal(ev); err == nil {
+			hb.BroadcastUser(user, msg)
+		}
+	})
 	callHandler := handler.NewCall(callManager, hb, userRepo)
 
 	r.Route("/api/v1", func(r chi.Router) {

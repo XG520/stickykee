@@ -42,4 +42,8 @@
     <!-- 语音消息 / 语音通话：录音与音频路由（首次录音时弹系统授权） -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- 定位（navigator.geolocation）：未声明时 WebView 定位授权被系统直接拒绝，
+         报 "User denied Geolocation"；首次定位时由 Capacitor 弹系统授权 -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 </manifest>

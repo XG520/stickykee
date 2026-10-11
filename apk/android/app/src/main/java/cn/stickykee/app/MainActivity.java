@@ -21,6 +21,10 @@ public class MainActivity extends BridgeActivity {
         // mediaPlaybackRequiresUserGesture=true 时自动朗读（无用户手势）会在合成回到
         // 前端后被 WebView 拒绝，导致自定义 TTS 引擎无声、只能回退系统 TTS。
         bridge.getWebView().getSettings().setMediaPlaybackRequiresUserGesture(false);
+        // 定位：navigator.geolocation 的授权弹窗与运行时权限由 Capacitor 的
+        // BridgeWebChromeClient.onGeolocationPermissionsShowPrompt 处理，无需自定义包装；
+        // 此前报 "User denied Geolocation" 的根因是 AndroidManifest 未声明定位权限，
+        // 未声明的权限被系统直接拒绝。权限声明见 AndroidManifest.xml。
     }
 
     @Override

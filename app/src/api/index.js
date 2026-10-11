@@ -216,12 +216,13 @@ export const api = {
   acceptShare: (id) => api.post(`/messages/${id}/accept`),
   declineShare: (id) => api.post(`/messages/${id}/decline`),
 
-  // 语音通话信令
+  // 语音通话信令。join/leave/reject 携带本机 device id：
+  // 同账号多端在线时，后端事件回传 device 供其它设备识别"已在其他设备操作"。
   callStart: (members) => api.post('/call/start', { members }),
   callSignal: (room, to, data) => api.post('/call/signal', { room, to, data }),
-  callJoin: (room) => api.post('/call/join', { room }),
-  callLeave: (room) => api.post('/call/leave', { room }),
-  callReject: (room) => api.post('/call/reject', { room }),
+  callJoin: (room, device) => api.post('/call/join', { room, device }),
+  callLeave: (room, device) => api.post('/call/leave', { room, device }),
+  callReject: (room, device) => api.post('/call/reject', { room, device }),
 }
 
 // WS 也能提供封装的路径拼接（供实时连接使用）。

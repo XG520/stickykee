@@ -118,6 +118,7 @@
 
     <!-- 地址列表（有保存地址时显示） -->
     <div id="listView" class="hidden">
+      <p class="msg" id="listMsg"></p>
       <div class="addr-list" id="addrList"></div>
       <button class="secondary" id="btnAdd">+ 添加服务器地址</button>
       <p class="hint">点击地址卡片直接连接；内网、外网地址可同时保存，<br>APP 按当前网络（WiFi / 移动数据）自动选用。</p>
@@ -373,7 +374,17 @@
     $connecting.classList.add('hidden');
     $listView.classList.remove('hidden');
     $formView.classList.add('hidden');
+    setListMsg('');
     renderList();
+  }
+
+  // 列表视图顶部提示（看门狗回退时显示「无法连接服务器」）
+  function setListMsg(text) {
+    var el = document.getElementById('listMsg');
+    if (el) el.textContent = text || '';
+  }
+  function showListMsg(text) {
+    setListMsg(text);
   }
 
   // ---- 协议选择器（通用绑定） ----
@@ -684,17 +695,27 @@
   // ---- 启动逻辑 ----
   async function boot() {
     // #manage：从应用内「修改服务器地址」回到壳页时进入管理模式，不探测、不自动跳转。
+    // #connfail：原生看门狗判定服务器不可达后退回本页，同样只展示列表、不自动跳回，
+    //             避免 no-cors 探测把 502 误判在线而反复整页跳转（画面闪烁）。
     // 用户点地址卡片连接后 go() 会替换掉 hash，正常启动不受影响。
     var manageMode = false;
-    try { manageMode = location.hash.indexOf('manage') >= 0; } catch (e) {}
+    var connFailed = false;
+    try {
+      manageMode = location.hash.indexOf('manage') >= 0;
+      connFailed = location.hash.indexOf('connfail') >= 0;
+    } catch (e) {}
 
     showConnecting();
     var cfg = loadConfig();
     if (cancelled()) return;
 
-    if (manageMode) {
-      if (cfg.addresses.length) showList();
-      else showForm(null);
+    if (manageMode || connFailed) {
+      if (cfg.addresses.length) {
+        showList();
+        if (connFailed) showListMsg('无法连接服务器，请检查服务是否已启动，或选择其他地址');
+      } else {
+        showForm(null);
+      }
       return;
     }
 

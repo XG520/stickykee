@@ -328,6 +328,9 @@ function zoomStyle(card) {
     display: 'flex',
     flexDirection: 'column',
     flex: 'none',
+    // 编辑态：顶部操作条（约 48px 屏幕高）浮在卡片上会挡住标题，
+    // 给内容预留等高的顶部内边距（换算回缩放前的基准像素）
+    ...(editing.value ? { paddingTop: 48 / z + 'px' } : {}),
   }
 }
 const gridStyle = computed(() => ({

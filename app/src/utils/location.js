@@ -4,8 +4,50 @@ import api from '@/api'
 import { store } from '@/store'
 import { ensureDevice } from '@/utils/device'
 
-// 获取当前浏览器定位（Promise 形式）。
-function getCurrentPosition() {
+// ---- 原生 GPS/北斗定位（APK 优先）----
+// WebView 的 navigator.geolocation 在 Android 上默认走 FUSED 网络混合定位（WiFi/基站，
+// 精度几十米）。APK 内直连原生 LocationManager.GPS_PROVIDER（国产机自动含北斗等星座），
+// 实现真正卫星定位；无原生桥或卫星定位失败时回退浏览器定位。
+export function nativeGps() {
+  const n = typeof window !== 'undefined' ? window.StickyKeeNative : null
+  return n && typeof n.gpsOnce === 'function' && typeof n.hasGps === 'function' ? n : null
+}
+
+// 单次原生卫星定位。resolve {lat,lng,acc,provider}；reject Error(message=no_permission|no_fix|timeout|...)
+export function nativeGpsOnce(timeoutMs = 15000) {
+  return new Promise((resolve, reject) => {
+    const n = nativeGps()
+    if (!n) { reject(new Error('unavailable')); return }
+    const req = 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+    let settled = false
+    const finish = (fn, arg) => {
+      if (settled) return
+      settled = true
+      window.removeEventListener('stickykee-gps', onEvt)
+      clearTimeout(timer)
+      fn(arg)
+    }
+    const onEvt = (e) => {
+      const d = e && e.detail
+      if (!d || d.req !== req) return
+      if (d.ok) finish(resolve, { lat: d.lat, lng: d.lng, acc: d.acc, provider: d.provider })
+      else finish(reject, new Error(d.provider || 'no_fix'))
+    }
+    // 原生最长等待受其内部 60s 钳制，这里再留 5s 余量兜底
+    const timer = setTimeout(() => finish(reject, new Error('timeout')), timeoutMs + 5000)
+    window.addEventListener('stickykee-gps', onEvt)
+    try { n.gpsOnce(req, timeoutMs) } catch (err) { finish(reject, err) }
+  })
+}
+
+// 获取当前定位（Promise 形式，兼容 GeolocationPosition 结构）。APK 内优先原生卫星定位。
+async function getCurrentPosition() {
+  if (nativeGps()) {
+    try {
+      const r = await nativeGpsOnce(15000)
+      return { coords: { latitude: r.lat, longitude: r.lng, accuracy: r.acc } }
+    } catch { /* 卫星无 fix/超时/无权限 → 回退浏览器定位（会触发系统授权弹窗） */ }
+  }
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) { reject(new Error('浏览器不支持定位，需 HTTPS 环境')); return }
     navigator.geolocation.getCurrentPosition(resolve, reject, {

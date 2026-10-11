@@ -144,6 +144,19 @@ func (h *Hub) BroadcastUser(user string, msg []byte) {
 	}
 }
 
+// IsUserOnline 判断该用户当前是否有任意在线前端连接（跨实例作用域）。
+// 通话发起时用于提示"对方不在线"。
+func (h *Hub) IsUserOnline(user string) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for scope, m := range h.byIns {
+		if scope.User == user && len(m) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // Count 返回某实例的用户作用域内的连接数。
 func (h *Hub) Count(instanceID int64) int {
 	h.mu.RLock()

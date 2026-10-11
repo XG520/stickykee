@@ -7,7 +7,7 @@ import api from '@/api'
 import { auth, store } from '@/store'
 import { getDeviceId } from '@/utils/device'
 import { getPrefs } from '@/utils/prefs'
-import { syncCurrentLocation, reportLocation } from '@/utils/location'
+import { syncCurrentLocation, reportLocation, nativeGps } from '@/utils/location'
 import { buildReportPayload } from '@/utils/sensors'
 
 const LOC_INTERVAL = 5 * 60 * 1000 // 定位兜底周期：5 分钟
@@ -18,6 +18,7 @@ let locTimer = null
 let sensorTimer = null
 let unwatchActive = null
 let watchId = null
+let nativeWatchId = null // 原生 GPS 连续监听已启动标记
 let stopped = false
 let lastLoc = null   // 上一次已上报坐标 { lat, lng }
 let inFlight = { location: false, sensors: false }
@@ -112,9 +113,28 @@ function onVisible() {
   }
 }
 
-// 位置变化实时监听：watchPosition 持续回调，移动超阈值即上报。
+// 位置变化实时监听：APK 内优先原生 GPS/北斗连续监听（stickykee-gps req='watch' 事件），
+// 无原生桥时回退 watchPosition（Android WebView 默认 FUSED 网络混合定位，精度几十米）。
+function onNativeGpsWatch(e) {
+  const d = e && e.detail
+  if (!d || d.req !== 'watch' || !d.ok) return
+  reportMoved(d.lat, d.lng, d.acc)
+}
 function startWatching() {
-  if (watchId != null || !navigator.geolocation) return
+  if (watchId != null || nativeWatchId != null) return
+  const n = nativeGps()
+  if (n) {
+    try {
+      window.addEventListener('stickykee-gps', onNativeGpsWatch)
+      n.startGpsWatch()
+      nativeWatchId = true
+      return
+    } catch {
+      window.removeEventListener('stickykee-gps', onNativeGpsWatch)
+      nativeWatchId = null
+    }
+  }
+  if (!navigator.geolocation) return
   watchId = navigator.geolocation.watchPosition(
     (p) => reportMoved(p.coords.latitude, p.coords.longitude, p.coords.accuracy),
     (e) => console.warn('[autoSync] watchPosition:', e && e.message ? e.message : e),
@@ -122,6 +142,11 @@ function startWatching() {
   )
 }
 function stopWatching() {
+  if (nativeWatchId != null) {
+    nativeWatchId = null
+    window.removeEventListener('stickykee-gps', onNativeGpsWatch)
+    try { nativeGps()?.stopGpsWatch() } catch {}
+  }
   if (watchId != null) {
     try { navigator.geolocation.clearWatch(watchId) } catch {}
     watchId = null

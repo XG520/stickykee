@@ -8,6 +8,9 @@ import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
 import android.media.AudioFormat;
 import android.media.AudioManager;
 import android.media.AudioRecord;
@@ -15,6 +18,7 @@ import android.media.MediaRecorder;
 import android.media.audiofx.AcousticEchoCanceler;
 import android.media.audiofx.AutomaticGainControl;
 import android.media.audiofx.NoiseSuppressor;
+import android.os.Bundle;
 import android.speech.tts.TextToSpeech;
 import android.util.Base64;
 import android.view.Window;
@@ -632,8 +636,184 @@ public class NativeBridge {
                     Toast.makeText(activity, "无法连接服务器，已返回地址配置", Toast.LENGTH_LONG).show();
                 } catch (Exception ignored) {
                 }
-                wv.loadUrl("http://localhost/");
+                // 带 #connfail 标记回壳页：壳页 boot 识别后只展示地址列表、
+                // 不再自动跳回故障服务器，避免 壳页↔502 页 整页重载循环（画面闪烁）
+                wv.loadUrl("http://localhost/#connfail");
             } catch (Exception ignored) {
+            }
+        });
+    }
+
+    // ================= 原生 GPS/北斗定位 =================
+    // WebView 的 navigator.geolocation 在 Android 上默认走 FUSED 网络混合定位（WiFi/基站，
+    // 精度几十米）。这里直连 LocationManager 的 GPS_PROVIDER——国产手机的卫星通道
+    // 自动包含北斗/GLONASS/Galileo 等星座，实现真正的卫星定位。
+    private LocationManager locationManager;
+    private LocationListener gpsListener;
+    private boolean gpsWatching;
+
+    private LocationManager locMgr() {
+        if (locationManager == null) {
+            locationManager = (LocationManager) activity.getSystemService(Context.LOCATION_SERVICE);
+        }
+        return locationManager;
+    }
+
+    private boolean hasLocPermission() {
+        return ContextCompat.checkSelfPermission(activity, Manifest.permission.ACCESS_FINE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED
+                || ContextCompat.checkSelfPermission(activity, Manifest.permission.ACCESS_COARSE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED;
+    }
+
+    /** 原生卫星定位是否可用（有权限且有 GPS 硬件）。 */
+    @JavascriptInterface
+    public boolean hasGps() {
+        try {
+            boolean hw = activity.getPackageManager()
+                    .hasSystemFeature(PackageManager.FEATURE_LOCATION_GPS);
+            return hasLocPermission() && hw;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** 发起系统定位授权（配合 hasGps()==false 时前端调用；授权结果经 stickykee-gps 事件回传）。 */
+    @JavascriptInterface
+    public void requestGpsPermission() {
+        if (hasLocPermission()) {
+            dispatchGps("perm", true, 0, 0, 0, "");
+            return;
+        }
+        activity.runOnUiThread(() -> ActivityCompat.requestPermissions(activity,
+                new String[]{Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.ACCESS_COARSE_LOCATION},
+                LOC_REQUEST_CODE));
+    }
+
+    private static final int LOC_REQUEST_CODE = 4201;
+
+    /**
+     * 单次卫星定位：优先 GPS_PROVIDER（卫星），超时后回传最后一次定位；
+     * 无 fix 时回传 lastKnownLocation。结果经 stickykee-gps 事件 {req,ok,lat,lng,acc,provider}。
+     * @param timeoutMs 等待卫星 fix 的上限（建议 10000~30000）
+     */
+    @JavascriptInterface
+    public void gpsOnce(final String req, final int timeoutMs) {
+        if (!hasLocPermission()) {
+            dispatchGps(req, false, 0, 0, 0, "no_permission");
+            return;
+        }
+        final LocationManager lm = locMgr();
+        try {
+            // 先取缓存定位，卫星超时也能有结果
+            Location last = null;
+            for (String p : new String[]{LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER}) {
+                try {
+                    Location l = lm.getLastKnownLocation(p);
+                    if (l != null && (last == null || l.getTime() > last.getTime())) last = l;
+                } catch (SecurityException ignored) {
+                }
+            }
+            final Location[] best = { last };
+            final Runnable[] finishRef = new Runnable[1];
+            final boolean[] done = { false };
+            activity.runOnUiThread(() -> {
+                final android.os.Handler handler = new android.os.Handler(activity.getMainLooper());
+                final LocationListener listener = new LocationListener() {
+                    @Override
+                    public void onLocationChanged(Location loc) {
+                        if (loc != null && (best[0] == null || loc.getAccuracy() <= best[0].getAccuracy())) {
+                            best[0] = loc;
+                        }
+                        // 精度已达卫星级（≤15m）可提前结束
+                        if (best[0] != null && best[0].getAccuracy() <= 15 && finishRef[0] != null) {
+                            finishRef[0].run();
+                        }
+                    }
+                    @Override public void onStatusChanged(String p, int s, Bundle e) {}
+                    @Override public void onProviderEnabled(String p) {}
+                    @Override public void onProviderDisabled(String p) {}
+                };
+                finishRef[0] = () -> {
+                    if (done[0]) return;
+                    done[0] = true;
+                    try { lm.removeUpdates(listener); } catch (Exception ignored) {}
+                    Location l = best[0];
+                    if (l != null) {
+                        dispatchGps(req, true, l.getLatitude(), l.getLongitude(),
+                                l.getAccuracy(), l.getProvider());
+                    } else {
+                        dispatchGps(req, false, 0, 0, 0, "no_fix");
+                    }
+                };
+                try {
+                    lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000, 0, listener);
+                } catch (SecurityException e) {
+                    dispatchGps(req, false, 0, 0, 0, "no_permission");
+                    return;
+                }
+                handler.postDelayed(finishRef[0], Math.max(3000, Math.min(timeoutMs, 60000)));
+            });
+        } catch (Exception e) {
+            dispatchGps(req, false, 0, 0, 0, "error");
+        }
+    }
+
+    /** 启动连续卫星监听：每次定位经 stickykee-gps 事件 {req:'watch',ok,lat,lng,acc,provider}。 */
+    @JavascriptInterface
+    public void startGpsWatch() {
+        if (!hasLocPermission() || gpsWatching) return;
+        try {
+            gpsListener = new LocationListener() {
+                @Override
+                public void onLocationChanged(Location loc) {
+                    if (loc == null) return;
+                    dispatchGps("watch", true, loc.getLatitude(), loc.getLongitude(),
+                            loc.getAccuracy(), loc.getProvider());
+                }
+                @Override public void onStatusChanged(String p, int s, Bundle e) {}
+                @Override public void onProviderEnabled(String p) {}
+                @Override public void onProviderDisabled(String p) {}
+            };
+            locMgr().requestLocationUpdates(LocationManager.GPS_PROVIDER, 2000, 5, gpsListener);
+            gpsWatching = true;
+        } catch (SecurityException ignored) {
+            gpsListener = null;
+        }
+    }
+
+    /** 停止连续卫星监听。 */
+    @JavascriptInterface
+    public void stopGpsWatch() {
+        if (!gpsWatching) return;
+        gpsWatching = false;
+        try {
+            if (gpsListener != null) locMgr().removeUpdates(gpsListener);
+        } catch (Exception ignored) {
+        }
+    }
+
+    /** 派发定位结果事件；WebView 未就绪时静默丢弃。 */
+    private void dispatchGps(final String req, final boolean ok, final double lat,
+                             final double lng, final float acc, final String provider) {
+        final WebView wv = webView;
+        if (wv == null) return;
+        final String js = "window.dispatchEvent(new CustomEvent('stickykee-gps',{detail:{"
+                + "req:" + JSONObject.quote(req == null ? "" : req)
+                + ",ok:" + ok
+                + ",lat:" + lat
+                + ",lng:" + lng
+                + ",acc:" + acc
+                + ",provider:" + JSONObject.quote(provider == null ? "" : provider)
+                + "}}))";
+        activity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    wv.evaluateJavascript(js, null);
+                } catch (Exception ignored) {
+                }
             }
         });
     }
@@ -641,6 +821,7 @@ public class NativeBridge {
     /** 释放原生 TTS 资源 */
     public void release() {
         try {
+            stopGpsWatch();
             stopConnWatchInternal();
             stopLight();
             recActive.set(false);
