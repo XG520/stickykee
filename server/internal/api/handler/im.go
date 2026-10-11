@@ -489,6 +489,10 @@ func (h *Im) Accept(w http.ResponseWriter, r *http.Request) {
 		WriteErr(w, 500, "internal", err.Error())
 		return
 	}
+	// 通知接收者本人全部设备热刷新仪表盘（含本机，前端对编辑态做保护）
+	if b, err := json.Marshal(map[string]any{"type": "prefs", "key": "dashboard"}); err == nil && h.hub != nil {
+		h.hub.BroadcastUser(me, b)
+	}
 	if err := h.msgs.SetStatus(r.Context(), id, "accepted"); err != nil {
 		WriteErr(w, 500, "internal", err.Error())
 		return

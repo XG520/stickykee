@@ -9,6 +9,7 @@ import (
 
 	"stickynuo/server/internal/auth"
 	"stickynuo/server/internal/ha"
+	"stickynuo/server/internal/hub"
 	"stickynuo/server/internal/store"
 )
 
@@ -19,11 +20,12 @@ type Prefs struct {
 	repo      *store.InstanceRepo
 	userPrefs *store.UserPrefs
 	manager   *ha.Manager
+	hb        *hub.Hub
 }
 
-// NewPrefs 构造 handler。
-func NewPrefs(repo *store.InstanceRepo, userPrefs *store.UserPrefs, manager *ha.Manager) *Prefs {
-	return &Prefs{repo: repo, userPrefs: userPrefs, manager: manager}
+// NewPrefs 构造 handler。hb 用于仪表盘变更后向本人全部设备推送刷新通知。
+func NewPrefs(repo *store.InstanceRepo, userPrefs *store.UserPrefs, manager *ha.Manager, hb *hub.Hub) *Prefs {
+	return &Prefs{repo: repo, userPrefs: userPrefs, manager: manager, hb: hb}
 }
 
 // 用户级偏好 key：按登录用户隔离；无值回退全局 prefs。
@@ -189,6 +191,7 @@ func (h *Prefs) Put(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	isAdmin := auth.IsAdmin(r.Context())
+	dashChanged := false // 本次写入是否包含 dashboard
 
 	userSet := map[string]bool{}
 	for _, k := range userScoped {
@@ -200,6 +203,9 @@ func (h *Prefs) Put(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for k, v := range body {
+		if k == "dashboard" {
+			dashChanged = true // 仪表盘变更：写库后通知本人全部设备热刷新
+		}
 		switch {
 		case k == "ha_token":
 			// 个人 HA token：写当前用户，并即时重建其 HA 连接（不需重启服务器）。
@@ -254,6 +260,13 @@ func (h *Prefs) Put(w http.ResponseWriter, r *http.Request) {
 				WriteErr(w, 500, "internal", err.Error())
 				return
 			}
+		}
+	}
+	// 仪表盘已变更：经 WebSocket 通知本人全部设备热刷新（含发起保存的设备，
+	// 前端对「刚在本地保存过」的端做时间窗去重，不会打断当前界面）。
+	if dashChanged && h.hb != nil {
+		if b, err := json.Marshal(map[string]any{"type": "prefs", "key": "dashboard"}); err == nil {
+			h.hb.BroadcastUser(username, b)
 		}
 	}
 	WriteJSON(w, 200, body)

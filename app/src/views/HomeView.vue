@@ -78,11 +78,11 @@
           </button>
         </div>
 
-        <!-- 操作按钮：编辑态常显，非编辑态感应式自动隐藏；
+        <!-- 操作按钮：编辑态常显，非编辑态感应式自动隐藏（仅桌面端导航栏内）；
              键盘 Tab 进入本组按钮时（focus-within）强制显示，避免焦点落在不可见按钮上 -->
         <div v-if="!immersive"
           class="ml-auto flex flex-wrap items-center gap-2 transition-opacity duration-300"
-          :class="(editing || toolbarShow) ? 'opacity-100' : 'opacity-0 pointer-events-none focus-within:opacity-100 focus-within:pointer-events-auto'">
+          :class="btnVisible ? 'opacity-100' : 'opacity-0 pointer-events-none focus-within:opacity-100 focus-within:pointer-events-auto'">
           <template v-if="editing">
             <button @click="onExport" class="px-3 py-2 rounded-lg bg-surface-alt border border-border text-muted hover:text-on-surface text-sm transition-colors flex items-center gap-1.5" title="把当前仪表盘导出为 JSON 文件">
               <span class="material-symbols-outlined text-base" aria-hidden="true">download</span> 导出
@@ -241,7 +241,7 @@
 
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, onUpdated, onActivated, nextTick } from 'vue'
-import { ui, entityStates, entityList, registryDevices, loadRegistry, haTokenConfigured, haTokenKnown, auth, openDeviceDrawer } from '@/store'
+import { ui, entityStates, entityList, registryDevices, loadRegistry, haTokenConfigured, haTokenKnown, auth, openDeviceDrawer, dashboardRev } from '@/store'
 import { useEntities } from '@/composables/useLive'
 import { useAutoHide } from '@/composables/useAutoHide'
 import { mark, count, measure as perfMeasure } from '@/utils/perf'
@@ -532,6 +532,7 @@ async function loadLayout() {
 }
 async function saveLayout() {
   const json = serializeDashboard(pages.value)
+  lastLocalSave = Date.now() // 本端刚保存：抑制随后服务端广播触发的重载，避免打断当前界面
   try {
     await putPrefs({ dashboard: json })
     cacheLayout(json)
@@ -544,11 +545,20 @@ async function resetLayout() {
   currentPageIndex.value = 0
   editing.value = false
   const json = serializeDashboard(pages.value)
+  lastLocalSave = Date.now()
   try {
     await putPrefs({ dashboard: json })
     cacheLayout(json)
   } catch { /* 离线：仅本次重置生效 */ }
 }
+
+// ---- 跨端热刷新：本人在其它设备保存/接受分享仪表盘后，这里自动重载 ----
+// 刚在本地保存（4s 内）或正在编辑时忽略广播，避免打断当前操作
+let lastLocalSave = 0
+watch(dashboardRev, () => {
+  if (editing.value || Date.now() - lastLocalSave < 4000) return
+  loadLayout() // 服务端权威值覆盖本地（含缓存落盘），与首启同一条路径
+})
 
 // 智能排版：用当前真实实体自动设计当前页（不直接落库，用户点「完成」才保存）
 const arranging = ref(false)
@@ -688,6 +698,7 @@ async function applyImport(nextPages, nextIndex, okMsg) {
   currentPageIndex.value = nextIndex
   try {
     const json = serializeDashboard(pages.value)
+    lastLocalSave = Date.now() // 抑制本端广播触发的重载
     await putPrefs({ dashboard: json })
     cacheLayout(json)
     importInfo.value = null
@@ -759,6 +770,9 @@ const isDesktop = ref(window.matchMedia('(min-width: 768px)').matches)
 let mqDesktop = null
 function onMqDesktop(e) { isDesktop.value = e.matches }
 const teleportToNav = computed(() => isDesktop.value && !ui.immersive)
+// 原地渲染（窄屏/沉浸回落）时按钮常显：触屏没有 hover 感应，「隐藏」只是 opacity-0
+// 仍占布局，会在顶栏与卡片之间撑出一条空白；桌面端整条 Teleport 进导航栏，保留感应隐藏。
+const btnVisible = computed(() => !teleportToNav.value || editing.value || toolbarShow.value)
 
 // 手机与平板（<1024px）禁用仪表盘编辑：触屏拖拽排版体验差，且窄屏下编辑工具条
 // 回落布局拥挤错位。桌面缩窗到平板宽度同样禁用，与响应式断点语义一致；

@@ -64,7 +64,7 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 	instances := handler.NewInstances(repo, manager)
 	entities := handler.NewEntities(manager)
 	services := handler.NewServices(manager)
-	prefs := handler.NewPrefs(repo, userPrefs, manager)
+	prefs := handler.NewPrefs(repo, userPrefs, manager, hb)
 	users := handler.NewUsers(userRepo, userPrefs, manager)
 	ws := handler.NewWS(manager, nil, authOpt.Authenticate)
 	agg := handler.NewAggregate(manager)

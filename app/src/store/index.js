@@ -150,6 +150,8 @@ export const entityStates = reactive({})
 // 用 shallowRef：只有实体集合本身增删（membership）时才替换，值变化不替换——
 // 否则任何一次状态推送都会让所有遍历全表的组件重算+重渲染。
 export const entityList = shallowRef([])
+// 仪表盘远程变更版本号：本人任一设备保存/接受分享后自增，HomeView watch 它重载布局
+export const dashboardRev = ref(0)
 
 // 实体订阅回调（实体变化时通知各视图）。
 const watchers = new Set()
@@ -389,6 +391,8 @@ function connectWS() {
       }
       else if (m.type === 'cmd') dispatchCommand(m.cmd, m.data)
       else if (m.type === 'im') refreshIm()
+      // 仪表盘变更：本人在其它设备保存/接受分享后热刷新（HomeView 监听此版本号重载布局）
+      else if (m.type === 'prefs' && m.key === 'dashboard') dashboardRev.value++
       // 通话信令：动态 import 避免 store ↔ call 模块循环依赖
       else if (m.type === 'call') import('@/utils/call').then((c) => c.handleCallEvent(m))
     } catch { /* 忽略坏帧 */ }
