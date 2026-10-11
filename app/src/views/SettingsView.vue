@@ -66,18 +66,29 @@
           <p class="text-muted text-xs mt-0.5">当前连接的后端服务器（内网/外网地址簿）</p>
         </div>
       </div>
-      <div v-if="serverAddr" class="rounded-xl bg-background border border-border px-3 py-2.5">
+      <div class="rounded-xl bg-background border border-border px-3 py-2.5">
+        <p class="text-on-surface text-xs font-semibold mb-1">当前地址</p>
+        <p class="text-muted text-xs font-body leading-relaxed break-all">{{ currentOrigin }}</p>
+      </div>
+      <div v-if="serverAddr" class="mt-2 rounded-xl bg-background border border-border px-3 py-2.5">
         <p class="text-on-surface text-xs font-semibold mb-1">{{ serverAddr.name }}</p>
-        <p class="text-muted text-xs font-body leading-relaxed">{{ serverAddr.url }}</p>
+        <p class="text-muted text-xs font-body leading-relaxed break-all">{{ serverAddr.url }}</p>
         <p class="text-muted text-xs font-body mt-1.5">
           <span class="px-1.5 py-0.5 rounded text-[10px]" :class="serverAddr.type === 'lan' ? 'bg-success/15 text-success' : 'bg-primary/15 text-primary'">
             {{ serverAddr.type === 'lan' ? '内网' : '外网' }}
           </span>
         </p>
       </div>
-      <p v-else class="text-muted text-xs font-body">未检测到服务器地址配置（网页直连模式）</p>
+      <!-- APK 内：远程页面与壳页不同源，读不到壳页地址簿；点此回到壳页管理 -->
+      <button v-if="isCap" @click="editServerUrl"
+        class="mt-3 w-full flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-accent hover:bg-accent/90 text-on-primary text-sm font-semibold transition-colors">
+        <span class="material-symbols-outlined text-base">edit_note</span>
+        修改服务器地址（内网/外网地址簿）
+      </button>
       <p class="text-muted text-xs font-body mt-2 leading-relaxed">
-        手机端（APK）启动时会根据网络类型自动选择内网或外网地址；如需修改地址，请退出到归祺启动页进行编辑。
+        {{ isCap
+          ? 'APK 启动时按当前网络（WiFi→内网、移动数据→外网）自动选路；点上方按钮可回到启动页增删改地址。'
+          : '手机端（APK）启动时会根据网络类型自动选择内网或外网地址。' }}
       </p>
     </section>
 
@@ -140,7 +151,7 @@
       <form @submit.prevent="addInstance" autocomplete="off" class="grid grid-cols-1 sm:grid-cols-[1fr_1fr] gap-3">
         <input v-model="form.name" placeholder="实例名称（如 家）" autocomplete="off"
           class="bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
-        <input v-model="form.url" placeholder="HA 地址（如 http://192.168.1.10:8123）" autocomplete="off" inputmode="url" type="text"
+        <input v-model="form.url" placeholder="HA 地址（如 http://homeassistant.local:8123）" autocomplete="off" inputmode="url" type="text"
           class="bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
         <!-- 诱饵字段：吸收浏览器自动填充，避免污染上面的 url -->
         <input type="text" name="username" autocomplete="username" class="hidden" aria-hidden="true" tabindex="-1">
@@ -222,30 +233,33 @@
       </div>
       <div v-if="deviceList.length" class="space-y-2">
         <div v-for="d in deviceList" :key="d.device_id"
-          class="flex flex-wrap items-center gap-3 rounded-xl bg-background border border-border px-3 py-2.5">
-          <span class="w-7 h-7 rounded-full bg-primary/20 text-primary flex items-center justify-center">
-            <span class="material-symbols-outlined text-base">devices_other</span>
-          </span>
-          <div class="min-w-0 flex-1">
-            <div class="flex items-center gap-2">
-              <span class="text-on-surface text-sm font-medium truncate">{{ d.name }}</span>
-              <span v-if="d.device_id === currentDevId" class="text-[10px] px-1.5 py-0.5 rounded bg-success/15 text-success font-semibold">当前设备</span>
+          class="flex flex-col gap-2.5 rounded-xl bg-background border border-border px-3 py-2.5 sm:flex-row sm:items-center sm:gap-3">
+          <!-- 主行：图标 + 名称/说明（手机上占整行，不再被右侧固定宽度挤成单字列） -->
+          <div class="flex items-center gap-2.5 min-w-0 flex-1">
+            <span class="w-7 h-7 flex-shrink-0 rounded-full bg-primary/20 text-primary flex items-center justify-center">
+              <span class="material-symbols-outlined text-base">devices_other</span>
+            </span>
+            <div class="min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="text-on-surface text-sm font-medium truncate">{{ d.name }}</span>
+                <span v-if="d.device_id === currentDevId" class="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-success/15 text-success font-semibold">当前设备</span>
+              </div>
+              <span class="text-muted text-xs font-body">HA 中已自动创建并绑定该设备的 device_tracker 实体</span>
             </div>
-            <span class="text-muted text-xs font-body">HA 中已自动创建并绑定该设备的 device_tracker 实体</span>
           </div>
-          <!-- 别名编辑 -->
-          <div class="flex items-center gap-1.5">
+          <!-- 操作行：别名编辑 + 删除（手机上整行排在下方，输入框自适应宽度） -->
+          <div class="flex items-center gap-1.5 sm:flex-shrink-0">
             <input v-model="d._draft" @keyup.enter="saveAlias(d)"
-              class="w-36 bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-on-surface focus:border-primary focus:outline-none transition-colors"
+              class="min-w-0 flex-1 sm:flex-none sm:w-36 bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-on-surface focus:border-primary focus:outline-none transition-colors"
               placeholder="设置别名">
-            <button @click="saveAlias(d)" class="px-2 py-1.5 rounded-lg bg-primary hover:bg-primary-hover text-on-primary text-xs font-semibold transition-colors">
+            <button @click="saveAlias(d)" class="flex-shrink-0 px-2 py-1.5 rounded-lg bg-primary hover:bg-primary-hover text-on-primary text-xs font-semibold transition-colors">
               保存别名
             </button>
+            <button @click="removeDevice(d)" class="flex-shrink-0 px-2 py-1.5 rounded-lg hover:bg-error/10 text-error text-xs font-semibold transition-colors"
+              title="删除此设备记录">
+              <span class="material-symbols-outlined text-base">delete</span>
+            </button>
           </div>
-          <button @click="removeDevice(d)" class="px-2 py-1.5 rounded-lg hover:bg-error/10 text-error text-xs font-semibold transition-colors"
-            title="删除此设备记录">
-            <span class="material-symbols-outlined text-base">delete</span>
-          </button>
         </div>
       </div>
       <p v-else class="text-muted text-sm font-body">暂无已注册设备。在地图上点「更新位置」后会自动注册当前设备。</p>
@@ -646,6 +660,27 @@
 
     <!-- ===== 用户管理（仅管理员） ===== -->
     <div v-if="auth.isAdmin" v-show="activeTab === 'users'" class="space-y-6">
+    <!-- 系统名称（全局）：改后所有用户的顶栏/登录页/浏览器标题同步更新 -->
+    <section class="bg-surface-alt border border-border rounded-2xl p-5">
+      <div class="flex items-center gap-2.5 mb-3">
+        <div class="w-8 h-8 rounded-xl bg-primary/20 flex items-center justify-center">
+          <span class="material-symbols-outlined text-primary text-lg">badge</span>
+        </div>
+        <div>
+          <h2 class="font-headline text-on-background text-base font-semibold">系统名称</h2>
+          <p class="text-muted text-xs mt-0.5">顶栏、登录页与浏览器标签标题显示的名字</p>
+        </div>
+      </div>
+      <div class="flex gap-2">
+        <input v-model="siteNameDraft" maxlength="20" placeholder="例如：糯米"
+          class="flex-1 min-w-0 bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
+        <button @click="saveSiteName" :disabled="siteNameSaving"
+          class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-on-primary text-sm font-semibold transition-all disabled:opacity-50 flex items-center gap-1.5">
+          <span class="material-symbols-outlined text-base">save</span> 保存
+        </button>
+      </div>
+      <p v-if="siteNameMsg" class="mt-2 text-xs font-body" :class="siteNameErr ? 'text-error' : 'text-success'">{{ siteNameMsg }}</p>
+    </section>
     <section class="bg-surface-alt border border-border rounded-2xl p-5">
       <div class="flex items-center gap-2.5 mb-4">
         <div class="w-8 h-8 rounded-xl bg-info/20 flex items-center justify-center">
@@ -753,7 +788,7 @@ import api from '@/api'
 import { listDevices, ensureDevice, renameDevice, deleteDevice, getDeviceId } from '@/utils/device'
 import { availableSensors, unavailableReason, startSensorMonitor, buildReportPayload } from '@/utils/sensors'
 import { showNotify, setBlackout, setScreenBrightness, setScreenWake, blackout, saveBlackoutDismiss, watchAmbientLight } from '@/utils/browserCommands'
-import { loadInstances, switchInstance, changePassword, authLogout, auth, store, backendOnline, haTokenConfigured, haTokenKnown, saveHAToken } from '@/store'
+import { loadInstances, switchInstance, changePassword, authLogout, auth, store, backendOnline, haTokenConfigured, haTokenKnown, saveHAToken, siteName, loadSiteName, saveSiteName as persistSiteName } from '@/store'
 import { applyTheme, resolveTheme, THEMES, CUSTOM_COLOR_KEYS, DEFAULT_CUSTOM_COLORS } from '@/themes'
 import { getPrefs, putPrefs } from '@/utils/prefs'
 
@@ -794,6 +829,20 @@ const serverAddr = computed(() => {
     return active
   } catch { return null }
 })
+
+// ---- Capacitor APK 环境：回到本地壳页地址簿修改服务器地址 ----
+// 远程页面与壳页 http://localhost 不同源，localStorage 互不可见，
+// 只能整体导航回壳页；#manage 让壳页进入管理模式、不自动跳转。
+// ---- APK 环境识别 ----
+// 远程页面里 Capacitor JS 运行时不存在（仅注入壳页源），
+// 但原生 addJavascriptInterface 注入的 StickyKeeNative 对所有源可用。
+const isCap = computed(() => typeof window !== 'undefined' && !!(window.StickyKeeNative || window.Capacitor))
+const currentOrigin = computed(() => {
+  try { return window.location.origin } catch { return '' }
+})
+function editServerUrl() {
+  window.location.replace('http://localhost/#manage')
+}
 
 async function saveMyToken() {
   savingToken.value = true
@@ -1132,6 +1181,29 @@ const newUser = reactive({ username: '', password: '', is_admin: false })
 const umsg = ref('')
 const umsgErr = ref(false)
 function uflash(text, err = false) { umsg.value = text; umsgErr.value = err }
+
+// ---- 系统名称（管理员） ----
+const siteNameDraft = ref(siteName.value)
+const siteNameSaving = ref(false)
+const siteNameMsg = ref('')
+const siteNameErr = ref(false)
+async function saveSiteName() {
+  const name = siteNameDraft.value.trim()
+  if (!name) { siteNameMsg.value = '名称不能为空'; siteNameErr.value = true; return }
+  siteNameSaving.value = true
+  siteNameMsg.value = ''
+  try {
+    await persistSiteName(name)
+    siteNameMsg.value = `已保存为「${name}」`
+    siteNameErr.value = false
+  } catch (e) {
+    siteNameMsg.value = e?.response?.data?.error || e.message || '保存失败'
+    siteNameErr.value = true
+  } finally {
+    siteNameSaving.value = false
+  }
+}
+
 async function loadUsers() {
   if (!auth.isAdmin) return
   try { users.value = (await api.listUsers()).data || [] } catch { /* 静默 */ }
@@ -1283,6 +1355,7 @@ async function resetDefaults() {
 
 onMounted(() => {
   loadPrefs(); loadDevices(); loadSensors(); loadUsers()
+  loadSiteName().then(() => { siteNameDraft.value = siteName.value }) // 同步后端权威值
   stopLightWatch = watchAmbientLight() // 面板打开期间持续读环境光，用于「实时值」显示
 })
 onUnmounted(() => {

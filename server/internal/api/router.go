@@ -102,6 +102,9 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 		// 加密：公钥公开下发（公钥本就可公开）；握手需登录，在下方鉴权组内。
 		r.Get("/crypto/pubkey", cryptoHandler.PubKey)
 
+		// 系统显示名称：公开读取（登录页展示用）；修改需管理员，在鉴权组内。
+		r.Get("/site-name", prefs.SiteName)
+
 		// 以下接口均要求登录（Group 创建独立子路由，先注册中间件再注册路由）。
 		r.Group(func(r chi.Router) {
 			r.Use(auth.Middleware(authOpt))
@@ -143,6 +146,7 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 			r.Get("/sensors/definitions", sensors.Definitions)
 			r.Get("/prefs", prefs.Get)
 			r.Put("/prefs", prefs.Put)
+			r.Put("/site-name", prefs.PutSiteName)
 			r.Get("/devices", devices.List)
 			r.Post("/devices", devices.Register)
 			r.Put("/devices/{device_id}", devices.Rename)

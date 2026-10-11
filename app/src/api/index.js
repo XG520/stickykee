@@ -148,6 +148,9 @@ export const api = {
   // 偏好
   getPrefs: () => api.get('/prefs'),
   putPrefs: (body) => api.put('/prefs', body),
+  // 系统显示名称：公开读取；修改需管理员
+  getSiteName: () => api.get('/site-name'),
+  putSiteName: (name) => api.put('/site-name', { name }),
 
   // 用户管理（仅管理员）
   listUsers: () => api.get('/users'),

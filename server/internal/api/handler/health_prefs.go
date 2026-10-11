@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
+	"unicode/utf8"
 
 	"stickynuo/server/internal/auth"
 	"stickynuo/server/internal/ha"
@@ -32,6 +34,10 @@ var deviceScoped = []string{"devices", "sensor_config"}
 
 // 全局偏好 key：系统/管理员级别，所有人共用。
 var globalKeys = []string{"result"}
+
+// siteNameKey 系统名称（全局 prefs），默认回退「归祺」。
+const siteNameKey = "site_name"
+const defaultSiteName = "糯米"
 
 // 读取当前用户（未登录时 readOnly 场景用空用户名）。
 func (h *Prefs) currentUser(r *http.Request) (string, bool) {
@@ -134,7 +140,43 @@ func (h *Prefs) assembleMapConfig(r *http.Request) string {
 	return string(b)
 }
 
-// Put PUT /prefs {key:value,...} 按用户隔离写入。
+// SiteName GET /site-name 公开：返回系统显示名称，登录页/启动页可用。
+func (h *Prefs) SiteName(w http.ResponseWriter, r *http.Request) {
+	name, _ := h.repo.GetPref(r.Context(), siteNameKey)
+	if name == "" {
+		name = defaultSiteName
+	}
+	WriteJSON(w, 200, map[string]string{"name": name})
+}
+
+// PutSiteName PUT /site-name 管理员：修改系统显示名称。
+func (h *Prefs) PutSiteName(w http.ResponseWriter, r *http.Request) {
+	if !auth.IsAdmin(r.Context()) {
+		WriteErr(w, 403, "forbidden", "仅管理员可修改系统名称")
+		return
+	}
+	var body struct {
+		Name string `json:"name"`
+	}
+	if err := DecodeBody(r, &body); err != nil {
+		WriteErr(w, 400, "bad_request", "bad payload")
+		return
+	}
+	name := strings.TrimSpace(body.Name)
+	if name == "" {
+		WriteErr(w, 400, "bad_request", "名称不能为空")
+		return
+	}
+	if utf8.RuneCountInString(name) > 20 {
+		WriteErr(w, 400, "bad_request", "名称最多 20 个字符")
+		return
+	}
+	if err := h.repo.SetPref(r.Context(), siteNameKey, name); err != nil {
+		WriteErr(w, 500, "internal", err.Error())
+		return
+	}
+	WriteJSON(w, 200, map[string]string{"name": name})
+}
 func (h *Prefs) Put(w http.ResponseWriter, r *http.Request) {
 	var body map[string]string
 	if err := DecodeBody(r, &body); err != nil {
@@ -202,6 +244,11 @@ func (h *Prefs) Put(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		default:
+			// site_name 仅允许经 PUT /site-name 由管理员修改，普通用户禁止走通用通道。
+			if k == siteNameKey {
+				WriteErr(w, 403, "forbidden", "系统名称仅管理员可修改")
+				return
+			}
 			// 全局（系统级）：写全局 prefs
 			if err := h.repo.SetPref(r.Context(), k, v); err != nil {
 				WriteErr(w, 500, "internal", err.Error())

@@ -31,6 +31,35 @@ export const auth = reactive({
   checked: false, // 是否已执行过登录态探测
 })
 
+// ---- 系统显示名称（管理员可改，存后端全局 prefs.site_name） ----
+// 初值取 localStorage 缓存防首帧闪烁；loadSiteName 拉后端权威值覆盖。
+// 登录页未登录也可用（GET /site-name 公开）。
+const SITE_NAME_CACHE_KEY = 'hc_site_name'
+let cachedSiteName = '糯米'
+try { cachedSiteName = localStorage.getItem(SITE_NAME_CACHE_KEY) || '糯米' } catch { /* 隐私模式 */ }
+export const siteName = ref(cachedSiteName)
+
+export async function loadSiteName() {
+  try {
+    const { data } = await api.getSiteName()
+    const n = String(data?.name || '').trim()
+    if (n) {
+      siteName.value = n
+      try { localStorage.setItem(SITE_NAME_CACHE_KEY, n) } catch { /* 忽略 */ }
+    }
+  } catch { /* 离线保持缓存值 */ }
+}
+
+export async function saveSiteName(name) {
+  const { data } = await api.putSiteName(name)
+  const n = String(data?.name || '').trim()
+  if (n) {
+    siteName.value = n
+    try { localStorage.setItem(SITE_NAME_CACHE_KEY, n) } catch { /* 忽略 */ }
+  }
+  return n
+}
+
 // remember=true（「保持登录」）：令牌写入 localStorage，关闭浏览器/APP 后仍保持登录；
 // 否则写入 sessionStorage，仅当前会话有效。写入前清掉另一处的残留，避免两份令牌不一致。
 function setToken(t, remember = false) {

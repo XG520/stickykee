@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<title>归祺</title>
+<title>糯米</title>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -45,7 +45,7 @@
     animation: r .8s linear infinite;
   }
   @keyframes r { to { transform: rotate(360deg); } }
-  .hidden { display: none; }
+  .hidden { display: none !important; }
 
   /* 协议分段选择 */
   .seg-wrap { display: flex; gap: 8px; align-items: stretch; }
@@ -107,7 +107,7 @@
 <body>
   <div class="card">
     <div class="logo">🏠</div>
-    <h1>归祺</h1>
+    <h1>糯米</h1>
     <p class="sub">Sticky Kee · 智能家居画布</p>
 
     <div id="connecting">
@@ -598,7 +598,7 @@
     showMsg('正在识别内网服务器…');
 
     // APK 壳页为本地 origin，无法从本机 IP 推断子网；抽样探测常见网段与端口
-    var prefixes = ['192.168.1', '192.168.0', '192.168.1', '10.0.0', '172.16.0'];
+    var prefixes = ['192.168.1', '192.168.0', '10.0.0', '172.16.0'];
     var ports = [8080, 8123, 80];
     var candidates = [];
     prefixes.forEach(function (p) {
@@ -631,9 +631,20 @@
 
   // ---- 启动逻辑 ----
   async function boot() {
+    // #manage：从应用内「修改服务器地址」回到壳页时进入管理模式，不探测、不自动跳转。
+    // 用户点地址卡片连接后 go() 会替换掉 hash，正常启动不受影响。
+    var manageMode = false;
+    try { manageMode = location.hash.indexOf('manage') >= 0; } catch (e) {}
+
     showConnecting();
     var cfg = loadConfig();
     if (cancelled()) return;
+
+    if (manageMode) {
+      if (cfg.addresses.length) showList();
+      else showForm(null);
+      return;
+    }
 
     // 无地址：显示添加表单
     if (!cfg.addresses.length) {

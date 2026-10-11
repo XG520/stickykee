@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { auth, loadMe } from '@/store'
+import { auth, loadMe, siteName, loadSiteName } from '@/store'
 
 const routes = [
   { path: '/login', name: 'login', component: () => import('@/views/LoginView.vue'), meta: { title: '登录', public: true } },
@@ -29,7 +29,8 @@ router.beforeEach(async (to) => {
 })
 
 router.afterEach((to) => {
-  document.title = to.meta.title ? `${to.meta.title} · Sticky Kee` : 'Sticky Kee'
+  loadSiteName() // 每次切页兜底拉取（内部静默失败，保持缓存值）
+  document.title = to.meta.title ? `${to.meta.title} · ${siteName.value}` : siteName.value
 })
 
 // 首次导航完成后，在浏览器空闲时预取其余路由的懒加载 chunk（Vite 会缓存模块解析结果，

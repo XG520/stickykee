@@ -1,4 +1,4 @@
-# 归祺 Sticky Kee
+# 糯米 Sticky Kee
 
 基于 Home Assistant 的智能家画布应用：酷家乐式户型图编辑器（2D 绘制 + 3D 渲染）、智能仪表盘卡片、聊天与系统通知（文本/图片/语音消息/一对一及多人语音通话/内置 HA 智家助手）、移动端适配。前端 Vue 3 + Vite + Tailwind，后端 Go（chi + modernc SQLite，纯 Go 免 CGO），WebSocket 实时同步 HA 实体状态。
 
@@ -159,8 +159,7 @@ location / {
 docker run -d --name stickynuo \
   --restart unless-stopped \
   -p 8080:8080 \
-  -v /vol2/homecanvas/data:/data \
-  -e SN_JWT_SECRET=b34d8b52f4f4988e5b1fe3980ae1551f307f2f29f400d60414c7900ebc33c6a3 \
+  -v ./data:/data \
+  -e SN_JWT_SECRET=<用 openssl rand -hex 32 生成随机长串> \
   -e TZ=Asia/Shanghai \
-  --restart unless-stopped \
   stickynuo:latest

@@ -112,6 +112,25 @@ function deriveCustomVars(c) {
   }
 }
 
+// ---- APK 系统栏（状态栏 + 导航栏）跟随主题 ----
+// 颜色取当前主题页面底色 --c-background（RGB 通道格式 "14 15 18"）。
+// 走 APK 原生注入的 window.StickyKeeNative（JavascriptInterface，对远程页同样可用），
+// 不依赖 Capacitor JS 运行时（其桥只注入壳页源）。网页环境静默跳过。
+function syncSystemBars() {
+  try {
+    const native = window.StickyKeeNative
+    if (!native || typeof native.setBars !== 'function') return
+
+    const raw = getComputedStyle(document.documentElement).getPropertyValue('--c-background') || ''
+    const channels = raw.trim().split(/\s+/).map((n) => parseInt(n, 10))
+    if (channels.length < 3 || channels.slice(0, 3).some((n) => Number.isNaN(n))) return
+    const [r, g, b] = channels
+    const hex = '#' + [r, g, b].map((v) => Math.max(0, Math.min(255, v)).toString(16).padStart(2, '0')).join('')
+    const darkIcons = 0.299 * r + 0.587 * g + 0.114 * b > 150
+    native.setBars(hex, darkIcons)
+  } catch { /* 非 APK 环境忽略 */ }
+}
+
 // 应用主题：themeKey 为 THEMES 的键（class 切换）。
 // custom 兼容两种形态：
 //   1. 字符串 hex —— 预设主题上的自定义主色覆盖（旧版行为）
@@ -148,6 +167,9 @@ export function applyTheme(themeKey, custom) {
   try {
     localStorage.setItem(CACHE_KEY, JSON.stringify(cache))
   } catch { /* 隐私模式等场景忽略 */ }
+
+  // 4. APK：系统栏（状态栏/导航栏）同步为主题底色；网页端为空操作
+  syncSystemBars()
 }
 
 const CACHE_KEY = 'hc_theme'
