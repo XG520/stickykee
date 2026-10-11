@@ -168,24 +168,29 @@
         v-for="card in cards"
         :key="card.uid"
         class="hc-card-holder"
+        :class="{ 'hc-card-editable': editing, 'hc-card-dragging': dragCard === card }"
         :id="'card-' + card.uid"
         :data-type="card.type"
         :style="holderStyle(card)"
+        @pointerdown="onCardPointerDown($event, card)"
+        @click.capture="onHolderClickCapture"
       >
-        <!-- 编辑态操作条 -->
+        <!-- 编辑态操作条：悬浮于卡片右下角（不占布局、不遮挡顶部标题） -->
         <div v-if="editing"
-          class="absolute z-30 top-2 right-2 flex items-center gap-1 bg-surface-alt/95 backdrop-blur border border-border rounded-full px-1.5 py-1 shadow-lg">
-          <button @click="moveCard(card, -1)" :disabled="isFirst(card)" class="p-1 rounded-full hover:bg-surface active:scale-95 transition disabled:opacity-30" title="左移">
-            <span class="material-symbols-outlined text-lg text-on-surface">arrow_back</span>
+          class="hc-card-tools absolute z-30 bottom-2 right-2 flex items-center gap-0.5 bg-black/55 backdrop-blur-md border border-white/15 rounded-full px-1 py-0.5 shadow-lg shadow-black/30">
+          <button @click="moveCard(card, -1)" :disabled="isFirst(card)" class="p-1.5 rounded-full text-white/85 hover:bg-white/15 hover:text-white active:scale-90 transition disabled:opacity-25" title="左移">
+            <span class="material-symbols-outlined text-base">arrow_back</span>
           </button>
-          <button @click="moveCard(card, 1)" :disabled="isLast(card)" class="p-1 rounded-full hover:bg-surface active:scale-95 transition disabled:opacity-30" title="右移">
-            <span class="material-symbols-outlined text-lg text-on-surface">arrow_forward</span>
+          <button @click="moveCard(card, 1)" :disabled="isLast(card)" class="p-1.5 rounded-full text-white/85 hover:bg-white/15 hover:text-white active:scale-90 transition disabled:opacity-25" title="右移">
+            <span class="material-symbols-outlined text-base">arrow_forward</span>
           </button>
-          <button @click="openEditor(card)" class="p-1 rounded-full hover:bg-primary/10 transition" title="编辑尺寸与代码">
-            <span class="material-symbols-outlined text-lg text-on-surface">tune</span>
+          <!-- 分隔：移动与卡片操作分组，降低误触 -->
+          <span class="w-px h-4 bg-white/20 mx-0.5"></span>
+          <button @click="openEditor(card)" class="p-1.5 rounded-full text-white/85 hover:bg-primary/30 hover:text-white active:scale-90 transition" title="编辑尺寸与代码">
+            <span class="material-symbols-outlined text-base">tune</span>
           </button>
-          <button @click="removeCard(card)" class="p-1 rounded-full hover:bg-error/10 text-muted hover:text-error active:scale-95 transition" title="删除">
-            <span class="material-symbols-outlined text-lg">delete</span>
+          <button @click="removeCard(card)" class="p-1.5 rounded-full text-white/85 hover:bg-error/40 hover:text-white active:scale-90 transition" title="删除">
+            <span class="material-symbols-outlined text-base">delete</span>
           </button>
         </div>
 
@@ -328,9 +333,6 @@ function zoomStyle(card) {
     display: 'flex',
     flexDirection: 'column',
     flex: 'none',
-    // 编辑态：顶部操作条（约 48px 屏幕高）浮在卡片上会挡住标题，
-    // 给内容预留等高的顶部内边距（换算回缩放前的基准像素）
-    ...(editing.value ? { paddingTop: 48 / z + 'px' } : {}),
   }
 }
 const gridStyle = computed(() => ({
@@ -347,6 +349,86 @@ function holderStyle(card) {
     display: 'flex',
     flexDirection: 'column',
     minHeight: 0,
+  }
+}
+
+// ---- 编辑态拖拽换位（手机桌面式：按住卡片拖动，实时让位，松手落位）----
+const dragCard = ref(null)
+let drag = null // { card, el, uid, grabX, grabY, startX, startY, active, moved }
+let lastDragEnd = 0 // 最近一次拖动结束时刻：用于抑制随后的 click（自失效，不会泄漏）
+function holderEl(card) { return document.getElementById('card-' + card.uid) }
+function onCardPointerDown(e, card) {
+  if (!editing.value || e.button !== 0) return
+  // 操作条内的按钮不触发拖拽（左移/右移/编辑/删除照常可点）
+  if (e.target.closest('.hc-card-tools')) return
+  const el = e.currentTarget
+  const rect = el.getBoundingClientRect()
+  drag = {
+    card, el, uid: card.uid,
+    grabX: e.clientX - rect.left, grabY: e.clientY - rect.top,
+    startX: e.clientX, startY: e.clientY,
+    active: false, moved: false,
+  }
+  window.addEventListener('pointermove', onCardPointerMove)
+  window.addEventListener('pointerup', onCardPointerUp)
+  window.addEventListener('pointercancel', onCardPointerUp)
+}
+function onCardPointerMove(e) {
+  if (!drag) return
+  if (!drag.active) {
+    // 超过阈值才进入拖拽，避免与点击/轻触混淆
+    if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < 6) return
+    drag.active = true
+    dragCard.value = drag.card
+  }
+  e.preventDefault()
+  drag.moved = true
+  const grid = gridEl.value
+  if (!grid) return
+  const gridRect = grid.getBoundingClientRect()
+  // offsetLeft/Top 为布局位置（不受 transform 影响），据此算出让拖拽块跟随指针的位移
+  const baseLeft = gridRect.left + drag.el.offsetLeft
+  const baseTop = gridRect.top + drag.el.offsetTop
+  const tx = e.clientX - drag.grabX - baseLeft
+  const ty = e.clientY - drag.grabY - baseTop
+  drag.el.style.transform = `translate(${tx}px, ${ty}px) scale(1.04)`
+  // 命中检测：指针落在哪张其它卡片上，就把拖拽卡实时移动到该位置
+  const arr = cards.value
+  for (let i = 0; i < arr.length; i++) {
+    const c = arr[i]
+    if (c === drag.card) continue
+    const el = holderEl(c)
+    if (!el) continue
+    const r = el.getBoundingClientRect()
+    if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
+      const from = arr.indexOf(drag.card)
+      if (from >= 0 && from !== i) {
+        arr.splice(from, 1)
+        arr.splice(i, 0, drag.card)
+        // 换位后布局位置已变：按新位置立即重算位移，避免拖拽块跳一帧
+        const nl = gridRect.left + drag.el.offsetLeft
+        const nt = gridRect.top + drag.el.offsetTop
+        drag.el.style.transform = `translate(${e.clientX - drag.grabX - nl}px, ${e.clientY - drag.grabY - nt}px) scale(1.04)`
+      }
+      break
+    }
+  }
+}
+function onCardPointerUp() {
+  // 拖动过则记录时刻：随后派发的 click 会被抑制，避免松手时误触发卡片内部交互（开关等）
+  if (drag && drag.moved) lastDragEnd = Date.now()
+  if (drag?.el) drag.el.style.transform = ''
+  drag = null
+  dragCard.value = null
+  window.removeEventListener('pointermove', onCardPointerMove)
+  window.removeEventListener('pointerup', onCardPointerUp)
+  window.removeEventListener('pointercancel', onCardPointerUp)
+}
+function onHolderClickCapture(e) {
+  // 拖动结束 350ms 内的 click 视为拖拽副产物，吞掉一次
+  if (Date.now() - lastDragEnd < 350) {
+    e.preventDefault()
+    e.stopPropagation()
   }
 }
 function updateCols() {
@@ -760,6 +842,7 @@ onBeforeUnmount(() => {
   display: none;
 }
 .dashboard-grid {
+  position: relative; /* 拖拽时作为卡片 offsetLeft/Top 的定位参照 */
   display: grid;
   gap: 12px;
   overflow: hidden;
@@ -778,6 +861,20 @@ onBeforeUnmount(() => {
     transform: translateY(-2px);
     box-shadow: 0 10px 28px -8px rgb(0 0 0 / .22);
   }
+}
+/* 编辑态：卡片可拖拽换位（手机桌面式）。禁用文字选中与触摸滚动，避免拖拽误操作 */
+.hc-card-editable {
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+/* 拖拽中的卡片：抬起效果 + 即时跟随指针（关闭过渡）；
+   其余卡片让位时仍走 holder 的 transform 过渡，形成平滑换位动画 */
+.hc-card-dragging {
+  z-index: 40;
+  cursor: grabbing;
+  transition: none !important;
+  box-shadow: 0 18px 44px -8px rgb(0 0 0 / .45) !important;
 }
 /* 卡片过多时跳过视口外卡片的布局与绘制（滚入视口才渲染，滚出即回收渲染开销）。
    地图卡除外：其内部按容器尺寸测量定位，初始隐藏会导致尺寸为 0 */

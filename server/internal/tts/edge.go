@@ -123,11 +123,13 @@ func (e *EdgeTTS) Synth(ctx context.Context, text, voice string) ([]byte, string
 			return nil, "", fmt.Errorf("edge tts read: %w", err)
 		}
 		if mt == websocket.BinaryMessage {
-			// 二进制帧格式：2字节头(0x00 0x67?) + 音频数据
-			if len(msg) > 2 && msg[0] == 0x00 && msg[1] == 0x67 {
-				audio = append(audio, msg[2:]...)
-			} else if len(msg) > 2 {
-				audio = append(audio, msg[2:]...)
+			// 二进制帧格式：[2字节大端头长度][头文本(含 Path:audio)][音频数据]。
+			// 必须按头长度跳过整个头文本，否则 ASCII 头会混入 MP3 流导致解码失败。
+			if len(msg) > 2 {
+				hdrLen := int(msg[0])<<8 | int(msg[1])
+				if 2+hdrLen <= len(msg) {
+					audio = append(audio, msg[2+hdrLen:]...)
+				}
 			}
 		} else if mt == websocket.TextMessage {
 			// 文本帧：可能是 turn.end 等控制消息
@@ -139,6 +141,11 @@ func (e *EdgeTTS) Synth(ctx context.Context, text, voice string) ([]byte, string
 	}
 	if len(audio) == 0 {
 		return nil, "", fmt.Errorf("edge tts: no audio received")
+	}
+	// 合法性自检：MP3 应以 ID3 标签或 MPEG 帧同步字开头
+	if !(len(audio) > 3 && audio[0] == 'I' && audio[1] == 'D' && audio[2] == '3' ||
+		len(audio) > 2 && audio[0] == 0xFF && audio[1]&0xE0 == 0xE0) {
+		return nil, "", fmt.Errorf("edge tts: invalid audio stream (header %q)", string(audio[:min(16, len(audio))]))
 	}
 	return audio, "audio/mpeg", nil
 }

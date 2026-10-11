@@ -2,6 +2,11 @@
 // 模型：onnx-community/Kokoro-82M-v1.1-zh-ONNX
 // 音色：zf_* 女声，zm_* 男声，需将 .bin 文件放到 public/kokoro/voices/
 import { KokoroTTS } from '@uzen/kokoro-js'
+import { env } from '@huggingface/transformers'
+
+// 国内直连 huggingface.co 不可用：模型下载改走 hf-mirror.com 镜像
+//（URL 结构一致：{host}/{model}/resolve/{revision}/{file}），浏览器缓存自动生效
+env.remoteHost = 'https://hf-mirror.com/'
 
 let ttsInstance = null
 let loadingPromise = null

@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -305,11 +306,71 @@ func (c *Rest) DeleteAutomation(ctx context.Context, automationID string) error 
 	return c.do(ctx, http.MethodDelete, "/api/config/automation/config/"+automationID, nil, nil)
 }
 
+// preferredAgent 从实体注册表发现用户安装的对话代理（conversation.* 实体）。
+// 排除内置代理 conversation.home_assistant（只认设备控制意图），按实体 ID 排序
+// 取第一个，保证多代理时选择稳定。查询失败或未安装 LLM 代理时返回空串，走 HA 默认。
+func (c *Rest) preferredAgent(ctx context.Context) string {
+	agents, err := c.ListAgents(ctx)
+	if err != nil {
+		return ""
+	}
+	for _, a := range agents {
+		if !a.Builtin {
+			return a.ID
+		}
+	}
+	return ""
+}
+
+// Agent 描述一个对话代理实体。
+type Agent struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Builtin bool   `json:"builtin"`
+}
+
+// ListAgents 枚举 HA 中的对话代理（conversation.* 实体），内置代理排最前，其余按 ID 排序。
+func (c *Rest) ListAgents(ctx context.Context) ([]Agent, error) {
+	var states []struct {
+		EntityID   string         `json:"entity_id"`
+		Attributes map[string]any `json:"attributes"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/api/states", nil, &states); err != nil {
+		return nil, err
+	}
+	agents := []Agent{}
+	for _, st := range states {
+		if !strings.HasPrefix(st.EntityID, "conversation.") {
+			continue
+		}
+		name, _ := st.Attributes["friendly_name"].(string)
+		if name == "" {
+			name = st.EntityID
+		}
+		agents = append(agents, Agent{ID: st.EntityID, Name: name, Builtin: st.EntityID == "conversation.home_assistant"})
+	}
+	sort.Slice(agents, func(i, j int) bool {
+		if agents[i].Builtin != agents[j].Builtin {
+			return agents[i].Builtin
+		}
+		return agents[i].ID < agents[j].ID
+	})
+	return agents, nil
+}
+
 // Conversation 调用 HA Assist：POST /api/conversation/process。
 // conversationID 为空时由 HA 开新会话；返回 (中文回复, conversation_id)。
 // 动作类意图常不返回语音文本，按 data.success/failed 生成中文回执。
-func (c *Rest) Conversation(ctx context.Context, text, conversationID string) (string, string, error) {
+// agentID：用户在设置页选择的代理实体 ID；为空或 "auto" 时自动发现
+// 已安装的 LLM 代理——内置代理只认设备控制意图，闲聊类问题会答非所问。
+func (c *Rest) Conversation(ctx context.Context, text, conversationID, agentID string) (string, string, error) {
 	req := map[string]any{"text": text, "language": "zh-CN"}
+	if agentID == "" || agentID == "auto" {
+		agentID = c.preferredAgent(ctx)
+	}
+	if agentID != "" {
+		req["agent_id"] = agentID
+	}
 	if conversationID != "" {
 		req["conversation_id"] = conversationID
 	}

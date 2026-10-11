@@ -165,10 +165,14 @@ public class EdgeTTS {
 
             @Override
             public void onMessage(WebSocket webSocket, ByteString bytes) {
-                // 二进制帧：前 2 字节为头，之后是 MP3 数据
+                // 二进制帧：[2字节大端头长度][头文本(含 Path:audio)][MP3 数据]。
+                // 必须按头长度跳过整个头文本，否则 ASCII 头会混入 MP3 流导致解码失败。
                 byte[] data = bytes.toByteArray();
                 if (data.length > 2) {
-                    audioBuf.write(data, 2, data.length - 2);
+                    int hdrLen = ((data[0] & 0xFF) << 8) | (data[1] & 0xFF);
+                    if (2 + hdrLen <= data.length) {
+                        audioBuf.write(data, 2 + hdrLen, data.length - 2 - hdrLen);
+                    }
                 }
             }
 

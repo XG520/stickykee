@@ -216,6 +216,9 @@ export const api = {
   acceptShare: (id) => api.post(`/messages/${id}/accept`),
   declineShare: (id) => api.post(`/messages/${id}/decline`),
 
+  // 智家助手：可用的 HA 对话代理列表（设置页「对话代理」选择器）
+  getHaAgents: () => api.get('/messages/assistant/agents'),
+
   // 语音通话信令。join/leave/reject 携带本机 device id：
   // 同账号多端在线时，后端事件回传 device 供其它设备识别"已在其他设备操作"。
   callStart: (members) => api.post('/call/start', { members }),

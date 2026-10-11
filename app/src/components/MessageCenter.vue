@@ -69,6 +69,19 @@
                 <span class="material-symbols-outlined text-lg"
                   :class="isAssistant ? 'text-primary' : 'text-accent'">{{ isAssistant ? 'smart_toy' : 'account_circle' }}</span>
                 <h3 class="text-on-background font-semibold text-sm truncate">{{ displayName(activeUser) }}</h3>
+                <!-- TTS 朗读引擎快选（仅智家助手）：读写当前运行环境对应的偏好键，与设置页格式一致 -->
+                <select v-if="isAssistant" v-model="ttsSel" @change="saveTTS" @click.stop
+                  title="朗读引擎：智家助手回复用哪种声音朗读"
+                  class="ml-auto max-w-[42%] shrink-0 bg-surface-alt border border-border rounded-lg px-2 py-1.5 text-xs text-muted focus:border-primary focus:outline-none truncate">
+                  <option v-for="o in ttsOptions" :key="o.v || 'auto'" :value="o.v">{{ o.label }}</option>
+                </select>
+                <!-- 对话代理选择（仅智家助手）：内置代理只能控制设备，LLM 代理才能闲聊问答 -->
+                <select v-if="isAssistant && haAgents.length" v-model="haAgentSel" @change="saveHaAgent" @click.stop
+                  title="对话代理：决定智家助手如何思考与回答"
+                  class="max-w-[42%] shrink-0 bg-surface-alt border border-border rounded-lg px-2 py-1.5 text-xs text-muted focus:border-primary focus:outline-none truncate">
+                  <option value="auto">自动（优先 AI 代理）</option>
+                  <option v-for="a in haAgents" :key="a.id" :value="a.id">{{ agentLabel(a) }}</option>
+                </select>
               </div>
 
               <div ref="listEl" class="flex-1 overflow-y-auto px-4 py-3 space-y-3 bg-background/40">
@@ -188,14 +201,20 @@
                     </p>
                   </div>
 
-                  <!-- 撤回按钮（自己的文本/图片/语音消息，悬停行内显示） -->
-                  <button v-if="m.from === auth.user && (m.type === 'text' || m.type === 'image' || m.type === 'audio')" @click="doRecall(m)" title="撤回"
+                  <!-- 撤回按钮（自己的文本/图片/语音消息，悬停行内显示；本地回显的临时消息 id<0 不可撤回） -->
+                  <button v-if="m.id > 0 && m.from === auth.user && (m.type === 'text' || m.type === 'image' || m.type === 'audio')" @click="doRecall(m)" title="撤回"
                     class="self-center w-7 h-7 rounded-full text-muted hover:text-error hover:bg-error/10 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all shrink-0">
                     <span class="material-symbols-outlined text-sm">undo</span>
                   </button>
                   </div>
                 </template>
                 <p v-if="!messages.length" class="text-muted text-center text-xs py-8 font-body">{{ isAssistant ? '向智家助手提问，如：打开客厅灯、今天天气怎样' : '没有消息，打个招呼吧' }}</p>
+                <!-- 思考中指示：助手会话等待 LLM 回复期间显示，避免误以为卡死 -->
+                <div v-if="busy && isAssistant" class="flex justify-start">
+                  <div class="px-4 py-2.5 rounded-2xl rounded-bl-sm bg-surface-alt border border-border flex items-center gap-1.5">
+                    <span v-for="i in 3" :key="i" class="w-1.5 h-1.5 rounded-full bg-muted animate-co-bounce" :style="{ animationDelay: (i - 1) * 0.15 + 's' }"></span>
+                  </div>
+                </div>
               </div>
 
               <!-- 输入区 -->
@@ -359,10 +378,87 @@ import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } 
 import api from '@/api'
 import { auth, imOpen, imRefresher, imConversations, closeIm, bumpIm, store, entityStates, requestEntityRefresh, refreshIm } from '@/store'
 import { dashboardCardCount } from '@/utils/dashboard'
-import { getPrefs } from '@/utils/prefs'
+import { getPrefs, putPrefs } from '@/utils/prefs'
 import { VoiceRecorder, WavRecorder, NativeWavRecorder } from '@/utils/recorder'
 import { startCall } from '@/utils/call'
 import { openEnvelope, withCrypto } from '@/utils/crypto'
+
+// ---- 对话代理选择（智家助手会话头部下拉）----
+const haAgents = ref([])
+const haAgentSel = ref('auto')
+let agentsLoaded = false
+
+// agentLabel：下拉项文案——内置代理注明仅设备控制，LLM 代理显示原名
+function agentLabel(a) {
+  return a.builtin ? 'Home Assistant（内置·仅设备控制）' : (a.name || a.id)
+}
+
+async function loadAgents() {
+  if (agentsLoaded) return
+  try {
+    const { data } = await api.getHaAgents()
+    haAgents.value = data?.agents || []
+    haAgentSel.value = data?.selected || 'auto'
+    agentsLoaded = true
+  } catch { haAgents.value = [] } // HA 未配置/不可达：隐藏选择器即可
+}
+
+async function saveHaAgent() {
+  try { await putPrefs({ ha_assist_agent: haAgentSel.value }) } catch { /* 静默：下条消息仍按旧代理 */ }
+}
+
+// ---- TTS 朗读引擎快选（智家助手会话头部下拉）----
+// 与设置页共用引擎存储格式：''=智能 / edge[:voice] / local[:speed]（仅 APK）/ kokoro[:voice]（仅网页）/ HA 引擎 ID。
+// 按当前运行环境读写对应偏好键（网页 tts_engine，APK tts_engine_apk），两端口径一致。
+const TTS_NATIVE = typeof window !== 'undefined' ? window.StickyKeeNative : null
+const TTS_IS_APK = !!(TTS_NATIVE && typeof TTS_NATIVE.speakEdge === 'function')
+const TTS_PREF_KEY = TTS_IS_APK ? 'tts_engine_apk' : 'tts_engine'
+
+const EDGE_VOICES = [
+  ['zh-CN-XiaoxiaoNeural', '晓晓（女·温柔）'], ['zh-CN-XiaoyiNeural', '晓伊（女·活泼）'],
+  ['zh-CN-YunxiNeural', '云希（男·年轻）'], ['zh-CN-YunjianNeural', '云健（男·浑厚）'],
+  ['zh-CN-YunyangNeural', '云扬（男·播音）'], ['zh-CN-YunxiaNeural', '云夏（男·少年）'],
+  ['zh-CN-liaoning-XiaobeiNeural', '晓北（女·东北）'], ['zh-HK-HiuMaanNeural', '曉曼（女·粤语）'],
+  ['zh-TW-HsiaoChenNeural', '曉臻（女·台湾）'],
+]
+const KOKORO_VOICES = [['zf_001', 'zf_001（女）'], ['zf_002', 'zf_002（女）'], ['zm_009', 'zm_009（男）'], ['zm_010', 'zm_010（男）']]
+
+const ttsSel = ref('')
+let ttsPrefsLoaded = false
+
+// 选项按当前环境裁剪：APK 只给本地离线（含语速），网页给 Edge/Kokoro（含音色）；
+// 当前值若是 HA 引擎 ID（不在预设里），动态补入保证回显正确
+const ttsOptions = computed(() => {
+  const o = [{ v: '', label: '朗读：智能选择（推荐）' }]
+  if (TTS_IS_APK) {
+    o.push({ v: 'local', label: '朗读：本地离线 · 正常语速' })
+    for (const [v, l] of [['0.8', '慢速 0.8x'], ['0.9', '稍慢 0.9x'], ['1.1', '稍快 1.1x'], ['1.2', '快速 1.2x']])
+      o.push({ v: 'local:' + v, label: '朗读：本地离线 · ' + l })
+  } else {
+    o.push({ v: 'edge', label: '朗读：Edge TTS · 晓晓（默认）' })
+    for (const [v, l] of EDGE_VOICES) o.push({ v: 'edge:' + v, label: '朗读：Edge · ' + l })
+    o.push({ v: 'kokoro', label: '朗读：Kokoro · zf_001（本机推理）' })
+    for (const [v, l] of KOKORO_VOICES) o.push({ v: 'kokoro:' + v, label: '朗读：Kokoro · ' + l })
+  }
+  const cur = ttsSel.value
+  if (cur && !o.some((x) => x.v === cur)) o.push({ v: cur, label: '朗读：HA 引擎 · ' + cur })
+  return o
+})
+
+async function loadTTS() {
+  if (ttsPrefsLoaded) return
+  try {
+    const { data } = await getPrefs()
+    const v = String((TTS_IS_APK ? (data?.tts_engine_apk ?? data?.tts_engine) : data?.tts_engine) || '').trim()
+    ttsSel.value = v === 'auto' ? '' : v // 兼容旧版把智能选择存成 'auto'
+    ttsPrefsLoaded = true
+  } catch { /* 读取失败保持默认，下次再试 */ }
+}
+
+async function saveTTS() {
+  stopTTS() // 切换引擎立即生效：停掉当前朗读，下一条用新引擎
+  try { await putPrefs({ [TTS_PREF_KEY]: ttsSel.value }) } catch { /* 静默：失败下次重选 */ }
+}
 
 // ASSISTANT 与后端保留虚拟用户名一致（handler.AssistantUser）。
 const ASSISTANT = 'ha-assistant'
@@ -990,7 +1086,9 @@ async function speak(text, msgId = 0) {
     }
     ttsAudio.src = URL.createObjectURL(blob)
     await ttsAudio.play()
-  } catch {
+  } catch (err) {
+    // 记录失败原因：此前完全静默，用户只能看到「没声音」而无从排查
+    console.warn('[TTS] 合成失败，尝试回退：', err?.message || err)
     // 回退 1：APK 系统 TTS（离线，依赖系统已装 TTS 引擎）
     if (native && typeof native.speakSystem === 'function') {
       try { native.speakSystem(text); return } catch { /* fallthrough */ }
@@ -1004,9 +1102,12 @@ async function speak(text, msgId = 0) {
         if (zh) u.voice = zh
         u.onend = () => { ttsPlayingId.value = 0 }
         window.speechSynthesis.speak(u)
+        // 系统自带音色质量差，提示一次本次走了回退，便于用户调整引擎设置
+        toast('高质量引擎不可用，已用系统语音朗读：' + (err?.message || '合成失败'))
       } catch { ttsPlayingId.value = 0 }
     } else {
       ttsPlayingId.value = 0
+      toast('语音朗读失败：' + (err?.message || '所有 TTS 引擎均不可用'), true)
     }
   }
 }
@@ -1065,7 +1166,7 @@ function scrollBottom() {
 async function openConv(user) {
   activeUser.value = user
   showPicker.value = false
-  if (user === ASSISTANT) voiceMode.value = false
+  if (user === ASSISTANT) { voiceMode.value = false; loadAgents(); loadTTS() } // 首次打开助手会话时拉取代理与朗读引擎
   await loadMessages(user)
   // 进入会话时把 lastSpokenId 设为已有最后一条助手消息 id，避免朗读历史
   const last = messages.value[messages.value.length - 1]
@@ -1081,12 +1182,19 @@ async function send() {
   const t = compose.value.trim()
   if (!t || !activeUser.value || busy.value) return
   busy.value = true
+  // 本地即时回显：不等服务器（助手消息需等 LLM 回复，可能数秒），避免"像卡了"
+  const pending = { id: -Date.now(), from: auth.user, to: activeUser.value, type: 'text', content: t, created_at: new Date().toISOString(), read: false }
+  messages.value.push(pending)
+  compose.value = ''
+  scrollBottom()
   try {
     await api.sendMessage(activeUser.value, t)
-    compose.value = ''
-    await loadMessages(activeUser.value)
+    await loadMessages(activeUser.value) // 用服务器权威数据替换本地回显
     bumpIm()
-  } catch (e) { toast(e.message || '发送失败', true) }
+  } catch (e) {
+    messages.value = messages.value.filter((m) => m.id !== pending.id)
+    toast(e.message || '发送失败', true)
+  }
   finally { busy.value = false }
 }
 
@@ -1175,6 +1283,12 @@ onBeforeUnmount(() => {
 .im-pop-enter-active { transition: opacity .15s ease, transform .15s ease; }
 .im-pop-leave-active { transition: opacity .12s ease, transform .12s ease; }
 .im-pop-enter-from, .im-pop-leave-to { opacity: 0; transform: translateY(-4px); }
+/* 助手「思考中」三点跳动 */
+@keyframes coBounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: .4; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+.animate-co-bounce { animation: coBounce 1.2s ease-in-out infinite; }
 
 /* 气泡浮窗进场：上浮 + 轻微放大；手机端从右下角弹出，桌面端从头像方向（右上）弹出 */
 @keyframes imCardIn {

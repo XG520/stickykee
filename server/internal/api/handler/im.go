@@ -194,6 +194,35 @@ func (h *Im) SendText(w http.ResponseWriter, r *http.Request) {
 	_ = writeEnvelope(h.keys, w, r, map[string]any{"id": id})
 }
 
+// haUnavailableReply 把 HA 连接类错误转成给用户的中文提示（聊天会话内展示）。
+func haUnavailableReply(err error) string {
+	if errors.Is(err, ha.ErrNoHAToken) {
+		return "还没有配置 Home Assistant 个人 Token，请在「设置 → Home Assistant」中填写后再来找我。"
+	}
+	return "还没有连接 Home Assistant 实例，请先在设置中添加实例并填写个人 Token。"
+}
+
+// ListAgents GET /api/v1/messages/assistant/agents
+// 枚举 HA 中可用的对话代理（内置 + 已安装的 LLM 代理），供设置页选择。
+// selected 为当前保存的偏好：空/"auto" 表示自动选择。
+func (h *Im) ListAgents(w http.ResponseWriter, r *http.Request) {
+	me := rUsername(r)
+	rest, err := h.ha.Rest(r.Context(), 0)
+	if err != nil {
+		haErr(w, err)
+		return
+	}
+	agents, err := rest.ListAgents(r.Context())
+	if err != nil {
+		haErr(w, err)
+		return
+	}
+	WriteJSON(w, 200, map[string]any{
+		"agents":   agents,
+		"selected": h.userPrefs.Get(r.Context(), me, "ha_assist_agent"),
+	})
+}
+
 // chatAssistant 处理与 HA Assist 的会话：
 // 用户消息先落库 → 调 active 实例 /api/conversation/process（携带上次 conversation_id 保持上下文）
 // → 助手回复落库 → 实时通知本人 → 密文返回两条消息 id。
@@ -205,11 +234,21 @@ func (h *Im) chatAssistant(w http.ResponseWriter, r *http.Request, me, text stri
 	}
 	rest, err := h.ha.Rest(r.Context(), 0) // 0 = active 实例，使用本人 token
 	if err != nil {
-		haErr(w, err)
+		// 连接不可用（未配实例/未填 Token）：以助手身份在会话内给出友好提示，
+		// 保证对话线程总能得到应答，而不是向用户抛英文原始错误。
+		id2, cerr := h.msgs.Create(r.Context(), AssistantUser, me, "text", haUnavailableReply(err), "")
+		if cerr != nil {
+			WriteErr(w, 500, "internal", cerr.Error())
+			return
+		}
+		h.notify(me)
+		_ = writeEnvelope(h.keys, w, r, map[string]any{"id": id1, "reply_id": id2})
 		return
 	}
 	cid := h.userPrefs.Get(r.Context(), me, "ha_chat_cid")
-	reply, newCID, err := rest.Conversation(r.Context(), text, cid)
+	// 对话代理：用户偏好优先（设置页可选），留空则自动发现已安装的 LLM 代理
+	agent := strings.TrimSpace(h.userPrefs.Get(r.Context(), me, "ha_assist_agent"))
+	reply, newCID, err := rest.Conversation(r.Context(), text, cid, agent)
 	if err != nil {
 		WriteErr(w, 502, "assistant_error", "助手暂不可用："+err.Error())
 		return
@@ -250,7 +289,11 @@ func (h *Im) chatAssistantVoice(w http.ResponseWriter, r *http.Request, me strin
 		err = fmt.Errorf("语音识别需要 WAV 格式，请更新客户端后重试")
 	}
 	if err != nil {
-		reply = "这段语音我没听清（" + err.Error() + "）。可以再试一次，或改用文字输入。"
+		if errors.Is(err, ha.ErrNoHAToken) || strings.Contains(err.Error(), "no configured home assistant instance") {
+			reply = haUnavailableReply(err)
+		} else {
+			reply = "这段语音我没听清（" + err.Error() + "）。可以再试一次，或改用文字输入。"
+		}
 	}
 	if newCID != "" && newCID != cid {
 		_ = h.userPrefs.Set(r.Context(), me, "ha_chat_cid", newCID)
@@ -294,6 +337,16 @@ func (h *Im) AssistantTTS(w http.ResponseWriter, r *http.Request) {
 	engine := strings.TrimSpace(r.URL.Query().Get("engine"))
 	if engine == "" {
 		engine = strings.TrimSpace(h.userPrefs.Get(r.Context(), rUsername(r), "tts_engine"))
+	}
+	// 旧版兼容：曾把「智能选择」持久化为 "auto"，等价于留空
+	if engine == "auto" {
+		engine = ""
+	}
+	// kokoro 为浏览器本地推理引擎，不经后端；误路由到此接口时明确报错，
+	// 避免落入 HA 分支被误判为「HA 未配置 TTS」
+	if strings.HasPrefix(engine, "kokoro") {
+		WriteErr(w, 400, "bad_request", "Kokoro 引擎在浏览器本地合成，无需请求后端")
+		return
 	}
 
 	var audio []byte
