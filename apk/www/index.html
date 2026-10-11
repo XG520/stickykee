@@ -202,28 +202,53 @@
   var $modal = document.getElementById('modal');
 
   // ---- 数据 ----
+  // 存储统一走原生桥（SharedPreferences）：壳页与远程页面（服务器源）不同源，
+  // localStorage 互不可见，只有原生层能被两端共用。旧版壳页遗留在本源
+  // localStorage 的数据在首次读取时迁移进原生并清除。
+  function nativeBridge() {
+    var n = window.StickyKeeNative;
+    return n && typeof n.getServerConfig === 'function' ? n : null;
+  }
+
   function loadConfig() {
+    var n = nativeBridge();
+    if (n) {
+      try {
+        var raw = n.getServerConfig();
+        if (raw) {
+          var cfg = JSON.parse(raw);
+          if (cfg && cfg.addresses) return cfg;
+        }
+      } catch (e) {}
+    }
+    // 迁移旧版 localStorage 数据
     try {
-      var raw = localStorage.getItem(KEY);
-      if (raw) return JSON.parse(raw);
-    } catch (e) {}
-    // 迁移旧数据
-    try {
-      var legacy = localStorage.getItem(LEGACY_KEY);
+      var legacy = localStorage.getItem(KEY) || localStorage.getItem(LEGACY_KEY);
       if (legacy) {
-        var cfg = {
-          addresses: [{ id: 'default', name: '默认服务器', url: legacy, type: 'lan' }],
-          activeId: 'default',
-          lastConnectedId: 'default'
-        };
-        localStorage.setItem(KEY, JSON.stringify(cfg));
-        return cfg;
+        var migrated = JSON.parse(legacy);
+        if (!migrated || !migrated.addresses) {
+          migrated = {
+            addresses: [{ id: 'default', name: '默认服务器', url: legacy, type: 'lan' }],
+            activeId: 'default',
+            lastConnectedId: 'default'
+          };
+        }
+        if (n) {
+          try { n.setServerConfig(JSON.stringify(migrated)); } catch (e) {}
+        }
+        localStorage.removeItem(KEY);
+        localStorage.removeItem(LEGACY_KEY);
+        return migrated;
       }
     } catch (e) {}
     return { addresses: [], activeId: null, lastConnectedId: null };
   }
 
   function saveConfig(cfg) {
+    var n = nativeBridge();
+    if (n) {
+      try { n.setServerConfig(JSON.stringify(cfg)); return; } catch (e) {}
+    }
     try { localStorage.setItem(KEY, JSON.stringify(cfg)); } catch (e) {}
   }
 

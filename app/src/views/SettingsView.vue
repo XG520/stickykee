@@ -203,27 +203,18 @@
         </div>
       </div>
       <div class="rounded-xl bg-background border border-border px-3 py-2.5">
-        <p class="text-on-surface text-xs font-semibold mb-1">当前地址</p>
+        <p class="text-on-surface text-xs font-semibold mb-1">当前连接</p>
         <p class="text-muted text-xs font-body leading-relaxed break-all">{{ currentOrigin }}</p>
       </div>
-      <div v-if="serverAddr" class="mt-2 rounded-xl bg-background border border-border px-3 py-2.5">
-        <p class="text-on-surface text-xs font-semibold mb-1">{{ serverAddr.name }}</p>
-        <p class="text-muted text-xs font-body leading-relaxed break-all">{{ serverAddr.url }}</p>
-        <p class="text-muted text-xs font-body mt-1.5">
-          <span class="px-1.5 py-0.5 rounded text-[10px]" :class="serverAddr.type === 'lan' ? 'bg-success/15 text-success' : 'bg-primary/15 text-primary'">
-            {{ serverAddr.type === 'lan' ? '内网' : '外网' }}
-          </span>
-        </p>
-      </div>
-      <!-- APK 内：远程页面与壳页不同源，读不到壳页地址簿；点此回到壳页管理 -->
-      <button v-if="isCap" @click="editServerUrl"
+      <!-- APK 内：打开应用内地址簿抽屉（数据经原生桥与启动壳页共用一份） -->
+      <button v-if="isApk" @click="openServerSheet"
         class="mt-3 w-full flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-accent hover:bg-accent/90 text-on-primary text-sm font-semibold transition-colors">
         <span class="material-symbols-outlined text-base">edit_note</span>
-        修改服务器地址（内网/外网地址簿）
+        管理服务器地址（内网/外网地址簿）
       </button>
       <p class="text-muted text-xs font-body mt-2 leading-relaxed">
-        {{ isCap
-          ? 'APK 启动时按当前网络（WiFi→内网、移动数据→外网）自动选路；点上方按钮可回到启动页增删改地址。'
+        {{ isApk
+          ? '地址簿与 APP 启动页共用一份；可同时保存内网、外网地址，启动与运行中按当前网络（WiFi→内网、移动数据→外网）自动选用。'
           : '手机端（APK）启动时会根据网络类型自动选择内网或外网地址。' }}
       </p>
     </section>
@@ -957,6 +948,7 @@ import { showNotify, setBlackout, setScreenBrightness, setScreenWake, blackout, 
 import { loadInstances, switchInstance, changePassword, authLogout, auth, store, backendOnline, haTokenConfigured, haTokenKnown, saveHAToken, siteName, loadSiteName, saveSiteName as persistSiteName } from '@/store'
 import { applyTheme, resolveTheme, THEMES, CUSTOM_COLOR_KEYS, DEFAULT_CUSTOM_COLORS } from '@/themes'
 import { getPrefs, putPrefs } from '@/utils/prefs'
+import { isApk, openServerSheet } from '@/utils/serverConfig'
 
 // ---- HA 实例管理 ----
 const form = reactive({ name: '', url: '', token: '', skipTLS: false })
@@ -1064,31 +1056,13 @@ const haTokenBadge = computed(() => {
     : { cls: 'bg-error/15 text-error', text: '未配置（HA 访问已禁用）' }
 })
 
-// ---- APK 壳页服务器地址（从 localStorage 读取 sn_server_config） ----
-const serverAddr = computed(() => {
-  try {
-    const raw = localStorage.getItem('sn_server_config')
-    if (!raw) return null
-    const cfg = JSON.parse(raw)
-    if (!cfg.addresses || !cfg.addresses.length) return null
-    const active = cfg.addresses.find(a => a.id === cfg.activeId) || cfg.addresses[0]
-    return active
-  } catch { return null }
-})
-
-// ---- Capacitor APK 环境：回到本地壳页地址簿修改服务器地址 ----
-// 远程页面与壳页 http://localhost 不同源，localStorage 互不可见，
-// 只能整体导航回壳页；#manage 让壳页进入管理模式、不自动跳转。
-// ---- APK 环境识别 ----
+// ---- APK 环境识别与地址簿入口 ----
 // 远程页面里 Capacitor JS 运行时不存在（仅注入壳页源），
-// 但原生 addJavascriptInterface 注入的 StickyKeeNative 对所有源可用。
-const isCap = computed(() => typeof window !== 'undefined' && !!(window.StickyKeeNative || window.Capacitor))
+// 原生 addJavascriptInterface 注入的 StickyKeeNative 对所有源可用。
+// 服务器地址簿经原生桥统一存取（utils/serverConfig），Web 端 isApk=false 不显示入口。
 const currentOrigin = computed(() => {
   try { return window.location.origin } catch { return '' }
 })
-function editServerUrl() {
-  window.location.replace('http://localhost/#manage')
-}
 
 async function saveMyToken() {
   savingToken.value = true

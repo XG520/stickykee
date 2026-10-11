@@ -54,6 +54,9 @@
       <!-- 全局语音通话覆盖层（来电/通话中界面，WebRTC mesh） -->
       <CallOverlay />
     </template>
+
+    <!-- APK 服务器地址簿抽屉：登录页（公开页）与登录后都可用，Web 端不渲染 -->
+    <ServerManagerSheet />
   </div>
 </template>
 
@@ -65,6 +68,7 @@ import TheNavBar from '@/components/TheNavBar.vue'
 import MobileTabBar from '@/components/MobileTabBar.vue'
 import DeviceDrawer from '@/components/DeviceDrawer.vue'
 import CallOverlay from '@/components/CallOverlay.vue'
+import ServerManagerSheet from '@/components/ServerManagerSheet.vue'
 import { auth, loadInstances, ui } from '@/store'
 import { useFullscreen } from '@/composables/useFullscreen'
 import { useAutoHide } from '@/composables/useAutoHide'

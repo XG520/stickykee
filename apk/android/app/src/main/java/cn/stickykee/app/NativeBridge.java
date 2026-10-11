@@ -556,6 +556,36 @@ public class NativeBridge {
         });
     }
 
+    // ==================== 服务器地址簿（跨源统一存储） ====================
+    // 壳页(localhost 源)与远程页面(服务器源)不同源，localStorage 互不可见；
+    // 地址簿经此桥落到 SharedPreferences，两端共用同一份数据，应用内增删改
+    // 后冷启动壳页立即可见。JavascriptInterface 为同步调用，前端可当普通函数用。
+
+    /** 读取地址簿 JSON（{addresses,activeId,lastConnectedId}）；无数据返回空串。 */
+    @JavascriptInterface
+    public String getServerConfig() {
+        try {
+            return activity.getApplicationContext()
+                    .getSharedPreferences("stickykee", Context.MODE_PRIVATE)
+                    .getString("server_config", "");
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    /** 写入地址簿 JSON；json 为空串时清除。 */
+    @JavascriptInterface
+    public void setServerConfig(final String json) {
+        try {
+            activity.getApplicationContext()
+                    .getSharedPreferences("stickykee", Context.MODE_PRIVATE)
+                    .edit()
+                    .putString("server_config", json == null ? "" : json)
+                    .apply();
+        } catch (Exception ignored) {
+        }
+    }
+
     // ==================== 连接看门狗 ====================
     // 服务不可达（后端宕机/反代 502/断网）时自动退回壳页地址配置。
     // 壳页 go() 跳转服务器前调用 connWatch 启动；原生线程持续探测 /healthz，

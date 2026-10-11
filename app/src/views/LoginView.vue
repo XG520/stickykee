@@ -52,6 +52,13 @@
         </form>
       </div>
 
+      <!-- APK 环境：退出登录后修改服务器地址的入口（打开应用内地址簿抽屉，Web 不显示） -->
+      <button v-if="isApk" type="button" @click="openServerSheet"
+        class="w-full mt-4 py-2.5 rounded-xl bg-surface-alt border border-border text-on-surface/80 text-sm font-medium hover:border-primary transition-colors flex items-center justify-center gap-1.5">
+        <span class="material-symbols-outlined text-lg">dns</span>
+        修改服务器地址
+      </button>
+
       <p class="text-center text-muted text-xs mt-6 font-body">登录后即可配置与管理你的 Home Assistant</p>
     </div>
   </div>
@@ -62,6 +69,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import api from '@/api'
 import { authLogin, authRegister, siteName, loadSiteName } from '@/store'
+import { isApk, openServerSheet } from '@/utils/serverConfig'
 
 const router = useRouter()
 const route = useRoute()
