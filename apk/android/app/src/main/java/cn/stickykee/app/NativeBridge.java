@@ -9,14 +9,19 @@ import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.media.AudioFormat;
+import android.media.AudioManager;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
+import android.media.audio.AcousticEchoCanceler;
+import android.media.audio.AutomaticGainControl;
+import android.media.audio.NoiseSuppressor;
 import android.speech.tts.TextToSpeech;
 import android.util.Base64;
 import android.view.Window;
 import android.view.WindowManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
+import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
@@ -27,11 +32,15 @@ import androidx.core.view.WindowInsetsControllerCompat;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -333,9 +342,18 @@ public class NativeBridge {
                 AudioFormat.ENCODING_PCM_16BIT);
         if (minBuf <= 0) return "error:minBufferSize " + minBuf;
         try {
-            audioRecord = new AudioRecord(MediaRecorder.AudioSource.MIC, sr,
+            // VOICE_COMMUNICATION 音源：平台自动启用回声消除(AEC)+降噪(NS)，
+            // 外放时录音不再啸叫/杂音（MIC 音源无任何处理，杂音明显）
+            audioRecord = new AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION, sr,
                     AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT,
                     Math.max(minBuf * 4, 8192));
+            // 显式挂载 AEC/NS/AGC（部分机型音源不自动启用，可用则启用）
+            int sid = audioRecord.getAudioSessionId();
+            if (sid != 0) {
+                try { if (AcousticEchoCanceler.isAvailable()) AcousticEchoCanceler.create(sid); } catch (Exception ignored) {}
+                try { if (NoiseSuppressor.isAvailable()) NoiseSuppressor.create(sid); } catch (Exception ignored) {}
+                try { if (AutomaticGainControl.isAvailable()) AutomaticGainControl.create(sid); } catch (Exception ignored) {}
+            }
             audioRecord.startRecording();
         } catch (Exception e) {
             try { if (audioRecord != null) audioRecord.release(); } catch (Exception ignored) {}
@@ -534,9 +552,96 @@ public class NativeBridge {
         });
     }
 
+    // ==================== 连接看门狗 ====================
+    // 服务不可达（后端宕机/反代 502/断网）时自动退回壳页地址配置。
+    // 壳页 go() 跳转服务器前调用 connWatch 启动；原生线程持续探测 /healthz，
+    // 连续 2 次非 200（含连接异常）即 Toast 提示并 loadUrl 回壳页。
+    // 注意：不能放在前端 JS 判断——502 错误页是网关返回的静态 HTML，前端脚本不会执行。
+    private final ScheduledExecutorService watchPool = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread t = new Thread(r, "conn-watch");
+        t.setDaemon(true);
+        return t;
+    });
+    private volatile String watchUrl = null;
+    private volatile int watchFails = 0;
+
+    /** 启动连接看门狗，base 为服务器根地址（如 http://192.168.1.10:8080）。重复调用会重置。 */
+    @JavascriptInterface
+    public void connWatch(final String base) {
+        stopConnWatchInternal();
+        if (base == null || base.isEmpty()) return;
+        watchUrl = base.endsWith("/") ? base : base + "/";
+        watchFails = 0;
+        watchPool.scheduleWithFixedDelay(this::watchTick, 3, 4, TimeUnit.SECONDS);
+    }
+
+    /** 停止连接看门狗。 */
+    @JavascriptInterface
+    public void connWatchStop() {
+        stopConnWatchInternal();
+    }
+
+    private void stopConnWatchInternal() {
+        watchUrl = null;
+        watchFails = 0;
+    }
+
+    private void watchTick() {
+        final String base = watchUrl;
+        if (base == null) return;
+        int status = httpStatus(base + "healthz", 3000);
+        if (status == 200) {
+            watchFails = 0;
+            return;
+        }
+        watchFails++;
+        if (watchFails < 2) return; // 容忍单次抖动（后端重启/WiFi 切换）
+        stopConnWatchInternal();
+        bounceToShell();
+    }
+
+    /** 原生 HTTP 状态码探测；连接异常返回 -1。 */
+    private int httpStatus(String urlStr, int timeoutMs) {
+        HttpURLConnection conn = null;
+        try {
+            conn = (HttpURLConnection) new URL(urlStr).openConnection();
+            conn.setConnectTimeout(timeoutMs);
+            conn.setReadTimeout(timeoutMs);
+            conn.setInstanceFollowRedirects(false);
+            conn.setRequestProperty("Connection", "close");
+            return conn.getResponseCode();
+        } catch (Exception e) {
+            return -1;
+        } finally {
+            if (conn != null) {
+                try { conn.disconnect(); } catch (Exception ignored) {
+                }
+            }
+        }
+    }
+
+    /** 回退壳页（http://localhost/）：已在该页则静默停止，否则 Toast 提示并跳转。 */
+    private void bounceToShell() {
+        activity.runOnUiThread(() -> {
+            try {
+                WebView wv = webView;
+                if (wv == null) return;
+                String cur = wv.getUrl();
+                if (cur != null && cur.startsWith("http://localhost")) return; // 已在壳页
+                try {
+                    Toast.makeText(activity, "无法连接服务器，已返回地址配置", Toast.LENGTH_LONG).show();
+                } catch (Exception ignored) {
+                }
+                wv.loadUrl("http://localhost/");
+            } catch (Exception ignored) {
+            }
+        });
+    }
+
     /** 释放原生 TTS 资源 */
     public void release() {
         try {
+            stopConnWatchInternal();
             stopLight();
             recActive.set(false);
             if (audioRecord != null) {

@@ -346,7 +346,14 @@
   }
 
   // ---- 跳转 ----
+  // 跳转前启动原生连接看门狗：进入服务器后若服务不可达（宕机/反代 502/断网），
+  // 原生层连续两次探测 /healthz 失败会 Toast 提示并自动退回本页地址配置。
+  // 502 错误页是网关返回的静态 HTML，前端脚本不会执行，故只能在原生层兜底。
   function go(url) {
+    try {
+      var n = window.StickyKeeNative;
+      if (n && typeof n.connWatch === 'function') n.connWatch(url);
+    } catch (e) {}
     location.replace(url + '/');
   }
 

@@ -309,11 +309,16 @@ func (h *Im) AssistantTTS(w http.ResponseWriter, r *http.Request) {
 		edge := tts.NewEdgeTTS()
 		audio, ctype, err = edge.Synth(r.Context(), text, voice)
 	} else {
-		// HA TTS：用 HA 已配置的引擎
+		// HA TTS / 智能选择：engine 非空为显式选择的 HA 引擎 ID；为空则智能选择。
 		var rest *client.Rest
 		rest, err = h.ha.Rest(r.Context(), 0)
 		if err == nil {
 			audio, ctype, err = rest.TTS(r.Context(), engine, text)
+		}
+		// 智能选择模式下 HA 不可用（未配置实例）或 TTS 失败时，回退 Edge TTS，
+		// 避免「只有浏览器自带 TTS 有声音」的兜底体验。
+		if err != nil && engine == "" {
+			audio, ctype, err = tts.NewEdgeTTS().Synth(r.Context(), text, "zh-CN-XiaoxiaoNeural")
 		}
 	}
 	if err != nil {

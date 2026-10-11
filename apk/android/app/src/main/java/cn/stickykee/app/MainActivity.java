@@ -17,6 +17,10 @@ public class MainActivity extends BridgeActivity {
         // 注入 WebView 引用：异步 TTS（speakEdge2/speakLocal2）完成后经 evaluateJavascript
         // 向页面派发 stickykee-tts 结果事件。
         nativeBridge.attachWebView(bridge.getWebView());
+        // 允许无手势自动播放：TTS 朗读助手回复走 new Audio().play()，默认
+        // mediaPlaybackRequiresUserGesture=true 时自动朗读（无用户手势）会在合成回到
+        // 前端后被 WebView 拒绝，导致自定义 TTS 引擎无声、只能回退系统 TTS。
+        bridge.getWebView().getSettings().setMediaPlaybackRequiresUserGesture(false);
     }
 
     @Override
