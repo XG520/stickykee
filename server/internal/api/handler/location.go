@@ -68,7 +68,7 @@ func (h *Location) Update(w http.ResponseWriter, r *http.Request) {
 	// 查/创建 Sticky Kee 设备记录（沿用 sensors.lookupDevice 以保证 dev_id 稳定）。
 	dev := h.sensors.lookupDevice(ctx, username, p.DeviceID)
 	if dev == nil {
-		d, err := (&Devices{repo: h.sensors.repo, userPrefs: h.sensors.userPrefs}).upsert(ctx, username, p.DeviceID, "")
+		d, err := (&Devices{repo: h.sensors.repo, userPrefs: h.sensors.userPrefs, manager: h.sensors.manager}).upsert(ctx, username, p.DeviceID, "")
 		if err != nil {
 			WriteErr(w, 500, "internal", err.Error())
 			return

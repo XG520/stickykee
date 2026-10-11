@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"stickynuo/server/internal/auth"
+	"stickynuo/server/internal/ha"
 	"stickynuo/server/internal/store"
 )
 
@@ -29,11 +31,12 @@ type Device struct {
 type Devices struct {
 	repo      *store.InstanceRepo
 	userPrefs *store.UserPrefs
+	manager   *ha.Manager // HA 连接管理器：删除设备时同步移除 HA 中的 mobile_app 设备
 }
 
 // NewDevices 构造 handler。
-func NewDevices(repo *store.InstanceRepo, userPrefs *store.UserPrefs) *Devices {
-	return &Devices{repo: repo, userPrefs: userPrefs}
+func NewDevices(repo *store.InstanceRepo, userPrefs *store.UserPrefs, manager *ha.Manager) *Devices {
+	return &Devices{repo: repo, userPrefs: userPrefs, manager: manager}
 }
 
 var devSlugRe = regexp.MustCompile(`[^a-z0-9]+`)
@@ -173,7 +176,9 @@ func (h *Devices) Rename(w http.ResponseWriter, r *http.Request) {
 	WriteErr(w, 404, "not_found", "device not found")
 }
 
-// Delete DELETE /devices/{device_id}  删除设备。
+// Delete DELETE /devices/{device_id}  删除设备并同步移除 HA 中的对应设备。
+// 本地注册记录始终删除；HA 侧经设备注册表移除 mobile_app 设备（与 HA UI 删除设备
+// 同一 WS 命令），结果经 ha_removed/ha_message 回传供前端提示。
 func (h *Devices) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "device_id")
 	if id == "" {
@@ -183,15 +188,17 @@ func (h *Devices) Delete(w http.ResponseWriter, r *http.Request) {
 	username := h.username(r)
 	list := h.list(r.Context(), username)
 	out := list[:0]
-	found := false
+	var found Device
+	existed := false
 	for _, d := range list {
 		if d.DeviceID == id {
-			found = true
+			found = d
+			existed = true
 			continue
 		}
 		out = append(out, d)
 	}
-	if !found {
+	if !existed {
 		WriteErr(w, 404, "not_found", "device not found")
 		return
 	}
@@ -201,7 +208,70 @@ func (h *Devices) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 	// 同步清理该设备的传感器配置与 mobile_app 注册信息，避免残留。
 	h.clearDeviceSensors(r.Context(), username, id)
-	WriteJSON(w, 200, map[string]bool{"deleted": true})
+	// 尽力移除 HA 中的 mobile_app 设备（device_tracker/传感器实体随设备一并消失）；
+	// 失败不影响本地删除，结果回传前端提示。
+	haRemoved, haMsg := h.removeHADevice(r.Context(), username, found)
+	slog.Info("device deleted", "user", username, "device", id, "ha_removed", haRemoved, "ha", haMsg)
+	WriteJSON(w, 200, map[string]any{
+		"deleted":    true,
+		"ha_removed": haRemoved,
+		"ha_message": haMsg,
+	})
+}
+
+// removeHADevice 从 HA 设备注册表移除本设备的 mobile_app 设备（尽力而为）。
+// 流程：WS config/device_registry/list 按 identifiers=["mobile_app","stickynuo_<dev_id>"]
+// 定位 HA 设备 → 逐个 config/device_registry/remove_config_entry 摘除配置项
+// （最后一个摘除后 HA 即删除该设备及其实体）。未配置实例/token、HA 不可达或
+// token 无管理员权限时返回 false 与中文原因。
+func (h *Devices) removeHADevice(ctx context.Context, username string, dev Device) (bool, string) {
+	if h.manager == nil {
+		return false, "服务未连接 HA"
+	}
+	// CallCommand 内部按当前用户个人 token 建连（id=0 取 active 实例）。
+	raw, err := h.manager.CallCommand(ctx, 0, "config/device_registry/list", nil)
+	if err != nil {
+		return false, "无法连接 Home Assistant：" + err.Error()
+	}
+	var devs []struct {
+		ID            string     `json:"id"`
+		Name          string     `json:"name"`
+		Identifiers   [][]string `json:"identifiers"`
+		ConfigEntries []string   `json:"config_entries"`
+	}
+	if json.Unmarshal(raw, &devs) != nil {
+		return false, "HA 返回的设备注册表无法解析"
+	}
+	want := "stickynuo_" + dev.DevID
+	haIdx := -1
+	for i, d := range devs {
+		for _, ident := range d.Identifiers {
+			if len(ident) == 2 && ident[0] == "mobile_app" && ident[1] == want {
+				haIdx = i
+				break
+			}
+		}
+		if haIdx >= 0 {
+			break
+		}
+	}
+	if haIdx < 0 {
+		// HA 中不存在（此前已被删除或从未注册成功）——视为已移除。
+		return true, ""
+	}
+	// 逐个摘除配置项；mobile_app 设备通常只挂一个（mobile_app 集成条目）。
+	for _, entryID := range devs[haIdx].ConfigEntries {
+		if _, err := h.manager.CallCommand(ctx, 0, "config/device_registry/remove_config_entry", map[string]any{
+			"device_id":       devs[haIdx].ID,
+			"config_entry_id": entryID,
+		}); err != nil {
+			if strings.Contains(err.Error(), "unauthorized") || strings.Contains(err.Error(), "only_admin") || strings.Contains(err.Error(), "not_admin") {
+				return false, "HA 个人 token 需要管理员权限才能删除设备"
+			}
+			return false, "HA 拒绝删除设备：" + err.Error()
+		}
+	}
+	return true, ""
 }
 
 // clearDeviceSensors 删除设备的 sensor_config 与 mobile_app_reg 项（按用户隔离）。

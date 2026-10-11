@@ -69,7 +69,7 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 	ws := handler.NewWS(manager, nil, authOpt.Authenticate)
 	agg := handler.NewAggregate(manager)
 	automation := handler.NewAutomation(manager)
-	devices := handler.NewDevices(repo, userPrefs)
+	devices := handler.NewDevices(repo, userPrefs, manager)
 	registrations := handler.NewRegisteredEntities(manager)
 	sensors := handler.NewSensors(manager, repo, userPrefs)
 	// Location 复用 sensors 的 mobile_app 注册与 webhook 探测能力，使

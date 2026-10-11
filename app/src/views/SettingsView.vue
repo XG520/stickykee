@@ -1275,11 +1275,11 @@ async function saveAlias(d) {
   } catch (e) { flash(e.message, true) }
 }
 async function removeDevice(d) {
-  if (!confirm(`确定删除设备「${d.name}」？`)) return
+  if (!confirm(`确定删除设备「${d.name}」？\n将同时从 Home Assistant 中移除对应设备（含 device_tracker 实体）。`)) return
   try {
-    await deleteDevice(d.device_id)
+    const { data } = await deleteDevice(d.device_id)
     deviceList.value = deviceList.value.filter((x) => x.device_id !== d.device_id)
-    flash('设备已删除')
+    flash(data?.ha_removed ? '设备已删除，HA 中对应设备已移除' : `设备已删除；${data?.ha_message || 'HA 设备未能移除'}`, !data?.ha_removed)
   } catch (e) { flash(e.message, true) }
 }
 
