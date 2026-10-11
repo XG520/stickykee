@@ -208,7 +208,7 @@ export const api = {
   },
   sendImage: (user, form) => postForm(`/messages/${encodeURIComponent(user)}/image`, form),
   sendAudio: (user, form) => postForm(`/messages/${encodeURIComponent(user)}/audio`, form),
-  assistantTTS: (text) => fetchBlob('GET', `/messages/assistant/tts?text=${encodeURIComponent(text)}`),
+  assistantTTS: (text, engine) => fetchBlob('GET', `/messages/assistant/tts?text=${encodeURIComponent(text)}${engine ? '&engine=' + encodeURIComponent(engine) : ''}`),
   recallMessage: (id) => api.post(`/messages/${id}/recall`),
   sendShare: (user, dashboard) => api.post(`/messages/${encodeURIComponent(user)}/share`, { dashboard }),
   sendDevice: (user, device) => api.post(`/messages/${encodeURIComponent(user)}/device`, { device }),

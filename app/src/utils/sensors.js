@@ -19,8 +19,9 @@ export function detectCapabilities() {
   return {
     battery: typeof navigator.getBattery === 'function', // 桌面 Chrome 也支持（Secure Context）
     connection: !!(navigator.connection && typeof navigator.connection.addEventListener === 'function'),
-    light: typeof window.AmbientLightSensor === 'function' || typeof window.DeviceLightEvent === 'function',
-    wakeLock: typeof navigator.wakeLock === 'object' && typeof navigator.wakeLock.request === 'function',
+    light: lightAvailable(), // APK 原生环境光优先，其次浏览器 Generic Sensor（仅安全上下文）
+    wakeLock: (typeof navigator.wakeLock === 'object' && typeof navigator.wakeLock.request === 'function')
+      || nativeKeepScreenOn(), // APK 原生常亮兜底（http 下 Web WakeLock 不可用）
     visibility: true, // 页面可见性所有浏览器都支持
     geolocation: typeof navigator.geolocation !== 'undefined',
     mobile: type === 'mobile' || type === 'tablet',
@@ -80,7 +81,99 @@ export function unavailableReason(key) {
 
 // ---- 采集 ----
 let batteryManager = null
-let luxSensor = null
+
+// ---- 环境光（APK 原生优先，Web Generic Sensor 兜底；引用计数供多模块共用） ----
+function nativeLight() {
+  const n = typeof window !== 'undefined' ? window.StickyKeeNative : null
+  return n && typeof n.hasLightSensor === 'function' && typeof n.startLight === 'function'
+    && typeof n.stopLight === 'function' && typeof n.lightLux === 'function' && n.hasLightSensor() ? n : null
+}
+
+// 原生屏幕常亮（http 下 Web WakeLock 不可用时的接近自动亮屏兜底）
+function nativeKeepScreenOn() {
+  const n = typeof window !== 'undefined' ? window.StickyKeeNative : null
+  return !!(n && typeof n.keepScreenOn === 'function')
+}
+
+// 设备是否具备环境光读取能力（原生或浏览器）
+export function lightAvailable() {
+  return !!nativeLight() || typeof window.AmbientLightSensor === 'function' || typeof window.DeviceLightEvent === 'function'
+}
+
+let luxUsers = 0
+let luxMode = ''          // '' | 'native' | 'web'
+let webLuxSensor = null
+const luxHandlers = new Set()
+
+function dispatchLux(lux) {
+  luxHandlers.forEach((h) => { try { h(lux) } catch { /* 单个处理器异常不影响其他 */ } })
+}
+
+function onNativeLightEvt(e) {
+  const lux = e && e.detail ? Number(e.detail.lux) : NaN
+  if (Number.isFinite(lux)) dispatchLux(Math.round(lux))
+}
+
+function onWebLightReading() {
+  if (!webLuxSensor || typeof webLuxSensor.illuminance !== 'number') return
+  dispatchLux(Math.round(webLuxSensor.illuminance))
+}
+
+// 获取环境光监听（引用计数，handler(lux) 接收整数 lux）。返回是否成功启动。
+export function acquireLight(handler) {
+  if (handler) luxHandlers.add(handler)
+  luxUsers += 1
+  if (luxMode) return true
+  const n = nativeLight()
+  if (n) {
+    try {
+      n.startLight()
+      window.addEventListener('stickykee-light', onNativeLightEvt)
+      luxMode = 'native'
+      return true
+    } catch { /* 回退浏览器实现 */ }
+  }
+  if (typeof window.AmbientLightSensor === 'function') {
+    try {
+      webLuxSensor = new window.AmbientLightSensor({ frequency: 5 })
+      webLuxSensor.addEventListener('reading', onWebLightReading)
+      webLuxSensor.start()
+      luxMode = 'web'
+      return true
+    } catch { webLuxSensor = null }
+  }
+  luxUsers -= 1
+  return false
+}
+
+// 释放环境光监听（可选移除 handler；引用归零才真正停掉传感器）
+export function releaseLight(handler) {
+  if (handler) luxHandlers.delete(handler)
+  luxUsers = Math.max(0, luxUsers - 1)
+  if (luxUsers > 0 || !luxMode) return
+  if (luxMode === 'native') {
+    try { nativeLight()?.stopLight() } catch { /* 忽略 */ }
+    window.removeEventListener('stickykee-light', onNativeLightEvt)
+  } else if (luxMode === 'web') {
+    try { webLuxSensor?.stop() } catch { /* 忽略 */ }
+    try { webLuxSensor?.removeEventListener('reading', onWebLightReading) } catch { /* 忽略 */ }
+    webLuxSensor = null
+  }
+  luxMode = ''
+}
+
+// 当前 lux 读数：原生缓存优先（无需事件在跑），其次 Web 传感器实例
+export function currentLux() {
+  const n = nativeLight()
+  if (n) {
+    try {
+      const v = Number(n.lightLux())
+      if (Number.isFinite(v) && v >= 0) return Math.round(v)
+    } catch { /* 忽略 */ }
+  }
+  if (webLuxSensor && typeof webLuxSensor.illuminance === 'number') return Math.round(webLuxSensor.illuminance)
+  return undefined
+}
 
 // 与后端 mobile_app 注册的 app_version 保持一致
 const SN_VERSION = '1.0.0'
@@ -181,24 +274,6 @@ function connType() {
   return /slow-2g|2g|3g|4g/.test(et) ? 'cellular' : 'unavailable'
 }
 
-function currentLux() {
-  if (window.AmbientLightSensor && luxSensor && typeof luxSensor.illuminance === 'number') {
-    return Math.round(luxSensor.illuminance)
-  }
-  return undefined
-}
-
-function ensureLuxSensor(onChange) {
-  if (typeof window.AmbientLightSensor !== 'function') return null
-  try {
-    const s = new window.AmbientLightSensor({ frequency: 5 })
-    s.addEventListener('reading', onChange)
-    s.start()
-    luxSensor = s
-    return s
-  } catch { return null }
-}
-
 // ---- 接近感应（Browser_mod 同款思路：用环境光阴影检测是否有人靠近） ----
 // 当有人站在面前（遮挡光线，lux 明显低于最近基线）判定为 near，
 // 屏幕被唤醒锁点亮；人离开（光线恢复）回 far，释放唤醒锁让屏幕可按时间熄灭。
@@ -231,10 +306,15 @@ function feedProximityLux(lux) {
   return PROXIMITY.state
 }
 
-// 按接近状态请求/释放屏幕唤醒锁：near 时保持屏幕点亮。返回是否成功改变状态。
+// 按接近状态请求/释放屏幕常亮：near 时保持屏幕点亮。返回是否成功改变状态。
 async function syncProximityWakeLock(state) {
-  if (typeof navigator.wakeLock !== 'object') return false
   const want = state === 'near'
+  // APK 原生常亮兜底（http 下 Web WakeLock 不可用）
+  const n = typeof window !== 'undefined' ? window.StickyKeeNative : null
+  if (n && typeof n.keepScreenOn === 'function') {
+    try { n.keepScreenOn(want); return true } catch { /* 忽略 */ }
+  }
+  if (typeof navigator.wakeLock !== 'object') return false
   try {
     if (want && !PROXIMITY.wakeLock) {
       PROXIMITY.wakeLock = await navigator.wakeLock.request('screen')
@@ -255,22 +335,18 @@ async function syncProximityWakeLock(state) {
 export function startProximityScreenWake() {
   const cap = detectCapabilities()
   if (!cap.mobile || !cap.light || !cap.wakeLock) return null
-  if (typeof window.AmbientLightSensor !== 'function') return null
-  let sensor = null
-  try {
-    sensor = new window.AmbientLightSensor({ frequency: 5 })
-  } catch { return null }
-  const onReading = () => {
-    const lux = currentLux()
+  let stopped = false
+  const onLux = (lux) => {
     if (lux === undefined) return
     PROXIMITY.active = true
     const next = feedProximityLux(lux)
     syncProximityWakeLock(next)
   }
-  sensor.addEventListener('reading', onReading)
-  try { sensor.start() } catch { try { sensor.stop() } catch {} return null }
+  if (!acquireLight(onLux)) return null
   return () => {
-    try { sensor.stop() } catch {}
+    if (stopped) return
+    stopped = true
+    releaseLight(onLux)
     PROXIMITY.active = false
     PROXIMITY.readings = []
     syncProximityWakeLock('far')
@@ -395,9 +471,9 @@ export function startSensorMonitor({ onChange, onError, scope } = {}) {
   }).catch(() => {})
 
   // 环境光 + 接近感应（移动端）：lux 变化驱动接近判定，并在靠近时用唤醒锁点亮屏幕
-  if (typeof window.AmbientLightSensor === 'function') {
-    const luxHandler = () => {
-      const lux = currentLux()
+  {
+    let lastLuxReport = 0 // 纯环境光模式的上报节流（原生光感事件频率高，避免上报风暴）
+    const luxHandler = (lux) => {
       if (lux === undefined) return
       if (wantProximity) {
         const prev = PROXIMITY.state
@@ -405,15 +481,16 @@ export function startSensorMonitor({ onChange, onError, scope } = {}) {
         syncProximityWakeLock(next)
         if (next !== prev) cb() // 接近状态变化时上报
       } else {
-        cb() // 仅环境光：lux 有值即当作变化上报
+        const now = Date.now()
+        if (now - lastLuxReport >= 5000) { lastLuxReport = now; cb() }
       }
     }
-    const s = ensureLuxSensor(luxHandler)
-    if (s) {
+    if (acquireLight(luxHandler)) {
       if (wantProximity) PROXIMITY.active = true
-      stopFns.push(() => { try { s.stop() } catch {} })
+      stopFns.push(() => releaseLight(luxHandler))
+    } else if (detectCapabilities().mobile) {
+      err(new Error('环境光传感器启动失败'))
     }
-    else err(new Error('环境光传感器启动失败'))
   }
 
   // 60s 周期兜底（状态可能变化但事件未触发）

@@ -925,9 +925,10 @@ async function speak(text, msgId = 0) {
 
   const native = typeof window !== 'undefined' ? window.StickyKeeNative : null
   const prefs = getPrefs ? (await getPrefs())?.data : null
-  const engine = String(prefs?.tts_engine || '').trim()
-  if (seq !== ttsSeq) return // 读取设置期间被停止/换新朗读
   const isApk = !!(native && typeof native.speakEdge === 'function')
+  // 手机端与网页端分别读取各自的引擎设置；APK 未单独设置过（旧版数据）时回退旧的单值设置
+  const engine = String((isApk ? (prefs?.tts_engine_apk ?? prefs?.tts_engine) : prefs?.tts_engine) || '').trim()
+  if (seq !== ttsSeq) return // 读取设置期间被停止/换新朗读
 
   // 播放 Base64 音频的辅助函数
   const playB64 = (b64, mime) => {
@@ -977,7 +978,7 @@ async function speak(text, msgId = 0) {
       const { kokoroSynth } = await import('@/utils/kokoro_tts')
       blob = await kokoroSynth(text, voice || 'zf_001')
     } else {
-      const res = await api.assistantTTS(text)
+      const res = await api.assistantTTS(text, engine)
       blob = res?.blob
     }
     if (!blob || blob.size === 0) throw new Error('empty audio')

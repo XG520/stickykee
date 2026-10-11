@@ -4,6 +4,10 @@ import android.Manifest;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
@@ -59,6 +63,13 @@ public class NativeBridge {
     private final ByteArrayOutputStream recBuf = new ByteArrayOutputStream();
     private int recSampleRate = 16000;
     private static final int REC_REQUEST_CODE = 4101;
+
+    // 环境光传感器（http WebView 下 JS Generic Sensor API 不可用，由原生兜底）
+    private SensorManager sensorManager;
+    private Sensor lightSensor;
+    private SensorEventListener lightListener;
+    private volatile float lastLux = -1f;
+    private boolean lightRunning;
 
     public NativeBridge(AppCompatActivity activity) {
         this.activity = activity;
@@ -423,9 +434,110 @@ public class NativeBridge {
         b[off] = (byte) v; b[off + 1] = (byte) (v >> 8);
     }
 
+    // ==================== 环境光传感器与屏幕常亮 ====================
+    // http 非安全上下文下 WebView 不暴露 AmbientLightSensor / WakeLock API，这里用原生能力兜底，
+    // JS 侧通过 hasLightSensor/startLight/stopLight/lightLux 与 stickykee-light 事件消费。
+
+    /** 设备是否具备环境光传感器。 */
+    @JavascriptInterface
+    public boolean hasLightSensor() {
+        try {
+            SensorManager sm = (SensorManager) activity.getApplicationContext()
+                    .getSystemService(Context.SENSOR_SERVICE);
+            return sm != null && sm.getDefaultSensor(Sensor.TYPE_LIGHT) != null;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** 开始监听环境光：读数变化即向 JS 派发 stickykee-light 事件 {lux}。重复调用幂等。 */
+    @JavascriptInterface
+    public synchronized boolean startLight() {
+        if (lightRunning) return true;
+        try {
+            SensorManager sm = (SensorManager) activity.getApplicationContext()
+                    .getSystemService(Context.SENSOR_SERVICE);
+            Sensor s = sm == null ? null : sm.getDefaultSensor(Sensor.TYPE_LIGHT);
+            if (s == null) return false;
+            sensorManager = sm;
+            lightSensor = s;
+            lightListener = new SensorEventListener() {
+                @Override
+                public void onSensorChanged(SensorEvent event) {
+                    if (event == null || event.values == null || event.values.length == 0) return;
+                    lastLux = event.values[0];
+                    dispatchLight(lastLux);
+                }
+
+                @Override
+                public void onAccuracyChanged(Sensor sensor, int accuracy) {
+                }
+            };
+            sm.registerListener(lightListener, s, SensorManager.SENSOR_DELAY_UI);
+            lightRunning = true;
+            return true;
+        } catch (Exception e) {
+            lightRunning = false;
+            return false;
+        }
+    }
+
+    /** 停止监听环境光。 */
+    @JavascriptInterface
+    public synchronized void stopLight() {
+        if (!lightRunning) return;
+        try {
+            if (sensorManager != null && lightListener != null) {
+                sensorManager.unregisterListener(lightListener);
+            }
+        } catch (Exception ignored) {
+        }
+        lightListener = null;
+        lightSensor = null;
+        lightRunning = false;
+    }
+
+    /** 最近一次环境光读数（lux）；从未读到返回 -1。 */
+    @JavascriptInterface
+    public double lightLux() {
+        return lastLux;
+    }
+
+    private void dispatchLight(final float lux) {
+        final WebView wv = webView;
+        if (wv == null) return;
+        final String js = "window.dispatchEvent(new CustomEvent('stickykee-light',{detail:{lux:" + lux + "}}))";
+        activity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    wv.evaluateJavascript(js, null);
+                } catch (Exception ignored) {
+                }
+            }
+        });
+    }
+
+    /** 屏幕常亮开关（接近自动亮屏等场景；http 下 Web WakeLock 不可用，用 FLAG_KEEP_SCREEN_ON 兜底）。 */
+    @JavascriptInterface
+    public void keepScreenOn(final boolean on) {
+        activity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    Window w = activity.getWindow();
+                    if (on) w.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                    else w.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                } catch (Exception ignored) {
+                }
+            }
+        });
+    }
+
     /** 释放原生 TTS 资源 */
     public void release() {
         try {
+            stopLight();
             recActive.set(false);
             if (audioRecord != null) {
                 audioRecord.stop();

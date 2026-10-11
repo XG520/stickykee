@@ -23,6 +23,7 @@ import router from '@/router'
 import api from '@/api'
 import { store, entityStates, refreshEntities } from '@/store'
 import { applyTheme, THEMES } from '@/themes'
+import { acquireLight as acquireLux, releaseLight as releaseLux, lightAvailable } from '@/utils/sensors'
 import BrowserPopup from '@/components/BrowserPopup.vue'
 import EntityMoreInfo from '@/components/EntityMoreInfo.vue'
 
@@ -63,7 +64,7 @@ const DISMISS_KEY = 'hc_blackout_dismiss'
 const DOUBLE_TAP_MS = 300     // 双击判定窗口
 const FULL_BLACK_ALPHA = 0.95 // 亮度遮罩不透明度达到该值即视为「全黑」，同样接入手势/接近解除
 
-function hasLightSensor() { return typeof window.AmbientLightSensor === 'function' }
+function hasLightSensor() { return lightAvailable() }
 
 // 遮罩状态与解除配置：设置页直接绑定它做实时显示与开关，避免出现「遮罩已关但按钮仍显示取消黑屏」的状态不同步
 export const blackout = reactive({
@@ -75,41 +76,31 @@ export const blackout = reactive({
   lux: null,        // 最近一次环境光读数（null = 尚未读到）
 })
 
-// 环境光监听（引用计数）：全黑解除与设置页实时值共用同一传感器实例，避免重复创建
-let lightSensor = null
+// 环境光监听（与传感器模块共享引用计数）：全黑解除与设置页实时值共用同一传感器实例，
+// APK 原生环境光由 sensors.js 统一兜底，这里只负责消费 lux
 let lightUsers = 0
+let lightOk = false
 
-function acquireLight() {
-  if (!hasLightSensor()) return
-  lightUsers += 1
-  if (lightSensor) return
-  try {
-    lightSensor = new window.AmbientLightSensor({ frequency: 5 })
-    lightSensor.addEventListener('reading', onLightReading)
-    lightSensor.start()
-  } catch { lightSensor = null }
-}
-
-function releaseLight() {
-  if (!hasLightSensor()) return
-  lightUsers = Math.max(0, lightUsers - 1)
-  if (lightUsers > 0 || !lightSensor) return
-  try { lightSensor.stop() } catch { /* 已停止 */ }
-  lightSensor.removeEventListener('reading', onLightReading)
-  lightSensor = null
-}
-
-function onLightReading() {
-  if (!lightSensor || typeof lightSensor.illuminance !== 'number') return
-  blackout.lux = Math.round(lightSensor.illuminance)
+function onLightLux(lux) {
+  blackout.lux = lux
   // 全黑中且已开启接近解除：lux 掉到阈值及以下判定有人靠近，解除当前全黑层
   if (armedDismiss && blackout.enabled && blackout.lux <= blackout.threshold) armedDismiss()
 }
 
+function ensureLight() {
+  lightUsers += 1
+  if (lightUsers === 1) lightOk = acquireLux(onLightLux)
+}
+
+function dropLight() {
+  lightUsers = Math.max(0, lightUsers - 1)
+  if (lightUsers === 0 && lightOk) releaseLux(onLightLux)
+}
+
 // 设置页用：停留期间持续读取环境光以实时显示数值（返回停止函数）
 export function watchAmbientLight() {
-  acquireLight()
-  return releaseLight
+  ensureLight()
+  return dropLight
 }
 
 // ---- 全黑层的解除接入（手势 / 接近） ----
@@ -162,8 +153,8 @@ function refreshDismiss() {
 function syncDismissLight() {
   const want = !!(armedEl && blackout.enabled)
   if (want === heldLight) return
-  if (want) { acquireLight(); heldLight = true }
-  else { releaseLight(); heldLight = false }
+  if (want) { ensureLight(); heldLight = true }
+  else { dropLight(); heldLight = false }
 }
 
 // 读取本地配置。模块加载时调一次，让 HA 下发的黑屏命令立刻按已保存配置生效
@@ -236,6 +227,11 @@ export function setBlackout(on, fadeMs = 200) {
 // ---- screen：屏幕唤醒锁（保持亮屏） ---- //
 let wakeLock = null
 export async function setScreenWake(wantActive) {
+  // APK 原生常亮兜底（http 下 Web WakeLock 不可用）
+  const n = typeof window !== 'undefined' ? window.StickyKeeNative : null
+  if (n && typeof n.keepScreenOn === 'function') {
+    try { n.keepScreenOn(!!wantActive); return true } catch { /* 忽略 */ }
+  }
   if (typeof navigator.wakeLock === 'undefined') return false
   try {
     if (wantActive && !wakeLock) {

@@ -290,7 +290,11 @@ func (h *Im) AssistantTTS(w http.ResponseWriter, r *http.Request) {
 		WriteErr(w, 400, "bad_request", "text required")
 		return
 	}
-	engine := strings.TrimSpace(h.userPrefs.Get(r.Context(), rUsername(r), "tts_engine"))
+	// 支持调用方显式指定引擎（网页端/手机端设置分离后由前端按端传入）；缺省回退存储的网页端设置
+	engine := strings.TrimSpace(r.URL.Query().Get("engine"))
+	if engine == "" {
+		engine = strings.TrimSpace(h.userPrefs.Get(r.Context(), rUsername(r), "tts_engine"))
+	}
 
 	var audio []byte
 	var ctype string
