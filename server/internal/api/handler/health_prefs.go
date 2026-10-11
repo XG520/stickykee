@@ -29,7 +29,9 @@ func NewPrefs(repo *store.InstanceRepo, userPrefs *store.UserPrefs, manager *ha.
 }
 
 // 用户级偏好 key：按登录用户隔离；无值回退全局 prefs。
-var userScoped = []string{"theme", "font", "icons", "floorplan", "floorplan_doc", "animation", "wakeWord", "dashboard", "tts_engine"}
+// tts_engine（网页端引擎）与 tts_engine_apk（手机端引擎）都必须在列：
+// 缺失时手机端读不到自己的引擎设置，会错误回退到网页端引擎（如 Kokoro）。
+var userScoped = []string{"theme", "font", "icons", "floorplan", "floorplan_doc", "animation", "wakeWord", "dashboard", "tts_engine", "tts_engine_apk"}
 
 // 设备级偏好 key：按登录用户隔离（设备/传感器均属个人），无全局回退。
 var deviceScoped = []string{"devices", "sensor_config"}
