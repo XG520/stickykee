@@ -19,9 +19,10 @@ import (
 
 // Rest 是 HA REST API 客户端。
 type Rest struct {
-	baseURL string
-	token   string
-	http    *http.Client
+	baseURL     string
+	token       string
+	http        *http.Client
+	insecureTLS bool // 是否跳过 TLS 证书校验（自签名/过期证书的本地 HA 常用）
 }
 
 // NewRest 构造 REST 客户端；insecureTLS 为 true 时信任自签名证书（本地 HA 常用）。
@@ -30,9 +31,10 @@ func NewRest(baseURL, token string, insecureTLS bool) *Rest {
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: insecureTLS}, // #nosec G402: 本地 HA 自签名
 	}
 	return &Rest{
-		baseURL: strings.TrimRight(baseURL, "/"),
-		token:   token,
-		http:    &http.Client{Timeout: 15 * time.Second, Transport: transport},
+		baseURL:     strings.TrimRight(baseURL, "/"),
+		token:       token,
+		http:        &http.Client{Timeout: 15 * time.Second, Transport: transport},
+		insecureTLS: insecureTLS,
 	}
 }
 

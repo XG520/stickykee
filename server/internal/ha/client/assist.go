@@ -6,6 +6,7 @@ package client
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -99,7 +100,12 @@ func (c *Rest) PipelineVoice(ctx context.Context, wav []byte, conversationID str
 
 	wsAddr := c.wsURL()
 	hdr := map[string][]string{}
-	dialer := websocket.Dialer{HandshakeTimeout: 10 * time.Second}
+	// 与 REST/live 连接保持一致：用户开启「忽略 TLS 证书校验」时同样跳过校验，
+	// 否则自签名/已过期证书的 HA 会让语音转文字单独失败（文本对话却正常）。
+	dialer := websocket.Dialer{
+		HandshakeTimeout: 10 * time.Second,
+		TLSClientConfig:  &tls.Config{InsecureSkipVerify: c.insecureTLS}, // #nosec G402: 本地 HA 自签名
+	}
 	conn, _, err := dialer.DialContext(ctx, wsAddr, hdr)
 	if err != nil {
 		return "", "", fmt.Errorf("connect ha websocket: %w", err)
