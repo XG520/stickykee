@@ -30,6 +30,9 @@ RUN go build -trimpath -ldflags="-s -w" -o /out/stickynuo ./cmd/server
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates tzdata \
  && addgroup -g 10001 sn && adduser -D -u 10001 -G sn sn
+# 预建数据目录并授予 sn 用户：命名卷/匿名卷首次挂载时继承该目录属主，
+# 否则卷目录为 root 所有，非 root 进程无法创建 SQLite 库，启动即失败。
+RUN mkdir -p /data && chown -R sn:sn /data
 WORKDIR /app
 COPY --from=build /out/stickynuo ./stickynuo
 COPY --from=web /web/dist ./dist
