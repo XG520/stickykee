@@ -33,4 +33,9 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD wget -qO- http://localhost:8080/healthz || exit 1
 
+# App 安装包下载（/api/v1/app/download）：默认随仓库根 Dockerfile（前后端单镜像）
+# 打包发布。纯后端镜像构建上下文不含 release/，如需提供下载，把 APK 拷进本目录后
+# 在下方 COPY 进镜像，并在运行环境设置 SN_APK_FILE 指向该文件，例如：
+#   COPY stickykee-app.apk /app/downloads/stickykee-app.apk
+#   SN_APK_FILE=/app/downloads/stickykee-app.apk
 ENTRYPOINT ["/app/stickynuo-server"]

@@ -116,6 +116,10 @@ export const api = {
     return (j && j.data) || {}
   },
 
+  // App 安装包（公开接口，无需登录）：info 查可用性，download 直接浏览器下载
+  appInfo: () => api.get('/app/info'),
+  appDownloadUrl: () => BASE + '/app/download',
+
   // 认证
   authStatus: () => api.get('/auth/status'),
   register: (b) => api.post('/auth/register', b),

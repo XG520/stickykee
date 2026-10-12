@@ -33,10 +33,17 @@ RUN apk add --no-cache ca-certificates tzdata \
 WORKDIR /app
 COPY --from=build /out/stickynuo ./stickynuo
 COPY --from=web /web/dist ./dist
+# 安卓 App 安装包打进镜像：设置页「系统信息」与 /api/v1/app/download 提供下载。
+# 构建镜像前需先产出 APK 并复制到仓库根 release/stickykee-app.apk：
+#   apk/android $ ./gradlew assembleDebug
+#   $ mkdir -p release && cp apk/android/app/build/outputs/apk/debug/app-debug.apk release/stickykee-app.apk
+# 无 APK 时此 COPY 会构建失败——按需注释掉下行与 SN_APK_FILE。
+COPY release/stickykee-app.apk ./dist/downloads/stickykee-app.apk
 # 数据库、聊天图片（/data/uploads/im）、图标缓存（/data/icons）都在 /data 下
 ENV SN_HTTP_ADDR=:8080 \
     SN_DB_PATH=/data/stickynuo.db \
-    SN_STATIC_DIR=/app/dist
+    SN_STATIC_DIR=/app/dist \
+    SN_APK_FILE=/app/dist/downloads/stickykee-app.apk
 VOLUME /data
 EXPOSE 8080
 USER sn

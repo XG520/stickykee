@@ -659,7 +659,7 @@
           <p class="text-muted text-xs mt-0.5">前后端版本号，用于确认部署是否已更新</p>
         </div>
       </div>
-      <div class="grid grid-cols-2 gap-2">
+      <div class="grid grid-cols-3 gap-2">
         <div class="rounded-xl bg-background border border-border px-3 py-2.5">
           <p class="text-muted text-xs mb-1">网页版本</p>
           <p class="text-on-surface text-sm font-semibold">{{ appVersion || '—' }}</p>
@@ -671,6 +671,15 @@
             <span v-else-if="backendVersion === ''" class="text-error">获取失败</span>
             <template v-else>{{ backendVersion }}</template>
           </p>
+        </div>
+        <div class="rounded-xl bg-background border border-border px-3 py-2.5">
+          <p class="text-muted text-xs mb-1">安卓 App</p>
+          <a v-if="apkAvailable" class="text-primary text-sm font-semibold inline-flex items-center gap-1 hover:underline"
+             :href="apkDownloadUrl" download>
+            <span class="material-symbols-outlined text-base">download</span>下载安装包
+          </a>
+          <p v-else-if="apkChecked" class="text-muted text-sm">未提供</p>
+          <p v-else class="text-muted text-sm">检测中…</p>
         </div>
       </div>
       <p v-if="versionMismatch" class="mt-2 text-xs font-body text-warning">
@@ -1370,8 +1379,21 @@ async function loadVersion() {
   }
 }
 
+// 安卓 App 安装包：服务端随 Docker 镜像发布 APK 时展示下载入口
+const apkAvailable = ref(false)
+const apkChecked = ref(false)
+const apkDownloadUrl = api.appDownloadUrl()
+async function loadAppInfo() {
+  try {
+    const info = await api.appInfo()
+    apkAvailable.value = !!info?.apkAvailable
+  } catch { /* 服务端旧版本无此接口：保持未提供 */ }
+  apkChecked.value = true
+}
+
 onMounted(() => {
   loadVersion()
+  loadAppInfo()
   loadPrefs(); loadDevices(); loadSensors(); loadUsers()
   loadSiteName().then(() => { siteNameDraft.value = siteName.value }) // 同步后端权威值
   stopLightWatch = watchAmbientLight() // 面板打开期间持续读环境光，用于「实时值」显示
