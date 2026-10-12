@@ -718,14 +718,12 @@ public class NativeBridge {
         }
         final LocationManager lm = locMgr();
         try {
-            // 先取缓存定位，卫星超时也能有结果
+            // 先取卫星缓存定位（只认 GPS_PROVIDER，不混入 WiFi/基站网络定位，保证结果必为卫星坐标），
+            // 卫星超时也能有结果
             Location last = null;
-            for (String p : new String[]{LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER}) {
-                try {
-                    Location l = lm.getLastKnownLocation(p);
-                    if (l != null && (last == null || l.getTime() > last.getTime())) last = l;
-                } catch (SecurityException ignored) {
-                }
+            try {
+                last = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+            } catch (SecurityException ignored) {
             }
             final Location[] best = { last };
             final Runnable[] finishRef = new Runnable[1];

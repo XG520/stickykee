@@ -40,13 +40,14 @@ export function nativeGpsOnce(timeoutMs = 15000) {
   })
 }
 
-// 获取当前定位（Promise 形式，兼容 GeolocationPosition 结构）。APK 内优先原生卫星定位。
-async function getCurrentPosition() {
+// 获取当前定位（Promise 形式，兼容 GeolocationPosition 结构）。
+// APK 内一律原生卫星定位（GPS/北斗）：卫星无 fix/超时/无权限时直接报错，
+// 绝不静默回退网络定位——否则会出现「文字地址与坐标不一致」的假位置。
+// 仅非 APK 的浏览器环境使用 navigator.geolocation。
+export async function getCurrentPosition() {
   if (nativeGps()) {
-    try {
-      const r = await nativeGpsOnce(15000)
-      return { coords: { latitude: r.lat, longitude: r.lng, accuracy: r.acc } }
-    } catch { /* 卫星无 fix/超时/无权限 → 回退浏览器定位（会触发系统授权弹窗） */ }
+    const r = await nativeGpsOnce(15000)
+    return { coords: { latitude: r.lat, longitude: r.lng, accuracy: r.acc } }
   }
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) { reject(new Error('浏览器不支持定位，需 HTTPS 环境')); return }

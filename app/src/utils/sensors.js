@@ -1,7 +1,7 @@
 // 设备传感器：检测设备类型与浏览器能力，按启用项采集传感器值，
 // 并启动监听（状态变化立即回调 + 60s 周期兜底）。数据经后端 HA mobile_app 协议上报。
 import { getDeviceId, currentDevice } from '@/utils/device'
-import { nativeGpsOnce } from '@/utils/location'
+import { getCurrentPosition } from '@/utils/location'
 
 // ---- 设备类型 ----
 export function detectDeviceType() {
@@ -243,24 +243,14 @@ async function reverseGeocode(lng, lat, amapKey) {
   return ''
 }
 
-// 设备定位（失败/拒绝授权时返回 null）。APK 内优先原生 GPS/北斗卫星定位。
+// 设备定位：复用 location.js 的统一定位（APK 内原生 GPS/北斗卫星定位，15s 超时，
+// 与 device_tracker 坐标同源同刻——保证 geocoded_location 的地址文字与地图坐标一致）。
+// 失败/拒绝授权/无卫星 fix 时返回 null（不上报，避免网络定位产生的错位地址）。
 async function currentPosition() {
-  const n = typeof window !== 'undefined' ? window.StickyKeeNative : null
-  if (n && typeof n.gpsOnce === 'function' && typeof n.hasGps === 'function' && n.hasGps()) {
-    try {
-      const r = await nativeGpsOnce(4000)
-      return { lng: r.lng, lat: r.lat }
-    } catch { /* 卫星无 fix/超时 → 回退浏览器定位 */ }
-  }
-  return new Promise((resolve) => {
-    try {
-      navigator.geolocation.getCurrentPosition(
-        (p) => resolve({ lng: p.coords.longitude, lat: p.coords.latitude }),
-        () => resolve(null),
-        { timeout: 4000, maximumAge: 60000 },
-      )
-    } catch { resolve(null) }
-  })
+  try {
+    const pos = await getCurrentPosition()
+    return { lng: pos.coords.longitude, lat: pos.coords.latitude }
+  } catch { return null }
 }
 
 async function getBattery() {
