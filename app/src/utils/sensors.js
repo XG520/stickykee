@@ -2,6 +2,7 @@
 // 并启动监听（状态变化立即回调 + 60s 周期兜底）。数据经后端 HA mobile_app 协议上报。
 import { getDeviceId, currentDevice } from '@/utils/device'
 import { getCurrentPosition } from '@/utils/location'
+import { wgs84ToGcj02 } from '@/utils/gcj02'
 
 // ---- 设备类型 ----
 export function detectDeviceType() {
@@ -432,7 +433,9 @@ export async function collect(enabled, trigger = 'manual', amapKey = '') {
   if (has('geocoded_location')) {
     const pos = await currentPosition()
     if (pos) {
-      const addr = await reverseGeocode(pos.lng, pos.lat, amapKey)
+      // 高德基于 GCJ-02：WGS-84 的 GPS 坐标须先转换再反查，否则地址偏数百米
+      const gc = wgs84ToGcj02(pos.lng, pos.lat)
+      const addr = await reverseGeocode(gc.lng, gc.lat, amapKey)
       if (addr) sensors.geocoded_location = { state: addr, attributes: { latitude: pos.lat, longitude: pos.lng } }
     }
   }

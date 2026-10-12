@@ -3,6 +3,7 @@
 import api from '@/api'
 import { store } from '@/store'
 import { ensureDevice } from '@/utils/device'
+import { wgs84ToGcj02 } from '@/utils/gcj02'
 
 // ---- 原生 GPS/北斗定位（APK 优先）----
 // WebView 的 navigator.geolocation 在 Android 上默认走 FUSED 网络混合定位（WiFi/基站，
@@ -147,7 +148,10 @@ export async function syncCurrentLocation() {
   const device = await ensureDevice()
   const pos = await getCurrentPosition()
   const { latitude, longitude, accuracy } = pos.coords
-  const address = await reverseGeocode(longitude, latitude)
+  // 高德基于 GCJ-02：WGS-84 的 GPS 坐标须先转换再反查，否则地址偏数百米
+  // （与官方 App 不一致）；上报 HA 的坐标保持 WGS-84，与官方 App 完全相同。
+  const gc = wgs84ToGcj02(longitude, latitude)
+  const address = await reverseGeocode(gc.lng, gc.lat)
   await reportLocation(latitude, longitude, accuracy)
   return {
     ok: true,
