@@ -28,6 +28,7 @@ import android.media.audiofx.AutomaticGainControl;
 import android.media.audiofx.NoiseSuppressor;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.PowerManager;
 import android.provider.Settings;
 import android.speech.tts.TextToSpeech;
 import android.util.Base64;
@@ -852,12 +853,24 @@ public class NativeBridge {
 
     // ==================== 前台保活服务 ====================
 
-    /** 登录后启动前台保活服务：防后台冻结断连（消息通知/来电铃声依赖实时连接）。 */
+    /** 登录后启动前台保活服务：防后台冻结断连（消息通知/来电铃声依赖实时连接）。
+     *  同时请求电池优化豁免（SOS/微信级常驻：MIUI 等省电策略是后台被杀的主因），
+     *  已豁免则静默；用户拒绝后下次登录会再次引导。 */
     @JavascriptInterface
     public void startKeepAlive() {
         try {
             ContextCompat.startForegroundService(activity,
                     new Intent(activity, KeepAliveService.class));
+        } catch (Exception ignored) {
+        }
+        try {
+            PowerManager pm = (PowerManager) activity.getSystemService(Context.POWER_SERVICE);
+            String pkg = activity.getPackageName();
+            if (pm != null && !pm.isIgnoringBatteryOptimizations(pkg)) {
+                activity.startActivity(new Intent(
+                        Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                        Uri.parse("package:" + pkg)));
+            }
         } catch (Exception ignored) {
         }
     }
