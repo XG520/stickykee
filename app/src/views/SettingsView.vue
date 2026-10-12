@@ -1416,8 +1416,8 @@ const apkChecked = ref(false)
 const apkDownloadUrl = api.appDownloadUrl()
 async function loadAppInfo() {
   try {
-    const info = await api.appInfo()
-    apkAvailable.value = !!info?.apkAvailable
+    const { data } = await api.appInfo()
+    apkAvailable.value = !!data?.apkAvailable
   } catch { /* 服务端旧版本无此接口：保持未提供 */ }
   apkChecked.value = true
 }
