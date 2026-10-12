@@ -64,7 +64,9 @@ export async function saveSiteName(name) {
 // 否则写入 sessionStorage，仅当前会话有效。写入前清掉另一处的残留，避免两份令牌不一致。
 function setToken(t, remember = false) {
   if (!t) return
-  if (remember) {
+  // APK 端强制持久化：WebView 进程被系统回收后 sessionStorage 会清空，
+  // 表现为「切后台一会儿回来就退出登录」；App 属个人设备，重启保持登录。
+  if (remember || !!window.StickyKeeNative) {
     localStorage.setItem('hc_token', t)
     sessionStorage.removeItem('hc_token')
   } else {
@@ -76,6 +78,12 @@ function setAuth(u) {
   auth.user = u?.username ?? null
   auth.isAdmin = !!u?.is_admin
   auth.checked = true
+  // 前台保活服务跟随登录态：登录后启动（后台收通知/来电依赖实时连接），登出停止
+  try {
+    const nk = window.StickyKeeNative
+    if (u) nk?.startKeepAlive?.()
+    else nk?.stopKeepAlive?.()
+  } catch { /* 忽略 */ }
 }
 
 // 登录/注册：成功后写入 token 与用户态。
@@ -412,6 +420,18 @@ function connectWS() {
     }, delay)
   }
   ws.onerror = () => { try { ws.close() } catch {} }
+}
+
+// 回到前台立即恢复连接：后台被冻结期间 WS 可能已断，
+// 指数退避最长 20s 太慢，切回前台时直接重连。
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return
+    if (ws || !store.ready || store.activeID <= 0 || !haTokenConfigured.value) return
+    retry = 1
+    if (wsTimer) { clearTimeout(wsTimer); wsTimer = null }
+    connectWS()
+  })
 }
 
 // 拉取实例列表并建立实时连接。

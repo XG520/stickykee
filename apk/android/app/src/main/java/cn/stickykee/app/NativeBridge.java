@@ -850,6 +850,27 @@ public class NativeBridge {
     private static final int NOTIF_ID = 9001;
     private static final int NOTIF_PERM_CODE = 4301;
 
+    // ==================== 前台保活服务 ====================
+
+    /** 登录后启动前台保活服务：防后台冻结断连（消息通知/来电铃声依赖实时连接）。 */
+    @JavascriptInterface
+    public void startKeepAlive() {
+        try {
+            ContextCompat.startForegroundService(activity,
+                    new Intent(activity, KeepAliveService.class));
+        } catch (Exception ignored) {
+        }
+    }
+
+    /** 退出登录时停止保活服务。 */
+    @JavascriptInterface
+    public void stopKeepAlive() {
+        try {
+            activity.stopService(new Intent(activity, KeepAliveService.class));
+        } catch (Exception ignored) {
+        }
+    }
+
     /** 弹出状态栏通知。点击通知拉应用到前台。Android 13+ 需先授权 POST_NOTIFICATIONS。 */
     @JavascriptInterface
     public void showNotification(final String title, final String body) {
