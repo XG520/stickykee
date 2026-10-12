@@ -119,7 +119,7 @@ export const api = {
   // App 安装包（需登录）：info 查可用性，download 经 fetch 携带令牌取流保存——
   // 浏览器导航下载无法携带 Authorization 头，未登录会被 401 拒绝。
   appInfo: () => api.get('/app/info'),
-  appDownload: () => fetchBlob('GET', BASE + '/app/download'),
+  appDownload: () => fetchBlob('GET', '/app/download'),
 
   // 认证
   authStatus: () => api.get('/auth/status'),
