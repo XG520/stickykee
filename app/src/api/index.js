@@ -222,6 +222,8 @@ export const api = {
 
   // 智家助手：可用的 HA 对话代理列表（设置页「对话代理」选择器）
   getHaAgents: () => api.get('/messages/assistant/agents'),
+  // 智家助手：可用的 HA TTS 引擎列表（朗读下拉动态展示，刷新方式与对话代理一致）
+  getHaTtsServices: () => api.get('/messages/tts/services'),
 
   // 语音通话信令。join/leave/reject 携带本机 device id：
   // 同账号多端在线时，后端事件回传 device 供其它设备识别"已在其他设备操作"。

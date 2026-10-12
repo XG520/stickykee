@@ -169,6 +169,7 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 			r.Get("/messages/contacts", im.Contacts)
 			r.Get("/messages/assistant/tts", im.AssistantTTS)
 			r.Get("/messages/assistant/agents", im.ListAgents)
+			r.Get("/messages/tts/services", im.ListTTS)
 			r.Get("/messages/{user}", im.History)
 			r.Post("/messages/{user}", im.SendText)
 			r.Post("/messages/{user}/share", im.SendShare)

@@ -83,6 +83,37 @@
       </p>
     </section>
 
+    <!-- 通话铃声（仅 APK）：来电铃声与呼叫彩铃，走系统铃声音量流 -->
+    <section v-if="canPickRing" class="bg-surface-alt border border-border rounded-2xl p-5">
+      <div class="flex items-center gap-2.5 mb-3">
+        <div class="w-8 h-8 rounded-xl bg-accent/20 flex items-center justify-center">
+          <span class="material-symbols-outlined text-accent text-lg">ring_volume</span>
+        </div>
+        <div>
+          <h2 class="font-headline text-on-background text-base font-semibold">通话铃声</h2>
+          <p class="text-muted text-xs mt-0.5">来电振铃与呼叫等待彩铃（随系统铃声音量）</p>
+        </div>
+      </div>
+      <div class="space-y-2">
+        <div v-for="k in ['call', 'back']" :key="k"
+          class="flex items-center justify-between gap-3 rounded-xl bg-background border border-border px-3 py-2.5">
+          <div class="min-w-0">
+            <p class="text-on-surface text-sm font-medium">{{ k === 'call' ? '来电铃声' : '呼叫彩铃（等待接听）' }}</p>
+            <p class="text-muted text-xs truncate">{{ ringNames[k] || '系统默认' }}</p>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <button @click="pickRing(k)"
+              class="px-3 py-1.5 rounded-lg bg-accent hover:bg-accent/90 text-on-primary text-xs font-semibold transition-colors">选择</button>
+            <button v-if="ringNames[k]" @click="resetRing(k)"
+              class="px-3 py-1.5 rounded-lg bg-surface-hover hover:bg-surface border border-border text-xs text-on-surface transition-colors">默认</button>
+          </div>
+        </div>
+      </div>
+      <p class="text-muted text-xs font-body mt-2 leading-relaxed">
+        通话铃声使用系统「铃声音量」，与媒体音量互不影响；在选择器中选「无」可静音对应铃声。
+      </p>
+    </section>
+
     <!-- Home Assistant 连接管理（仅管理员可见） -->
     <section v-if="auth.isAdmin" class="bg-surface-alt border border-border rounded-2xl p-5">
       <div class="flex items-center justify-between mb-4">
@@ -1391,16 +1422,47 @@ async function loadAppInfo() {
   apkChecked.value = true
 }
 
+// ===== 通话铃声（仅 APK）：经原生铃声选择器选择来电铃声/彩铃，存 localStorage 与 call.js 共用 =====
+const canPickRing = !!window.StickyKeeNative?.pickRingtone
+const RING_KEYS = { call: 'sk_call_ringtone', back: 'sk_back_ringtone' }
+const ringNames = reactive({ call: '', back: '' })
+function loadRingNames() {
+  for (const k of ['call', 'back']) {
+    try {
+      const v = JSON.parse(localStorage.getItem(RING_KEYS[k]) || 'null')
+      ringNames[k] = v?.name || (v?.uri ? '自定义铃声' : '')
+    } catch { ringNames[k] = '' }
+  }
+}
+function pickRing(kind) {
+  let cur = ''
+  try { cur = JSON.parse(localStorage.getItem(RING_KEYS[kind]) || 'null')?.uri || '' } catch { /* 忽略 */ }
+  window.StickyKeeNative.pickRingtone(kind, cur)
+}
+function resetRing(kind) {
+  localStorage.removeItem(RING_KEYS[kind])
+  loadRingNames()
+}
+// 选择器结果（原生桥派发 stickykee-ring {kind,ok,uri,name}）：ok=false 为用户取消
+function onRingPicked(e) {
+  const d = e.detail || {}
+  if (!d.ok || !RING_KEYS[d.kind]) return
+  localStorage.setItem(RING_KEYS[d.kind], JSON.stringify({ uri: d.uri || '', name: d.name || (d.uri ? '自定义铃声' : '静音') }))
+  loadRingNames()
+}
+
 onMounted(() => {
   loadVersion()
   loadAppInfo()
   loadPrefs(); loadDevices(); loadSensors(); loadUsers()
+  if (canPickRing) { loadRingNames(); window.addEventListener('stickykee-ring', onRingPicked) }
   loadSiteName().then(() => { siteNameDraft.value = siteName.value }) // 同步后端权威值
   stopLightWatch = watchAmbientLight() // 面板打开期间持续读环境光，用于「实时值」显示
 })
 onUnmounted(() => {
   if (stopMonitor) { stopMonitor(); stopMonitor = null }
   if (stopLightWatch) { stopLightWatch(); stopLightWatch = null }
+  if (canPickRing) window.removeEventListener('stickykee-ring', onRingPicked)
 })
 </script>
 

@@ -223,6 +223,26 @@ func (h *Im) ListAgents(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ListTTS GET /api/v1/messages/tts/services
+// 枚举 HA 中可用的 TTS 引擎（tts.* 实体），供朗读引擎下拉动态展示（刷新方式与对话代理一致）。
+func (h *Im) ListTTS(w http.ResponseWriter, r *http.Request) {
+	me := rUsername(r)
+	rest, err := h.ha.Rest(r.Context(), 0)
+	if err != nil {
+		haErr(w, err)
+		return
+	}
+	svcs, err := rest.ListTTSServices(r.Context())
+	if err != nil {
+		haErr(w, err)
+		return
+	}
+	WriteJSON(w, 200, map[string]any{
+		"services": svcs,
+		"selected": h.userPrefs.Get(r.Context(), me, "tts_engine"),
+	})
+}
+
 // chatAssistant 处理与 HA Assist 的会话：
 // 用户消息先落库 → 调 active 实例 /api/conversation/process（携带上次 conversation_id 保持上下文）
 // → 助手回复落库 → 实时通知本人 → 密文返回两条消息 id。

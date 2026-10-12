@@ -392,8 +392,9 @@ function connectWS() {
       else if (m.type === 'cmd') dispatchCommand(m.cmd, m.data)
       else if (m.type === 'im') {
         refreshIm().then(notifyNewIm).catch(() => {})
-        // 提示音立即播放（不等 refreshIm 完毕，延迟越小体验越好）
-        if (!imOpen.value || document.hidden) playImBeep()
+        // 提示音立即播放（不等 refreshIm 完毕，延迟越小体验越好）。
+        // APK 不播 WebAudio 提示音（走媒体音量）：原生通知自带系统提示音（通知音量流）。
+        if ((!imOpen.value || document.hidden) && !window.StickyKeeNative) playImBeep()
       }
       // 仪表盘变更：本人在其它设备保存/接受分享后热刷新（HomeView 监听此版本号重载布局）
       else if (m.type === 'prefs' && m.key === 'dashboard') dashboardRev.value++

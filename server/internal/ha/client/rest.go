@@ -360,6 +360,37 @@ func (c *Rest) ListAgents(ctx context.Context) ([]Agent, error) {
 	return agents, nil
 }
 
+// TTSService 描述一个 HA TTS 引擎实体。
+type TTSService struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// ListTTSServices 枚举 HA 中的 TTS 引擎（tts.* 实体），按 ID 排序。
+// 与 ListAgents 同思路：实体存在即代表对应集成（piper、edge_tts、cloud 等）可用。
+func (c *Rest) ListTTSServices(ctx context.Context) ([]TTSService, error) {
+	var states []struct {
+		EntityID   string         `json:"entity_id"`
+		Attributes map[string]any `json:"attributes"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/api/states", nil, &states); err != nil {
+		return nil, err
+	}
+	svcs := []TTSService{}
+	for _, st := range states {
+		if !strings.HasPrefix(st.EntityID, "tts.") {
+			continue
+		}
+		name, _ := st.Attributes["friendly_name"].(string)
+		if name == "" {
+			name = st.EntityID
+		}
+		svcs = append(svcs, TTSService{ID: st.EntityID, Name: name})
+	}
+	sort.Slice(svcs, func(i, j int) bool { return svcs[i].ID < svcs[j].ID })
+	return svcs, nil
+}
+
 // Conversation 调用 HA Assist：POST /api/conversation/process。
 // conversationID 为空时由 HA 开新会话；返回 (中文回复, conversation_id)。
 // 动作类意图常不返回语音文本，按 data.success/failed 生成中文回执。

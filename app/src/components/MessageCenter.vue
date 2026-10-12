@@ -387,6 +387,9 @@ import { openEnvelope, withCrypto } from '@/utils/crypto'
 const haAgents = ref([])
 const haAgentSel = ref('auto')
 let agentsLoading = false
+// HA TTS 引擎动态列表：与对话代理同刷新节奏（进入助手会话即拉取）
+const haTts = ref([])
+let ttsLoading = false
 
 // agentLabel：下拉项文案——内置代理注明仅设备控制，LLM 代理显示原名
 function agentLabel(a) {
@@ -416,8 +419,26 @@ async function saveHaAgent() {
   try { await putPrefs({ ha_assist_agent: haAgentSel.value }) } catch { /* 静默：下条消息仍按旧代理 */ }
 }
 
+// 进入助手会话时拉取 HA TTS 引擎列表（装/删集成后列表自动跟随）；
+// 已保存的 ha: 引擎若已被删除，自动回退智能选择并持久化
+async function loadHaTts() {
+  if (ttsLoading) return
+  ttsLoading = true
+  try {
+    const { data } = await api.getHaTtsServices()
+    haTts.value = data?.services || []
+    const cur = ttsSel.value
+    if (cur?.startsWith('ha:') && !haTts.value.some((t) => 'ha:' + t.id === cur)) {
+      ttsSel.value = ''
+      putPrefs({ [TTS_PREF_KEY]: '' }).catch(() => {})
+    }
+  } catch { /* 失败保留旧列表，不打断会话 */ }
+  ttsLoading = false
+}
+
 // ---- TTS 朗读引擎快选（智家助手会话头部下拉）----
-// 引擎存储格式：''=智能 / edge[:voice] / browser / HA 引擎 ID。
+// 引擎存储格式：''=智能 / edge[:voice]（内置 Edge）/ sys（系统/浏览器自带）/ ha:<引擎ID>（HA 服务）。
+// 旧格式兼容：browser→sys、local*→''（本地 MeloTTS 已移除）、auto→''。
 // 按当前运行环境读写对应偏好键（网页 tts_engine，APK tts_engine_apk），两端口径一致。
 const TTS_NATIVE = typeof window !== 'undefined' ? window.StickyKeeNative : null
 const TTS_IS_APK = !!(TTS_NATIVE && typeof TTS_NATIVE.speakEdge === 'function')
@@ -434,14 +455,16 @@ const EDGE_VOICES = [
 const ttsSel = ref('')
 let ttsPrefsLoaded = false
 
-// 选项：智能选择 + Edge TTS（多音色）+ 浏览器 TTS + HA 引擎（动态补入）
+// 选项：智能选择 + 内置 Edge TTS（多音色）+ 系统/浏览器自带 + HA TTS 引擎（动态列表）
 const ttsOptions = computed(() => {
   const o = [{ v: '', label: '朗读：智能选择（推荐）' }]
-  o.push({ v: 'edge', label: '朗读：Edge TTS · 晓晓（默认）' })
+  o.push({ v: 'edge', label: '朗读：内置 Edge TTS · 晓晓（默认）' })
   for (const [v, l] of EDGE_VOICES) o.push({ v: 'edge:' + v, label: '朗读：Edge · ' + l })
-  o.push({ v: 'browser', label: '朗读：浏览器 TTS（系统语音）' })
+  o.push({ v: 'sys', label: TTS_IS_APK ? '朗读：系统自带 TTS（离线）' : '朗读：浏览器自带语音' })
+  for (const t of haTts.value) o.push({ v: 'ha:' + t.id, label: '朗读：HA · ' + (t.name || t.id) })
   const cur = ttsSel.value
-  if (cur && !o.some((x) => x.v === cur)) o.push({ v: cur, label: '朗读：HA 引擎 · ' + cur })
+  // 遗留值（如已删除的 HA 引擎）：保留占位供回显，loadHaTts 会自动回退
+  if (cur && cur !== 'sys' && !o.some((x) => x.v === cur)) o.push({ v: cur, label: '朗读：HA 引擎 · ' + cur })
   return o
 })
 
@@ -449,8 +472,10 @@ async function loadTTS() {
   if (ttsPrefsLoaded) return
   try {
     const { data } = await getPrefs()
-    const v = String((TTS_IS_APK ? (data?.tts_engine_apk ?? data?.tts_engine) : data?.tts_engine) || '').trim()
-    ttsSel.value = v === 'auto' ? '' : v // 兼容旧版把智能选择存成 'auto'
+    let v = String((TTS_IS_APK ? (data?.tts_engine_apk ?? data?.tts_engine) : data?.tts_engine) || '').trim()
+    if (v === 'auto' || v.startsWith('local')) v = '' // 旧版智能选择 / 已移除的本地引擎 → 回退智能
+    if (v === 'browser') v = 'sys' // 旧浏览器自带值 → 新统一值
+    ttsSel.value = v
     ttsPrefsLoaded = true
   } catch { /* 读取失败保持默认，下次再试 */ }
 }
@@ -1025,8 +1050,11 @@ async function speak(text, msgId = 0) {
   const native = typeof window !== 'undefined' ? window.StickyKeeNative : null
   const prefs = getPrefs ? (await getPrefs())?.data : null
   const isApk = !!(native && typeof native.speakEdge === 'function')
-  // 手机端与网页端分别读取各自的引擎设置；APK 未单独设置过（旧版数据）时回退旧的单值设置
-  const engine = String((isApk ? (prefs?.tts_engine_apk ?? prefs?.tts_engine) : prefs?.tts_engine) || '').trim()
+  // 手机端与网页端分别读取各自的引擎设置；APK 未单独设置过（旧版数据）时回退旧的单值设置。
+  // 兼容遗留值：local*（本地引擎已移除）与 auto → 智能选择；browser → sys
+  let engine = String((isApk ? (prefs?.tts_engine_apk ?? prefs?.tts_engine) : prefs?.tts_engine) || '').trim()
+  if (engine === 'auto' || engine.startsWith('local')) engine = ''
+  if (engine === 'browser') engine = 'sys'
   if (seq !== ttsSeq) return // 读取设置期间被停止/换新朗读
 
   // 播放 Base64 音频的辅助函数
@@ -1040,19 +1068,26 @@ async function speak(text, msgId = 0) {
     return ttsAudio.play()
   }
 
-  // ---- 路线 1：浏览器 TTS（Web Speech API，系统自带语音引擎，离线可用）----
-  if (engine === 'browser' && ttsSupported) {
-    try {
-      window.speechSynthesis.cancel()
-      const u = new SpeechSynthesisUtterance(text)
-      u.lang = 'zh-CN'; u.rate = 1.0; u.pitch = 1.0
-      const zh = window.speechSynthesis.getVoices().find((v) => /zh|Chinese|cmn/i.test(v.lang + v.name))
-      if (zh) u.voice = zh
-      u.onend = () => { ttsPlayingId.value = 0 }
-      u.onerror = () => { ttsPlayingId.value = 0 }
-      window.speechSynthesis.speak(u)
-      return
-    } catch { /* fallthrough */ }
+  // ---- 路线 1：系统/浏览器自带语音（离线可用；APK 走原生 speakSystem，网页走 Web Speech API）----
+  if (engine === 'sys') {
+    if (isApk && native && typeof native.speakSystem === 'function') {
+      try { native.speakSystem(text); return } catch { /* fallthrough */ }
+    }
+    if (ttsSupported) {
+      try {
+        window.speechSynthesis.cancel()
+        const u = new SpeechSynthesisUtterance(text)
+        u.lang = 'zh-CN'; u.rate = 1.0; u.pitch = 1.0
+        const zh = window.speechSynthesis.getVoices().find((v) => /zh|Chinese|cmn/i.test(v.lang + v.name))
+        if (zh) u.voice = zh
+        u.onend = () => { ttsPlayingId.value = 0 }
+        u.onerror = () => { ttsPlayingId.value = 0 }
+        window.speechSynthesis.speak(u)
+        return
+      } catch { /* fallthrough */ }
+    }
+    // 自带语音不可用（APK WebView 无 speechSynthesis 且无 speakSystem）→ 落到智能选择
+    engine = ''
   }
 
   // ---- 路线 2：APK 原生 Edge TTS（在线、不依赖后端，直连微软）----
@@ -1070,8 +1105,10 @@ async function speak(text, msgId = 0) {
   }
 
   // ---- 路线 3：后端 TTS（Edge TTS / HA TTS，engine 为空时智能选择）----
+  // ha:<引擎ID> 摘掉前缀传后端（后端按 HA 引擎 ID 合成）；edge 音色参数仅 APK 原生使用
   try {
-    const res = await api.assistantTTS(text, engine)
+    const backendEngine = engine.startsWith('ha:') ? engine.slice(3) : (engine.startsWith('edge:') ? '' : engine)
+    const res = await api.assistantTTS(text, backendEngine)
     const blob = res?.blob
     if (!blob || blob.size === 0) throw new Error('empty audio')
     if (seq !== ttsSeq) return // 合成期间被停止/换新朗读
@@ -1162,7 +1199,7 @@ function scrollBottom() {
 async function openConv(user) {
   activeUser.value = user
   showPicker.value = false
-  if (user === ASSISTANT) { voiceMode.value = false; loadAgents(); loadTTS() } // 首次打开助手会话时拉取代理与朗读引擎
+  if (user === ASSISTANT) { voiceMode.value = false; loadAgents(); loadHaTts(); loadTTS() } // 首次打开助手会话时拉取代理/朗读引擎
   await loadMessages(user)
   // 进入会话时把 lastSpokenId 设为已有最后一条助手消息 id，避免朗读历史
   const last = messages.value[messages.value.length - 1]

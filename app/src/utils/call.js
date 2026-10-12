@@ -46,11 +46,33 @@ function flashError(msg) {
   raf = setTimeout(() => (callState.error = ''), 4000)
 }
 
-// ---- 铃声与振动（来电时循环播放；APK WebView 已放开自动播放）----
+// ---- 铃声与振动 ----
+// APK：走原生铃声播放（铃声音量流 USAGE_NOTIFICATION_RINGTONE，随铃声键调音量），
+//      铃声文件可在设置中选择（localStorage 存 {uri,name}，sk_call_ringtone=来电 / sk_back_ringtone=彩铃）。
+// Web：WebAudio 合成双音回铃（媒体音量，仅作回退）。
+const nativeBridge = () => window.StickyKeeNative || null
+const TONE_KEYS = { incoming: 'sk_call_ringtone', back: 'sk_back_ringtone' }
 let ringCtx = null
 let ringTimer = null
-function startRing() {
+
+function readToneUri(kind) {
+  try {
+    const v = JSON.parse(localStorage.getItem(TONE_KEYS[kind]) || 'null')
+    return v?.uri || ''
+  } catch { return '' }
+}
+
+// kind: 'incoming' 来电振铃 | 'back' 呼叫等待回铃（彩铃）
+function startRing(kind) {
   stopRing()
+  const n = nativeBridge()
+  if (n?.playRing) {
+    n.playRing(readToneUri(kind), true)
+    if (kind === 'incoming') {
+      try { navigator.vibrate?.([500, 200, 500, 800]) } catch { /* 不支持则忽略 */ }
+    }
+    return
+  }
   try {
     ringCtx = new (window.AudioContext || window.webkitAudioContext)()
   } catch { ringCtx = null }
@@ -74,9 +96,13 @@ function startRing() {
   }
   beep()
   ringTimer = setInterval(beep, 2000)
-  try { navigator.vibrate?.([500, 200, 500, 800]) } catch { /* 不支持则忽略 */ }
+  if (kind === 'incoming') {
+    try { navigator.vibrate?.([500, 200, 500, 800]) } catch { /* 忽略 */ }
+  }
 }
+
 function stopRing() {
+  try { nativeBridge()?.stopRing?.() } catch { /* 忽略 */ }
   if (ringTimer) { clearInterval(ringTimer); ringTimer = null }
   if (ringCtx) { ringCtx.close().catch(() => {}); ringCtx = null }
   try { navigator.vibrate?.(0) } catch { /* 忽略 */ }
@@ -151,7 +177,10 @@ export async function startCall(users) {
       localStream, startedAt: Date.now(),
     }
     callState.micMuted = false
-    connectAllPeers()
+    // 不在此处建链：若本端字典序小于对方，offer 会在对方接听前到达并被其
+    // onSignal 丢弃（彼时对方 active 为空），对方接听后按规则等待 offer → 死锁无声。
+    // 改为收到 joined（对方已加入、双方 active 均就绪）后再按字典序补齐建链。
+    startRing('back') // 呼叫方等待接听：播彩铃（铃声音量流），对方加入后停止
     // 被邀请人当前无在线设备：给出提示（仍等待其上线接听，超时后自动结束）
     if (Array.isArray(data.offline) && data.offline.length) {
       flashError(`对方不在线：${data.offline.join('、')}`)
@@ -257,7 +286,7 @@ async function onInvite(ev) {
   if (callState.active) { try { await api.callReject(ev.room, getDeviceId()) } catch {}; return }
   if (callState.incoming) { try { await api.callReject(ev.room, getDeviceId()) } catch {}; return }
   callState.incoming = { id: ev.room, from: ev.from, owner: ev.owner, members: ev.members }
-  startRing()
+  startRing('incoming')
 }
 
 async function onSignal(ev) {
@@ -295,9 +324,11 @@ function onJoined(ev) {
   }
   const a = callState.active
   if (!a || a.id !== ev.room) return
+  stopRing() // 对方接通（加入房间）：呼叫方停止彩铃
   a.members = new Set(ev.members)
-  // 新成员若字典序大于我，我主动连；否则等其 offer
-  if (ev.user > auth.user) connectPeer(ev.user, true)
+  // 对方已接听、双方 active 均就绪，此刻按字典序规则建链才安全
+  // （connectAllPeers 对缺链且字典序大于本端的成员发 offer，已建链自动跳过）
+  connectAllPeers()
 }
 
 function onLeft(ev) {

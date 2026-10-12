@@ -37,6 +37,15 @@ public class MainActivity extends BridgeActivity {
     }
 
     @Override
+    public void onActivityResult(int requestCode, int resultCode, android.content.Intent data) {
+        // 先让 Capacitor 处理自身插件的结果，再转发给自定义桥（铃声选择器结果 → 'stickykee-ring' 事件）
+        super.onActivityResult(requestCode, resultCode, data);
+        if (nativeBridge != null) {
+            nativeBridge.handleActivityResult(requestCode, resultCode, data);
+        }
+    }
+
+    @Override
     public void onDestroy() {
         if (nativeBridge != null) {
             nativeBridge.release();

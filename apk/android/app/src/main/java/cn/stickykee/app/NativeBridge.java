@@ -16,13 +16,19 @@ import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
 import android.media.AudioFormat;
+import android.media.AudioAttributes;
 import android.media.AudioManager;
 import android.media.AudioRecord;
+import android.media.MediaPlayer;
 import android.media.MediaRecorder;
+import android.media.Ringtone;
+import android.media.RingtoneManager;
 import android.media.audiofx.AcousticEchoCanceler;
 import android.media.audiofx.AutomaticGainControl;
 import android.media.audiofx.NoiseSuppressor;
+import android.net.Uri;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.speech.tts.TextToSpeech;
 import android.util.Base64;
 import android.view.Window;
@@ -864,13 +870,29 @@ public class NativeBridge {
                     }
                     NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
                     if (nm == null) return;
-                    // 创建通知渠道（Android 8+ 必需）
+                    // 创建通知渠道（Android 8+ 必需）；显式指定系统默认提示音（通知音量流，非媒体音量）。
+                    // 渠道创建后声音不可改：旧版本创建的无声渠道删除重建一次（用户若自定义过会被重置，可接受）
                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                        if (nm.getNotificationChannel(NOTIF_CHANNEL_ID) == null) {
-                            NotificationChannel ch = new NotificationChannel(
+                        AudioAttributes attrs = new AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                            .build();
+                        NotificationChannel ch = nm.getNotificationChannel(NOTIF_CHANNEL_ID);
+                        if (ch == null) {
+                            ch = new NotificationChannel(
                                 NOTIF_CHANNEL_ID, "消息通知", NotificationManager.IMPORTANCE_HIGH);
                             ch.setDescription("收到新消息时通知");
+                            ch.setSound(Settings.System.DEFAULT_NOTIFICATION_URI, attrs);
+                            ch.enableVibration(true);
                             nm.createNotificationChannel(ch);
+                        } else if (ch.getSound() == null) {
+                            nm.deleteNotificationChannel(NOTIF_CHANNEL_ID);
+                            NotificationChannel fresh = new NotificationChannel(
+                                NOTIF_CHANNEL_ID, "消息通知", NotificationManager.IMPORTANCE_HIGH);
+                            fresh.setDescription("收到新消息时通知");
+                            fresh.setSound(Settings.System.DEFAULT_NOTIFICATION_URI, attrs);
+                            fresh.enableVibration(true);
+                            nm.createNotificationChannel(fresh);
                         }
                     }
                     // 点击通知拉应用到前台
@@ -892,9 +914,127 @@ public class NativeBridge {
         });
     }
 
+    // ==================== 通话铃声（铃声音量流 + 系统铃声选择器） ====================
+    private MediaPlayer ringPlayer;
+    private String pendingRingKind = ""; // 等待选择器结果的铃声类别（call | back）
+    private static final int RING_PICK_CODE = 4401;
+
+    /**
+     * 循环播放通话铃声：走系统铃声音量流（USAGE_NOTIFICATION_RINGTONE），随铃声调节音量。
+     * @param uri 铃声资源 URI；为空时用系统默认来电铃声
+     */
+    @JavascriptInterface
+    public void playRing(final String uri, final boolean loop) {
+        activity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                stopRingInternal();
+                try {
+                    MediaPlayer mp = new MediaPlayer();
+                    AudioAttributes attrs = new AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build();
+                    mp.setAudioAttributes(attrs);
+                    String src = (uri == null || uri.trim().isEmpty())
+                        ? Settings.System.DEFAULT_RINGTONE_URI.toString() : uri.trim();
+                    mp.setDataSource(activity, Uri.parse(src));
+                    mp.setLooping(loop);
+                    mp.prepare();
+                    mp.start();
+                    ringPlayer = mp;
+                } catch (Exception ignored) {
+                    ringPlayer = null;
+                }
+            }
+        });
+    }
+
+    /** 停止铃声播放。 */
+    @JavascriptInterface
+    public void stopRing() {
+        activity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() { stopRingInternal(); }
+        });
+    }
+
+    private void stopRingInternal() {
+        try {
+            if (ringPlayer != null) {
+                ringPlayer.stop();
+                ringPlayer.release();
+                ringPlayer = null;
+            }
+        } catch (Exception ignored) {
+            ringPlayer = null;
+        }
+    }
+
+    /** 拉起系统铃声选择器（来电铃声/彩铃共用）；结果经 stickykee-ring 事件 {kind,ok,uri,name} 回传。 */
+    @JavascriptInterface
+    public void pickRingtone(final String kind, final String currentUri) {
+        activity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    Intent i = new Intent(RingtoneManager.ACTION_RINGTONE_PICKER);
+                    i.putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_RINGTONE);
+                    i.putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true);
+                    i.putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, true);
+                    if (currentUri != null && !currentUri.trim().isEmpty()) {
+                        try {
+                            i.putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI,
+                                Uri.parse(currentUri.trim()));
+                        } catch (Exception ignored) {
+                        }
+                    }
+                    pendingRingKind = kind == null ? "" : kind;
+                    activity.startActivityForResult(i, RING_PICK_CODE);
+                } catch (Exception ignored) {
+                }
+            }
+        });
+    }
+
+    /** 接收铃声选择器结果（由 MainActivity.onActivityResult 转发）。 */
+    public void handleActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode != RING_PICK_CODE) return;
+        String kind = pendingRingKind;
+        pendingRingKind = "";
+        String uri = "";
+        String name = "";
+        boolean ok = resultCode == -1; // RESULT_OK：用户完成选择（含「无」=静音，uri 为空）；否则为取消
+        if (ok && data != null) {
+            Uri picked = data.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI);
+            if (picked != null) {
+                uri = picked.toString();
+                try {
+                    Ringtone r = RingtoneManager.getRingtone(activity, picked);
+                    if (r != null) {
+                        name = r.getTitle(activity);
+                        r.stop();
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+        }
+        final boolean jsOk = ok;
+        final String js = "window.dispatchEvent(new CustomEvent('stickykee-ring',{detail:{"
+            + "kind:" + JSONObject.quote(kind)
+            + ",ok:" + jsOk
+            + ",uri:" + JSONObject.quote(uri)
+            + ",name:" + JSONObject.quote(name)
+            + "}}))";
+        final WebView wv = webView;
+        if (wv == null) return;
+        wv.post(() -> wv.evaluateJavascript(js, null));
+    }
+
     /** 释放原生 TTS 资源 */
     public void release() {
         try {
+            stopRingInternal();
             stopGpsWatch();
             stopConnWatchInternal();
             stopLight();
