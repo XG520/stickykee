@@ -705,10 +705,12 @@
         </div>
         <div class="rounded-xl bg-background border border-border px-3 py-2.5">
           <p class="text-muted text-xs mb-1">安卓 App</p>
-          <a v-if="apkAvailable" class="text-primary text-sm font-semibold inline-flex items-center gap-1 hover:underline"
-             :href="apkDownloadUrl" download>
-            <span class="material-symbols-outlined text-base">download</span>下载安装包
-          </a>
+          <button v-if="apkAvailable" @click="downloadApk" :disabled="apkSaving"
+            class="text-primary text-sm font-semibold inline-flex items-center gap-1 hover:underline disabled:opacity-60">
+            <span v-if="apkSaving" class="hc-spinner"></span>
+            <span v-else class="material-symbols-outlined text-base">download</span>
+            {{ apkSaving ? '下载中…' : '下载安装包' }}
+          </button>
           <p v-else-if="apkChecked" class="text-muted text-sm">未提供</p>
           <p v-else class="text-muted text-sm">检测中…</p>
         </div>
@@ -1410,16 +1412,36 @@ async function loadVersion() {
   }
 }
 
-// 安卓 App 安装包：服务端随 Docker 镜像发布 APK 时展示下载入口
+// 安卓 App 安装包：服务端随 Docker 镜像发布 APK 时展示下载入口（下载需登录）
 const apkAvailable = ref(false)
 const apkChecked = ref(false)
-const apkDownloadUrl = api.appDownloadUrl()
+const apkSaving = ref(false)
 async function loadAppInfo() {
   try {
     const { data } = await api.appInfo()
     apkAvailable.value = !!data?.apkAvailable
   } catch { /* 服务端旧版本无此接口：保持未提供 */ }
   apkChecked.value = true
+}
+// 下载安装包：浏览器导航无法携带鉴权头，经 fetch 取流后再触发本地保存
+async function downloadApk() {
+  if (apkSaving.value) return
+  apkSaving.value = true
+  try {
+    const { blob } = await api.appDownload()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'StickyKee-' + (backendVersion.value || '') + '.apk'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 10000)
+  } catch (e) {
+    flash(e.message || '下载失败', true)
+  } finally {
+    apkSaving.value = false
+  }
 }
 
 // ===== 通话铃声（仅 APK）：经原生铃声选择器选择来电铃声/彩铃，存 localStorage 与 call.js 共用 =====

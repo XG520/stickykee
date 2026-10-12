@@ -40,10 +40,6 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 	r.Get("/healthz", handler.PublicCORS(health.Healthz))
 	r.Get("/readyz", health.Readyz)
 
-	// App 安装包（公开：登录前即可获取下载入口与安装包；info 附 CORS 头供跨源读取）。
-	r.Get("/api/v1/app/info", handler.PublicCORS(handler.AppInfo))
-	r.Get("/api/v1/app/download", handler.AppDownload)
-
 	// 结构图标资源（公开：静态资源、浏览器 <img> 无法携带鉴权头）。
 	// 列表：/api/v1/icons 与 /api/v1/icons/；单图标：/api/v1/icons/{name}.svg
 	r.Get("/api/v1/icons", http.HandlerFunc(icons.ListHandler))
@@ -158,6 +154,10 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 			r.Get("/prefs", prefs.Get)
 			r.Put("/prefs", prefs.Put)
 			r.Put("/site-name", prefs.PutSiteName)
+
+			// App 安装包：需登录（防外链盗刷下载）；前端经 fetch 携带令牌取流保存。
+			r.Get("/app/info", handler.AppInfo)
+			r.Get("/app/download", handler.AppDownload)
 			r.Get("/devices", devices.List)
 			r.Post("/devices", devices.Register)
 			r.Put("/devices/{device_id}", devices.Rename)

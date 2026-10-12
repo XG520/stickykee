@@ -1,7 +1,8 @@
 package handler
 
 // 安卓 App 安装包下载：Docker 构建时把 release/stickykee-app.apk 打进镜像，
-// 运行时由此端点对外提供下载（登录前即可获取，公开 + CORS）。
+// 运行时由此端点对外提供下载。两接口均要求登录（auth 中间件，见 router），
+// 防止安装包外链被恶意批量盗刷；未登录请求返回 401。
 // APK 路径解析：SN_APK_FILE 环境变量优先，否则回退 <SN_STATIC_DIR>/downloads/stickykee-app.apk。
 
 import (
