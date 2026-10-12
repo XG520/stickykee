@@ -247,7 +247,7 @@ import { useAutoHide } from '@/composables/useAutoHide'
 import { mark, count, measure as perfMeasure } from '@/utils/perf'
 import { saveKV, loadKV } from '@/utils/snapshotCache'
 import { getPrefs, putPrefs } from '@/utils/prefs'
-import { syncCurrentLocation } from '@/utils/location'
+import { syncCurrentLocation, locErrorMessage } from '@/utils/location'
 import CodeCard from '@/components/cards/CodeCard.vue'
 import CardEditor from '@/components/cards/CardEditor.vue'
 import { cardDefaults } from '@/components/cards/defaults'
@@ -750,7 +750,7 @@ async function locate(silent) {
     const where = res.address || `${res.lat.toFixed(5)}, ${res.lng.toFixed(5)}`
     if (!silent) toast(`${res.name} 位置已同步（${where}）`)
   } catch (e) {
-    if (!silent) toast(e.message || '定位同步失败', true)
+    if (!silent) toast(locErrorMessage(e), true)
   } finally { locating.value = false }
 }
 function manualLocate() { locate(false) }

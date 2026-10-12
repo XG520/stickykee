@@ -705,6 +705,17 @@ public class NativeBridge {
 
     private static final int LOC_REQUEST_CODE = 4201;
 
+    /** 接收运行时授权结果（由 MainActivity.onRequestPermissionsResult 转发），经 stickykee-gps 'perm' 事件回传。 */
+    public void handlePermissionResult(int requestCode, String[] permissions, int[] grantResults) {
+        boolean ok = false;
+        if (requestCode == LOC_REQUEST_CODE && grantResults != null) {
+            for (int r : grantResults) {
+                if (r == PackageManager.PERMISSION_GRANTED) { ok = true; break; }
+            }
+        }
+        dispatchGps("perm", ok, 0, 0, 0, ok ? "" : "denied");
+    }
+
     /**
      * 单次卫星定位：优先 GPS_PROVIDER（卫星），超时后回传最后一次定位；
      * 无 fix 时回传 lastKnownLocation。结果经 stickykee-gps 事件 {req,ok,lat,lng,acc,provider}。

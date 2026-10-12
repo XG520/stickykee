@@ -28,6 +28,15 @@ public class MainActivity extends BridgeActivity {
     }
 
     @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        // 先让 Capacitor 处理自身插件的授权，再转发给自定义桥（定位授权结果 → 'perm' 事件）
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (nativeBridge != null) {
+            nativeBridge.handlePermissionResult(requestCode, permissions, grantResults);
+        }
+    }
+
+    @Override
     public void onDestroy() {
         if (nativeBridge != null) {
             nativeBridge.release();

@@ -13,30 +13,66 @@ export function nativeGps() {
   return n && typeof n.gpsOnce === 'function' && typeof n.hasGps === 'function' ? n : null
 }
 
-// 单次原生卫星定位。resolve {lat,lng,acc,provider}；reject Error(message=no_permission|no_fix|timeout|...)
+// 等待原生定位授权结果（requestGpsPermission 的 'perm' 事件）。超时/拒绝返回 false。
+function waitGpsPermission(n, timeoutMs = 120000) {
+  return new Promise((resolve) => {
+    const onEvt = (e) => {
+      const d = e && e.detail
+      if (!d || d.req !== 'perm') return
+      window.removeEventListener('stickykee-gps', onEvt)
+      clearTimeout(pt)
+      resolve(!!d.ok)
+    }
+    const pt = setTimeout(() => {
+      window.removeEventListener('stickykee-gps', onEvt)
+      resolve(false)
+    }, timeoutMs)
+    window.addEventListener('stickykee-gps', onEvt)
+    try { n.requestGpsPermission() } catch { resolve(false) }
+  })
+}
+
+// 单次原生卫星定位。resolve {lat,lng,acc,provider}；reject Error(message=no_permission|denied|no_fix|timeout|...)。
+// 未授权时自动发起系统授权弹窗，授权成功后自动重试一次。
 export function nativeGpsOnce(timeoutMs = 15000) {
   return new Promise((resolve, reject) => {
     const n = nativeGps()
     if (!n) { reject(new Error('unavailable')); return }
-    const req = 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
-    let settled = false
-    const finish = (fn, arg) => {
-      if (settled) return
-      settled = true
-      window.removeEventListener('stickykee-gps', onEvt)
-      clearTimeout(timer)
-      fn(arg)
+    let permRequested = false // 已经历过一次「申请授权→等待结果」流程
+
+    const attempt = () => {
+      const req = 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+      let settled = false
+      const finish = (fn, arg) => {
+        if (settled) return
+        settled = true
+        window.removeEventListener('stickykee-gps', onEvt)
+        clearTimeout(timer)
+        fn(arg)
+      }
+      const onEvt = async (e) => {
+        const d = e && e.detail
+        if (!d || d.req !== req) return
+        if (d.ok) {
+          finish(resolve, { lat: d.lat, lng: d.lng, acc: d.acc, provider: d.provider })
+          return
+        }
+        if (d.provider === 'no_permission' && !permRequested) {
+          // 首次未授权：弹系统授权框，等待结果后重试一次
+          permRequested = true
+          const ok = await waitGpsPermission(n)
+          if (ok) { attempt(); return }
+          finish(reject, new Error('denied'))
+          return
+        }
+        finish(reject, new Error(d.provider || 'no_fix'))
+      }
+      // 原生最长等待受其内部 60s 钳制，这里再留 5s 余量兜底
+      const timer = setTimeout(() => finish(reject, new Error('timeout')), timeoutMs + 5000)
+      window.addEventListener('stickykee-gps', onEvt)
+      try { n.gpsOnce(req, timeoutMs) } catch (err) { finish(reject, err) }
     }
-    const onEvt = (e) => {
-      const d = e && e.detail
-      if (!d || d.req !== req) return
-      if (d.ok) finish(resolve, { lat: d.lat, lng: d.lng, acc: d.acc, provider: d.provider })
-      else finish(reject, new Error(d.provider || 'no_fix'))
-    }
-    // 原生最长等待受其内部 60s 钳制，这里再留 5s 余量兜底
-    const timer = setTimeout(() => finish(reject, new Error('timeout')), timeoutMs + 5000)
-    window.addEventListener('stickykee-gps', onEvt)
-    try { n.gpsOnce(req, timeoutMs) } catch (err) { finish(reject, err) }
+    attempt()
   })
 }
 
@@ -55,6 +91,19 @@ export async function getCurrentPosition() {
       enableHighAccuracy: true, timeout: 15000, maximumAge: 30000,
     })
   })
+}
+
+// 定位错误码 → 中文提示（供界面展示；APK 无权限时前端会自动弹系统授权框，denied 即用户拒绝）
+export function locErrorMessage(e) {
+  const map = {
+    no_permission: '尚未授予定位权限，请点击重试并允许',
+    denied: '定位权限被拒绝，请在系统设置中允许',
+    no_fix: '暂无卫星信号，请到窗边或户外重试',
+    timeout: '卫星定位超时，请到空旷处重试',
+    unavailable: '当前环境不支持卫星定位',
+  }
+  const msg = e && e.message
+  return map[msg] || msg || '定位同步失败'
 }
 
 // 逆地理编码（可选；无高德则不阻塞）。
