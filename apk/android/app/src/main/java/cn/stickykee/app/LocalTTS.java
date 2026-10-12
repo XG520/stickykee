@@ -41,7 +41,9 @@ public class LocalTTS {
         vitsConfig.setModel(dir + "/model.onnx");
         vitsConfig.setTokens(dir + "/tokens.txt");
         vitsConfig.setLexicon(dir + "/lexicon.txt");
-        vitsConfig.setDataDir(dir + "/dict");
+        // 注意：jieba 词典必须走 setDictDir（dict_dir）。setDataDir 是 espeak-ng 数据目录，
+        // 填错字段会导致 jieba 分词不加载、拼音全部错乱（合成出的语音无法听懂）。
+        vitsConfig.setDictDir(dir + "/dict");
 
         OfflineTtsModelConfig modelConfig = new OfflineTtsModelConfig();
         modelConfig.setVits(vitsConfig);
