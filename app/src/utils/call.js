@@ -209,8 +209,11 @@ export async function acceptCall() {
     callState.micMuted = false
     // 成员中字典序大于我的，由我发起；小于我的等对方 offer
     connectAllPeers()
+    // 回放接听前缓存的信号：旧版对端在响铃期已发出的 offer/ICE
+    replayPreAccept(data.id)
   } catch (e) {
     stopRing()
+    dropPreAccept(inc.id)
     // 房间已被其他设备接听/结束：清理本地振铃状态
     callState.incoming = null
     flashError(e.message || '接听失败')
@@ -222,6 +225,7 @@ export async function rejectCall() {
   const inc = callState.incoming
   if (!inc) return
   stopRing()
+  dropPreAccept(inc.id)
   callState.incoming = null
   try { await api.callReject(inc.id, getDeviceId()) } catch { /* ignore */ }
 }
@@ -237,6 +241,7 @@ export async function hangup() {
 // 统一结束：关 peer、停麦克风、清来电/振铃，并设置结束提示（UI 短暂展示后自动清空）
 function endCall(reason) {
   stopRing()
+  dropPreAccept(callState.active?.id || callState.incoming?.id)
   teardown()
   callState.incoming = null
   callState.ended = { reason }
@@ -290,14 +295,35 @@ async function onInvite(ev) {
 }
 
 async function onSignal(ev) {
-  const a = callState.active
-  if (!a || !a.members.has(ev.from)) return
-  let ctx = a.peers.get(ev.from)
+  let a = callState.active
+  if (!a) {
+    // 振铃期（无 active）收到的 offer/ICE 不能丢弃：旧版发起方在响铃时已发出，
+    // 新版接听后才建链；若在此丢弃会形成「旧发起方+新被叫」无声死锁。缓存待回放。
+    if (callState.incoming?.id === ev.room) {
+      const d = ev.data || {}
+      if (d.kind === 'offer' || d.kind === 'ice') {
+        let buf = preAccept.find((b) => b.room === ev.room && b.from === ev.from)
+        if (!buf) { buf = { room: ev.room, from: ev.from, ts: Date.now(), items: [] }; preAccept.push(buf) }
+        if (Date.now() - buf.ts < 60000) buf.items.push(d)
+      }
+    }
+    return
+  }
+  if (!a.members.has(ev.from)) return
+  const ctx0 = a.peers.get(ev.from)
   const d = ev.data || {}
   if (d.kind === 'offer') {
-    if (!ctx) ctx = createPeerCtx(ev.from)
+    const ctx = ctx0 || createPeerCtx(ev.from)
+    const pc = ctx.pc
+    // 完美协商（避免双方同时互发 offer 的 glare）：
+    // 字典序大者为 polite——冲突时回滚己方 offer 让路；小者为 impolite——忽略对方 offer
+    const polite = ev.from > auth.user
+    if (pc.signalingState !== 'stable') {
+      if (!polite) return
+      try { await pc.setLocalDescription({ type: 'rollback' }) } catch { /* 已 stable 则忽略 */ }
+    }
     try {
-      await ctx.pc.setRemoteDescription(new RTCSessionDescription(d.sdp))
+      await pc.setRemoteDescription(new RTCSessionDescription(d.sdp))
       ctx.iceQueue.forEach((c) => ctx.pc.addIceCandidate(c).catch(() => {}))
       ctx.iceQueue = []
       const answer = await ctx.pc.createAnswer()
@@ -305,14 +331,28 @@ async function onSignal(ev) {
       await api.callSignal(a.id, ev.from, { kind: 'answer', sdp: ctx.pc.localDescription })
     } catch { /* 协商失败：等对方重连 */ }
   } else if (d.kind === 'answer') {
-    if (!ctx) return
-    await ctx.pc.setRemoteDescription(new RTCSessionDescription(d.sdp)).catch(() => {})
+    if (!ctx0 || ctx0.pc.signalingState !== 'have-local-offer') return
+    await ctx0.pc.setRemoteDescription(new RTCSessionDescription(d.sdp)).catch(() => {})
   } else if (d.kind === 'ice') {
-    if (!ctx) return
+    if (!ctx0) return
     const c = new RTCIceCandidate(d.candidate)
-    if (ctx.pc.remoteDescription) ctx.pc.addIceCandidate(c).catch(() => {})
-    else ctx.iceQueue.push(c)
+    if (ctx0.pc.remoteDescription) ctx0.pc.addIceCandidate(c).catch(() => {})
+    else ctx0.iceQueue.push(c)
   }
+}
+
+// 接听前缓存的信号：[{room, from, ts, items:[{kind,...}]}]（60s 过期）
+let preAccept = []
+// 接听成功后回放缓存：旧版对端在响铃期发出的 offer/ICE 按原顺序补处理
+function replayPreAccept(room) {
+  const buf = preAccept.filter((b) => b.room === room)
+  preAccept = preAccept.filter((b) => b.room !== room)
+  for (const b of buf) for (const d of b.items) onSignal({ room, from: b.from, data: d })
+}
+// 通话终结（拒接/结束/超时）时丢弃该房间缓存
+function dropPreAccept(room) {
+  if (room) preAccept = preAccept.filter((b) => b.room !== room)
+  else preAccept = []
 }
 
 function onJoined(ev) {
