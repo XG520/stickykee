@@ -1,7 +1,11 @@
 package cn.stickykee.app;
 
 import android.Manifest;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.hardware.Sensor;
@@ -29,6 +33,7 @@ import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
+import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
@@ -65,7 +70,6 @@ public class NativeBridge {
 
     private final AppCompatActivity activity;
     private final EdgeTTS edgeTTS;
-    private final LocalTTS localTTS;
     private TextToSpeech sysTts;
     private WebView webView;
     // 单线程线程池（newFixedThreadPool(1) 返回真实 ThreadPoolExecutor，
@@ -93,7 +97,6 @@ public class NativeBridge {
     public NativeBridge(AppCompatActivity activity) {
         this.activity = activity;
         this.edgeTTS = new EdgeTTS();
-        this.localTTS = new LocalTTS(activity.getApplicationContext());
     }
 
     /** MainActivity 在注册桥后注入 WebView 引用，供异步 TTS 完成时回传 JS 事件。 */
@@ -166,27 +169,6 @@ public class NativeBridge {
     }
 
     /**
-     * APK 本地离线 TTS：使用内置 MeloTTS 中文模型在设备本地推理，完全无需网络。
-     * 返回 Base64 编码的 WAV 音频字符串；失败返回空串。
-     *
-     * 前端用法：
-     *   const b64 = window.StickyKeeNative.speakLocal('你好', 1.0)
-     *   if (b64) { const audio = new Audio('data:audio/wav;base64,' + b64); audio.play() }
-     *
-     * @param text  要合成的文本
-     * @param speed 语速（1.0 = 正常，范围建议 0.5~2.0）
-     */
-    @JavascriptInterface
-    public String speakLocal(String text, float speed) {
-        try {
-            String b64 = localTTS.synth(text, speed > 0 ? speed : 1.0f);
-            return b64 != null ? b64 : "";
-        } catch (Exception e) {
-            return "";
-        }
-    }
-
-    /**
      * APK 原生 Edge TTS（异步版）：后台线程合成，立即返回不阻塞 JS 线程。
      * 完成后派发 window 事件 stickykee-tts：{req, ok, audio(base64|''), mime}。
      * 与旧同步 speakEdge 并存：旧前端继续用同步版，新前端按 speakEdge2 是否存在选择。
@@ -213,48 +195,12 @@ public class NativeBridge {
     }
 
     /**
-     * APK 本地离线 TTS（异步流式版）：后台线程用 MeloTTS 按句推理，每句合成立即
-     * 派发分片事件 stickykee-tts：{req, ok, audio(base64 WAV), mime, seq, done}。
-     * 前端按 seq 顺序播放，首句出声无需等全文合成完（长文本感知延迟从 10~30s 降到 1~3s）。
-     *
-     * @param text  要合成的文本
-     * @param speed 语速（1.0 = 正常，范围建议 0.5~2.0）
-     * @param req   前端生成的请求标识，原样回传用于配对
-     */
-    @JavascriptInterface
-    public void speakLocal2(final String text, final float speed, final String req) {
-        final int gen = ttsGen.get();
-        ttsPool.execute(new Runnable() {
-            @Override
-            public void run() {
-                if (gen != ttsGen.get()) return; // 排队期间已被取消
-                localTTS.synthStream(text, speed > 0 ? speed : 1.0f, new LocalTTS.ChunkSink() {
-                    private int seq = 0;
-
-                    @Override
-                    public void onChunk(byte[] wav) {
-                        if (gen != ttsGen.get()) return; // 合成途中被取消：分片不再派发
-                        dispatchTTS(req, Base64.encodeToString(wav, Base64.NO_WRAP), "audio/wav", seq++, false);
-                    }
-
-                    @Override
-                    public void onDone() {
-                        if (gen != ttsGen.get()) return;
-                        dispatchTTS(req, "", "", -1, true);
-                    }
-                });
-            }
-        });
-    }
-
-    /**
-     * 取消全部 TTS 任务：中止正在进行的本地合成（下一句边界生效）、清空排队任务、
-     * 递增代次使在途结果作废。切换引擎 / 停止朗读时由前端调用，保证新引擎立即生效。
+     * 取消全部 TTS 任务：清空排队任务、递增代次使在途结果作废。
+     * 切换引擎 / 停止朗读时由前端调用，保证新引擎立即生效。
      */
     @JavascriptInterface
     public void cancelTTS() {
         ttsGen.incrementAndGet();
-        localTTS.cancel();
         ttsPool.getQueue().clear();
     }
 
@@ -884,6 +830,59 @@ public class NativeBridge {
         });
     }
 
+    // ==================== 状态栏通知（IM 新消息） ====================
+    private static final String NOTIF_CHANNEL_ID = "im_messages";
+    private static final int NOTIF_ID = 9001;
+    private static final int NOTIF_PERM_CODE = 4301;
+
+    /** 弹出状态栏通知。点击通知拉应用到前台。Android 13+ 需先授权 POST_NOTIFICATIONS。 */
+    @JavascriptInterface
+    public void showNotification(final String title, final String body) {
+        activity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    Context ctx = activity.getApplicationContext();
+                    // Android 13+ 检查通知权限
+                    if (android.os.Build.VERSION.SDK_INT >= 33) {
+                        if (ContextCompat.checkSelfPermission(ctx, "android.permission.POST_NOTIFICATIONS")
+                                != PackageManager.PERMISSION_GRANTED) {
+                            // 未授权时先请求权限（通知本次不弹出，授权后后续生效）
+                            ActivityCompat.requestPermissions(activity,
+                                new String[]{"android.permission.POST_NOTIFICATIONS"}, NOTIF_PERM_CODE);
+                            return;
+                        }
+                    }
+                    NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
+                    if (nm == null) return;
+                    // 创建通知渠道（Android 8+ 必需）
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                        if (nm.getNotificationChannel(NOTIF_CHANNEL_ID) == null) {
+                            NotificationChannel ch = new NotificationChannel(
+                                NOTIF_CHANNEL_ID, "消息通知", NotificationManager.IMPORTANCE_HIGH);
+                            ch.setDescription("收到新消息时通知");
+                            nm.createNotificationChannel(ch);
+                        }
+                    }
+                    // 点击通知拉应用到前台
+                    Intent intent = new Intent(ctx, activity.getClass());
+                    intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                    PendingIntent pi = PendingIntent.getActivity(ctx, 0, intent,
+                        PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+                    NotificationCompat.Builder b = new NotificationCompat.Builder(ctx, NOTIF_CHANNEL_ID)
+                        .setSmallIcon(android.R.drawable.ic_dialog_info)
+                        .setContentTitle(title == null ? "新消息" : title)
+                        .setContentText(body == null ? "" : body)
+                        .setAutoCancel(true)
+                        .setPriority(NotificationCompat.PRIORITY_HIGH)
+                        .setContentIntent(pi);
+                    nm.notify(NOTIF_ID, b.build());
+                } catch (Exception ignored) {
+                }
+            }
+        });
+    }
+
     /** 释放原生 TTS 资源 */
     public void release() {
         try {
@@ -901,7 +900,6 @@ public class NativeBridge {
                 sysTts.shutdown();
             }
             ttsPool.shutdownNow();
-            localTTS.release();
             edgeTTS.shutdown();
         } catch (Exception ignored) {
         }

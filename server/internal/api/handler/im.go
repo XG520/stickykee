@@ -342,10 +342,9 @@ func (h *Im) AssistantTTS(w http.ResponseWriter, r *http.Request) {
 	if engine == "auto" {
 		engine = ""
 	}
-	// kokoro 为浏览器本地推理引擎，不经后端；误路由到此接口时明确报错，
-	// 避免落入 HA 分支被误判为「HA 未配置 TTS」
-	if strings.HasPrefix(engine, "kokoro") {
-		WriteErr(w, 400, "bad_request", "Kokoro 引擎在浏览器本地合成，无需请求后端")
+	// browser 为浏览器端 Web Speech API 引擎，不经后端；误路由到此接口时明确报错
+	if engine == "browser" {
+		WriteErr(w, 400, "bad_request", "浏览器 TTS 在客户端合成，无需请求后端")
 		return
 	}
 

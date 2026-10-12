@@ -390,7 +390,11 @@ function connectWS() {
         }
       }
       else if (m.type === 'cmd') dispatchCommand(m.cmd, m.data)
-      else if (m.type === 'im') refreshIm()
+      else if (m.type === 'im') {
+        refreshIm().then(notifyNewIm).catch(() => {})
+        // 提示音立即播放（不等 refreshIm 完毕，延迟越小体验越好）
+        if (!imOpen.value || document.hidden) playImBeep()
+      }
       // 仪表盘变更：本人在其它设备保存/接受分享后热刷新（HomeView 监听此版本号重载布局）
       else if (m.type === 'prefs' && m.key === 'dashboard') dashboardRev.value++
       // 通话信令：动态 import 避免 store ↔ call 模块循环依赖
@@ -535,6 +539,64 @@ export function bumpIm() {
 export function openIm() { imOpen.value = true; bumpIm() }
 export function closeIm() { imOpen.value = false }
 export function toggleIm() { imOpen.value ? closeIm() : openIm() }
+
+// ---- 新消息提示音 + 状态栏通知 ----
+// 收到 WS im 事件时：消息面板未打开或应用在后台 → 播放提示音并推送状态栏通知。
+// 提示音用 Web Audio API 合成短促 880Hz 正弦波，无需音频文件，WebView 与浏览器通用。
+let beepCtx = null
+function playImBeep() {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext
+    if (!AC) return
+    if (!beepCtx) beepCtx = new AC()
+    const ctx = beepCtx
+    if (ctx.state === 'suspended') ctx.resume()
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.frequency.value = 880
+    osc.type = 'sine'
+    gain.gain.setValueAtTime(0.15, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3)
+    osc.start()
+    osc.stop(ctx.currentTime + 0.3)
+  } catch { /* AudioContext 不可用时静默 */ }
+}
+
+// 新消息到达后推送状态栏通知：APK 走原生桥，Web 走 Notification API。
+// refreshIm 完成后调用，从会话列表提取发送者与消息预览。
+async function notifyNewIm() {
+  // 面板打开且应用在前台时不打扰（用户已在看消息）
+  if (imOpen.value && !document.hidden) return
+  // 找到有未读消息的会话
+  const conv = imConversations.value.find(c => (c.unread || 0) > 0)
+  if (!conv) return
+  const sender = conv.user || '新消息'
+  const last = conv.last
+  let preview = ''
+  if (last) {
+    if (last.type === 'text' && last.content) preview = last.content
+    else if (last.type === 'image') preview = '[图片]'
+    else if (last.type === 'share') preview = '[仪表盘分享]'
+    else if (last.type === 'device') preview = '[设备分享]'
+    else preview = last.content || '[新消息]'
+  }
+  const title = '收到来自 ' + sender + ' 的消息'
+  const body = preview || '点击查看'
+
+  // APK 原生状态栏通知
+  const native = window.StickyKeeNative
+  if (native && typeof native.showNotification === 'function') {
+    native.showNotification(title, body)
+    return
+  }
+  // Web 端：Notification API（已授权时弹系统通知，否则回退应用内 toast）
+  try {
+    const { showNotify } = await import('@/utils/browserCommands')
+    showNotify({ title: sender, message: body })
+  } catch { /* 通知模块不可用时静默 */ }
+}
 
 // 登录后才轮询：始终定时拉取，未登录时 quick-return。断网/无 HA token 用户据此兜底。
 setInterval(() => { if (auth.checked && auth.user) refreshIm() }, 15000)

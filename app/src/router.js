@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { auth, loadMe, siteName, loadSiteName } from '@/store'
+import { isApk, activeAddress } from '@/utils/serverConfig'
 
 const routes = [
   { path: '/login', name: 'login', component: () => import('@/views/LoginView.vue'), meta: { title: '登录', public: true } },
@@ -22,6 +23,16 @@ const router = createRouter({
 
 // 登录守卫：未登录一律重定向到登录页。
 router.beforeEach(async (to) => {
+  // APK 壳页（localhost）自动跳转：已配置服务器地址时整页跳转到目标服务器。
+  // #connfail 标记表示看门狗检测到服务器不可达已退回壳页，此时不自动跳转
+  // 避免壳页↔故障服务器整页重载循环（画面闪烁）。
+  if (isApk && location.hostname === 'localhost' && !location.hash.includes('connfail')) {
+    const addr = activeAddress()
+    if (addr && addr.url) {
+      location.replace(addr.url + '/')
+      return false // 中止导航，页面将整页重载到目标服务器
+    }
+  }
   if (to.meta.public) return true
   if (!auth.checked) await loadMe()
   if (!auth.user) return { path: '/login', query: { redirect: to.fullPath } }

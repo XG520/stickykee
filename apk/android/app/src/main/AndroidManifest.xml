@@ -46,4 +46,6 @@
          报 "User denied Geolocation"；首次定位时由 Capacitor 弹系统授权 -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- 状态栏通知：IM 新消息推送（Android 13+ 需运行时授权） -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>

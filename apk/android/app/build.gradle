@@ -42,8 +42,6 @@ dependencies {
     implementation project(':capacitor-cordova-android-plugins')
     // OkHttp：APK 原生 Edge TTS 客户端（WebSocket，在线、不依赖后端）
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
-    // sherpa-onnx：APK 本地离线 TTS（VITS/MeloTTS 模型推理，无需网络）
-    implementation(name: 'sherpa-onnx', ext: 'aar')
 }
 
 apply from: 'capacitor.build.gradle'

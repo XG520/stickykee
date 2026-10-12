@@ -417,7 +417,7 @@ async function saveHaAgent() {
 }
 
 // ---- TTS 朗读引擎快选（智家助手会话头部下拉）----
-// 与设置页共用引擎存储格式：''=智能 / edge[:voice] / local[:speed]（仅 APK）/ kokoro[:voice]（仅网页）/ HA 引擎 ID。
+// 引擎存储格式：''=智能 / edge[:voice] / browser / HA 引擎 ID。
 // 按当前运行环境读写对应偏好键（网页 tts_engine，APK tts_engine_apk），两端口径一致。
 const TTS_NATIVE = typeof window !== 'undefined' ? window.StickyKeeNative : null
 const TTS_IS_APK = !!(TTS_NATIVE && typeof TTS_NATIVE.speakEdge === 'function')
@@ -430,25 +430,16 @@ const EDGE_VOICES = [
   ['zh-CN-liaoning-XiaobeiNeural', '晓北（女·东北）'], ['zh-HK-HiuMaanNeural', '曉曼（女·粤语）'],
   ['zh-TW-HsiaoChenNeural', '曉臻（女·台湾）'],
 ]
-const KOKORO_VOICES = [['zf_001', 'zf_001（女）'], ['zf_002', 'zf_002（女）'], ['zm_009', 'zm_009（男）'], ['zm_010', 'zm_010（男）']]
 
 const ttsSel = ref('')
 let ttsPrefsLoaded = false
 
-// 选项跨端全列出（TTS 仅在此处选择）：Edge 两端通用；APK 追加本地离线（含语速），
-// 网页追加 Kokoro（含音色）；当前值若是 HA 引擎 ID（不在预设里），动态补入保证回显正确
+// 选项：智能选择 + Edge TTS（多音色）+ 浏览器 TTS + HA 引擎（动态补入）
 const ttsOptions = computed(() => {
   const o = [{ v: '', label: '朗读：智能选择（推荐）' }]
   o.push({ v: 'edge', label: '朗读：Edge TTS · 晓晓（默认）' })
   for (const [v, l] of EDGE_VOICES) o.push({ v: 'edge:' + v, label: '朗读：Edge · ' + l })
-  if (TTS_IS_APK) {
-    o.push({ v: 'local', label: '朗读：本地离线 · 正常语速' })
-    for (const [v, l] of [['0.8', '慢速 0.8x'], ['0.9', '稍慢 0.9x'], ['1.1', '稍快 1.1x'], ['1.2', '快速 1.2x']])
-      o.push({ v: 'local:' + v, label: '朗读：本地离线 · ' + l })
-  } else {
-    o.push({ v: 'kokoro', label: '朗读：Kokoro · zf_001（本机推理）' })
-    for (const [v, l] of KOKORO_VOICES) o.push({ v: 'kokoro:' + v, label: '朗读：Kokoro · ' + l })
-  }
+  o.push({ v: 'browser', label: '朗读：浏览器 TTS（系统语音）' })
   const cur = ttsSel.value
   if (cur && !o.some((x) => x.v === cur)) o.push({ v: cur, label: '朗读：HA 引擎 · ' + cur })
   return o
@@ -986,18 +977,10 @@ let ttsSupported = typeof window !== 'undefined' && 'speechSynthesis' in window
 let ttsAudio = null
 const ttsPlayingId = ref(0)
 let ttsSeq = 0 // 朗读代次：stopTTS/新一轮 speak 时递增，丢弃在途的异步合成结果
-// 本地 TTS 流式分片播放队列（speakLocal2 按句推送，此处顺序连播）
-const streamQueue = []
-let streamBusy = false
-let streamAudio = null
 function stopTTS() {
   ttsSeq++
   if (ttsAudio) { try { ttsAudio.pause(); ttsAudio.currentTime = 0 } catch {} }
   if (ttsSupported) { try { window.speechSynthesis.cancel() } catch {} }
-  // 清空流式分片播放队列
-  streamQueue.length = 0
-  streamBusy = false
-  if (streamAudio) { try { streamAudio.pause() } catch {} streamAudio = null }
   // 停止 APK 原生：cancelTTS 中止合成/清空排队任务（新引擎立即生效），stopSystem 停系统朗读
   const native = typeof window !== 'undefined' ? window.StickyKeeNative : null
   if (native && typeof native.cancelTTS === 'function') {
@@ -1009,58 +992,7 @@ function stopTTS() {
   ttsPlayingId.value = 0
 }
 
-// 顺序播放本地 TTS 的 WAV 分片（每句一个独立 WAV，句间衔接自然）
-function playNextChunk() {
-  if (streamBusy) return
-  const b64 = streamQueue.shift()
-  if (!b64) return
-  streamBusy = true
-  if (!streamAudio) {
-    streamAudio = new Audio()
-    streamAudio.onended = () => { streamBusy = false; playNextChunk() }
-    streamAudio.onerror = () => { streamBusy = false; streamQueue.length = 0; ttsPlayingId.value = 0 }
-  }
-  streamAudio.src = `data:audio/wav;base64,${b64}`
-  streamAudio.play().catch(() => { streamBusy = false })
-}
-
-// 流式接收 APK 本地 TTS 分片（speakLocal2）：每句合成立即推送，边合成边播放。
-// 全部完成且至少播放过一片时 resolve true；失败/无分片 resolve null。
-function nativeTTSStream(native, text, speed) {
-  return new Promise((resolve) => {
-    if (!native || typeof native.speakLocal2 !== 'function') { resolve(null); return }
-    const req = 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
-    let timer = null
-    let got = false
-    const armTimer = () => {
-      if (timer) clearTimeout(timer)
-      timer = setTimeout(() => { cleanup(); resolve(got || streamQueue.length ? true : null) }, 120000)
-    }
-    const cleanup = () => { window.removeEventListener('stickykee-tts', onEvt); if (timer) { clearTimeout(timer); timer = null } }
-    const onEvt = (e) => {
-      const d = e && e.detail
-      if (!d || d.req !== req) return
-      if (d.done) {
-        cleanup()
-        // 分片已播完/队列为空则收尾；否则播放器 onended 后自然结束
-        if (!streamBusy && !streamQueue.length) ttsPlayingId.value = 0
-        resolve(got || streamQueue.length ? true : (d.ok ? true : null))
-        return
-      }
-      if (d.ok && d.audio) {
-        got = true
-        streamQueue.push(d.audio)
-        if (!streamBusy) playNextChunk()
-      }
-      armTimer() // 分片持续到达即视为活跃，重置超时
-    }
-    armTimer()
-    window.addEventListener('stickykee-tts', onEvt)
-    try { native.speakLocal2(text, speed, req) } catch { cleanup(); resolve(null) }
-  })
-}
-
-// 异步调用 APK 原生 TTS（speakEdge2/speakLocal2）：合成在原生后台线程执行，完成后
+// 异步调用 APK 原生 TTS（speakEdge2）：合成在原生后台线程执行，完成后
 // 经 NativeBridge 派发 window 事件 stickykee-tts（{req, ok, audio, mime}）。避免旧同步
 // 接口在合成期间阻塞 WebView JS 线程（整页冻结 1~30 秒）。超时/失败 resolve null。
 function nativeTTSAsync(native, fnName, args, mime) {
@@ -1108,23 +1040,22 @@ async function speak(text, msgId = 0) {
     return ttsAudio.play()
   }
 
-  // ---- 路线 B-1：APK 本地离线 TTS（MeloTTS，完全无需网络，流式按句播报）----
-  if (isApk && engine.startsWith('local')) {
+  // ---- 路线 1：浏览器 TTS（Web Speech API，系统自带语音引擎，离线可用）----
+  if (engine === 'browser' && ttsSupported) {
     try {
-      const speed = engine.includes(':') ? parseFloat(engine.slice(engine.indexOf(':') + 1)) || 1.0 : 1.0
-      // 流式接口（不阻塞 JS 线程，首句 1~3s 出声）；旧 APK 无 speakLocal2 时回退旧同步调用
-      if (typeof native.speakLocal2 === 'function') {
-        const ok = await nativeTTSStream(native, text, speed)
-        if (seq !== ttsSeq) return // 等待期间被停止/换新朗读
-        if (ok) return
-      } else {
-        const b64 = native.speakLocal(text, speed)
-        if (b64) { await playB64(b64, 'audio/wav'); return }
-      }
+      window.speechSynthesis.cancel()
+      const u = new SpeechSynthesisUtterance(text)
+      u.lang = 'zh-CN'; u.rate = 1.0; u.pitch = 1.0
+      const zh = window.speechSynthesis.getVoices().find((v) => /zh|Chinese|cmn/i.test(v.lang + v.name))
+      if (zh) u.voice = zh
+      u.onend = () => { ttsPlayingId.value = 0 }
+      u.onerror = () => { ttsPlayingId.value = 0 }
+      window.speechSynthesis.speak(u)
+      return
     } catch { /* fallthrough */ }
   }
 
-  // ---- 路线 B-2：APK 原生 Edge TTS（在线、不依赖后端，直连微软）----
+  // ---- 路线 2：APK 原生 Edge TTS（在线、不依赖后端，直连微软）----
   if (isApk && (engine === '' || engine.startsWith('edge'))) {
     try {
       const voice = engine.startsWith('edge:') ? engine.slice(5).trim() : 'zh-CN-XiaoxiaoNeural'
@@ -1138,17 +1069,10 @@ async function speak(text, msgId = 0) {
     } catch { /* fallthrough */ }
   }
 
-  // ---- 路线 A/C：kokoro 浏览器本地推理 或 后端（Edge TTS / HA TTS）----
+  // ---- 路线 3：后端 TTS（Edge TTS / HA TTS，engine 为空时智能选择）----
   try {
-    let blob
-    if (engine.startsWith('kokoro')) {
-      const voice = engine.includes(':') ? engine.slice(engine.indexOf(':') + 1).trim() : 'zf_001'
-      const { kokoroSynth } = await import('@/utils/kokoro_tts')
-      blob = await kokoroSynth(text, voice || 'zf_001')
-    } else {
-      const res = await api.assistantTTS(text, engine)
-      blob = res?.blob
-    }
+    const res = await api.assistantTTS(text, engine)
+    const blob = res?.blob
     if (!blob || blob.size === 0) throw new Error('empty audio')
     if (seq !== ttsSeq) return // 合成期间被停止/换新朗读
     if (!ttsAudio) {
