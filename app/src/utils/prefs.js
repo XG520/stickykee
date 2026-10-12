@@ -15,7 +15,19 @@ let cache = null      // 最近一次成功的 data
 let at = 0            // 缓存写入时间
 let inflight = null   // 进行中的请求
 
+const SNAP_KEY = 'prefs_snapshot'
+
+// 最近一次已知偏好的本地快照（localStorage）。服务器不可达（如 APK 离线用
+// 本地 TTS）时作为兜底数据源，保证本机已保存的设置仍然可读可写。
+function loadSnapshot() {
+  try { return JSON.parse(localStorage.getItem(SNAP_KEY) || 'null') || {} } catch { return {} }
+}
+function saveSnapshot(data) {
+  try { localStorage.setItem(SNAP_KEY, JSON.stringify(data || {})) } catch { /* 隐私模式等 */ }
+}
+
 // 读取偏好。force=true 绕过缓存（需要绝对新鲜值时使用）。
+// 服务器不可达时回退本地快照（不 reject），离线功能依赖此行为。
 export function getPrefs({ force = false } = {}) {
   if (!force && cache && Date.now() - at < TTL) return Promise.resolve({ data: cache })
   if (inflight) return inflight
@@ -23,17 +35,31 @@ export function getPrefs({ force = false } = {}) {
     .then((res) => {
       cache = res?.data || {}
       at = Date.now()
+      saveSnapshot(cache)
       return res
+    })
+    .catch(() => {
+      if (!cache) { cache = loadSnapshot(); at = 0 }
+      return { data: cache || {} }
     })
     .finally(() => { inflight = null })
   return inflight
 }
 
 // 写入偏好：成功后立即失效本地缓存。
+// 写入失败（离线）时合并进本地快照，保证本机设置离线立即生效；错误向上抛出由调用方静默。
 export async function putPrefs(body) {
-  const res = await api.putPrefs(body)
-  invalidate()
-  return res
+  try {
+    const res = await api.putPrefs(body)
+    invalidate()
+    saveSnapshot({ ...loadSnapshot(), ...body })
+    return res
+  } catch (e) {
+    cache = { ...(cache || loadSnapshot()), ...body }
+    at = Date.now()
+    saveSnapshot(cache)
+    throw e
+  }
 }
 
 export function invalidate() {

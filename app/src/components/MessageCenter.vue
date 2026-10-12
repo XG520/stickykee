@@ -986,16 +986,78 @@ let ttsSupported = typeof window !== 'undefined' && 'speechSynthesis' in window
 let ttsAudio = null
 const ttsPlayingId = ref(0)
 let ttsSeq = 0 // 朗读代次：stopTTS/新一轮 speak 时递增，丢弃在途的异步合成结果
+// 本地 TTS 流式分片播放队列（speakLocal2 按句推送，此处顺序连播）
+const streamQueue = []
+let streamBusy = false
+let streamAudio = null
 function stopTTS() {
   ttsSeq++
   if (ttsAudio) { try { ttsAudio.pause(); ttsAudio.currentTime = 0 } catch {} }
   if (ttsSupported) { try { window.speechSynthesis.cancel() } catch {} }
-  // 停止 APK 原生系统 TTS
+  // 清空流式分片播放队列
+  streamQueue.length = 0
+  streamBusy = false
+  if (streamAudio) { try { streamAudio.pause() } catch {} streamAudio = null }
+  // 停止 APK 原生：cancelTTS 中止合成/清空排队任务（新引擎立即生效），stopSystem 停系统朗读
   const native = typeof window !== 'undefined' ? window.StickyKeeNative : null
+  if (native && typeof native.cancelTTS === 'function') {
+    try { native.cancelTTS() } catch {}
+  }
   if (native && typeof native.stopSystem === 'function') {
     try { native.stopSystem() } catch {}
   }
   ttsPlayingId.value = 0
+}
+
+// 顺序播放本地 TTS 的 WAV 分片（每句一个独立 WAV，句间衔接自然）
+function playNextChunk() {
+  if (streamBusy) return
+  const b64 = streamQueue.shift()
+  if (!b64) return
+  streamBusy = true
+  if (!streamAudio) {
+    streamAudio = new Audio()
+    streamAudio.onended = () => { streamBusy = false; playNextChunk() }
+    streamAudio.onerror = () => { streamBusy = false; streamQueue.length = 0; ttsPlayingId.value = 0 }
+  }
+  streamAudio.src = `data:audio/wav;base64,${b64}`
+  streamAudio.play().catch(() => { streamBusy = false })
+}
+
+// 流式接收 APK 本地 TTS 分片（speakLocal2）：每句合成立即推送，边合成边播放。
+// 全部完成且至少播放过一片时 resolve true；失败/无分片 resolve null。
+function nativeTTSStream(native, text, speed) {
+  return new Promise((resolve) => {
+    if (!native || typeof native.speakLocal2 !== 'function') { resolve(null); return }
+    const req = 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+    let timer = null
+    let got = false
+    const armTimer = () => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => { cleanup(); resolve(got || streamQueue.length ? true : null) }, 120000)
+    }
+    const cleanup = () => { window.removeEventListener('stickykee-tts', onEvt); if (timer) { clearTimeout(timer); timer = null } }
+    const onEvt = (e) => {
+      const d = e && e.detail
+      if (!d || d.req !== req) return
+      if (d.done) {
+        cleanup()
+        // 分片已播完/队列为空则收尾；否则播放器 onended 后自然结束
+        if (!streamBusy && !streamQueue.length) ttsPlayingId.value = 0
+        resolve(got || streamQueue.length ? true : (d.ok ? true : null))
+        return
+      }
+      if (d.ok && d.audio) {
+        got = true
+        streamQueue.push(d.audio)
+        if (!streamBusy) playNextChunk()
+      }
+      armTimer() // 分片持续到达即视为活跃，重置超时
+    }
+    armTimer()
+    window.addEventListener('stickykee-tts', onEvt)
+    try { native.speakLocal2(text, speed, req) } catch { cleanup(); resolve(null) }
+  })
 }
 
 // 异步调用 APK 原生 TTS（speakEdge2/speakLocal2）：合成在原生后台线程执行，完成后
@@ -1046,18 +1108,19 @@ async function speak(text, msgId = 0) {
     return ttsAudio.play()
   }
 
-  // ---- 路线 B-1：APK 本地离线 TTS（MeloTTS，完全无需网络）----
+  // ---- 路线 B-1：APK 本地离线 TTS（MeloTTS，完全无需网络，流式按句播报）----
   if (isApk && engine.startsWith('local')) {
     try {
       const speed = engine.includes(':') ? parseFloat(engine.slice(engine.indexOf(':') + 1)) || 1.0 : 1.0
-      // 优先异步接口（不阻塞 JS 线程）；旧 APK 无 speakLocal2 时回退旧同步调用
-      let r = await nativeTTSAsync(native, 'speakLocal2', [text, speed], 'audio/wav')
-      if (seq !== ttsSeq) return // 等待期间被停止/换新朗读
-      if (!r && typeof native.speakLocal2 !== 'function') {
+      // 流式接口（不阻塞 JS 线程，首句 1~3s 出声）；旧 APK 无 speakLocal2 时回退旧同步调用
+      if (typeof native.speakLocal2 === 'function') {
+        const ok = await nativeTTSStream(native, text, speed)
+        if (seq !== ttsSeq) return // 等待期间被停止/换新朗读
+        if (ok) return
+      } else {
         const b64 = native.speakLocal(text, speed)
-        r = b64 ? { b64, mime: 'audio/wav' } : null
+        if (b64) { await playB64(b64, 'audio/wav'); return }
       }
-      if (r) { await playB64(r.b64, r.mime); return }
     } catch { /* fallthrough */ }
   }
 

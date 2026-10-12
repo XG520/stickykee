@@ -44,8 +44,10 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 极简原生桥：通过 WebView.addJavascriptInterface 注册为 window.StickyKeeNative。
@@ -66,7 +68,11 @@ public class NativeBridge {
     private final LocalTTS localTTS;
     private TextToSpeech sysTts;
     private WebView webView;
-    private final ExecutorService ttsPool = Executors.newSingleThreadExecutor();
+    // 单线程线程池（newFixedThreadPool(1) 返回真实 ThreadPoolExecutor，
+    // 以便 cancelTTS 时 clear 队列；newSingleThreadExecutor 的包装类不可取队列）
+    private final ThreadPoolExecutor ttsPool = (ThreadPoolExecutor) Executors.newFixedThreadPool(1);
+    // TTS 请求代次：cancelTTS() 自增，旧任务的合成结果按代次丢弃（切换引擎立即生效）
+    private final AtomicInteger ttsGen = new AtomicInteger(0);
 
     // ---- 原生录音（http 非安全上下文下 WebView 不暴露 navigator.mediaDevices，
     //      getUserMedia/WebRTC 均不可用，语音消息与助手识别经此原生兜底）----
@@ -191,6 +197,7 @@ public class NativeBridge {
      */
     @JavascriptInterface
     public void speakEdge2(final String text, final String voice, final String req) {
+        final int gen = ttsGen.get();
         ttsPool.execute(new Runnable() {
             @Override
             public void run() {
@@ -200,14 +207,15 @@ public class NativeBridge {
                     b64 = r != null ? r : "";
                 } catch (Exception ignored) {
                 }
-                dispatchTTS(req, b64, "audio/mpeg");
+                if (gen == ttsGen.get()) dispatchTTS(req, b64, "audio/mpeg");
             }
         });
     }
 
     /**
-     * APK 本地离线 TTS（异步版）：后台线程用 MeloTTS 推理，立即返回不阻塞 JS 线程。
-     * 事件协议同 speakEdge2，mime 为 audio/wav。
+     * APK 本地离线 TTS（异步流式版）：后台线程用 MeloTTS 按句推理，每句合成立即
+     * 派发分片事件 stickykee-tts：{req, ok, audio(base64 WAV), mime, seq, done}。
+     * 前端按 seq 顺序播放，首句出声无需等全文合成完（长文本感知延迟从 10~30s 降到 1~3s）。
      *
      * @param text  要合成的文本
      * @param speed 语速（1.0 = 正常，范围建议 0.5~2.0）
@@ -215,22 +223,48 @@ public class NativeBridge {
      */
     @JavascriptInterface
     public void speakLocal2(final String text, final float speed, final String req) {
+        final int gen = ttsGen.get();
         ttsPool.execute(new Runnable() {
             @Override
             public void run() {
-                String b64 = "";
-                try {
-                    String r = localTTS.synth(text, speed > 0 ? speed : 1.0f);
-                    b64 = r != null ? r : "";
-                } catch (Exception ignored) {
-                }
-                dispatchTTS(req, b64, "audio/wav");
+                if (gen != ttsGen.get()) return; // 排队期间已被取消
+                localTTS.synthStream(text, speed > 0 ? speed : 1.0f, new LocalTTS.ChunkSink() {
+                    private int seq = 0;
+
+                    @Override
+                    public void onChunk(byte[] wav) {
+                        if (gen != ttsGen.get()) return; // 合成途中被取消：分片不再派发
+                        dispatchTTS(req, Base64.encodeToString(wav, Base64.NO_WRAP), "audio/wav", seq++, false);
+                    }
+
+                    @Override
+                    public void onDone() {
+                        if (gen != ttsGen.get()) return;
+                        dispatchTTS(req, "", "", -1, true);
+                    }
+                });
             }
         });
     }
 
+    /**
+     * 取消全部 TTS 任务：中止正在进行的本地合成（下一句边界生效）、清空排队任务、
+     * 递增代次使在途结果作废。切换引擎 / 停止朗读时由前端调用，保证新引擎立即生效。
+     */
+    @JavascriptInterface
+    public void cancelTTS() {
+        ttsGen.incrementAndGet();
+        localTTS.cancel();
+        ttsPool.getQueue().clear();
+    }
+
     /** 合成完成（或失败）后向 JS 派发结果事件；WebView 未就绪时静默丢弃。 */
     private void dispatchTTS(final String req, final String b64, final String mime) {
+        dispatchTTS(req, b64, mime, 0, true);
+    }
+
+    /** 流式分片派发：seq 为分片序号（-1 表示结束标记），done=true 表示合成结束。 */
+    private void dispatchTTS(final String req, final String b64, final String mime, final int seq, final boolean done) {
         final WebView wv = webView;
         if (wv == null) return;
         final String js = "window.dispatchEvent(new CustomEvent('stickykee-tts',{detail:{"
@@ -238,6 +272,8 @@ public class NativeBridge {
                 + ",ok:" + (b64 != null && !b64.isEmpty())
                 + ",audio:" + JSONObject.quote(b64 == null ? "" : b64)
                 + ",mime:" + JSONObject.quote(mime)
+                + ",seq:" + seq
+                + ",done:" + done
                 + "}}))";
         activity.runOnUiThread(new Runnable() {
             @Override
