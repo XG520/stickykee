@@ -55,142 +55,6 @@
       <p v-if="tokMsg" class="mt-2 text-xs font-body" :class="tokMsgErr ? 'text-error' : 'text-success'">{{ tokMsg }}</p>
     </section>
 
-    <!-- 语音合成引擎（TTS）：决定智家助手朗读回复的音色，点选即选，无需手输 -->
-    <section class="bg-surface-alt border border-border rounded-2xl p-5">
-      <div class="flex items-center gap-2.5 mb-3">
-        <div class="w-8 h-8 rounded-xl bg-success/20 flex items-center justify-center">
-          <span class="material-symbols-outlined text-success text-lg">record_voice_over</span>
-        </div>
-        <div>
-          <h2 class="font-headline text-on-background text-base font-semibold">语音合成引擎（TTS）</h2>
-          <p class="text-muted text-xs mt-0.5">智家助手回复的朗读音色，网页端与手机端可分别设置</p>
-        </div>
-      </div>
-      <div class="flex gap-1 p-1 rounded-xl bg-background border border-border mb-3">
-        <button @click="ttsTarget = 'web'" type="button"
-          class="flex-1 py-1.5 rounded-lg text-sm font-semibold transition-all"
-          :class="ttsTarget === 'web' ? 'bg-primary text-on-primary shadow-sm' : 'text-muted hover:text-on-surface'">网页端</button>
-        <button @click="ttsTarget = 'apk'" type="button"
-          class="flex-1 py-1.5 rounded-lg text-sm font-semibold transition-all"
-          :class="ttsTarget === 'apk' ? 'bg-primary text-on-primary shadow-sm' : 'text-muted hover:text-on-surface'">手机端（APK）</button>
-      </div>
-      <div class="space-y-1.5">
-        <!-- 智能选择 -->
-        <div @click="selectTTSMode('auto')"
-          class="rounded-xl border px-3 py-2.5 cursor-pointer transition-colors"
-          :class="ttsMode === 'auto' ? 'border-primary bg-primary/10' : 'border-border bg-background hover:border-primary/40'">
-          <div class="flex items-center gap-2.5">
-            <span class="w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0"
-              :class="ttsMode === 'auto' ? 'border-primary' : 'border-muted'">
-              <span v-if="ttsMode === 'auto'" class="w-2 h-2 rounded-full bg-primary"></span>
-            </span>
-            <div class="min-w-0">
-              <p class="text-on-surface text-sm font-semibold">智能选择<span class="text-muted text-xs font-normal ml-1.5">推荐</span></p>
-              <p class="text-muted text-xs mt-0.5">APK 用 Edge TTS（默认音色），网页用 HA 默认引擎</p>
-            </div>
-          </div>
-        </div>
-        <!-- Edge TTS -->
-        <div @click="selectTTSMode('edge')"
-          class="rounded-xl border px-3 py-2.5 cursor-pointer transition-colors"
-          :class="ttsMode === 'edge' ? 'border-primary bg-primary/10' : 'border-border bg-background hover:border-primary/40'">
-          <div class="flex items-center gap-2.5">
-            <span class="w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0"
-              :class="ttsMode === 'edge' ? 'border-primary' : 'border-muted'">
-              <span v-if="ttsMode === 'edge'" class="w-2 h-2 rounded-full bg-primary"></span>
-            </span>
-            <div class="min-w-0">
-              <p class="text-on-surface text-sm font-semibold">Edge TTS（微软在线）</p>
-              <p class="text-muted text-xs mt-0.5">音质最佳，APK 内直连不依赖后端</p>
-            </div>
-          </div>
-          <select v-if="ttsMode === 'edge'" v-model="ttsEdgeVoice"
-            class="mt-2 w-full bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none">
-            <option value="">默认音色（晓晓·女）</option>
-            <option value="zh-CN-XiaoxiaoNeural">晓晓（女·温柔）</option>
-            <option value="zh-CN-XiaoyiNeural">晓伊（女·活泼）</option>
-            <option value="zh-CN-YunxiNeural">云希（男·年轻）</option>
-            <option value="zh-CN-YunjianNeural">云健（男·浑厚）</option>
-            <option value="zh-CN-YunyangNeural">云扬（男·播音）</option>
-            <option value="zh-CN-YunxiaNeural">云夏（男·少年）</option>
-            <option value="zh-CN-liaoning-XiaobeiNeural">晓北（女·东北）</option>
-            <option value="zh-HK-HiuMaanNeural">曉曼（女·粤语）</option>
-            <option value="zh-TW-HsiaoChenNeural">曉臻（女·台湾）</option>
-          </select>
-        </div>
-        <!-- APK 本地离线 -->
-        <div @click="selectTTSMode('local')"
-          class="rounded-xl border px-3 py-2.5 cursor-pointer transition-colors"
-          :class="[ttsMode === 'local' ? 'border-primary bg-primary/10' : 'border-border bg-background hover:border-primary/40', ttsCardDisabled('local') && 'opacity-50']">
-          <div class="flex items-center gap-2.5">
-            <span class="w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0"
-              :class="ttsMode === 'local' ? 'border-primary' : 'border-muted'">
-              <span v-if="ttsMode === 'local'" class="w-2 h-2 rounded-full bg-primary"></span>
-            </span>
-            <div class="min-w-0">
-              <p class="text-on-surface text-sm font-semibold">APK 本地离线（MeloTTS）</p>
-              <p class="text-muted text-xs mt-0.5">完全无需网络，仅 APK 生效</p>
-            </div>
-          </div>
-          <select v-if="ttsMode === 'local'" v-model="ttsLocalSpeed"
-            class="mt-2 w-full bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none">
-            <option value="">正常语速</option>
-            <option value="0.8">慢速（0.8x）</option>
-            <option value="0.9">稍慢（0.9x）</option>
-            <option value="1.1">稍快（1.1x）</option>
-            <option value="1.2">快速（1.2x）</option>
-          </select>
-        </div>
-        <!-- Kokoro 浏览器本地推理 -->
-        <div @click="selectTTSMode('kokoro')"
-          class="rounded-xl border px-3 py-2.5 cursor-pointer transition-colors"
-          :class="[ttsMode === 'kokoro' ? 'border-primary bg-primary/10' : 'border-border bg-background hover:border-primary/40', ttsCardDisabled('kokoro') && 'opacity-50']">
-          <div class="flex items-center gap-2.5">
-            <span class="w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0"
-              :class="ttsMode === 'kokoro' ? 'border-primary' : 'border-muted'">
-              <span v-if="ttsMode === 'kokoro'" class="w-2 h-2 rounded-full bg-primary"></span>
-            </span>
-            <div class="min-w-0">
-              <p class="text-on-surface text-sm font-semibold">浏览器本地推理（Kokoro-82M）</p>
-              <p class="text-muted text-xs mt-0.5">离线免费，仅网页端生效</p>
-            </div>
-          </div>
-          <select v-if="ttsMode === 'kokoro'" v-model="ttsKokoroVoice"
-            class="mt-2 w-full bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none">
-            <option value="">默认音色（zf_001·女）</option>
-            <option value="zf_002">zf_002（女）</option>
-            <option value="zm_009">zm_009（男）</option>
-            <option value="zm_010">zm_010（男）</option>
-          </select>
-        </div>
-        <!-- HA 引擎 -->
-        <div @click="selectTTSMode('ha')"
-          class="rounded-xl border px-3 py-2.5 cursor-pointer transition-colors"
-          :class="ttsMode === 'ha' ? 'border-primary bg-primary/10' : 'border-border bg-background hover:border-primary/40'">
-          <div class="flex items-center gap-2.5">
-            <span class="w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0"
-              :class="ttsMode === 'ha' ? 'border-primary' : 'border-muted'">
-              <span v-if="ttsMode === 'ha'" class="w-2 h-2 rounded-full bg-primary"></span>
-            </span>
-            <div class="min-w-0">
-              <p class="text-on-surface text-sm font-semibold">Home Assistant 引擎</p>
-              <p class="text-muted text-xs mt-0.5">使用 HA 已配置的 TTS 集成（如 tts.piper）</p>
-            </div>
-          </div>
-          <input v-if="ttsMode === 'ha'" v-model="ttsHaEngine" type="text" placeholder="填写 HA 引擎 ID，如 tts.piper"
-            class="mt-2 w-full bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none">
-        </div>
-      </div>
-      <div class="mt-3 flex justify-end">
-        <button @click="saveTTSEngine" :disabled="savingTTS"
-          class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-on-primary text-sm font-semibold transition-all disabled:opacity-70 flex items-center gap-1.5">
-          <span v-if="savingTTS" class="hc-spinner"></span>
-          {{ savingTTS ? '保存中…' : '保存' }}
-        </button>
-      </div>
-      <p v-if="ttsMsg" class="mt-2 text-xs font-body" :class="ttsMsgErr ? 'text-error' : 'text-success'">{{ ttsMsg }}</p>
-    </section>
-
     <!-- 服务器地址（APK 壳页地址簿同步显示） -->
     <section class="bg-surface-alt border border-border rounded-2xl p-5">
       <div class="flex items-center gap-2.5 mb-3">
@@ -963,86 +827,6 @@ function flash(text, err = false) {
 
 // ---- 个人 HA Token ----
 const myToken = ref('')
-// ---- TTS 引擎选择（网页端 / 手机端分别设置，点选式）----
-const ttsTarget = ref('web') // 当前编辑的端：web | apk
-const ttsStates = reactive({
-  web: { mode: 'auto', edgeVoice: '', localSpeed: '', kokoroVoice: '', haEngine: '' },
-  apk: { mode: 'auto', edgeVoice: '', localSpeed: '', kokoroVoice: '', haEngine: '' },
-})
-const savingTTS = ref(false)
-const ttsMsg = ref('')
-const ttsMsgErr = ref(false)
-
-// 代理：模板按当前编辑端读写
-const ttsMode = computed({
-  get: () => ttsStates[ttsTarget.value].mode,
-  set: (v) => { ttsStates[ttsTarget.value].mode = v },
-})
-const ttsEdgeVoice = computed({
-  get: () => ttsStates[ttsTarget.value].edgeVoice,
-  set: (v) => { ttsStates[ttsTarget.value].edgeVoice = v },
-})
-const ttsLocalSpeed = computed({
-  get: () => ttsStates[ttsTarget.value].localSpeed,
-  set: (v) => { ttsStates[ttsTarget.value].localSpeed = v },
-})
-const ttsKokoroVoice = computed({
-  get: () => ttsStates[ttsTarget.value].kokoroVoice,
-  set: (v) => { ttsStates[ttsTarget.value].kokoroVoice = v },
-})
-const ttsHaEngine = computed({
-  get: () => ttsStates[ttsTarget.value].haEngine,
-  set: (v) => { ttsStates[ttsTarget.value].haEngine = v },
-})
-
-const TTS_LABELS = { auto: '智能选择', edge: 'Edge TTS', local: 'APK 本地离线（MeloTTS）', kokoro: 'Kokoro 浏览器推理', ha: 'HA 引擎' }
-
-// 某端不可用的引擎：网页端无法使用 APK 本地离线，手机端不提供 Kokoro（离线请选 local）
-function ttsCardDisabled(id) {
-  return (ttsTarget.value === 'web' && id === 'local') || (ttsTarget.value === 'apk' && id === 'kokoro')
-}
-
-function selectTTSMode(id) {
-  if (ttsCardDisabled(id)) {
-    ttsMsgErr.value = true
-    ttsMsg.value = id === 'local'
-      ? 'APK 本地离线引擎仅手机端生效，请改选其他引擎'
-      : 'Kokoro 浏览器推理仅网页端生效，手机端离线请选 APK 本地离线'
-    setTimeout(() => { ttsMsg.value = '' }, 3000)
-    return
-  }
-  ttsMode.value = id
-}
-
-// 依据存储值还原某端的选择状态（兼容旧的手输格式）；forbid 为该端不可用、需迁移为智能选择的引擎
-function parseTTSEngine(v, st, forbid) {
-  const s = String(v || '').trim()
-  st.edgeVoice = ''; st.localSpeed = ''; st.kokoroVoice = ''; st.haEngine = ''
-  st.mode = 'auto'
-  if (!s) return
-  const i = s.indexOf(':')
-  const head = (i >= 0 ? s.slice(0, i) : s).trim()
-  const arg = i >= 0 ? s.slice(i + 1).trim() : ''
-  if (head === 'edge' || head === 'local' || head === 'kokoro') {
-    if (head === forbid) return
-    st.mode = head
-    if (head === 'edge') st.edgeVoice = arg
-    else if (head === 'local') st.localSpeed = arg
-    else st.kokoroVoice = arg
-  } else {
-    st.mode = 'ha'
-    st.haEngine = s
-  }
-}
-
-// 将某端选择状态序列化为 tts_engine 存储值（与 MessageCenter/后端约定格式一致）
-function buildTTSEngine(st) {
-  if (st.mode === 'edge') return st.edgeVoice ? 'edge:' + st.edgeVoice : 'edge'
-  if (st.mode === 'local') return st.localSpeed ? 'local:' + st.localSpeed : 'local'
-  if (st.mode === 'kokoro') return st.kokoroVoice ? 'kokoro:' + st.kokoroVoice : 'kokoro'
-  if (st.mode === 'ha') return st.haEngine.trim()
-  return ''
-}
 const savingToken = ref(false)
 const tokMsg = ref('')
 const tokMsgErr = ref(false)
@@ -1077,32 +861,6 @@ async function saveMyToken() {
   }
   savingToken.value = false
   setTimeout(() => { tokMsg.value = '' }, 3000)
-}
-
-async function saveTTSEngine() {
-  for (const t of ['web', 'apk']) {
-    if (ttsStates[t].mode === 'ha' && !buildTTSEngine(ttsStates[t])) {
-      ttsMsgErr.value = true
-      ttsMsg.value = `请填写${t === 'web' ? '网页端' : '手机端'}的 HA 引擎 ID（如 tts.piper），或改选其他引擎`
-      setTimeout(() => { ttsMsg.value = '' }, 3000)
-      return
-    }
-  }
-  savingTTS.value = true
-  ttsMsg.value = ''
-  try {
-    await putPrefs({
-      tts_engine: buildTTSEngine(ttsStates.web),
-      tts_engine_apk: buildTTSEngine(ttsStates.apk),
-    })
-    ttsMsgErr.value = false
-    ttsMsg.value = `已保存：网页端 ${TTS_LABELS[ttsStates.web.mode]}，手机端 ${TTS_LABELS[ttsStates.apk.mode]}`
-  } catch (e) {
-    ttsMsgErr.value = true
-    ttsMsg.value = e.message
-  }
-  savingTTS.value = false
-  setTimeout(() => { ttsMsg.value = '' }, 3000)
 }
 
 async function addInstance() {
@@ -1523,9 +1281,6 @@ async function loadPrefs() {
       toggles.value.forEach((t) => { if (t.id in m) t.on = !!m[t.id] })
     }
     if (data.wakeWord) wakeWord.value = data.wakeWord
-    // 网页端/手机端分别还原；APK 未单独设置过时回退旧单值，不可用于该端的旧值迁移为智能选择
-    parseTTSEngine(data.tts_engine, ttsStates.web, 'local')
-    parseTTSEngine(data.tts_engine_apk ?? data.tts_engine, ttsStates.apk, 'kokoro')
     if (data.map_config) {
       try {
         const mc = JSON.parse(data.map_config)

@@ -435,17 +435,17 @@ const KOKORO_VOICES = [['zf_001', 'zf_001（女）'], ['zf_002', 'zf_002（女�
 const ttsSel = ref('')
 let ttsPrefsLoaded = false
 
-// 选项按当前环境裁剪：APK 只给本地离线（含语速），网页给 Edge/Kokoro（含音色）；
-// 当前值若是 HA 引擎 ID（不在预设里），动态补入保证回显正确
+// 选项跨端全列出（TTS 仅在此处选择）：Edge 两端通用；APK 追加本地离线（含语速），
+// 网页追加 Kokoro（含音色）；当前值若是 HA 引擎 ID（不在预设里），动态补入保证回显正确
 const ttsOptions = computed(() => {
   const o = [{ v: '', label: '朗读：智能选择（推荐）' }]
+  o.push({ v: 'edge', label: '朗读：Edge TTS · 晓晓（默认）' })
+  for (const [v, l] of EDGE_VOICES) o.push({ v: 'edge:' + v, label: '朗读：Edge · ' + l })
   if (TTS_IS_APK) {
     o.push({ v: 'local', label: '朗读：本地离线 · 正常语速' })
     for (const [v, l] of [['0.8', '慢速 0.8x'], ['0.9', '稍慢 0.9x'], ['1.1', '稍快 1.1x'], ['1.2', '快速 1.2x']])
       o.push({ v: 'local:' + v, label: '朗读：本地离线 · ' + l })
   } else {
-    o.push({ v: 'edge', label: '朗读：Edge TTS · 晓晓（默认）' })
-    for (const [v, l] of EDGE_VOICES) o.push({ v: 'edge:' + v, label: '朗读：Edge · ' + l })
     o.push({ v: 'kokoro', label: '朗读：Kokoro · zf_001（本机推理）' })
     for (const [v, l] of KOKORO_VOICES) o.push({ v: 'kokoro:' + v, label: '朗读：Kokoro · ' + l })
   }
