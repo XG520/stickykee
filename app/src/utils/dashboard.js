@@ -64,6 +64,24 @@ export function upgradeToggleCard(card) {
   if (!String(card.css || '').includes('.h-ctl{')) card.css = (card.css || '') + CTL_CSS
 }
 
+// 翻页时钟卡动画修复：对齐标准机械分瓣翻页（clockhub 式两段式连续翻动）——
+// 旧上半先翻落（.2s ease-in，露出新上半），落定后新下半展开（.24s ease-out 延迟 .2s），
+// 落定回调 460ms。幂等：兼容最初快照（.3s 同时动）与中间版本快照。
+export function upgradeFlipClockCard(card) {
+  if (!card || card.type !== 'flipclock') return
+  const css = String(card.css || '')
+  if (css.includes('animation:fcFlipA .3s') || css.includes('animation:fcFlipA .22s')) {
+    card.css = css
+      .replace('animation:fcFlipA .3s ease-in forwards', 'animation:fcFlipA .2s ease-in forwards')
+      .replace('animation:fcFlipA .22s ease-out forwards', 'animation:fcFlipA .2s ease-in forwards')
+      .replace('animation:fcFlipB .3s ease-out forwards', 'animation:fcFlipB .24s ease-out .2s forwards')
+      .replace('animation:fcFlipB .24s ease-in forwards', 'animation:fcFlipB .24s ease-out .2s forwards')
+  }
+  const js = String(card.js || '')
+  if (js.includes('}, 320)')) card.js = js.replace('}, 320)', '}, 460)')
+  else if (js.includes('}, 280)')) card.js = js.replace('}, 280)', '}, 460)')
+}
+
 // 卡片数组归一化：字符串（旧的卡片类型简写）→ 卡片对象；丢弃未知类型；跑卡片级迁移。
 // 幂等：已有 uid 的卡片保留原 uid，因此可安全地重复调用（load / import 共用）。
 export function normalizeCards(list) {
@@ -83,6 +101,7 @@ export function normalizeCards(list) {
   }
   out.forEach(upgradePersonCard)
   out.forEach(upgradeToggleCard)
+  out.forEach(upgradeFlipClockCard)
   return out
 }
 

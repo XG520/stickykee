@@ -703,8 +703,8 @@ export function tplFlipClock() {
 .fcd .fb{bottom:0;top:auto;border-radius:0 0 5px 5px;transform-origin:50% 0%;transform:rotateX(90deg);box-shadow:inset 0 3px 5px -3px rgb(0 0 0 / .45)}
 .fcd .fb b{bottom:0}
 .fcd.flip .fa,.fcd.flip .fb{visibility:visible}
-.fcd.flip .fa{animation:fcFlipA .3s ease-in forwards}
-.fcd.flip .fb{animation:fcFlipB .3s ease-out forwards}
+.fcd.flip .fa{animation:fcFlipA .2s ease-in forwards}
+.fcd.flip .fb{animation:fcFlipB .24s ease-out .2s forwards}
 @keyframes fcFlipA{from{transform:rotateX(0)}to{transform:rotateX(-90deg)}}
 @keyframes fcFlipB{from{transform:rotateX(90deg)}to{transform:rotateX(0)}}
 .fc-colon{display:flex;flex-direction:column;justify-content:center;gap:9px;height:42px;margin:0 1px}
@@ -736,7 +736,7 @@ export const JS_FLIP_CLOCK = `// 翻页时钟：自走 1s 定时器驱动翻页�
     d._t = setTimeout(function () {
       d.querySelector('.bot b').textContent = ch    // 动画结束：下半静止落为新值
       d.classList.remove('flip')
-    }, 320)
+    }, 460)
   }
   function tick() {
     if (!el.isConnected) { clearInterval(el._fcT); return }
