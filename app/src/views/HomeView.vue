@@ -80,7 +80,7 @@
 
         <!-- 操作按钮：编辑态常显，非编辑态感应式自动隐藏（仅桌面端导航栏内）；
              键盘 Tab 进入本组按钮时（focus-within）强制显示，避免焦点落在不可见按钮上 -->
-        <div v-if="!immersive"
+        <div v-if="!immersive && (editing || canEdit)"
           class="ml-auto flex flex-wrap items-center gap-2 transition-opacity duration-300"
           :class="btnVisible ? 'opacity-100' : 'opacity-0 pointer-events-none focus-within:opacity-100 focus-within:pointer-events-auto'">
           <template v-if="editing">
@@ -99,27 +99,10 @@
             </button>
           </template>
           <template v-else>
-            <!-- 非编辑态：手机端收成紧凑图标按钮（文字仅宽屏显示），避免挤占页签行 -->
-            <button
-              @click="manualLocate"
-              :disabled="locating"
-              class="p-2 rounded-lg bg-primary/10 text-primary hover:bg-primary/15 border border-primary/25 text-sm font-semibold transition-colors flex items-center justify-center gap-1.5 disabled:opacity-60"
-              title="更新位置：获取当前设备定位并同步到 Home Assistant"
-              aria-label="更新位置"
-            >
-              <span v-if="locating" class="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin" aria-hidden="true"></span>
-              <span v-else class="material-symbols-outlined text-base" aria-hidden="true">my_location</span>
-              <span class="hidden sm:inline">{{ locating ? '定位中…' : '更新位置' }}</span>
-            </button>
-            <button v-if="canEdit" @click="editing = true" class="p-2 sm:px-4 py-2 rounded-lg bg-surface-alt border border-border hover:border-primary/40 text-sm text-on-surface transition-colors flex items-center gap-1.5" title="编辑仪表盘" aria-label="编辑仪表盘">
+            <!-- 非编辑态：定位自动执行（onMounted 每会话一次），全屏用顶栏按钮，这里只留编辑入口 -->
+            <button v-if="canEdit" @click="editing = true" class="px-4 py-2 rounded-lg bg-surface-alt border border-border hover:border-primary/40 text-sm text-on-surface transition-colors flex items-center gap-1.5" title="编辑仪表盘" aria-label="编辑仪表盘">
               <span class="material-symbols-outlined text-base" aria-hidden="true">edit_square</span>
               <span class="hidden sm:inline">编辑仪表盘</span>
-            </button>
-            <button @click="enterImmersive"
-              class="p-2 sm:px-3 py-2 rounded-lg bg-surface-alt border border-border hover:border-primary/40 text-sm text-on-surface transition-colors flex items-center gap-1.5"
-              title="全屏显示：折叠导航栏、隐藏编辑按钮" aria-label="全屏">
-              <span class="material-symbols-outlined text-base" aria-hidden="true">fullscreen</span>
-              <span class="hidden sm:inline">全屏</span>
             </button>
           </template>
         </div>
@@ -757,14 +740,9 @@ async function locate(silent) {
     if (!silent) toast(locErrorMessage(e), true)
   } finally { locating.value = false }
 }
-function manualLocate() { locate(false) }
 
-// 沉浸/全屏模式
+// 沉浸/全屏模式：进入由顶栏全屏按钮（App.vue toggleFullscreen）负责，这里只跟随状态
 const immersive = computed(() => ui.immersive)
-async function enterImmersive() {
-  ui.immersive = true
-  try { if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen() } catch {}
-}
 function onFsChange() { if (!document.fullscreenElement) ui.immersive = false }
 
 // 顶部工具条落位：桌面端（≥768px，与导航栏的 hidden md:flex 同断点）Teleport 进导航栏右侧槽位；
