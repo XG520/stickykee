@@ -9,8 +9,7 @@ homecanvas/
 ├── app/                 # Vue 3 前端（vite，构建产物 dist/）
 ├── server/              # Go 后端（cmd/server 入口）
 │   └── Dockerfile       # 纯后端镜像（前后端分离部署用）
-├── apk/                 # Capacitor Android 壳工程（APK 打包）
-│   └── dist/            # APK 产物输出
+├── apk/                 # Capacitor Android 壳工程（APK 打包，产物在 android/app/build/outputs/apk/）
 ├── release/             # 构建镜像前放置 stickykee-app.apk（被根 Dockerfile COPY 进镜像供服务端下载）
 └── Dockerfile           # 前后端合一镜像（推荐部署方式）
 ```
@@ -134,6 +133,8 @@ cd android
 ```
 
 依赖与 Gradle 发行版均走阿里云/腾讯云国内镜像，无需代理。壳页 `apk/www/index.html` 有改动时，重新执行第 2、3 步即可；仅 `app/` 前端改动（语音、卡片等）无需 sync，更新服务器镜像后直接生效。
+
+> 完整的打包方式、产物路径、发版版本号同步（3 处）与核对清单见 [docs/打包指南.md](docs/打包指南.md)。
 
 ### 语音通话网络说明
 
