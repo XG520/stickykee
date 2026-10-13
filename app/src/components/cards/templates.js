@@ -711,40 +711,72 @@ export function tplFlipClock() {
 }
 
 // 翻页时钟卡片 JS：渲染后执行一次，内部轮询检测秒变化驱动整瓣 180° 翻转（参考 flipflow 实现）。
-// 卡片 DOM 被移除后（el.isConnected=false）自动清掉定时器，不留泄漏。
-export const JS_FLIP_CLOCK = `// 翻页时钟 v2：上半立即新值、下半翻完新值（经典时序）；卡片卸载后自动停止
+// 卡片 DOM 被移除后（el.isConnected=false）自动清掉定时器，不留泄漏；
+// 启动时先做中断自愈（keep-alive 停用/主题切换可能打断翻页留下 .flip.on 残留），
+// 运行中带看门狗，翻板超时未复位则强制落定，保证任何打断后都能自动恢复。
+export const JS_FLIP_CLOCK = `// 翻页时钟 v3：上半立即新值、下半翻完新值；中断自愈 + 翻页看门狗；卸载自动停止
 ;(function () {
   var ds = el.querySelectorAll('.fcd')
   var dateEl = el.querySelector('.fc-date')
   if (!ds.length) return
   var WEEK = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
   function p(n) { return (n < 10 ? '0' : '') + n }
+  function faces(d) {
+    return {
+      sc: d.querySelector('.sc b'), sn: d.querySelector('.sn b'),
+      fc: d.querySelector('.fc b'), fn: d.querySelector('.fn b'),
+      flip: d.querySelector('.flip'),
+    }
+  }
+  // 中断自愈：翻页进行到一半被打断时 .flip.on 残留、四瓣文字不一致，
+  // 复位翻板并清空 _v，让下一轮 tick 重新做一次完整翻页对齐到当前值。
+  function heal(d) {
+    var f = faces(d)
+    if (!f.flip.classList.contains('on')) return
+    f.flip.classList.remove('on')
+    clearTimeout(d._t)
+    d._v = null
+  }
   function setD(d, ch) {
     if (d._v === ch) return
     d._v = ch
-    var old = d.querySelector('.sc b').textContent // 翻页前上半旧值
-    d.querySelector('.sc b').textContent = ch      // 静止上半：翻页瞬间立即变为新值
-    d.querySelector('.fn b').textContent = ch      // 后脸（下半）：预置新值
-    d.querySelector('.fc b').textContent = old     // 前脸（上半）：保持旧值，随翻板翻走
-    var f = d.querySelector('.flip')
-    f.classList.remove('on')                       // 立即复位（transition 0s），再重启翻转
-    void f.offsetWidth
-    f.classList.add('on')
+    var f = faces(d)
+    var old = f.fc.textContent                    // 翻页前实际显示值（前脸），静止态与上半一致
+    f.sc.textContent = ch                         // 静止上半：翻页瞬间立即变为新值
+    f.fn.textContent = ch                         // 后脸（下半）：预置新值
+    f.fc.textContent = old                        // 前脸（上半）：保持旧值，随翻板翻走
+    f.flip.classList.remove('on')                 // 立即复位（transition 0s），再重启翻转
+    void f.flip.offsetWidth
+    f.flip.classList.add('on')
+    d._ts = Date.now()                            // 翻页开始时间，供看门狗判定卡死
     clearTimeout(d._t)
     d._t = setTimeout(function () {
-      f.classList.remove('on')                     // 翻板复位（transition 0s 瞬时），露出新值
-      d.querySelector('.sn b').textContent = ch    // 静止下半：翻完写入新值
-      d.querySelector('.fc b').textContent = ch    // 前脸复位为新值，供下一轮翻页
+      f.flip.classList.remove('on')               // 翻板复位（transition 0s 瞬时），露出新值
+      f.sn.textContent = ch                       // 静止下半：翻完写入新值
+      f.fc.textContent = ch                       // 前脸复位为新值，供下一轮翻页
     }, 500)
   }
   function tick() {
     if (!el.isConnected) { clearInterval(el._fcT); return }
+    // 看门狗：翻板 .on 残留超过 1.5s（定时器被系统节流等罕见情况）→ 强制落定到新值
+    for (var k = 0; k < ds.length; k++) {
+      var dk = ds[k]
+      if (dk._v && dk._ts && Date.now() - dk._ts > 1500) {
+        var fk = faces(dk)
+        if (fk.flip.classList.contains('on')) {
+          fk.flip.classList.remove('on')
+          fk.sn.textContent = dk._v
+          fk.fc.textContent = dk._v
+        }
+      }
+    }
     var t = new Date()
     var s = p(t.getHours()) + p(t.getMinutes()) + p(t.getSeconds())
     for (var i = 0; i < 6; i++) setD(ds[i], s[i])
     if (dateEl) dateEl.textContent = (t.getMonth() + 1) + '月' + t.getDate() + '日 · ' + WEEK[t.getDay()]
   }
   clearInterval(el._fcT)
+  for (var j = 0; j < ds.length; j++) heal(ds[j])
   tick()
   el._fcT = setInterval(tick, 250)
 })()`

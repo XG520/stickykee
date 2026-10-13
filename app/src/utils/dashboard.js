@@ -67,11 +67,13 @@ export function upgradeToggleCard(card) {
 // 翻页时钟卡动画修复：现为「整瓣 180° 翻转」结构（.flip 面板 + .fn/.fc 前后两半，
 // 参考 flipflow 实现），与旧版（两瓣分体 fcFlipA / 单瓣 roll+shd）DOM 结构不同，
 // 无法字符串补丁，检测到旧快照即整体重同步为注册表最新模板（uid 等保留，幂等）。
+// v3：新增中断自愈 + 翻页看门狗（主题切换/keep-alive 停用打断动画后自动恢复），
+// js 含 'v3' 即为最新；旧 'v2' 快照同样整体重同步。
 export function upgradeFlipClockCard(card) {
   if (!card || card.type !== 'flipclock') return
   const d = cardDefaults.flipclock
   if (!d) return
-  const ok = String(card.css || '').includes('.fcd::before') && String(card.js || '').includes('v2')
+  const ok = String(card.css || '').includes('.fcd::before') && String(card.js || '').includes('v3')
   if (!ok) { card.html = d.html; card.css = d.css; card.js = d.js }
 }
 

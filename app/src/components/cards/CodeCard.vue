@@ -9,7 +9,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onBeforeUnmount, onUpdated, nextTick, createApp } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, onUpdated, onActivated, nextTick, createApp } from 'vue'
 import { useEntities } from '@/composables/useLive'
 import { count as perfCount } from '@/utils/perf'
 import { renderTemplate, scopeCss, computeData, cardDefaults } from './defaults'
@@ -196,6 +196,22 @@ function applyJs() {
     console.error('[card-js]', props.card.type, e)
   }
 }
+
+// ---- 自驱动卡片（卡片 JS 自管定时器）的存活保障 ----
+// 这类卡在 keep-alive 停用期间因 DOM 脱离文档会自清定时器（防泄漏设计），
+// 重新激活后需重跑 JS 才能恢复；主题切换（themes.applyTheme）同样可能打断动画。
+// 卡内 JS 起始均自带 clearInterval 幂等保护，重跑安全；防抖合并短时间内的多次触发
+// （如设置页拖动自定义主题色时高频 applyTheme）。
+const SELF_DRIVING_TYPES = new Set(['flipclock', 'amapweather'])
+let jsRestartT = null
+function restartCardJs() {
+  if (props.freeze || !SELF_DRIVING_TYPES.has(props.card.type)) return
+  clearTimeout(jsRestartT)
+  jsRestartT = setTimeout(() => nextTick(applyJs), 300)
+}
+// keep-alive 激活（从设置页等返回首页）+ 主题应用完成广播（新增主题类型自动覆盖）
+onActivated(restartCardJs)
+window.addEventListener('sk-theme-applied', restartCardJs)
 
 // ---- 事件委托：data-hc 属性体系 ----
 //  data-hc="toggle"                  → 切换实体开关
@@ -406,6 +422,8 @@ onBeforeUnmount(() => {
   if (clock) clearInterval(clock)
   if (io) { io.disconnect(); io = null }
   if (schemeObs) { schemeObs.disconnect(); schemeObs = null }
+  clearTimeout(jsRestartT)
+  window.removeEventListener('sk-theme-applied', restartCardJs)
   rangeTimers.forEach((t) => clearTimeout(t))
   rangeTimers.clear()
   unmountMap()

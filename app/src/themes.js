@@ -170,6 +170,12 @@ export function applyTheme(themeKey, custom) {
 
   // 4. APK：系统栏（状态栏/导航栏）同步为主题底色；网页端为空操作
   syncSystemBars()
+
+  // 5. 广播主题应用完成：自驱动卡片（如翻页时钟）监听后重跑自身 JS，
+  // 保证任何主题（含后续新增类型）/自定义色调整后动画自动恢复，无需刷新页面
+  try {
+    window.dispatchEvent(new CustomEvent('sk-theme-applied', { detail: { theme: themeKey } }))
+  } catch { /* 极老环境无 CustomEvent 时忽略 */ }
 }
 
 const CACHE_KEY = 'hc_theme'
