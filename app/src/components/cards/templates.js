@@ -670,14 +670,14 @@ export function tplFlipClock() {
     <span class="h-mut fc-date">{{date}} · {{week}}</span>
   </div>
   <div class="fcd-row">
-    <div class="fcd"><i class="half up"><b>{{hh1}}</b></i><i class="half bot"><b>{{hh1}}</b></i><i class="half fa"><b>{{hh1}}</b></i><i class="half fb"><b>{{hh1}}</b></i></div>
-    <div class="fcd"><i class="half up"><b>{{hh2}}</b></i><i class="half bot"><b>{{hh2}}</b></i><i class="half fa"><b>{{hh2}}</b></i><i class="half fb"><b>{{hh2}}</b></i></div>
+    <div class="fcd"><i class="half up"><b>{{hh1}}</b></i><i class="half bot"><b>{{hh1}}</b></i><i class="roll"><i class="face front"><b>{{hh1}}</b></i><i class="face back"><b>{{hh1}}</b></i></i><i class="shd st"></i><i class="shd sb"></i></div>
+    <div class="fcd"><i class="half up"><b>{{hh2}}</b></i><i class="half bot"><b>{{hh2}}</b></i><i class="roll"><i class="face front"><b>{{hh2}}</b></i><i class="face back"><b>{{hh2}}</b></i></i><i class="shd st"></i><i class="shd sb"></i></div>
     <span class="fc-colon"><i></i><i></i></span>
-    <div class="fcd"><i class="half up"><b>{{mm1}}</b></i><i class="half bot"><b>{{mm1}}</b></i><i class="half fa"><b>{{mm1}}</b></i><i class="half fb"><b>{{mm1}}</b></i></div>
-    <div class="fcd"><i class="half up"><b>{{mm2}}</b></i><i class="half bot"><b>{{mm2}}</b></i><i class="half fa"><b>{{mm2}}</b></i><i class="half fb"><b>{{mm2}}</b></i></div>
+    <div class="fcd"><i class="half up"><b>{{mm1}}</b></i><i class="half bot"><b>{{mm1}}</b></i><i class="roll"><i class="face front"><b>{{mm1}}</b></i><i class="face back"><b>{{mm1}}</b></i></i><i class="shd st"></i><i class="shd sb"></i></div>
+    <div class="fcd"><i class="half up"><b>{{mm2}}</b></i><i class="half bot"><b>{{mm2}}</b></i><i class="roll"><i class="face front"><b>{{mm2}}</b></i><i class="face back"><b>{{mm2}}</b></i></i><i class="shd st"></i><i class="shd sb"></i></div>
     <span class="fc-colon"><i></i><i></i></span>
-    <div class="fcd"><i class="half up"><b>{{ss1}}</b></i><i class="half bot"><b>{{ss1}}</b></i><i class="half fa"><b>{{ss1}}</b></i><i class="half fb"><b>{{ss1}}</b></i></div>
-    <div class="fcd"><i class="half up"><b>{{ss2}}</b></i><i class="half bot"><b>{{ss2}}</b></i><i class="half fa"><b>{{ss2}}</b></i><i class="half fb"><b>{{ss2}}</b></i></div>
+    <div class="fcd"><i class="half up"><b>{{ss1}}</b></i><i class="half bot"><b>{{ss1}}</b></i><i class="roll"><i class="face front"><b>{{ss1}}</b></i><i class="face back"><b>{{ss1}}</b></i></i><i class="shd st"></i><i class="shd sb"></i></div>
+    <div class="fcd"><i class="half up"><b>{{ss2}}</b></i><i class="half bot"><b>{{ss2}}</b></i><i class="roll"><i class="face front"><b>{{ss2}}</b></i><i class="face back"><b>{{ss2}}</b></i></i><i class="shd st"></i><i class="shd sb"></i></div>
   </div>
   <div class="h-row" style="justify-content:space-between">
     <span class="h-mut">{{period}}</span>
@@ -689,24 +689,27 @@ export function tplFlipClock() {
 .h-ic{font-size:11px}
 .h-mut{font-size:8px;color:var(--hc-sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .h-row{display:flex;align-items:center;gap:4px}
-.fcd-row{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;gap:4px;perspective:400px}
-.fcd{position:relative;width:27px;height:42px;font-variant-numeric:tabular-nums;transform-style:preserve-3d}
+.fcd-row{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;gap:4px}
+.fcd{position:relative;width:27px;height:42px;font-variant-numeric:tabular-nums;perspective:220px}
 .fcd .half{position:absolute;left:0;width:100%;height:50%;overflow:hidden;background:var(--hc-bg2);font-style:normal}
 .fcd .half b{position:absolute;left:0;width:100%;height:42px;line-height:42px;font-weight:700;font-size:33px;text-align:center;color:var(--hc-text);display:block}
 .fcd .up{top:0;border-radius:5px 5px 0 0;border-bottom:1px solid rgb(0 0 0 / .35)}
 .fcd .up b{top:0}
 .fcd .bot{bottom:0;top:auto;border-radius:0 0 5px 5px;box-shadow:inset 0 3px 5px -3px rgb(0 0 0 / .45)}
 .fcd .bot b{bottom:0}
-.fcd .fa,.fcd .fb{visibility:hidden;z-index:3;backface-visibility:hidden}
-.fcd .fa{top:0;border-radius:5px 5px 0 0;transform-origin:50% 100%;box-shadow:0 2px 4px rgb(0 0 0 / .3)}
-.fcd .fa b{top:0}
-.fcd .fb{bottom:0;top:auto;border-radius:0 0 5px 5px;transform-origin:50% 0%;transform:rotateX(90deg);box-shadow:inset 0 3px 5px -3px rgb(0 0 0 / .45)}
-.fcd .fb b{bottom:0}
-.fcd.flip .fa,.fcd.flip .fb{visibility:visible}
-.fcd.flip .fa{animation:fcFlipA .2s ease-in forwards}
-.fcd.flip .fb{animation:fcFlipB .24s ease-out .2s forwards}
-@keyframes fcFlipA{from{transform:rotateX(0)}to{transform:rotateX(-90deg)}}
-@keyframes fcFlipB{from{transform:rotateX(90deg)}to{transform:rotateX(0)}}
+.fcd .roll{position:absolute;inset:0;z-index:5;visibility:hidden;font-style:normal;transform-style:preserve-3d}
+.fcd .roll .face{position:absolute;inset:0;overflow:hidden;backface-visibility:hidden;background:var(--hc-bg2);box-shadow:0 2px 4px rgb(0 0 0 / .3);font-style:normal}
+.fcd .roll .face b{position:absolute;left:0;top:0;width:100%;height:42px;line-height:42px;font-weight:700;font-size:33px;text-align:center;color:var(--hc-text);display:block}
+.fcd .roll .back{transform:rotateX(180deg)}
+.fcd .shd{position:absolute;left:0;width:100%;height:50%;z-index:6;opacity:0;pointer-events:none;font-style:normal}
+.fcd .shd.st{top:0;background:linear-gradient(rgba(0,0,0,0) 35%,rgba(0,0,0,.45))}
+.fcd .shd.sb{bottom:0;background:linear-gradient(rgba(0,0,0,.45),rgba(0,0,0,0) 55%)}
+.fcd.flip .roll{visibility:visible;animation:fcRoll .9s ease-in-out forwards}
+.fcd.flip .shd.st{animation:fcShadeT .9s ease-in-out forwards}
+.fcd.flip .shd.sb{animation:fcShadeB .9s ease-in-out forwards}
+@keyframes fcRoll{from{transform:rotateX(0)}to{transform:rotateX(-180deg)}}
+@keyframes fcShadeT{0%{opacity:0}42%{opacity:.7}55%{opacity:0}100%{opacity:0}}
+@keyframes fcShadeB{0%,50%{opacity:0}72%{opacity:.35}100%{opacity:0}}
 .fc-colon{display:flex;flex-direction:column;justify-content:center;gap:9px;height:42px;margin:0 1px}
 .fc-colon i{width:5px;height:5px;border-radius:50%;background:var(--hc-color);margin:0 auto;animation:fcBlink 2s ease-in-out infinite}
 @keyframes fcBlink{0%,100%{opacity:1}50%{opacity:.25}}`
@@ -726,17 +729,17 @@ export const JS_FLIP_CLOCK = `// 翻页时钟：自走 1s 定时器驱动翻页�
     if (d._v === ch) return
     var old = d._v == null ? d.querySelector('.up b').textContent : d._v
     d._v = ch
-    d.querySelector('.up b').textContent = ch      // 上半静止 → 立即显示新值
-    d.querySelector('.fa b').textContent = old     // 翻下的一半带着旧值落下
-    d.querySelector('.fb b').textContent = ch      // 另一半带着新值翻上来
+    d.querySelector('.up b').textContent = ch        // 静止上半 → 新值（整瓣翻走即露出）
+    d.querySelector('.front b').textContent = old    // 旋转整瓣前脸：旧值
+    d.querySelector('.back b').textContent = ch      // 旋转整瓣后脸：新值（转过 90° 后朝前）
     d.classList.remove('flip')
-    void d.offsetWidth                              // 重启动画
+    void d.offsetWidth                                // 重启动画
     d.classList.add('flip')
     clearTimeout(d._t)
     d._t = setTimeout(function () {
-      d.querySelector('.bot b').textContent = ch    // 动画结束：下半静止落为新值
+      d.querySelector('.bot b').textContent = ch      // 动画结束：下半静止落为新值
       d.classList.remove('flip')
-    }, 460)
+    }, 920)
   }
   function tick() {
     if (!el.isConnected) { clearInterval(el._fcT); return }

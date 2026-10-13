@@ -64,22 +64,19 @@ export function upgradeToggleCard(card) {
   if (!String(card.css || '').includes('.h-ctl{')) card.css = (card.css || '') + CTL_CSS
 }
 
-// 翻页时钟卡动画修复：对齐标准机械分瓣翻页（clockhub 式两段式连续翻动）——
-// 旧上半先翻落（.2s ease-in，露出新上半），落定后新下半展开（.24s ease-out 延迟 .2s），
-// 落定回调 460ms。幂等：兼容最初快照（.3s 同时动）与中间版本快照。
+// 翻页时钟卡动画修复：旧版为上下两瓣分体接续动画，clockhub 式真实结构是单瓣绕中缝
+// 连续转 180°（前脸旧值、后脸预转新值）+ 翻动阴影层，DOM 结构不同无法字符串补丁，
+// 含 fcFlipA/fcRoll 旧快照整体重同步为注册表最新模板（仅覆盖 html/css/js，uid 等保留）。
+// 最新版以遮罩渐变里的 rgba(0,0,0,.45) 为版本标记：早期版本遮罩过重（60% 黑 × 峰值不
+// 透明度 1）会把翻动中的数字整体压暗成灰块，已改折缝局部低强度阴影，幂等。
 export function upgradeFlipClockCard(card) {
-  if (!card || card.type !== 'flipclock') return
-  const css = String(card.css || '')
-  if (css.includes('animation:fcFlipA .3s') || css.includes('animation:fcFlipA .22s')) {
-    card.css = css
-      .replace('animation:fcFlipA .3s ease-in forwards', 'animation:fcFlipA .2s ease-in forwards')
-      .replace('animation:fcFlipA .22s ease-out forwards', 'animation:fcFlipA .2s ease-in forwards')
-      .replace('animation:fcFlipB .3s ease-out forwards', 'animation:fcFlipB .24s ease-out .2s forwards')
-      .replace('animation:fcFlipB .24s ease-in forwards', 'animation:fcFlipB .24s ease-out .2s forwards')
+  if (!card || card.type !== 'flipclock' || !card.css) return
+  const css = String(card.css)
+  if (css.includes('rgba(0,0,0,.45)')) return
+  if (css.includes('fcRoll') || css.includes('fcFlipA')) {
+    const d = cardDefaults.flipclock
+    if (d) { card.html = d.html; card.css = d.css; card.js = d.js }
   }
-  const js = String(card.js || '')
-  if (js.includes('}, 320)')) card.js = js.replace('}, 320)', '}, 460)')
-  else if (js.includes('}, 280)')) card.js = js.replace('}, 280)', '}, 460)')
 }
 
 // 卡片数组归一化：字符串（旧的卡片类型简写）→ 卡片对象；丢弃未知类型；跑卡片级迁移。
