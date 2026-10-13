@@ -670,14 +670,14 @@ export function tplFlipClock() {
     <span class="h-mut fc-date">{{date}} · {{week}}</span>
   </div>
   <div class="fcd-row">
-    <div class="fcd"><i class="half up"><b>{{hh1}}</b></i><i class="half bot"><b>{{hh1}}</b></i><i class="roll"><i class="face front"><b>{{hh1}}</b></i><i class="face back"><b>{{hh1}}</b></i></i><i class="shd st"></i><i class="shd sb"></i></div>
-    <div class="fcd"><i class="half up"><b>{{hh2}}</b></i><i class="half bot"><b>{{hh2}}</b></i><i class="roll"><i class="face front"><b>{{hh2}}</b></i><i class="face back"><b>{{hh2}}</b></i></i><i class="shd st"></i><i class="shd sb"></i></div>
+    <div class="fcd"><i class="half sc"><b>{{hh1}}</b></i><i class="half sn"><b>{{hh1}}</b></i><div class="flip"><i class="half fn"><b>{{hh1}}</b></i><i class="half fc"><b>{{hh1}}</b></i></div></div>
+    <div class="fcd"><i class="half sc"><b>{{hh2}}</b></i><i class="half sn"><b>{{hh2}}</b></i><div class="flip"><i class="half fn"><b>{{hh2}}</b></i><i class="half fc"><b>{{hh2}}</b></i></div></div>
     <span class="fc-colon"><i></i><i></i></span>
-    <div class="fcd"><i class="half up"><b>{{mm1}}</b></i><i class="half bot"><b>{{mm1}}</b></i><i class="roll"><i class="face front"><b>{{mm1}}</b></i><i class="face back"><b>{{mm1}}</b></i></i><i class="shd st"></i><i class="shd sb"></i></div>
-    <div class="fcd"><i class="half up"><b>{{mm2}}</b></i><i class="half bot"><b>{{mm2}}</b></i><i class="roll"><i class="face front"><b>{{mm2}}</b></i><i class="face back"><b>{{mm2}}</b></i></i><i class="shd st"></i><i class="shd sb"></i></div>
+    <div class="fcd"><i class="half sc"><b>{{mm1}}</b></i><i class="half sn"><b>{{mm1}}</b></i><div class="flip"><i class="half fn"><b>{{mm1}}</b></i><i class="half fc"><b>{{mm1}}</b></i></div></div>
+    <div class="fcd"><i class="half sc"><b>{{mm2}}</b></i><i class="half sn"><b>{{mm2}}</b></i><div class="flip"><i class="half fn"><b>{{mm2}}</b></i><i class="half fc"><b>{{mm2}}</b></i></div></div>
     <span class="fc-colon"><i></i><i></i></span>
-    <div class="fcd"><i class="half up"><b>{{ss1}}</b></i><i class="half bot"><b>{{ss1}}</b></i><i class="roll"><i class="face front"><b>{{ss1}}</b></i><i class="face back"><b>{{ss1}}</b></i></i><i class="shd st"></i><i class="shd sb"></i></div>
-    <div class="fcd"><i class="half up"><b>{{ss2}}</b></i><i class="half bot"><b>{{ss2}}</b></i><i class="roll"><i class="face front"><b>{{ss2}}</b></i><i class="face back"><b>{{ss2}}</b></i></i><i class="shd st"></i><i class="shd sb"></i></div>
+    <div class="fcd"><i class="half sc"><b>{{ss1}}</b></i><i class="half sn"><b>{{ss1}}</b></i><div class="flip"><i class="half fn"><b>{{ss1}}</b></i><i class="half fc"><b>{{ss1}}</b></i></div></div>
+    <div class="fcd"><i class="half sc"><b>{{ss2}}</b></i><i class="half sn"><b>{{ss2}}</b></i><div class="flip"><i class="half fn"><b>{{ss2}}</b></i><i class="half fc"><b>{{ss2}}</b></i></div></div>
   </div>
   <div class="h-row" style="justify-content:space-between">
     <span class="h-mut">{{period}}</span>
@@ -690,35 +690,29 @@ export function tplFlipClock() {
 .h-mut{font-size:8px;color:var(--hc-sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .h-row{display:flex;align-items:center;gap:4px}
 .fcd-row{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;gap:4px}
-.fcd{position:relative;width:27px;height:42px;font-variant-numeric:tabular-nums;perspective:220px}
-.fcd .half{position:absolute;left:0;width:100%;height:50%;overflow:hidden;background:var(--hc-bg2);font-style:normal}
+.fcd{position:relative;width:27px;height:42px;font-variant-numeric:tabular-nums;perspective:42px}
+.fcd::before{content:'';position:absolute;left:0;right:0;top:50%;height:1px;margin-top:-.5px;background:rgb(0 0 0 / .35);z-index:4}
+.fcd .half{position:absolute;left:0;top:0;width:100%;height:50%;overflow:hidden;background:var(--hc-bg2);font-style:normal}
 .fcd .half b{position:absolute;left:0;width:100%;height:42px;line-height:42px;font-weight:700;font-size:33px;text-align:center;color:var(--hc-text);display:block}
-.fcd .up{top:0;border-radius:5px 5px 0 0;border-bottom:1px solid rgb(0 0 0 / .35)}
-.fcd .up b{top:0}
-.fcd .bot{bottom:0;top:auto;border-radius:0 0 5px 5px;box-shadow:inset 0 3px 5px -3px rgb(0 0 0 / .45)}
-.fcd .bot b{bottom:0}
-.fcd .roll{position:absolute;inset:0;z-index:5;visibility:hidden;font-style:normal;transform-style:preserve-3d}
-.fcd .roll .face{position:absolute;inset:0;overflow:hidden;backface-visibility:hidden;background:var(--hc-bg2);box-shadow:0 2px 4px rgb(0 0 0 / .3);font-style:normal}
-.fcd .roll .face b{position:absolute;left:0;top:0;width:100%;height:42px;line-height:42px;font-weight:700;font-size:33px;text-align:center;color:var(--hc-text);display:block}
-.fcd .roll .back{transform:rotateX(180deg)}
-.fcd .shd{position:absolute;left:0;width:100%;height:50%;z-index:6;opacity:0;pointer-events:none;font-style:normal}
-.fcd .shd.st{top:0;background:linear-gradient(rgba(0,0,0,0) 35%,rgba(0,0,0,.45))}
-.fcd .shd.sb{bottom:0;background:linear-gradient(rgba(0,0,0,.45),rgba(0,0,0,0) 55%)}
-.fcd.flip .roll{visibility:visible;animation:fcRoll .9s ease-in-out forwards}
-.fcd.flip .shd.st{animation:fcShadeT .9s ease-in-out forwards}
-.fcd.flip .shd.sb{animation:fcShadeB .9s ease-in-out forwards}
-@keyframes fcRoll{from{transform:rotateX(0)}to{transform:rotateX(-180deg)}}
-@keyframes fcShadeT{0%{opacity:0}42%{opacity:.7}55%{opacity:0}100%{opacity:0}}
-@keyframes fcShadeB{0%,50%{opacity:0}72%{opacity:.35}100%{opacity:0}}
+.fcd .sc{border-radius:5px 5px 0 0}
+.fcd .sc b{top:0}
+.fcd .sn{top:auto;bottom:0;border-radius:0 0 5px 5px}
+.fcd .sn b{bottom:0}
+.fcd .flip{position:absolute;inset:0;z-index:3;transform-style:preserve-3d;transition:transform 0s;transform:rotateX(0)}
+.fcd .flip.on{transition:transform .5s ease-in-out;transform:rotateX(-180deg)}
+.fcd .flip .fc{backface-visibility:hidden;border-radius:5px 5px 0 0}
+.fcd .flip .fc b{top:0}
+.fcd .flip .fn{transform:rotateX(-180deg);backface-visibility:hidden;border-radius:0 0 5px 5px}
+.fcd .flip .fn b{bottom:0}
 .fc-colon{display:flex;flex-direction:column;justify-content:center;gap:9px;height:42px;margin:0 1px}
 .fc-colon i{width:5px;height:5px;border-radius:50%;background:var(--hc-color);margin:0 auto;animation:fcBlink 2s ease-in-out infinite}
 @keyframes fcBlink{0%,100%{opacity:1}50%{opacity:.25}}`
   return { html, css }
 }
 
-// 翻页时钟卡片 JS：渲染后执行一次，内部自走 1s 定时器（不依赖组件重渲染）。
+// 翻页时钟卡片 JS：渲染后执行一次，内部轮询检测秒变化驱动整瓣 180° 翻转（参考 flipflow 实现）。
 // 卡片 DOM 被移除后（el.isConnected=false）自动清掉定时器，不留泄漏。
-export const JS_FLIP_CLOCK = `// 翻页时钟：自走 1s 定时器驱动翻页动画；卡片卸载后自动停止
+export const JS_FLIP_CLOCK = `// 翻页时钟 v2：上半立即新值、下半翻完新值（经典时序）；卡片卸载后自动停止
 ;(function () {
   var ds = el.querySelectorAll('.fcd')
   var dateEl = el.querySelector('.fc-date')
@@ -727,19 +721,21 @@ export const JS_FLIP_CLOCK = `// 翻页时钟：自走 1s 定时器驱动翻页�
   function p(n) { return (n < 10 ? '0' : '') + n }
   function setD(d, ch) {
     if (d._v === ch) return
-    var old = d._v == null ? d.querySelector('.up b').textContent : d._v
     d._v = ch
-    d.querySelector('.up b').textContent = ch        // 静止上半 → 新值（整瓣翻走即露出）
-    d.querySelector('.front b').textContent = old    // 旋转整瓣前脸：旧值
-    d.querySelector('.back b').textContent = ch      // 旋转整瓣后脸：新值（转过 90° 后朝前）
-    d.classList.remove('flip')
-    void d.offsetWidth                                // 重启动画
-    d.classList.add('flip')
+    var old = d.querySelector('.sc b').textContent // 翻页前上半旧值
+    d.querySelector('.sc b').textContent = ch      // 静止上半：翻页瞬间立即变为新值
+    d.querySelector('.fn b').textContent = ch      // 后脸（下半）：预置新值
+    d.querySelector('.fc b').textContent = old     // 前脸（上半）：保持旧值，随翻板翻走
+    var f = d.querySelector('.flip')
+    f.classList.remove('on')                       // 立即复位（transition 0s），再重启翻转
+    void f.offsetWidth
+    f.classList.add('on')
     clearTimeout(d._t)
     d._t = setTimeout(function () {
-      d.querySelector('.bot b').textContent = ch      // 动画结束：下半静止落为新值
-      d.classList.remove('flip')
-    }, 920)
+      f.classList.remove('on')                     // 翻板复位（transition 0s 瞬时），露出新值
+      d.querySelector('.sn b').textContent = ch    // 静止下半：翻完写入新值
+      d.querySelector('.fc b').textContent = ch    // 前脸复位为新值，供下一轮翻页
+    }, 500)
   }
   function tick() {
     if (!el.isConnected) { clearInterval(el._fcT); return }
@@ -750,12 +746,12 @@ export const JS_FLIP_CLOCK = `// 翻页时钟：自走 1s 定时器驱动翻页�
   }
   clearInterval(el._fcT)
   tick()
-  el._fcT = setInterval(tick, 1000)
+  el._fcT = setInterval(tick, 250)
 })()`
 
 // ================= 高德天气卡片（app 级：不依赖 HA 实体，用已配置的高德 Key 查询） =================
-// 链路：卡片 js → window.skAmapKey()（prefs.map_config.amap_key）→ 加载 AMap SDK →
-// CitySearch IP 定城市（adcode）→ Weather 插件实况 + 3 天预报。10 分钟自动刷新。
+// 链路：卡片 js → window.skAmapKey()（prefs.map_config.amap_key）→ restapi.amap.com 直查
+// IP 定城市（adcode）→ 实况(base) + 预报(all)。Key 需开通「Web服务」类型。10 分钟自动刷新。
 export function tplAmapWeather() {
   const html = `<div class="hc aw">
   <div class="h-head">
@@ -789,7 +785,8 @@ export function tplAmapWeather() {
   return { html, css }
 }
 
-export const JS_AMAP_WEATHER = `// 高德天气：IP 定城市 → 实况 + 3 天预报；10 分钟刷新，卡片卸载自动停
+export const JS_AMAP_WEATHER = `// 高德天气 v2：REST API 直查（IP定城市 + 实况 + 预报），不依赖 SDK 加载
+// Key 需开通「Web服务」类型（地图用的「Web端」Key 不行）；10分钟刷新，卡片卸载自动停
 ;(function () {
   var bodyEl = el.querySelector('.aw-body')
   var cityEl = el.querySelector('.aw-city')
@@ -813,18 +810,17 @@ export const JS_AMAP_WEATHER = `// 高德天气：IP 定城市 → 实况 + 3 �
     if (/晴/.test(txt)) return 'wb_sunny'
     return 'cloud'
   }
-  function render(live, fc) {
-    var days = (fc && fc.forecasts) || []
+  function render(live, casts) {
     var h = '<div class="aw-now">'
       + '<span class="material-symbols-outlined aw-bigic">' + icon(live.weather) + '</span>'
       + '<span class="aw-temp">' + esc(live.temperature) + '<i>°C</i></span>'
       + '</div>'
       + '<div class="aw-desc">' + esc(live.weather) + '</div>'
       + '<div class="aw-meta">' + esc(live.winddirection) + '风' + esc(live.windpower) + '级 · 湿度 ' + esc(live.humidity) + '%</div>'
-    if (days.length) {
+    if (casts && casts.length) {
       h += '<div class="aw-fc">'
-      for (var i = 0; i < Math.min(days.length, 3); i++) {
-        var d = days[i]
+      for (var i = 0; i < Math.min(casts.length, 3); i++) {
+        var d = casts[i]
         h += '<div class="aw-day"><span class="aw-dd">' + (i === 0 ? '今天' : esc(String(d.date || '').slice(5))) + '</span>'
           + '<span class="material-symbols-outlined aw-di">' + icon(d.dayweather) + '</span>'
           + '<span class="aw-dt">' + esc(d.nighttemp) + '° / ' + esc(d.daytemp) + '°</span></div>'
@@ -834,33 +830,45 @@ export const JS_AMAP_WEATHER = `// 高德天气：IP 定城市 → 实况 + 3 �
     if (bodyEl) bodyEl.innerHTML = h
     if (timeEl) timeEl.textContent = '更新 ' + esc(String(live.reporttime || '').slice(11, 16))
   }
-  function start() {
-    AMap.plugin('AMap.CitySearch', function () {
-      new AMap.CitySearch().getLocalCity(function (st, city) {
-        var code = city && city.adcode
-        if (!code) { busy = false; say('城市识别失败（网络或 IP 库未覆盖）'); return }
-        if (cityEl && city.city) cityEl.textContent = String(city.city).replace(/市$/, '')
-        AMap.plugin('AMap.Weather', function () {
-          var w = new AMap.Weather()
-          w.getLive(code, function (e1, live) {
-            if (e1 || !live || !live.temperature) { busy = false; say('实况获取失败，请检查 Key 类型（需 Web 服务）'); return }
-            w.getForecast(code, function (e2, fc) {
-              busy = false
-              render(live, (e2 || !fc) ? null : fc)
-            })
-          })
-        })
-      })
-    })
+  var ERR = {
+    '10001': 'Key 无效，请检查高德 Key 配置',
+    '10003': 'Key 无 Web 服务权限，请在高德控制台为该 Key 开通「Web服务」类型',
+    '10009': 'Key 类型不匹配，天气查询需「Web服务」类型 Key',
+    '10010': '请求过于频繁，请稍后重试',
+    '10021': 'IP 定位服务暂不可用',
+    '10044': '天气服务暂不可用'
+  }
+  function errDesc(info, code) {
+    return ERR[code] || ERR[info] || (info ? ('查询失败：' + info) : '查询失败')
   }
   function load() {
     if (busy || !el.isConnected) return
     if (typeof window.skAmapKey !== 'function') { say('等待配置加载…'); return }
     busy = true
+    say('查询中…')
     Promise.resolve(window.skAmapKey()).then(function (key) {
       if (!key) { busy = false; say('未配置高德 Key（设置 → 地图定位）'); return }
-      if (window.AMap) { start(); return }
-      window.skLoadAMap(key).then(function () { start() }).catch(function () { busy = false; say('地图 SDK 加载失败') })
+      var base = 'https://restapi.amap.com/v3/'
+      // 1) IP 定城市（adcode）
+      fetch(base + 'ip?key=' + encodeURIComponent(key))
+        .then(function (r) { return r.json() })
+        .then(function (ip) {
+          if (ip.status === '0' || !ip.adcode) { busy = false; say('城市识别失败（' + errDesc(ip.info, ip.infocode) + '）'); return }
+          if (cityEl && ip.city) cityEl.textContent = String(ip.city).replace(/市$/, '')
+          // 2) 实况(base) + 预报(all) 并行
+          var q = '&key=' + encodeURIComponent(key) + '&city=' + encodeURIComponent(ip.adcode)
+          Promise.all([
+            fetch(base + 'weather/weatherInfo' + q + '&extensions=base').then(function (r) { return r.json() }),
+            fetch(base + 'weather/weatherInfo' + q + '&extensions=all').then(function (r) { return r.json() })
+          ]).then(function (rs) {
+            busy = false
+            var live = rs[0], fc = rs[1]
+            if (live.status === '0' || !live.lives || !live.lives.length) { say(errDesc(live.info, live.infocode)); return }
+            var casts = (fc.status === '1' && fc.forecasts && fc.forecasts[0] && fc.forecasts[0].casts) ? fc.forecasts[0].casts : []
+            render(live.lives[0], casts)
+          }).catch(function () { busy = false; say('天气数据解析失败') })
+        })
+        .catch(function () { busy = false; say('网络请求失败，请检查网络连接') })
     }).catch(function () { busy = false; say('配置读取失败') })
   }
   clearInterval(el._awT)

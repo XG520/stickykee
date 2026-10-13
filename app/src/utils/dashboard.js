@@ -64,19 +64,25 @@ export function upgradeToggleCard(card) {
   if (!String(card.css || '').includes('.h-ctl{')) card.css = (card.css || '') + CTL_CSS
 }
 
-// 翻页时钟卡动画修复：旧版为上下两瓣分体接续动画，clockhub 式真实结构是单瓣绕中缝
-// 连续转 180°（前脸旧值、后脸预转新值）+ 翻动阴影层，DOM 结构不同无法字符串补丁，
-// 含 fcFlipA/fcRoll 旧快照整体重同步为注册表最新模板（仅覆盖 html/css/js，uid 等保留）。
-// 最新版以遮罩渐变里的 rgba(0,0,0,.45) 为版本标记：早期版本遮罩过重（60% 黑 × 峰值不
-// 透明度 1）会把翻动中的数字整体压暗成灰块，已改折缝局部低强度阴影，幂等。
+// 翻页时钟卡动画修复：现为「整瓣 180° 翻转」结构（.flip 面板 + .fn/.fc 前后两半，
+// 参考 flipflow 实现），与旧版（两瓣分体 fcFlipA / 单瓣 roll+shd）DOM 结构不同，
+// 无法字符串补丁，检测到旧快照即整体重同步为注册表最新模板（uid 等保留，幂等）。
 export function upgradeFlipClockCard(card) {
-  if (!card || card.type !== 'flipclock' || !card.css) return
-  const css = String(card.css)
-  if (css.includes('rgba(0,0,0,.45)')) return
-  if (css.includes('fcRoll') || css.includes('fcFlipA')) {
-    const d = cardDefaults.flipclock
-    if (d) { card.html = d.html; card.css = d.css; card.js = d.js }
-  }
+  if (!card || card.type !== 'flipclock') return
+  const d = cardDefaults.flipclock
+  if (!d) return
+  const ok = String(card.css || '').includes('.fcd::before') && String(card.js || '').includes('v2')
+  if (!ok) { card.html = d.html; card.css = d.css; card.js = d.js }
+}
+
+// 高德天气卡修复：旧版走 SDK 插件链路（CitySearch + Weather）易静默失败，且预报
+// 解析取了 fc.forecasts 而非 fc.forecasts[0].casts，数据层级错误；新版改 REST API
+// 直查并修正解析。检测到旧快照（js 不含 'v2'）即整体重同步（幂等）。
+export function upgradeAmapWeatherCard(card) {
+  if (!card || card.type !== 'amapweather') return
+  const d = cardDefaults.amapweather
+  if (!d) return
+  if (!String(card.js || '').includes('v2')) { card.html = d.html; card.css = d.css; card.js = d.js }
 }
 
 // 卡片数组归一化：字符串（旧的卡片类型简写）→ 卡片对象；丢弃未知类型；跑卡片级迁移。
@@ -99,6 +105,7 @@ export function normalizeCards(list) {
   out.forEach(upgradePersonCard)
   out.forEach(upgradeToggleCard)
   out.forEach(upgradeFlipClockCard)
+  out.forEach(upgradeAmapWeatherCard)
   return out
 }
 
