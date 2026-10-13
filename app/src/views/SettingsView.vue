@@ -1532,7 +1532,7 @@ async function loadAppInfo() {
     // 必须用原生 getAppVersion()（build.gradle 的 versionName）才是真实 APK 版本。
     if (isApk && data?.apkAvailable && data?.version) {
       const nativeVer = window.StickyKeeNative?.getAppVersion?.() || appVersion
-      apkUpdateAvailable.value = cmpVer(nativeVer, data.version) < 0
+      apkUpdateAvailable.value = cmpVer(nativeVer, data.version) > 0
     }
   } catch { /* 服务端旧版本无此接口：保持未提供 */ }
   apkChecked.value = true
