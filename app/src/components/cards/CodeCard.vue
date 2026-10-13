@@ -84,7 +84,7 @@ const renderedHtml = computed(() => {
 //    完整色（rgb(...)）直接用于 color/background，同名 -rgb 三元组用于半透明 rgb(var(--hc-x-rgb) / .15)
 const hcVars = computed(() => {
   const hex = { 'text-warning': '#E8A84C', 'text-primary': '#F5A623', 'text-info': '#6BA3D9', 'text-success': '#5EC4B0', 'text-accent': '#5EC4B0', 'text-muted': '#8A8986' }
-  const fix = { greeting: '#F5A623', weather: '#6BA3D9', map: '#5EC4B0', toggle: '#F5A623', clock: '#6BA3D9', date: '#E8A84C', overview: '#5EC4B0' }
+  const fix = { greeting: '#F5A623', weather: '#6BA3D9', map: '#5EC4B0', toggle: '#F5A623', clock: '#6BA3D9', flipclock: '#6BA3D9', date: '#E8A84C', overview: '#5EC4B0' }
   const cls = domainColorCls[entity.value?.domain]
   const c = (cls && hex[cls]) || fix[props.card.type] || '#F5A623'
   return {

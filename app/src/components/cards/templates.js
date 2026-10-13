@@ -662,6 +662,94 @@ export function tplClock() {
   return { html, css }
 }
 
+// ================= 翻页时钟卡片（机械分瓣翻页动画，卡片 JS 自驱动） =================
+export function tplFlipClock() {
+  const html = `<div class="hc fcc">
+  <div class="h-head">
+    <span class="h-ic material-symbols-outlined" style="color:var(--hc-info)">{{glyph}}</span>
+    <span class="h-mut fc-date">{{date}} · {{week}}</span>
+  </div>
+  <div class="fcd-row">
+    <div class="fcd"><i class="half up"><b>{{hh1}}</b></i><i class="half bot"><b>{{hh1}}</b></i><i class="half fa"><b>{{hh1}}</b></i><i class="half fb"><b>{{hh1}}</b></i></div>
+    <div class="fcd"><i class="half up"><b>{{hh2}}</b></i><i class="half bot"><b>{{hh2}}</b></i><i class="half fa"><b>{{hh2}}</b></i><i class="half fb"><b>{{hh2}}</b></i></div>
+    <span class="fc-colon"><i></i><i></i></span>
+    <div class="fcd"><i class="half up"><b>{{mm1}}</b></i><i class="half bot"><b>{{mm1}}</b></i><i class="half fa"><b>{{mm1}}</b></i><i class="half fb"><b>{{mm1}}</b></i></div>
+    <div class="fcd"><i class="half up"><b>{{mm2}}</b></i><i class="half bot"><b>{{mm2}}</b></i><i class="half fa"><b>{{mm2}}</b></i><i class="half fb"><b>{{mm2}}</b></i></div>
+    <span class="fc-colon"><i></i><i></i></span>
+    <div class="fcd"><i class="half up"><b>{{ss1}}</b></i><i class="half bot"><b>{{ss1}}</b></i><i class="half fa"><b>{{ss1}}</b></i><i class="half fb"><b>{{ss1}}</b></i></div>
+    <div class="fcd"><i class="half up"><b>{{ss2}}</b></i><i class="half bot"><b>{{ss2}}</b></i><i class="half fa"><b>{{ss2}}</b></i><i class="half fb"><b>{{ss2}}</b></i></div>
+  </div>
+  <div class="h-row" style="justify-content:space-between">
+    <span class="h-mut">{{period}}</span>
+    <span class="h-mut">{{year}} 年</span>
+  </div>
+</div>`
+  const css = shell + `.hc.fcc{flex:1;min-height:0;display:flex;flex-direction:column;gap:3px;overflow:hidden;padding:7px}
+.h-head{display:flex;align-items:center;gap:4px}
+.h-ic{font-size:11px}
+.h-mut{font-size:8px;color:var(--hc-sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.h-row{display:flex;align-items:center;gap:4px}
+.fcd-row{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;gap:4px;perspective:400px}
+.fcd{position:relative;width:27px;height:42px;font-variant-numeric:tabular-nums;transform-style:preserve-3d}
+.fcd .half{position:absolute;left:0;width:100%;height:50%;overflow:hidden;background:var(--hc-bg2);font-style:normal}
+.fcd .half b{position:absolute;left:0;width:100%;height:42px;line-height:42px;font-weight:700;font-size:33px;text-align:center;color:var(--hc-text);display:block}
+.fcd .up{top:0;border-radius:5px 5px 0 0;border-bottom:1px solid rgb(0 0 0 / .35)}
+.fcd .up b{top:0}
+.fcd .bot{bottom:0;top:auto;border-radius:0 0 5px 5px;box-shadow:inset 0 3px 5px -3px rgb(0 0 0 / .45)}
+.fcd .bot b{bottom:0}
+.fcd .fa,.fcd .fb{visibility:hidden;z-index:3;backface-visibility:hidden}
+.fcd .fa{top:0;border-radius:5px 5px 0 0;transform-origin:50% 100%;box-shadow:0 2px 4px rgb(0 0 0 / .3)}
+.fcd .fa b{top:0}
+.fcd .fb{bottom:0;top:auto;border-radius:0 0 5px 5px;transform-origin:50% 0%;transform:rotateX(90deg);box-shadow:inset 0 3px 5px -3px rgb(0 0 0 / .45)}
+.fcd .fb b{bottom:0}
+.fcd.flip .fa,.fcd.flip .fb{visibility:visible}
+.fcd.flip .fa{animation:fcFlipA .3s ease-in forwards}
+.fcd.flip .fb{animation:fcFlipB .3s ease-out forwards}
+@keyframes fcFlipA{from{transform:rotateX(0)}to{transform:rotateX(-90deg)}}
+@keyframes fcFlipB{from{transform:rotateX(90deg)}to{transform:rotateX(0)}}
+.fc-colon{display:flex;flex-direction:column;justify-content:center;gap:9px;height:42px;margin:0 1px}
+.fc-colon i{width:5px;height:5px;border-radius:50%;background:var(--hc-color);margin:0 auto;animation:fcBlink 2s ease-in-out infinite}
+@keyframes fcBlink{0%,100%{opacity:1}50%{opacity:.25}}`
+  return { html, css }
+}
+
+// 翻页时钟卡片 JS：渲染后执行一次，内部自走 1s 定时器（不依赖组件重渲染）。
+// 卡片 DOM 被移除后（el.isConnected=false）自动清掉定时器，不留泄漏。
+export const JS_FLIP_CLOCK = `// 翻页时钟：自走 1s 定时器驱动翻页动画；卡片卸载后自动停止
+;(function () {
+  var ds = el.querySelectorAll('.fcd')
+  var dateEl = el.querySelector('.fc-date')
+  if (!ds.length) return
+  var WEEK = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
+  function p(n) { return (n < 10 ? '0' : '') + n }
+  function setD(d, ch) {
+    if (d._v === ch) return
+    var old = d._v == null ? d.querySelector('.up b').textContent : d._v
+    d._v = ch
+    d.querySelector('.up b').textContent = ch      // 上半静止 → 立即显示新值
+    d.querySelector('.fa b').textContent = old     // 翻下的一半带着旧值落下
+    d.querySelector('.fb b').textContent = ch      // 另一半带着新值翻上来
+    d.classList.remove('flip')
+    void d.offsetWidth                              // 重启动画
+    d.classList.add('flip')
+    clearTimeout(d._t)
+    d._t = setTimeout(function () {
+      d.querySelector('.bot b').textContent = ch    // 动画结束：下半静止落为新值
+      d.classList.remove('flip')
+    }, 320)
+  }
+  function tick() {
+    if (!el.isConnected) { clearInterval(el._fcT); return }
+    var t = new Date()
+    var s = p(t.getHours()) + p(t.getMinutes()) + p(t.getSeconds())
+    for (var i = 0; i < 6; i++) setD(ds[i], s[i])
+    if (dateEl) dateEl.textContent = (t.getMonth() + 1) + '月' + t.getDate() + '日 · ' + WEEK[t.getDay()]
+  }
+  clearInterval(el._fcT)
+  tick()
+  el._fcT = setInterval(tick, 1000)
+})()`
+
 // ================= 29. 基础日期卡片 =================
 export function tplDate() {
   const html = `<div class="hc">

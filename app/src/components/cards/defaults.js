@@ -7,7 +7,7 @@ import {
   tplToggle, tplSensor, tplBinary, tplClimate, tplCover, tplMedia, tplSecurity, tplCamera,
   tplVacuum, tplAction, tplGeneric, tplPerson, tplWeatherEntity, tplSelect, tplText,
   tplDatetime, tplTimer, tplCalendar, tplUpdate, tplEvent, tplPlant, tplLawnMower, tplSun,
-  tplImage, tplGreeting, tplWeather, tplMap, tplClock, tplDate, tplOverview, JS_COMMON,
+  tplImage, tplGreeting, tplWeather, tplMap, tplClock, tplFlipClock, tplDate, tplOverview, JS_COMMON, JS_FLIP_CLOCK,
 } from './templates'
 
 export { computeData } from './data'
@@ -29,6 +29,8 @@ export const cardDefaults = {
   // 基础开关：未指定实体时自动取第一个开关类实体，也可在属性面板手动指定
   toggle: mk({ label: '开关', icon: 'toggle_on', colorCls: 'text-primary', w: 1, h: 1, needEntity: false, entityOptional: true, entityDomains: ['switch', 'light', 'plug', 'valve', 'input_boolean', 'fan', 'humidifier', 'group', 'remote', 'siren'], group: '基础仪表盘' }, tplToggle),
   clock: mk({ label: '时钟', icon: 'av_timer', colorCls: 'text-info', w: 1, h: 1, needEntity: false, entityDomains: null, group: '基础仪表盘' }, tplClock),
+  // 翻页时钟：默认 js 为翻页驱动逻辑（用户可改），其余同 mk 组装
+  flipclock: { ...mk({ label: '翻页时钟', icon: 'flip', colorCls: 'text-info', w: 2, h: 1, needEntity: false, entityDomains: null, group: '基础仪表盘' }, tplFlipClock), js: JS_FLIP_CLOCK },
   date: mk({ label: '日期', icon: 'calendar_month', colorCls: 'text-warning', w: 1, h: 1, needEntity: false, entityDomains: null, group: '基础仪表盘' }, tplDate),
   overview: mk({ label: '设备概览', icon: 'devices', colorCls: 'text-success', w: 2, h: 1, needEntity: false, entityDomains: null, group: '基础仪表盘' }, tplOverview),
 

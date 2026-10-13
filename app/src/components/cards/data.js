@@ -968,6 +968,15 @@ function clockData(now) {
   }
 }
 
+// ================= 基础卡：翻页时钟（数字牌初始值；后续由卡片 JS 自走定时器驱动） =================
+function flipClockData(now) {
+  const d = clockData(now)
+  const hh = pad(now.getHours())
+  const mm = pad(now.getMinutes())
+  const ss = pad(now.getSeconds())
+  return { ...d, year: now.getFullYear(), hh1: hh[0], hh2: hh[1], mm1: mm[0], mm2: mm[1], ss1: ss[0], ss2: ss[1] }
+}
+
 // ================= 基础卡：日期 =================
 function dateData(now) {
   const d = now
@@ -1016,6 +1025,7 @@ export function computeData(type, ctx) {
     case 'map': d = {}; break
     case 'toggle': d = toggleData(resolveToggleEntity(ctx), hasData); break
     case 'clock': d = clockData(ctx.now); break
+    case 'flipclock': d = flipClockData(ctx.now); break
     case 'date': d = dateData(ctx.now); break
     case 'overview': d = overviewData(ctx); break
     case 'light': case 'switch': case 'fan': case 'input_boolean': d = toggleData(entity, hasData); break
