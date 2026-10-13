@@ -586,6 +586,8 @@ public class NativeBridge {
     // 壳页 go() 跳转服务器前调用 connWatch 启动；原生线程持续探测 /healthz，
     // 连续 2 次非 200（含连接异常）即 Toast 提示并 loadUrl 回壳页。
     // 注意：不能放在前端 JS 判断——502 错误页是网关返回的静态 HTML，前端脚本不会执行。
+    // 生命周期：onPause 停看门狗（Doze 会掐断后台网络，探测必失败），
+    // onResume 延迟 12 秒恢复（给移动数据/WS 重连足够时间从 Doze 恢复）。
     private final ScheduledExecutorService watchPool = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r, "conn-watch");
         t.setDaemon(true);
@@ -593,6 +595,7 @@ public class NativeBridge {
     });
     private volatile String watchUrl = null;
     private volatile int watchFails = 0;
+    private ScheduledFuture<?> watchFuture = null; // 当前运行中的定时任务，onPause 时 cancel
 
     /** 启动连接看门狗，base 为服务器根地址（如 http://192.168.1.10:8080）。重复调用会重置。 */
     @JavascriptInterface
@@ -601,7 +604,7 @@ public class NativeBridge {
         if (base == null || base.isEmpty()) return;
         watchUrl = base.endsWith("/") ? base : base + "/";
         watchFails = 0;
-        watchPool.scheduleWithFixedDelay(this::watchTick, 3, 4, TimeUnit.SECONDS);
+        watchFuture = watchPool.scheduleWithFixedDelay(this::watchTick, 3, 4, TimeUnit.SECONDS);
     }
 
     /** 停止连接看门狗。 */
@@ -610,7 +613,29 @@ public class NativeBridge {
         stopConnWatchInternal();
     }
 
+    /** 生命周期：Activity 进入后台（onPause）时调用，停掉看门狗避免 Doze 网络掐断导致误判。 */
+    public void onPause() {
+        if (watchFuture != null) {
+            watchFuture.cancel(false);
+            watchFuture = null;
+        }
+        // watchUrl 保留：onResume 用它恢复看门狗
+        watchFails = 0;
+    }
+
+    /** 生命周期：Activity 回到前台（onResume）时调用，延迟 12 秒恢复看门狗（给网络/WS 重连留时间）。 */
+    public void onResume() {
+        if (watchUrl == null) return;
+        watchFails = 0;
+        // 12 秒 grace：蜂窝数据从 Doze 恢复 + WS 重连 + 后端 ready 至少 8-10 秒
+        watchFuture = watchPool.scheduleWithFixedDelay(this::watchTick, 12, 4, TimeUnit.SECONDS);
+    }
+
     private void stopConnWatchInternal() {
+        if (watchFuture != null) {
+            watchFuture.cancel(false);
+            watchFuture = null;
+        }
         watchUrl = null;
         watchFails = 0;
     }

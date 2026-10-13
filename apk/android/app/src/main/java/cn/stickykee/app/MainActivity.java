@@ -52,4 +52,16 @@ public class MainActivity extends BridgeActivity {
         }
         super.onDestroy();
     }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (nativeBridge != null) nativeBridge.onPause();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (nativeBridge != null) nativeBridge.onResume();
+    }
 }

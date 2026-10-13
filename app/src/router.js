@@ -24,9 +24,29 @@ const router = createRouter({
 // 登录守卫：未登录一律重定向到登录页。
 router.beforeEach(async (to) => {
   // APK 壳页（localhost）自动跳转：已配置服务器地址时整页跳转到目标服务器。
-  // #connfail 标记表示看门狗检测到服务器不可达已退回壳页，此时不自动跳转
-  // 避免壳页↔故障服务器整页重载循环（画面闪烁）。
-  if (isApk && location.hostname === 'localhost' && !location.hash.includes('connfail')) {
+  // #connfail 标记表示看门狗检测到服务器不可达已退回壳页，此时先延迟探测重试，
+  // 避免壳页↔故障服务器整页重载循环（画面闪烁）；3 次探测仍失败才留在地址列表。
+  if (isApk && location.hostname === 'localhost' && location.hash.includes('connfail')) {
+    // 异步探测：壳页先渲染（展示地址列表），探测成功后自动跳转
+    Promise.resolve().then(async () => {
+      const addr = activeAddress()
+      if (!addr) return // 无配置地址，让用户手动添加
+      // 连续 3 次探测（每次 4 秒间隔），成功即跳
+      for (let i = 0; i < 3; i++) {
+        await new Promise((r) => setTimeout(r, 4000))
+        const ok = await (await import('@/utils/serverConfig')).probe(addr.url, 4000)
+        if (ok) {
+          window.location.replace(addr.url + '/')
+          return
+        }
+      }
+      // 3 次都失败：剥掉 #connfail，让用户手动选择
+      history.replaceState(null, '', location.pathname)
+    })
+    // 守卫继续，让壳页展示地址列表（探测在后台进行）
+    return true
+  }
+  if (isApk && location.hostname === 'localhost') {
     const addr = activeAddress()
     if (addr && addr.url) {
       location.replace(addr.url + '/')
