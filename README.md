@@ -11,6 +11,7 @@ homecanvas/
 │   └── Dockerfile       # 纯后端镜像（前后端分离部署用）
 ├── apk/                 # Capacitor Android 壳工程（APK 打包）
 │   └── dist/            # APK 产物输出
+├── release/             # 构建镜像前放置 stickykee-app.apk（被根 Dockerfile COPY 进镜像供服务端下载）
 └── Dockerfile           # 前后端合一镜像（推荐部署方式）
 ```
 
@@ -36,14 +37,20 @@ go run ./cmd/server/main.go    # 监听 :8080，数据库 data/stickynuo.db
 后端直接托管前端静态产物，网页与 APK 同源访问，无需额外反向代理或跨域配置。
 
 ```bash
+# 构建前先产出 APK 放到仓库根（合一镜像内置 APK 供服务端下载）：
+#   cd apk/android && ./gradlew assembleDebug  # 详见下方「打包命令」
+#   mkdir -p release && cp app/build/outputs/apk/debug/app-debug.apk release/stickykee-app.apk
+# 暂不内置 APK 时可注释根 Dockerfile 的 COPY release/... 与 SN_APK_FILE，下载入口自动关闭。
+
 # 构建（在仓库根目录）
 docker build -t stickynuo:latest .
 
-# 运行
+# 运行（SN_JWT_SECRET 务必固定一个随机长串，可用 openssl rand -hex 32 生成，不要每次重建都换）
 docker run -d --name stickynuo \
   -p 8080:8080 \
   -v stickynuo-data:/data \
   -e SN_JWT_SECRET=<改成随机长串> \
+  -e TZ=Asia/Shanghai \
   --restart unless-stopped \
   stickynuo:latest
 ```
@@ -75,24 +82,37 @@ docker run -d --name stickynuo-server \
 |---|---|---|
 | `SN_HTTP_ADDR` | `:8080` | HTTP 监听地址 |
 | `SN_DB_PATH` | `data/stickynuo.db` | SQLite 数据库路径（图标缓存默认建在其同目录） |
-| `SN_JWT_SECRET` | `dev-secret-change-me` | **生产必须改为随机长串**，否则会话可被伪造 |
+| `SN_JWT_SECRET` | `dev-secret-change-me` | **生产必须改为随机长串**（`openssl rand -hex 32`），否则会话可被伪造 |
 | `SN_STATIC_DIR` | 空（不托管） | 设为前端 `dist/` 目录后由后端托管网页（合一镜像已内置 `/app/dist`） |
 | `SN_LOG_LEVEL` | `info` | 日志级别：debug / info / warn / error |
 | `SN_STANDALONE` | `0` | `1` 为无鉴权模式，仅限本地开发，生产禁用 |
 | `SN_TLS_SKIP_VERIFY` | `1` | 跳过 HA 自签证书校验；HA 用可信证书时设 `0` |
 | `SN_ICON_CACHE_DIR` | `<数据库目录>/icons` | HA 实体图标缓存目录 |
+| `SN_APK_FILE` | 空 | 安卓安装包路径。合一镜像内置 `/var/apk/stickykee-app.apk`；设为空则关闭「设置 → 系统信息」的下载入口与 `/api/v1/app/download` |
 | `HA_DEFAULT_URL` / `HA_DEFAULT_TOKEN` | 空 | 可选：首个 HA 实例的种子地址与长期访问令牌 |
+| `TZ` | UTC | 时区，国内部署设 `Asia/Shanghai`（镜像已内置 tzdata） |
 
 ## Android APK
 
 产物：`apk/android/app/build/outputs/apk/debug/app-debug.apk`（debug 签名，可直接安装）。
 
+### 服务端下载（推荐）
+
+合一镜像构建时已把 `release/stickykee-app.apk` 打入镜像并设置 `SN_APK_FILE=/var/apk/stickykee-app.apk`，用户**无需向管理员索要安装包**：
+
+- 网页端登录后进入「设置 → 系统信息」，点「安卓 App」一栏的**「下载安装包」**即可下载（接口 `/api/v1/app/download` 需登录，防止外链盗刷）。
+- 已安装旧版 APK 的用户打开 APP 进入同一位置，当服务端版本更高时显示**「发现新版本，立即更新」**，点击在应用内下载并拉起系统安装器，升级不丢账号与地址簿。
+
+> 构建镜像前需先产出 APK 并放到仓库根：`mkdir -p release && cp apk/android/app/build/outputs/apk/debug/app-debug.apk release/stickykee-app.apk`。根 `Dockerfile` 的 `COPY release/stickykee-app.apk ...` 在文件不存在时会构建失败；若暂不内置 APK，可注释掉该行与 `SN_APK_FILE`，此时下载入口自动关闭。纯后端镜像（`server/Dockerfile`）构建上下文不含 `release/`，如需对外提供下载需手动 COPY APK 进容器并设 `SN_APK_FILE`。
+
+### APK 功能说明
+
 - **首次打开**：显示服务器地址配置页，可手动填写或点「自动识别内网服务器」；支持保存多个地址（内网/外网），WiFi 时优先内网、移动数据时优先外网，自动探测后整页进入应用。
 - **地址变更**：所有地址均不可达时自动回到地址列表；可随时添加、编辑、删除地址。
 - **保持登录**：登录页勾选「保持登录」后，关闭 APP 再打开无需重新登录（令牌持久化 30 天）；不勾选则仅本次会话有效。
 - **前端更新**：APK 只是壳，页面在服务器上——重新 `docker build` 镜像后 APK 内自动生效，无需重装。
-- **语音功能**：聊天内可发语音消息（按住说话、上滑取消），并支持一对一及多人语音通话（WebRTC mesh，建议 ≤6 人）。首次录音时系统弹麦克风授权，Manifest 已声明 RECORD_AUDIO。
-- **智家助手**：消息列表置顶的「智家助手」即 HA Assist（conversation/process），可用自然语言问天气、控设备、闲聊；多轮上下文由 HA conversation_id 保持。需要在设置中配置 HA 地址与个人 Token，且 HA 已配置助手（默认 Assist 即可）。
+- **语音功能**：聊天内可发语音消息（按住说话、上滑取消），并支持一对一及多人语音通话（服务器 WS 中继，建议 ≤6 人）。首次录音时系统弹麦克风授权，Manifest 已声明 RECORD_AUDIO。
+- **智家助手**：消息列表置顶的「智家助手」即 HA Assist（conversation/process），可用自然语言问天气、控设备、闲聊；多轮上下文由 HA conversation_id 保持。助手回复支持语音朗读，可在会话顶部切换朗读引擎（智能选择 / 内置 Edge TTS / 系统浏览器自带 / HA TTS）。需要在设置中配置 HA 地址与个人 Token，且 HA 已配置助手（默认 Assist 即可）。
 
 ### 打包命令（自行打包）
 
@@ -120,9 +140,9 @@ cd android
 
 ### 语音通话网络说明
 
-- 通话语音走 **WebRTC P2P**，服务器只中继信令（经现有 /ws，反向代理按 WebSocket 配置即可）。
-- 同一直局域网无需 STUN 直连；跨网（如外网拨入）依赖 STUN 打洞（已内置腾讯/小米公共 STUN）。
-- 对称型 NAT 打洞失败时需自备 **TURN** 中继（coturn），在 [call.js](app/src/utils/call.js) 的 ICE_SERVERS 中加入 `turn:` 配置。
+- 通话媒体走**服务器 WebSocket 中继**（与信令同一条 8080 连接的二进制帧转发），**不再使用 WebRTC P2P / ICE / STUN / TURN**。
+- 因此跨运营商 NAT、对称型 NAT 等「打洞失败」问题已不存在——凡能连上服务器 8080（或经反代的对应端口）即可通话，无需部署 coturn 或配置 ICE 服务器。
+- 公网部署只需保证 `/api/v1/ws` 这条 WebSocket 长连接可达（反代按 WebSocket 升级配置，见上节）；带宽与延迟取决于服务器到各端的链路。
 
 ## 安全与加密
 
@@ -155,11 +175,3 @@ location / {
 - **端口占用**：`bind: Only one usage of each socket address` 表示 8080 已被旧实例占用，先停掉旧进程再启动。
 - **数据库锁**：同一 `SN_DB_PATH` 不要被多个后端实例同时使用。
 - **镜像源**：项目默认配置国内源（npm npmmirror、Go goproxy.cn、Gradle 阿里云/腾讯云），无需额外设置。
-
-docker run -d --name stickynuo \
-  --restart unless-stopped \
-  -p 8080:8080 \
-  -v ./data:/data \
-  -e SN_JWT_SECRET=<用 openssl rand -hex 32 生成随机长串> \
-  -e TZ=Asia/Shanghai \
-  stickynuo:latest
