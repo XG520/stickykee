@@ -223,6 +223,15 @@
             前往 <a href="https://console.amap.com/" target="_blank" rel="noopener" class="text-primary hover:underline">高德开放平台</a> → 应用管理，新建「Web端(JS API)」应用并开启定位权限。
           </p>
         </div>
+        <!-- 设备追踪开关：APK 默认开启，网页端默认关闭；切换即时生效（不刷新/不重登） -->
+        <div class="rounded-xl bg-background border border-border px-1.5 py-1">
+          <ToggleRow :model-value="locTracking" icon="my_location" color="bg-info/15 text-info"
+            title="设备追踪（自动同步位置到 Home Assistant）"
+            :desc="locTracking
+              ? '已开启：位置自动上报，HA 自动生成并绑定本机的 device_tracker 实体'
+              : '已关闭：不会自动上报位置，也不生成 device_tracker（App 默认开启，网页端默认关闭）'"
+            @update:model-value="toggleTracking" />
+        </div>
         <div class="rounded-xl bg-background border border-border px-3 py-2.5">
           <p class="text-on-surface text-xs font-semibold mb-1">位置同步方式（HA 官方 mobile_app 协议）</p>
           <p class="text-muted text-xs font-body leading-relaxed">
@@ -262,7 +271,7 @@
                 <span class="text-on-surface text-sm font-medium truncate">{{ d.name }}</span>
                 <span v-if="d.device_id === currentDevId" class="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-success/15 text-success font-semibold">当前设备</span>
               </div>
-              <span class="text-muted text-xs font-body">HA 中已自动创建并绑定该设备的 device_tracker 实体</span>
+              <span class="text-muted text-xs font-body">开启设备追踪后，HA 中会自动创建并绑定该设备的 device_tracker 实体</span>
             </div>
           </div>
           <!-- 操作行：别名编辑 + 删除（手机上整行排在下方，输入框自适应宽度） -->
@@ -903,6 +912,17 @@ import { loadInstances, switchInstance, changePassword, authLogout, auth, store,
 import { applyTheme, resolveTheme, THEMES, CUSTOM_COLOR_KEYS, DEFAULT_CUSTOM_COLORS } from '@/themes'
 import { getPrefs, putPrefs } from '@/utils/prefs'
 import { isApk, openServerSheet } from '@/utils/serverConfig'
+import { trackingEnabled, setTrackingEnabled } from '@/utils/location'
+import { applyTrackingPref } from '@/utils/autoSync'
+
+// ---- 设备追踪开关（APK 默认开启、网页端默认关闭，localStorage 设备级偏好） ----
+// 切换后调 applyTrackingPref 即时启停定位链路（autoSync 的 watch/周期上报），无需刷新或重登
+const locTracking = ref(trackingEnabled())
+function toggleTracking(v) {
+  locTracking.value = !!v
+  setTrackingEnabled(!!v)
+  applyTrackingPref()
+}
 
 // ---- HA 实例管理 ----
 const form = reactive({ name: '', url: '', token: '', skipTLS: false })

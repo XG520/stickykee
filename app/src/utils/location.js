@@ -5,6 +5,27 @@ import { store } from '@/store'
 import { ensureDevice } from '@/utils/device'
 import { wgs84ToGcj02 } from '@/utils/gcj02'
 
+// ---- 设备追踪开关 ----
+// device_tracker 实体由首次位置上报（update_location webhook）时 HA 自动创建；
+// 本开关只控制「自动上报」（autoSync 周期/watch、进入首页自动定位），
+// 手动点「同步位置」按钮不受限（用户显式操作）。
+// 默认值：APK 开启（对齐官方 App 行为）、网页端关闭（避免每次登录就在 HA 里生成 tracker）。
+// 偏好存 localStorage（设备级，跨账号一致），key 缺失时按端取默认。
+const TRACKING_KEY = 'hc_loc_tracking'
+export function isCapDevice() {
+  return typeof window !== 'undefined' && !!(window.StickyKeeNative || window.Capacitor)
+}
+export function trackingEnabled() {
+  try {
+    const v = localStorage.getItem(TRACKING_KEY)
+    if (v === '0' || v === '1') return v === '1'
+  } catch { /* 隐私模式等忽略 */ }
+  return isCapDevice()
+}
+export function setTrackingEnabled(on) {
+  try { localStorage.setItem(TRACKING_KEY, on ? '1' : '0') } catch { /* 忽略 */ }
+}
+
 // ---- 原生 GPS/北斗定位（APK 优先）----
 // WebView 的 navigator.geolocation 在 Android 上默认走 FUSED 网络混合定位（WiFi/基站，
 // 精度几十米）。APK 内直连原生 LocationManager.GPS_PROVIDER（国产机自动含北斗等星座），

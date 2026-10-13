@@ -234,7 +234,7 @@ import { useAutoHide } from '@/composables/useAutoHide'
 import { mark, count, measure as perfMeasure } from '@/utils/perf'
 import { saveKV, loadKV } from '@/utils/snapshotCache'
 import { getPrefs, putPrefs } from '@/utils/prefs'
-import { syncCurrentLocation, locErrorMessage } from '@/utils/location'
+import { syncCurrentLocation, locErrorMessage, trackingEnabled } from '@/utils/location'
 import CodeCard from '@/components/cards/CodeCard.vue'
 import CardEditor from '@/components/cards/CardEditor.vue'
 import { cardDefaults } from '@/components/cards/defaults'
@@ -798,11 +798,14 @@ onMounted(async () => {
   mqCanEdit = window.matchMedia('(min-width: 1024px)')
   canEdit.value = mqCanEdit.matches
   mqCanEdit.addEventListener('change', onMqCanEdit)
-  // 自动定位：每会话一次
+  // 自动定位：每会话一次；受「设备追踪开关」控制（APK 默认开、网页端默认关），
+  // 关闭时不自动上报（手动点同步位置按钮仍可用）
   if (autoLocateRan()) {
     markAutoLocateRan()
-    toast('正在自动定位，请允许浏览器位置授权…')
-    locate(false)
+    if (trackingEnabled()) {
+      toast('正在自动定位，请允许浏览器位置授权…')
+      locate(false)
+    }
   }
 })
 
