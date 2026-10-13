@@ -3,7 +3,7 @@
     <!-- 页面标题只保留给屏读器（可见标题行占的垂直空间已省掉） -->
     <h1 class="sr-only">个性化设置</h1>
 
-    <!-- 顶部导航 + 重置按钮（不再悬浮，常驻导航区右侧） -->
+    <!-- 顶部导航（重置按钮收纳在「个性化」页底部） -->
     <div class="flex flex-wrap items-center gap-2">
       <nav class="flex flex-wrap gap-1.5 p-1.5 w-fit rounded-2xl bg-surface-alt/90 backdrop-blur-xl border border-border shadow-sm">
         <button v-for="t in tabs" :key="t.key" @click="activeTab = t.key"
@@ -15,10 +15,6 @@
           {{ t.label }}
         </button>
       </nav>
-      <button @click="resetDefaults" title="将所有偏好恢复为系统默认值"
-        class="ml-auto flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border text-muted hover:text-on-surface hover:bg-surface text-sm transition-colors">
-        <span class="material-symbols-outlined text-base">restart_alt</span> 重置为默认
-      </button>
     </div>
 
     <!-- ===== 连接与设备 ===== -->
@@ -645,6 +641,12 @@
         </div>
       </div>
     </section>
+
+    <!-- 重置为默认：只作用于个性化偏好，收纳在本页底部 -->
+    <button @click="resetDefaults" title="将所有偏好恢复为系统默认值"
+      class="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border border-border text-muted hover:text-error hover:border-error/40 hover:bg-error/5 text-sm transition-colors">
+      <span class="material-symbols-outlined text-base">restart_alt</span> 重置为默认
+    </button>
     </div>
 
     <!-- ===== 账户 ===== -->

@@ -99,23 +99,27 @@
             </button>
           </template>
           <template v-else>
+            <!-- 非编辑态：手机端收成紧凑图标按钮（文字仅宽屏显示），避免挤占页签行 -->
             <button
               @click="manualLocate"
               :disabled="locating"
-              class="px-3.5 py-2 rounded-lg bg-primary/10 text-primary hover:bg-primary/15 border border-primary/25 text-sm font-semibold transition-colors flex items-center gap-1.5 disabled:opacity-60"
-              title="获取当前设备定位并同步到 Home Assistant"
+              class="p-2 rounded-lg bg-primary/10 text-primary hover:bg-primary/15 border border-primary/25 text-sm font-semibold transition-colors flex items-center justify-center gap-1.5 disabled:opacity-60"
+              title="更新位置：获取当前设备定位并同步到 Home Assistant"
+              aria-label="更新位置"
             >
-              <span v-if="locating" class="w-3.5 h-3.5 border-2 border-primary/30 border-t-primary rounded-full animate-spin" aria-hidden="true"></span>
+              <span v-if="locating" class="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin" aria-hidden="true"></span>
               <span v-else class="material-symbols-outlined text-base" aria-hidden="true">my_location</span>
-              {{ locating ? '定位中…' : '更新位置' }}
+              <span class="hidden sm:inline">{{ locating ? '定位中…' : '更新位置' }}</span>
             </button>
-            <button v-if="canEdit" @click="editing = true" class="px-4 py-2 rounded-lg bg-surface-alt border border-border hover:border-primary/40 text-sm text-on-surface transition-colors flex items-center gap-1.5">
-              <span class="material-symbols-outlined text-base" aria-hidden="true">edit_square</span> 编辑仪表盘
+            <button v-if="canEdit" @click="editing = true" class="p-2 sm:px-4 py-2 rounded-lg bg-surface-alt border border-border hover:border-primary/40 text-sm text-on-surface transition-colors flex items-center gap-1.5" title="编辑仪表盘" aria-label="编辑仪表盘">
+              <span class="material-symbols-outlined text-base" aria-hidden="true">edit_square</span>
+              <span class="hidden sm:inline">编辑仪表盘</span>
             </button>
             <button @click="enterImmersive"
-              class="px-3 py-2 rounded-lg bg-surface-alt border border-border hover:border-primary/40 text-sm text-on-surface transition-colors flex items-center gap-1.5"
-              title="全屏显示：折叠导航栏、隐藏编辑按钮">
-              <span class="material-symbols-outlined text-base" aria-hidden="true">fullscreen</span> 全屏
+              class="p-2 sm:px-3 py-2 rounded-lg bg-surface-alt border border-border hover:border-primary/40 text-sm text-on-surface transition-colors flex items-center gap-1.5"
+              title="全屏显示：折叠导航栏、隐藏编辑按钮" aria-label="全屏">
+              <span class="material-symbols-outlined text-base" aria-hidden="true">fullscreen</span>
+              <span class="hidden sm:inline">全屏</span>
             </button>
           </template>
         </div>
