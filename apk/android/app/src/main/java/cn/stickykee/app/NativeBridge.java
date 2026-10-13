@@ -41,6 +41,7 @@ import android.widget.Toast;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.app.NotificationCompat;
+import androidx.core.app.NotificationManagerCompat;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 import androidx.core.view.WindowCompat;
@@ -972,6 +973,70 @@ public class NativeBridge {
 
     // ==================== 来电通知（响铃期间状态栏常驻） ====================
     private static final int NOTIF_CALL_ID = 9002;
+    private static final String PREFS_BRIDGE = "stickykee_bridge";
+
+    /** 查询通知权限是否已授权（androidx 兼容全部版本，含 MIUI 独立通知开关）。 */
+    @JavascriptInterface
+    public boolean notifEnabled() {
+        try {
+            return NotificationManagerCompat.from(activity.getApplicationContext())
+                    .areNotificationsEnabled();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** 申请通知权限：首次弹系统授权框；再次调用仍未授权（用户已永久拒绝，系统不再弹）
+     *  时自动跳应用详情页让用户手动开启。 */
+    @JavascriptInterface
+    public void requestNotifPermission() {
+        activity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (NotificationManagerCompat.from(activity.getApplicationContext())
+                            .areNotificationsEnabled()) return;
+                    String perm = "android.permission.POST_NOTIFICATIONS";
+                    if (android.os.Build.VERSION.SDK_INT >= 33) {
+                        boolean asked = activity.getSharedPreferences(PREFS_BRIDGE, Context.MODE_PRIVATE)
+                                .getBoolean("notif_asked", false);
+                        activity.getSharedPreferences(PREFS_BRIDGE, Context.MODE_PRIVATE)
+                                .edit().putBoolean("notif_asked", true).apply();
+                        if (!asked || ActivityCompat.shouldShowRequestPermissionRationale(activity, perm)) {
+                            // 首次申请，或拒绝过一次（系统仍会弹框）
+                            ActivityCompat.requestPermissions(activity, new String[]{perm}, NOTIF_PERM_CODE);
+                        } else {
+                            openAppDetailsInternal(); // 永久拒绝：系统不再弹，引导手动开启
+                        }
+                    } else {
+                        // Android 13 以下无运行时通知权限（MIUI 有独立开关）：应用详情
+                        openAppDetailsInternal();
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+        });
+    }
+
+    /** 打开系统应用详情页（MIUI 的自启动 / 通知 / 省电策略都在这里配置）。 */
+    @JavascriptInterface
+    public void openAppDetails() {
+        activity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                openAppDetailsInternal();
+            }
+        });
+    }
+
+    private void openAppDetailsInternal() {
+        try {
+            activity.startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.parse("package:" + activity.getPackageName()))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        } catch (Exception ignored) {
+        }
+    }
 
     /** 来电状态栏通知：响铃期间常驻，点击拉应用回前台。
      *  提示音由铃声（playRing，铃声音量流）负责，通知渠道无声避免双重响铃。 */

@@ -736,6 +736,30 @@
             <p v-else class="text-muted text-sm">检测中…</p>
           </template>
         </div>
+        <!-- 通知权限：未开启时醒目提示，点击申请（永久拒绝自动跳应用详情） -->
+        <div v-if="canInAppUpdate" class="rounded-xl bg-background border px-3 py-2.5"
+          :class="notifOn === false ? 'border-warning' : 'border-border'">
+          <p class="text-muted text-xs mb-1">通知提醒</p>
+          <button v-if="notifOn === false" @click="askNotifPerm"
+            class="text-warning text-sm font-semibold inline-flex items-center gap-1 hover:underline">
+            <span class="material-symbols-outlined text-base">notifications_off</span>
+            未开启，消息/来电无法提醒，点击开启
+          </button>
+          <p v-else-if="notifOn === true" class="text-success text-sm inline-flex items-center gap-1">
+            <span class="material-symbols-outlined text-base">check_circle</span> 已开启
+          </p>
+          <p v-else class="text-muted text-sm">检测中…</p>
+        </div>
+        <!-- 开机自启动：MIUI 等需手动允许，引导到应用详情 -->
+        <div v-if="canInAppUpdate" class="rounded-xl bg-background border border-border px-3 py-2.5">
+          <p class="text-muted text-xs mb-1">开机自启动</p>
+          <button @click="goAppDetails"
+            class="text-primary text-sm font-semibold inline-flex items-center gap-1 hover:underline">
+            <span class="material-symbols-outlined text-base">restart_alt</span>
+            允许自启动（重启后自动恢复在线）
+          </button>
+          <p class="text-muted text-[11px] mt-1">在应用详情中开启「自启动」，省电策略选「无限制」</p>
+        </div>
       </div>
       <p v-if="versionMismatch" class="mt-2 text-xs font-body text-warning">
         前后端版本不一致：请先刷新页面（Ctrl+F5）；若仍不一致，说明服务端尚未更新到最新版本。
@@ -1484,6 +1508,21 @@ function updateApk() {
     flash('更新失败：原生下载不可用', true)
   }
 }
+// 通知权限状态：未开启时在关于区醒目提示（null=检测中/不可用）
+const notifOn = ref(null)
+function refreshNotif() {
+  try { notifOn.value = !!window.StickyKeeNative?.notifEnabled?.() } catch { notifOn.value = null }
+}
+// 申请通知权限：首次弹系统框；被永久拒绝后原生会自动跳应用详情 → 回来时重查状态
+function askNotifPerm() {
+  try { window.StickyKeeNative?.requestNotifPermission?.() } catch { /* 忽略 */ }
+  setTimeout(refreshNotif, 1200)
+}
+// 开机自启动引导：MIUI 等需在应用详情手动开启
+function goAppDetails() {
+  try { window.StickyKeeNative?.openAppDetails?.() } catch { /* 忽略 */ }
+}
+const onVisNotif = () => { if (document.visibilityState === 'visible') refreshNotif() }
 async function loadAppInfo() {
   try {
     const { data } = await api.appInfo()
@@ -1551,6 +1590,7 @@ onMounted(() => {
   loadPrefs(); loadDevices(); loadSensors(); loadUsers()
   if (canPickRing) { loadRingNames(); window.addEventListener('stickykee-ring', onRingPicked) }
   if (isApk) window.addEventListener('stickykee-apk', onApkEvent) // 应用内更新进度
+  if (canInAppUpdate) { refreshNotif(); document.addEventListener('visibilitychange', onVisNotif) } // 通知权限状态（从详情页回来刷新）
   loadSiteName().then(() => { siteNameDraft.value = siteName.value }) // 同步后端权威值
   stopLightWatch = watchAmbientLight() // 面板打开期间持续读环境光，用于「实时值」显示
 })
@@ -1559,6 +1599,7 @@ onUnmounted(() => {
   if (stopLightWatch) { stopLightWatch(); stopLightWatch = null }
   if (canPickRing) window.removeEventListener('stickykee-ring', onRingPicked)
   if (isApk) window.removeEventListener('stickykee-apk', onApkEvent)
+  if (canInAppUpdate) document.removeEventListener('visibilitychange', onVisNotif)
 })
 </script>
 
