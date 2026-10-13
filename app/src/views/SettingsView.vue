@@ -1527,9 +1527,12 @@ async function loadAppInfo() {
   try {
     const { data } = await api.appInfo()
     apkAvailable.value = !!data?.apkAvailable
-    // APK 环境下比较服务端版本与本机版本：服务端更高即提示更新
+    // APK 环境下比较服务端版本与本机 APK 版本：服务端更高即提示更新。
+    // 注意 WebView 加载的是服务器网页，appVersion（网页版本）恒等于服务端版本，
+    // 必须用原生 getAppVersion()（build.gradle 的 versionName）才是真实 APK 版本。
     if (isApk && data?.apkAvailable && data?.version) {
-      apkUpdateAvailable.value = cmpVer(appVersion, data.version) < 0
+      const nativeVer = window.StickyKeeNative?.getAppVersion?.() || appVersion
+      apkUpdateAvailable.value = cmpVer(nativeVer, data.version) < 0
     }
   } catch { /* 服务端旧版本无此接口：保持未提供 */ }
   apkChecked.value = true
