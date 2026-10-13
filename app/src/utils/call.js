@@ -13,10 +13,19 @@ import api from '@/api'
 import { auth } from '@/store'
 import { getDeviceId } from '@/utils/device'
 
-const ICE_SERVERS = [
+let ICE_SERVERS = [
   // 腾讯/小米公共 STUN；局域网内即使无 STUN 也能用 host candidate 直连
   { urls: ['stun:stun.qq.com:3478', 'stun:stun.miwifi.com:3478'] },
 ]
+// TURN 中继配置从服务端 /ice 拉取（coturn，跨运营商 NAT 打洞失败时经服务器中继语音）。
+// 拉取失败保持纯 STUN（行为同旧版）；成功后本会话内所有新通话生效。
+;(async () => {
+  try {
+    const { data } = await api.ice()
+    const list = data && Array.isArray(data.iceServers) ? data.iceServers.filter((s) => s && s.urls && s.urls.length) : []
+    if (list.length) ICE_SERVERS = list
+  } catch { /* 未配置/未登录时用默认 STUN */ }
+})()
 
 // 通话结束原因 → 提示文案（CallOverlay 展示 callState.ended.reason 对应文字）
 export const END_TEXT = {

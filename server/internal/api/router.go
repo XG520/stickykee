@@ -158,6 +158,8 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 			// App 安装包：需登录（防外链盗刷下载）；前端经 fetch 携带令牌取流保存。
 			r.Get("/app/info", handler.AppInfo)
 			r.Get("/app/download", handler.AppDownload)
+			// WebRTC ICE 配置（STUN/TURN 中继，跨网通话用）
+			r.Get("/ice", handler.IceServers)
 			r.Get("/devices", devices.List)
 			r.Post("/devices", devices.Register)
 			r.Put("/devices/{device_id}", devices.Rename)
