@@ -211,8 +211,10 @@ export async function acceptCall() {
     connectAllPeers()
     // 回放接听前缓存的信号：旧版对端在响铃期已发出的 offer/ICE
     replayPreAccept(data.id)
+    try { window.StickyKeeNative?.cancelCallNotification?.() } catch { /* 忽略 */ }
   } catch (e) {
     stopRing()
+    try { window.StickyKeeNative?.cancelCallNotification?.() } catch { /* 忽略 */ }
     dropPreAccept(inc.id)
     // 房间已被其他设备接听/结束：清理本地振铃状态
     callState.incoming = null
@@ -225,6 +227,7 @@ export async function rejectCall() {
   const inc = callState.incoming
   if (!inc) return
   stopRing()
+  try { window.StickyKeeNative?.cancelCallNotification?.() } catch { /* 忽略 */ }
   dropPreAccept(inc.id)
   callState.incoming = null
   try { await api.callReject(inc.id, getDeviceId()) } catch { /* ignore */ }
@@ -241,6 +244,7 @@ export async function hangup() {
 // 统一结束：关 peer、停麦克风、清来电/振铃，并设置结束提示（UI 短暂展示后自动清空）
 function endCall(reason) {
   stopRing()
+  try { window.StickyKeeNative?.cancelCallNotification?.() } catch { /* 忽略 */ }
   dropPreAccept(callState.active?.id || callState.incoming?.id)
   teardown()
   callState.incoming = null
@@ -292,6 +296,8 @@ async function onInvite(ev) {
   if (callState.incoming) { try { await api.callReject(ev.room, getDeviceId()) } catch {}; return }
   callState.incoming = { id: ev.room, from: ev.from, owner: ev.owner, members: ev.members }
   startRing('incoming')
+  // 来电状态栏通知（APK）：响铃期间常驻，接听/挂断后取消；点击拉应用回前台
+  try { window.StickyKeeNative?.callNotification?.('来电', '来自 ' + (ev.from || '联系人') + ' 的语音通话') } catch { /* 忽略 */ }
 }
 
 async function onSignal(ev) {

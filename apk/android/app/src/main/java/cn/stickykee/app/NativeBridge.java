@@ -854,8 +854,9 @@ public class NativeBridge {
     // ==================== 前台保活服务 ====================
 
     /** 登录后启动前台保活服务：防后台冻结断连（消息通知/来电铃声依赖实时连接）。
-     *  同时请求电池优化豁免（SOS/微信级常驻：MIUI 等省电策略是后台被杀的主因），
-     *  已豁免则静默；用户拒绝后下次登录会再次引导。 */
+     *  同时：① 主动申请通知权限（Android 13+ 消息/来电通知的前提，若等首条消息触发
+     *  申请会丢掉该条通知）；② 请求电池优化豁免（SOS/微信级常驻）。
+     *  用户拒绝后下次登录会再次引导。 */
     @JavascriptInterface
     public void startKeepAlive() {
         try {
@@ -873,6 +874,22 @@ public class NativeBridge {
             }
         } catch (Exception ignored) {
         }
+        // 通知权限申请须在 UI 线程发起
+        activity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (android.os.Build.VERSION.SDK_INT >= 33
+                            && ContextCompat.checkSelfPermission(activity.getApplicationContext(),
+                                "android.permission.POST_NOTIFICATIONS")
+                                != PackageManager.PERMISSION_GRANTED) {
+                        ActivityCompat.requestPermissions(activity,
+                                new String[]{"android.permission.POST_NOTIFICATIONS"}, NOTIF_PERM_CODE);
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+        });
     }
 
     /** 退出登录时停止保活服务。 */
@@ -942,6 +959,71 @@ public class NativeBridge {
                         .setPriority(NotificationCompat.PRIORITY_HIGH)
                         .setContentIntent(pi);
                     nm.notify(NOTIF_ID, b.build());
+                } catch (Exception ignored) {
+                }
+            }
+        });
+    }
+
+    // ==================== 来电通知（响铃期间状态栏常驻） ====================
+    private static final int NOTIF_CALL_ID = 9002;
+
+    /** 来电状态栏通知：响铃期间常驻，点击拉应用回前台。
+     *  提示音由铃声（playRing，铃声音量流）负责，通知渠道无声避免双重响铃。 */
+    @JavascriptInterface
+    public void callNotification(final String title, final String body) {
+        activity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    Context ctx = activity.getApplicationContext();
+                    if (android.os.Build.VERSION.SDK_INT >= 33
+                            && ContextCompat.checkSelfPermission(ctx, "android.permission.POST_NOTIFICATIONS")
+                                != PackageManager.PERMISSION_GRANTED) {
+                        return; // 无权限静默（登录时已申请过）
+                    }
+                    NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
+                    if (nm == null) return;
+                    String chId = "call_alert";
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                        NotificationChannel ch = nm.getNotificationChannel(chId);
+                        if (ch == null) {
+                            ch = new NotificationChannel(chId, "来电通知", NotificationManager.IMPORTANCE_HIGH);
+                            ch.setDescription("来电时显示状态栏通知");
+                            ch.setSound(null, null); // 声音走来电铃声，不重复
+                            ch.enableVibration(false);
+                            nm.createNotificationChannel(ch);
+                        }
+                    }
+                    Intent intent = new Intent(ctx, activity.getClass());
+                    intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                    PendingIntent pi = PendingIntent.getActivity(ctx, 1, intent,
+                        PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+                    NotificationCompat.Builder b = new NotificationCompat.Builder(ctx, chId)
+                        .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+                        .setContentTitle(title == null ? "来电" : title)
+                        .setContentText(body == null ? "" : body)
+                        .setOngoing(true)
+                        .setPriority(NotificationCompat.PRIORITY_HIGH)
+                        .setCategory(NotificationCompat.CATEGORY_CALL)
+                        .setContentIntent(pi);
+                    nm.notify(NOTIF_CALL_ID, b.build());
+                } catch (Exception ignored) {
+                }
+            }
+        });
+    }
+
+    /** 取消来电通知：接听/拒接/挂断/其他设备处理后由前端调用。 */
+    @JavascriptInterface
+    public void cancelCallNotification() {
+        activity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    NotificationManager nm = (NotificationManager) activity.getApplicationContext()
+                            .getSystemService(Context.NOTIFICATION_SERVICE);
+                    if (nm != null) nm.cancel(NOTIF_CALL_ID);
                 } catch (Exception ignored) {
                 }
             }
