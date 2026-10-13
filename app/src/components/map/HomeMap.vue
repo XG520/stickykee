@@ -41,7 +41,8 @@
     </div>
 
     <!-- 地图容器 -->
-    <div v-show="configured" class="map-shell w-full rounded-xl overflow-hidden relative bg-surface"
+    <div v-show="configured" class="map-shell w-full overflow-hidden relative bg-surface"
+      :class="flat ? '' : 'rounded-xl'"
       :style="{ height: height === 'flex' ? undefined : height, flex: height === 'flex' ? '1 1 auto' : undefined, minHeight: height === 'flex' ? 0 : undefined }">
       <div ref="mapEl" class="w-full h-full"></div>
       <div v-if="mapStatus !== 'ready'" class="absolute inset-0 bg-surface/80 backdrop-blur-sm flex items-center justify-center text-sm font-body text-muted">
@@ -61,7 +62,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, onActivated } from 'vue'
 import api from '@/api'
 import { store } from '@/store'
 import { loadAMap } from '@/utils/amap'
@@ -76,6 +77,8 @@ const gcjPt = (lng, lat) => { const p = wgs84ToGcj02(lng, lat); return [p.lng, p
 const props = defineProps({
   title: { type: String, default: '地图定位' },
   height: { type: String, default: '320px' },
+  // flat：去掉容器圆角（全幅页面用，圆角会切掉贴边的地图四角）
+  flat: { type: Boolean, default: false },
 })
 
 const markers = usePersonMarkers()
@@ -290,6 +293,9 @@ onMounted(async () => {
   await loadConfig()
   if (configured.value) initMap()
 })
+
+// keep-alive 缓存的页面重新激活：容器尺寸可能已随窗口变化，通知地图重算
+onActivated(() => { try { map?.resize?.() } catch { /* 忽略 */ } })
 </script>
 
 <style scoped>

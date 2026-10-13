@@ -35,11 +35,12 @@
            不加 <transition>：切换时同步卸载旧页再挂载新页。若包 transition，
            旧首页 DOM 会滞留至少一帧，而期间 CodeCard 已移除动态注入的 <style>，
            表现为「闪现无样式的首页」；同步交换还能避免新旧重型页同帧挂载掉帧。
-           keep-alive 缓存首页：仪表盘卡片数多（含地图卡），移动端切走再切回
-           重新挂载+重新拉布局耗时过长；缓存后秒回，HA 实时数据仍经 store 推送保持新鲜。 -->
+           keep-alive 缓存首页与地图页：仪表盘卡片数多（含地图卡）、地图页含高德
+           实例（重建需重新拉 SDK 与全部瓦片），移动端切走再切回秒回，
+           HA 实时数据仍经 store 推送保持新鲜。 -->
       <main class="max-w-screen-2xl mx-auto px-6 pt-3 md:pt-5 pb-10">
         <router-view v-slot="{ Component }">
-          <keep-alive include="HomeView">
+          <keep-alive include="HomeView,MapView">
             <component :is="Component" />
           </keep-alive>
         </router-view>

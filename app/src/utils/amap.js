@@ -2,6 +2,18 @@
 let cache = null
 let promise = null
 
+// 瓦片离线缓存：SDK 首次加载成功后注册 SW（仅 https；http 内网/本地自动跳过）。
+// SW 按域名只拦瓦片 CDN，应用资源与 API 不受影响。
+let swRegistered = false
+function registerTileSW() {
+  if (swRegistered) return
+  swRegistered = true
+  try {
+    if (!('serviceWorker' in navigator) || location.protocol !== 'https:') return
+    navigator.serviceWorker.register('/sw.js').catch(() => {})
+  } catch { /* 忽略 */ }
+}
+
 // loadAMap(key) → Promise<window.AMap>。key 变化时强制重新加载。
 export function loadAMap(rawKey) {
   const key = (rawKey || '').trim()
@@ -11,6 +23,7 @@ export function loadAMap(rawKey) {
   promise = null
   return new Promise((resolve, reject) => {
     if (window.AMap) {
+      registerTileSW()
       resolve(window.AMap)
       return
     }
@@ -25,7 +38,7 @@ export function loadAMap(rawKey) {
     script.dataset.amapKey = key
     script.onerror = () => reject(new Error('高德地图 SDK 加载失败，请检查 Key 与网络'))
     document.head.appendChild(script)
-    waitReady(resolve, reject)
+    waitReady((am) => { registerTileSW(); resolve(am) }, reject)
   })
 }
 
