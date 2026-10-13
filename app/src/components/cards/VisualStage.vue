@@ -360,6 +360,8 @@ const holderStyle = computed(() => ({
   width: effW.value * cellPx() + 'px',
   height: effH.value * cellPx() + 'px',
   transform: `scale(${props.scale})`,
+  // 预览净缩放 = scale × (cellPx/baseCell)，边框厚度按它反向补偿，与仪表盘所见即所得
+  '--card-bw': (1 / (props.scale * (cellPx() / baseCell) || 1)).toFixed(3) + 'px',
 }))
 const zoomStyle = computed(() => ({
   // transform:scale 替代 zoom：zoom 触发同步重排且与 container-type/content-visibility 组合会反复失效重排

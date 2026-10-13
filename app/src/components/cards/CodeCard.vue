@@ -457,6 +457,7 @@ onBeforeUnmount(() => {
   border-radius: 14px;
   background: linear-gradient(165deg, rgb(255 255 255 / .05), rgb(255 255 255 / 0) 46%), color-mix(in srgb, var(--hc-bg2) 72%, var(--hc-bg));
   border: 1px dashed color-mix(in srgb, var(--hc-border) 80%, transparent);
+  border-width: var(--card-bw, 1px); /* 同卡片壳：按视图层缩放反向补偿，渲染厚度恒定 ≈1px */
   box-shadow: 0 1px 2px rgb(0 0 0 / .05), 0 6px 16px -6px rgb(0 0 0 / .1);
 }
 </style>

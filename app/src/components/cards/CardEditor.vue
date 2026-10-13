@@ -1020,6 +1020,8 @@ const holderStyle = computed(() => ({
   width: Math.min(draft.w, props.cols) * cellPx() + 'px',
   height: Math.min(3, draft.h) * cellPx() + 'px',
   transform: `scale(${previewScale.value})`,
+  // 预览净缩放 = previewScale × (cellPx/baseCell)，边框厚度按它反向补偿，与仪表盘所见即所得
+  '--card-bw': (1 / (previewScale.value * (cellPx() / baseCell) || 1)).toFixed(3) + 'px',
 }))
 const zoomStyle = computed(() => {
   const factor = cellPx() / baseCell

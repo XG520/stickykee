@@ -323,6 +323,9 @@ function zoomStyle(card) {
   }
 }
 const gridStyle = computed(() => ({
+  // 卡片被 zoom 等比放大，1px 边框会被同步放大；按缩放系数反向补偿，
+  // 使边框最终渲染厚度恒定 ≈1px（卡片外壳 border-width:var(--card-bw,1px)）
+  '--card-bw': (1 / (zoomFactor.value || 1)).toFixed(3) + 'px',
   gridTemplateColumns: `repeat(${cols.value}, minmax(0, 1fr))`,
   // 行高 = 列宽：1×1 仍为正方形，格子尺寸约为原来的 1/2（列数翻倍）
   gridAutoRows: cellSize.value ? cellSize.value + 'px' : 'auto',

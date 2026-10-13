@@ -15,6 +15,10 @@
 const SHELL_BASE = `.hc{flex:1;min-height:0;display:flex;flex-direction:column;gap:4px;overflow:hidden;padding:8px;border-radius:14px;
   background:linear-gradient(165deg,rgb(255 255 255 / .05),rgb(255 255 255 / 0) 46%),color-mix(in srgb,var(--hc-bg2) 72%,var(--hc-bg));
   border:1px solid var(--hc-border);
+  /* 边框厚度补偿：仪表盘/预览以 transform:scale 等比放大整卡，1px 会被同步放大
+     （桌面端约 1.2~1.9px）。视图层按缩放系数把补偿值写入 --card-bw，
+     使最终渲染的边框厚度恒定 ≈1px；无该变量的场景回落 1px，视觉不变 */
+  border-width:var(--card-bw,1px);
   box-shadow:0 1px 3px rgb(0 0 0 / .07),0 8px 20px -8px rgb(0 0 0 / .16)}
 .h-head{display:flex;align-items:center;gap:5px;min-width:0}
 .h-ic{width:18px;height:18px;font-size:11px;flex:none;display:flex;align-items:center;justify-content:center;border-radius:6px;
@@ -56,6 +60,11 @@ export const CTL_CSS = `
 .h-tin{flex:1;min-width:0;font-size:8px;padding:1px 4px;border-radius:6px;background:var(--hc-bg2);border:1px solid var(--hc-border);color:var(--hc-text);outline:none}`
 
 const shell = SHELL_BASE + CTL_CSS
+
+// 边框厚度补偿片段：与上面三处外壳（.hc/.dk/.hcm）的 border-width 覆盖等价，
+// 单独导出供 dashboard.js 迁移历史卡片 CSS 快照时追加（卡片 CSS 是创建时的快照）。
+export const BORDER_CSS = `
+.hc,.dk,.hcm{border-width:var(--card-bw,1px)}`
 
 const head = `<div class="h-head"><span class="h-ic material-symbols-outlined">{{glyph}}</span><span class="h-t">{{name}}</span>{{badge}}</div>`
 
@@ -267,7 +276,7 @@ export function tplGeneric() {
   const css = `
 .dk{flex:1;min-height:0;display:flex;flex-direction:column;gap:4px;padding:7px;position:relative;overflow:hidden;border-radius:14px;
   background:linear-gradient(165deg,rgb(255 255 255 / .05),rgb(255 255 255 / 0) 46%),color-mix(in srgb,var(--hc-bg2) 72%,var(--hc-bg));
-  border:1px solid var(--hc-border);
+  border:1px solid var(--hc-border);border-width:var(--card-bw,1px);
   box-shadow:0 1px 3px rgb(0 0 0 / .07),0 8px 20px -8px rgb(0 0 0 / .16)}
 /* 顶部类型色光晕：默认隐于背景，激活态显现 */
 .dk-glow{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .25s;
@@ -965,7 +974,7 @@ export function tplOverview() {
 export function tplMap() {
   const html = `<div class="hcm" data-map></div>`
   const css = `.hcm{flex:1;min-height:0;border-radius:14px;overflow:hidden;
-  border:1px solid var(--hc-border);
+  border:1px solid var(--hc-border);border-width:var(--card-bw,1px);
   box-shadow:0 1px 3px rgb(0 0 0 / .07),0 8px 20px -8px rgb(0 0 0 / .16)}`
   return { html, css }
 }

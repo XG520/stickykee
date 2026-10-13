@@ -4,7 +4,7 @@
 //   v2：{ version: 2, pages: [{ id, name, cards: [...] }, ...] }
 // HomeView（读写布局）与 MessageCenter（共享前判空）共用此模块，避免判空逻辑两处分叉。
 import { cardDefaults } from '@/components/cards/defaults'
-import { CTL_CSS } from '@/components/cards/templates'
+import { CTL_CSS, BORDER_CSS } from '@/components/cards/templates'
 
 export const DASH_VERSION = 2
 export const EXPORT_APP = 'lumina-home-app'
@@ -64,6 +64,15 @@ export function upgradeToggleCard(card) {
   if (!String(card.css || '').includes('.h-ctl{')) card.css = (card.css || '') + CTL_CSS
 }
 
+// 卡片边框厚度补偿：仪表盘/编辑器预览都以 transform:scale 等比放大整卡，1px 边框被同步放大
+// （桌面端格子约 140~230px，边框视觉 1.2~1.9px，不同屏宽下粗细不一）。视图层按实际缩放
+// 把补偿值写入 --card-bw，卡片外壳 border-width 引用它后最终渲染厚度恒定 ≈1px。
+// 历史 CSS 快照没有这段覆盖，加载时统一补上（幂等：已含 --card-bw 则跳过）。
+export function upgradeCardBorderCss(card) {
+  if (!card || !card.css || String(card.css).includes('--card-bw')) return
+  card.css = (card.css || '') + BORDER_CSS
+}
+
 // 翻页时钟卡动画修复：现为「整瓣 180° 翻转」结构（.flip 面板 + .fn/.fc 前后两半，
 // 参考 flipflow 实现），与旧版（两瓣分体 fcFlipA / 单瓣 roll+shd）DOM 结构不同，
 // 无法字符串补丁，检测到旧快照即整体重同步为注册表最新模板（uid 等保留，幂等）。
@@ -108,6 +117,7 @@ export function normalizeCards(list) {
   out.forEach(upgradeToggleCard)
   out.forEach(upgradeFlipClockCard)
   out.forEach(upgradeAmapWeatherCard)
+  out.forEach(upgradeCardBorderCss)
   return out
 }
 
