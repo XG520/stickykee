@@ -7,9 +7,14 @@ public class MainActivity extends BridgeActivity {
 
     private NativeBridge nativeBridge;
 
+    // 主界面存活标记：KeepAliveService 被系统重启（进程被杀后 START_STICKY 拉活）时
+    // 据此判断主界面是否需要重建——alive=false 说明用户划掉/进程被杀，尝试拉起自恢复
+    public static volatile boolean alive = false;
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        alive = true;
         // 注册对所有源（壳页 + allowNavigation 远程页面）可用的极简原生桥，
         // 用于系统栏主题配色与 APK 原生 TTS；远程页没有 Capacitor JS 运行时，只能走 JavascriptInterface。
         nativeBridge = new NativeBridge(this);
@@ -47,6 +52,7 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onDestroy() {
+        alive = false;
         if (nativeBridge != null) {
             nativeBridge.release();
         }

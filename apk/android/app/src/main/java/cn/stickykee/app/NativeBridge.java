@@ -116,6 +116,66 @@ public class NativeBridge {
     /** MainActivity 在注册桥后注入 WebView 引用，供异步 TTS 完成时回传 JS 事件。 */
     public void attachWebView(WebView wv) {
         this.webView = wv;
+        activeBridge = this;
+    }
+
+    // ---- 服务→WebView 传感器心跳 ----
+    // KeepAliveService 在后台按配置间隔调用 tickSensorsFromService()，经此注入
+    // window.__skSensorTick 驱动前端采集上报。evaluateJavascript 是显式调用，
+    // 不受 WebView 后台 pauseTimers（JS 定时器全部冻结）影响——这是后台传感器
+    // 实时更新的关键：退后台后前端 setInterval 停摆，由原生心跳接管。
+    private static volatile NativeBridge activeBridge;
+
+    /** 保活服务心跳入口：向当前活跃页面注入一次传感器 tick；无活跃页面时静默。 */
+    public static void tickSensorsFromService() {
+        NativeBridge b = activeBridge;
+        if (b != null) b.dispatchSensorTick();
+    }
+
+    private void dispatchSensorTick() {
+        activity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    WebView wv = webView;
+                    if (wv == null) return;
+                    // __skSensorTick 由 autoSync 在登录后挂载：内部做登录态/频次校验
+                    wv.evaluateJavascript(
+                        "if(window.__skSensorTick)try{window.__skSensorTick()}catch(e){}", null);
+                } catch (Exception ignored) {
+                }
+            }
+        });
+    }
+
+    // ==================== 传感器上报间隔（后台心跳周期，前端可配） ====================
+    // 前端设置页保存间隔时调用 setSensorInterval：落 SharedPreferences（跨进程持久），
+    // 并重启保活服务传递新间隔（onStartCommand 按它重新排程心跳）。
+
+    /** 设置传感器上报间隔（秒，10~3600）；同时通知保活服务重排心跳。 */
+    @JavascriptInterface
+    public void setSensorInterval(final int sec) {
+        try {
+            int v = Math.max(10, Math.min(3600, sec));
+            activity.getApplicationContext()
+                    .getSharedPreferences("stickykee", Context.MODE_PRIVATE)
+                    .edit().putInt("sensor_interval", v).apply();
+            ContextCompat.startForegroundService(activity,
+                    new Intent(activity, KeepAliveService.class).putExtra("interval_sec", v));
+        } catch (Exception ignored) {
+        }
+    }
+
+    /** 读取传感器上报间隔（秒）；从未设置返回默认 60。 */
+    @JavascriptInterface
+    public int getSensorInterval() {
+        try {
+            return activity.getApplicationContext()
+                    .getSharedPreferences("stickykee", Context.MODE_PRIVATE)
+                    .getInt("sensor_interval", 60);
+        } catch (Exception e) {
+            return 60;
+        }
     }
 
     private int parseHex(String s) {
@@ -1406,6 +1466,7 @@ public class NativeBridge {
     /** 释放原生 TTS 资源 */
     public void release() {
         try {
+            if (activeBridge == this) activeBridge = null; // Activity 销毁：服务心跳不再注入
             stopRingInternal();
             stopGpsWatch();
             stopConnWatchInternal();

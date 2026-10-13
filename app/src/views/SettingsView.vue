@@ -312,6 +312,18 @@
         </button>
       </div>
 
+      <!-- 上报间隔：前台为周期 timer；APK 退后台由保活服务原生心跳按同间隔接管 -->
+      <div class="flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl bg-background border border-border mb-1">
+        <div class="min-w-0">
+          <p class="text-on-surface text-xs font-semibold">上报间隔</p>
+          <p class="text-muted text-xs mt-0.5 leading-relaxed">App 退后台后由常驻服务按此间隔唤醒上报，被杀后自动恢复</p>
+        </div>
+        <select :value="sensorInterval" @change="changeInterval($event.target.value)"
+          class="shrink-0 bg-surface border border-border rounded-lg px-2 py-1.5 text-xs text-on-surface outline-none">
+          <option v-for="o in INTERVALS" :key="o.v" :value="o.v">{{ o.label }}</option>
+        </select>
+      </div>
+
       <div v-if="sensorDefs.length" class="space-y-1">
         <ToggleRow
           v-for="d in sensorDefs"
@@ -913,7 +925,7 @@ import { applyTheme, resolveTheme, THEMES, CUSTOM_COLOR_KEYS, DEFAULT_CUSTOM_COL
 import { getPrefs, putPrefs } from '@/utils/prefs'
 import { isApk, openServerSheet } from '@/utils/serverConfig'
 import { trackingEnabled, setTrackingEnabled } from '@/utils/location'
-import { applyTrackingPref } from '@/utils/autoSync'
+import { applyTrackingPref, setSensorIntervalPref } from '@/utils/autoSync'
 
 // ---- 设备追踪开关（APK 默认开启、网页端默认关闭，localStorage 设备级偏好） ----
 // 切换后调 applyTrackingPref 即时启停定位链路（autoSync 的 watch/周期上报），无需刷新或重登
@@ -1160,6 +1172,21 @@ async function removeDevice(d) {
 
 // 设备传感器：按设备类型与浏览器能力提供不同传感器，可逐项开关并自动上报 HA
 const sensorDefs = ref([])          // 后端定义 [{key,label,desc,icon}]
+// 上报间隔（秒，设备级配置存 sensor_config.<deviceId>._interval）：
+// 前台为前端周期 timer 周期；APK 退后台由保活服务原生心跳按同间隔注入接管
+const INTERVALS = [
+  { v: 15, label: '15 秒' }, { v: 30, label: '30 秒' }, { v: 60, label: '1 分钟' },
+  { v: 120, label: '2 分钟' }, { v: 300, label: '5 分钟' }, { v: 900, label: '15 分钟' },
+]
+const sensorInterval = ref(60)
+async function changeInterval(v) {
+  const sec = parseInt(v, 10) || 60
+  sensorInterval.value = sec
+  try {
+    await setSensorIntervalPref(sec)
+    flash('上报间隔已更新，后台心跳同步生效')
+  } catch (e) { flash(e.message, true) }
+}
 const sensorConfig = reactive({})   // key -> bool（当前设备）
 const sensorAvail = ref(new Set())  // 当前设备可用的 key 集
 const reporting = ref(false)
@@ -1202,6 +1229,7 @@ async function loadSensors() {
       const all = JSON.parse(data.sensor_config) || {}
       const mine = all[getDeviceId()] || {}
       sensorDefs.value.forEach((d) => { sensorConfig[d.key] = !!mine[d.key] })
+      if (mine._interval) sensorInterval.value = parseInt(mine._interval, 10) || 60
     }
   } catch { /* 忽略坏配置 */ }
   syncMonitor()
