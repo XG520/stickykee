@@ -43,7 +43,8 @@ export function friendlyDeviceLabel() {
   return '浏览器设备'
 }
 
-function readCache() {
+// 本机已注册设备的本地缓存（未注册过返回 null）——供注册门控判断，避免为读缓存而请求后端
+export function readCache() {
   try { return JSON.parse(localStorage.getItem(DEV_CACHE_KEY) || 'null') } catch { return null }
 }
 function writeCache(d) { try { localStorage.setItem(DEV_CACHE_KEY, JSON.stringify(d)) } catch {} }

@@ -905,7 +905,7 @@
 import { ref, reactive, watch, onMounted, onUnmounted, computed } from 'vue'
 import ToggleRow from '@/components/ToggleRow.vue'
 import api, { getToken } from '@/api'
-import { listDevices, ensureDevice, renameDevice, deleteDevice, getDeviceId } from '@/utils/device'
+import { listDevices, ensureDevice, renameDevice, deleteDevice, getDeviceId, currentDevice, readCache } from '@/utils/device'
 import { availableSensors, unavailableReason, startSensorMonitor, buildReportPayload } from '@/utils/sensors'
 import { showNotify, setBlackout, setScreenBrightness, setScreenWake, blackout, saveBlackoutDismiss, watchAmbientLight } from '@/utils/browserCommands'
 import { loadInstances, switchInstance, changePassword, authLogout, auth, store, backendOnline, haTokenConfigured, haTokenKnown, saveHAToken, siteName, loadSiteName, saveSiteName as persistSiteName } from '@/store'
@@ -1128,7 +1128,14 @@ const deviceList = ref([])
 const currentDevId = ref('')
 async function loadDevices() {
   try {
-    const [list, cur] = await Promise.all([listDevices(), ensureDevice()])
+    // 注册门控：仅当设备追踪开启（APK 默认开）或本机已有注册记录时才 ensureDevice；
+    // 网页端默认（追踪关 + 从未注册）只读列表，不生成本机设备条目
+    const cached = readDeviceCache()
+    const shouldEnsure = trackingEnabled() || !!(cached && cached.device_id)
+    const [list, cur] = await Promise.all([
+      listDevices(),
+      shouldEnsure ? ensureDevice() : Promise.resolve(currentDevice()),
+    ])
     deviceList.value = list.map((d) => ({ ...d, _draft: d.name }))
     currentDevId.value = cur.device_id
   } catch { /* 后端离线时静默 */ }
@@ -1198,9 +1205,12 @@ async function loadSensors() {
     }
   } catch { /* 忽略坏配置 */ }
   syncMonitor()
-  // 无论是否启用传感器都上报一次：注册 mobile_app 设备（HA 中立即出现 Sticky Kee 设备）。
+  // 注册上报门控：仅当本机启用了传感器、或设备追踪开启（APK 默认开）时才上报一次，
+  // 注册 mobile_app 设备（HA 中出现 Sticky Kee 设备）。
+  // 网页端默认（无启用传感器 + 追踪关闭）完全不注册——设备列表与 HA 中都不会生成条目。
   // activeID 由实例列表异步加载，尚未就绪时等待其变化后触发。
-  if (sensorDefs.value.length) {
+  const anySensor = sensorDefs.value.some((d) => sensorConfig[d.key])
+  if (sensorDefs.value.length && (anySensor || trackingEnabled())) {
     if (store.activeID) reportNow(false)
     else {
       const stop = watch(() => store.activeID, (v) => { if (v) { stop(); reportNow(false) } })
