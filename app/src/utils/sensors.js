@@ -227,11 +227,21 @@ function timeZoneInfo() {
   } catch { return { tz: '', offset: 0 } }
 }
 
-// 高德逆地理（REST API 支持浏览器跨域）
+// 高德逆地理（REST API 支持浏览器跨域）。
+// APK 优先走系统 Geocoder：国内 ROM 的系统定位与系统地理编码同坐标系（GCJ-02），
+// 与官方 App 同源、无需转换、免 key；REST 高德仅作 Web 端回退（先转 GCJ-02）。
 async function reverseGeocode(lng, lat, amapKey) {
+  try {
+    const nv = window.StickyKeeNative
+    if (nv && typeof nv.geocode === 'function') {
+      const r = JSON.parse(nv.geocode(lat, lng) || '{}')
+      return r.ok && r.address ? r.address : ''
+    }
+  } catch { /* 原生不可用则走 REST */ }
   if (!amapKey) return ''
   try {
-    const url = `https://restapi.amap.com/v3/geocode/regeo?location=${lng},${lat}&key=${amapKey}&extensions=base&output=json`
+    const gc02 = wgs84ToGcj02(lng, lat)
+    const url = `https://restapi.amap.com/v3/geocode/regeo?location=${gc02.lng},${gc02.lat}&key=${amapKey}&extensions=base&output=json`
     const ctrl = new AbortController()
     const t = setTimeout(() => ctrl.abort(), 4000)
     const res = await fetch(url, { signal: ctrl.signal })
@@ -433,9 +443,9 @@ export async function collect(enabled, trigger = 'manual', amapKey = '') {
   if (has('geocoded_location')) {
     const pos = await currentPosition()
     if (pos) {
-      // 高德基于 GCJ-02：WGS-84 的 GPS 坐标须先转换再反查，否则地址偏数百米
-      const gc = wgs84ToGcj02(pos.lng, pos.lat)
-      const addr = await reverseGeocode(gc.lng, gc.lat, amapKey)
+      // 反查由 reverseGeocode 按端处理坐标系（APK 系统 Geocoder 免转换 / Web 转 GCJ-02），
+      // attributes 上报设备原始坐标，与官方 App 一致
+      const addr = await reverseGeocode(pos.lng, pos.lat, amapKey)
       if (addr) sensors.geocoded_location = { state: addr, attributes: { latitude: pos.lat, longitude: pos.lng } }
     }
   }

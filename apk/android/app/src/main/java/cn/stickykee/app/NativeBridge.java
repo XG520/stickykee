@@ -1037,6 +1037,43 @@ public class NativeBridge {
 
     // ==================== APK 应用内更新 ====================
 
+    /**
+     * 系统 Geocoder 逆地理：与官方 App 同源（国内 ROM 的系统定位与系统地理编码
+     * 同一坐标系，传入设备原始坐标即可，前端无需做 WGS/GCJ 转换），且免高德 key。
+     * 同步返回 JSON {ok, address}（JavascriptInterface 运行在 WebView 后台线程，可阻塞 IO）。
+     */
+    @JavascriptInterface
+    public String geocode(double lat, double lng) {
+        String addr = "";
+        try {
+            android.location.Geocoder geo = new android.location.Geocoder(
+                    activity.getApplicationContext(), Locale.CHINA);
+            java.util.List<android.location.Address> list = geo.getFromLocation(lat, lng, 1);
+            if (list != null && !list.isEmpty()) {
+                android.location.Address a = list.get(0);
+                addr = a.getAddressLine(0);
+                if (addr == null || addr.isEmpty()) {
+                    StringBuilder sb = new StringBuilder();
+                    if (a.getAdminArea() != null) sb.append(a.getAdminArea());
+                    if (a.getLocality() != null) sb.append(a.getLocality());
+                    if (a.getSubLocality() != null) sb.append(a.getSubLocality());
+                    if (a.getThoroughfare() != null) sb.append(a.getThoroughfare());
+                    if (a.getFeatureName() != null) sb.append(a.getFeatureName());
+                    addr = sb.toString();
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        try {
+            JSONObject o = new JSONObject();
+            o.put("ok", addr != null && !addr.isEmpty());
+            o.put("address", addr == null ? "" : addr);
+            return o.toString();
+        } catch (Exception e) {
+            return "{\"ok\":false,\"address\":\"\"}";
+        }
+    }
+
     /** 返回当前 APK 版本名（build.gradle 的 versionName，如 "1.0.5"）。 */
     @JavascriptInterface
     public String getAppVersion() {

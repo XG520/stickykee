@@ -107,12 +107,23 @@ export function locErrorMessage(e) {
   return map[msg] || msg || '定位同步失败'
 }
 
-// 逆地理编码（可选；无高德则不阻塞）。
+// 逆地理编码（可选；无高德则不阻塞）。传入设备原始坐标。
+// APK：走系统 Geocoder——国内 ROM 的系统定位与系统地理编码同坐标系（GCJ-02），
+//      与官方 App 完全同源，无需转换且免高德 key；
+// Web：浏览器定位为 WGS-84，先转 GCJ-02 再查高德 JS API。
 async function reverseGeocode(lng, lat) {
+  try {
+    const nv = window.StickyKeeNative
+    if (nv && typeof nv.geocode === 'function') {
+      const r = JSON.parse(nv.geocode(lat, lng) || '{}')
+      return r.ok && r.address ? r.address : ''
+    }
+  } catch { /* 原生不可用则走 Web 路径 */ }
   if (!window.AMap || !window.AMap.Geocoder) return ''
   try {
+    const gc02 = wgs84ToGcj02(lng, lat)
     const gc = new window.AMap.Geocoder({ city: '全国', radius: 1000 })
-    return await new Promise((res, rej) => gc.getAddress([lng, lat], (err, d) => err || !d?.regeocode ? rej() : res(d.regeocode.formattedAddress)))
+    return await new Promise((res, rej) => gc.getAddress([gc02.lng, gc02.lat], (err, d) => err || !d?.regeocode ? rej() : res(d.regeocode.formattedAddress)))
   } catch { return '' }
 }
 
@@ -148,10 +159,9 @@ export async function syncCurrentLocation() {
   const device = await ensureDevice()
   const pos = await getCurrentPosition()
   const { latitude, longitude, accuracy } = pos.coords
-  // 高德基于 GCJ-02：WGS-84 的 GPS 坐标须先转换再反查，否则地址偏数百米
-  // （与官方 App 不一致）；上报 HA 的坐标保持 WGS-84，与官方 App 完全相同。
-  const gc = wgs84ToGcj02(longitude, latitude)
-  const address = await reverseGeocode(gc.lng, gc.lat)
+  // 反查地址：reverseGeocode 内部按端选择系统 Geocoder（APK，免转换）或
+  // 高德+GCJ-02 转换（Web）；上报 HA 的坐标保持设备原始值，与官方 App 相同。
+  const address = await reverseGeocode(longitude, latitude)
   await reportLocation(latitude, longitude, accuracy)
   return {
     ok: true,
