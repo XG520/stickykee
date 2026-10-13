@@ -66,7 +66,14 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 	services := handler.NewServices(manager)
 	prefs := handler.NewPrefs(repo, userPrefs, manager, hb)
 	users := handler.NewUsers(userRepo, userPrefs, manager)
-	ws := handler.NewWS(manager, nil, authOpt.Authenticate)
+	// 语音通话：内存房间 + 事件推送 + 语音帧 WS 中继（8080 媒体中继，不经 P2P）。
+	// push 回调供房间超时清理时向全员推送 ended 事件（如无人接听自动结束）。
+	callManager := call.NewManager(func(user string, ev map[string]any) {
+		if msg, err := json.Marshal(ev); err == nil {
+			hb.BroadcastUser(user, msg)
+		}
+	}, hb.BroadcastUserBinary)
+	ws := handler.NewWS(manager, nil, authOpt.Authenticate, callManager.AudioRoute)
 	agg := handler.NewAggregate(manager)
 	automation := handler.NewAutomation(manager)
 	devices := handler.NewDevices(repo, userPrefs, manager)
@@ -77,13 +84,7 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 	location := handler.NewLocation(manager, sensors)
 	media := handler.NewMedia(manager)
 
-	// 语音通话：内存房间 + WebRTC 信令中继。
-	// push 回调供房间超时清理时向全员推送 ended 事件（如无人接听自动结束）。
-	callManager := call.NewManager(func(user string, ev map[string]any) {
-		if msg, err := json.Marshal(ev); err == nil {
-			hb.BroadcastUser(user, msg)
-		}
-	})
+	// 语音通话：内存房间 + 信令事件推送（媒体经 /ws 二进制中继，不经 P2P）。
 	callHandler := handler.NewCall(callManager, hb, userRepo)
 
 	r.Route("/api/v1", func(r chi.Router) {
@@ -158,8 +159,6 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 			// App 安装包：需登录（防外链盗刷下载）；前端经 fetch 携带令牌取流保存。
 			r.Get("/app/info", handler.AppInfo)
 			r.Get("/app/download", handler.AppDownload)
-			// WebRTC ICE 配置（STUN/TURN 中继，跨网通话用）
-			r.Get("/ice", handler.IceServers)
 			r.Get("/devices", devices.List)
 			r.Post("/devices", devices.Register)
 			r.Put("/devices/{device_id}", devices.Rename)

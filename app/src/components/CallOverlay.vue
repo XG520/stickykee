@@ -61,7 +61,6 @@
                     <span class="material-symbols-outlined text-3xl"
                       :class="u.connected ? 'text-white' : 'text-white/45'">account_circle</span>
                   </div>
-                  <span v-if="u.speaking" class="absolute -inset-1 rounded-full border-2 border-primary/70 animate-ping"></span>
                 </div>
                 <p class="text-xs truncate max-w-full" :class="u.connected ? 'text-white' : 'text-white/45'">{{ u.name }}</p>
                 <p class="text-[10px] text-white/40 font-body">{{ u.me ? (callState.micMuted ? '已静音' : '我') : (u.connected ? '已连接' : '等待接听') }}</p>
@@ -89,10 +88,6 @@
               <span class="text-[11px] text-white/60 font-body">挂断</span>
             </div>
           </div>
-
-          <!-- 远端语音：每个连接的 peer 一个 audio -->
-          <audio v-for="u in remoteParticipants" :key="'au-' + u"
-            :srcObject="callState.active.peers.get(u)?.stream" autoplay playsinline></audio>
         </template>
       </div>
     </Transition>
@@ -110,14 +105,12 @@
 </template>
 
 <script setup>
-import { ref, computed, reactive, watch, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { auth } from '@/store'
 import {
   callState, acceptCall, rejectCall, hangup, toggleMute, END_TEXT,
 } from '@/utils/call'
 
-// 每个成员的连接状态（由 pc connectionstatechange 更新）
-const conn = reactive({})
 let timer = null
 const elapsed = ref('00:00')
 
@@ -129,53 +122,37 @@ function fmt(s) {
 
 watch(() => callState.active, (a) => {
   if (timer) { clearInterval(timer); timer = null }
-  if (!a) { Object.keys(conn).forEach((k) => delete conn[k]); return }
+  if (!a) return
   let s = 0
   elapsed.value = '00:00'
   timer = setInterval(() => { s += 1; elapsed.value = fmt(s) }, 1000)
 }, { immediate: true })
-
-// 为每个 peer 注册连接状态监听
-watch(() => callState.active && [...callState.active.peers.keys()], (keys) => {
-  if (!keys || !callState.active) return
-  for (const u of keys) {
-    if (conn[u] !== undefined) continue
-    const ctx = callState.active.peers.get(u)
-    conn[u] = ctx.pc.connectionState === 'connected'
-    ctx.pc.onconnectionstatechange = () => {
-      conn[u] = ctx.pc.connectionState === 'connected'
-    }
-  }
-}, { deep: true, immediate: true })
 
 onBeforeUnmount(() => { if (timer) clearInterval(timer) })
 
 // 结束原因 → 文案
 const endText = computed(() => END_TEXT[callState.ended?.reason] || '通话已结束')
 
-// 呼叫方仍在等待：除自己外没有任何成员建立连接
+// 媒体走 WS 中继：voiceReady=true 即本端语音管线就绪、房间成员经服务器互通，无逐 peer 协商
+const connected = computed(() => !!callState.active?.voiceReady)
+
+// 呼叫方仍在等待：对方尚未接通（语音管线未就绪且成员里有别人）
 const waiting = computed(() => {
   const a = callState.active
-  if (!a) return false
-  return [...a.members].some((u) => u !== auth.user && !conn[u])
+  if (!a || connected.value) return false
+  return [...a.members].some((u) => u !== auth.user)
 })
 
 // 参与者展示列表：自己 + 房间成员（保持顺序稳定）
 const participants = computed(() => {
   const a = callState.active
   if (!a) return []
-  const list = [{ name: auth.user, me: true, connected: !callState.micMuted }]
+  const list = [{ name: auth.user, me: true, connected: true }]
   for (const u of a.members) {
     if (u === auth.user) continue
-    list.push({ name: u, connected: !!conn[u] })
+    list.push({ name: u, connected: connected.value })
   }
   return list
-})
-
-const remoteParticipants = computed(() => {
-  const a = callState.active
-  if (!a) return []
-  return [...a.members].filter((u) => u !== auth.user)
 })
 </script>
 

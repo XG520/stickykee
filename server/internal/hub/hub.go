@@ -27,13 +27,19 @@ func New(log *slog.Logger) *Hub {
 	return &Hub{byIns: map[Scope]map[uint64]*Client{}, dev: map[Scope]map[string]*Client{}, log: log}
 }
 
+// OutMsg 写通道消息：Typ 与 gorilla/websocket 常量一致（1=Text 2=Binary）。
+type OutMsg struct {
+	Typ  int
+	Data []byte
+}
+
 // Client 表示一条已连接的前端 WS。
 type Client struct {
 	ID       uint64
 	DeviceID string // 浏览器持久设备唯一标识（来自 query device）
 	User     string // 已登录用户名
 	hub      *Hub
-	send     chan []byte // 写缓冲
+	send     chan OutMsg // 写缓冲
 	close    chan struct{}
 }
 
@@ -48,7 +54,7 @@ func (h *Hub) Register(instanceID int64, user, deviceID string) *Client {
 		User:     user,
 		DeviceID: deviceID,
 		hub:      h,
-		send:     make(chan []byte, 256),
+		send:     make(chan OutMsg, 256),
 		close:    make(chan struct{}),
 	}
 	scope := Scope{Instance: instanceID, User: user}
@@ -95,18 +101,27 @@ func (h *Hub) Unregister(instanceID int64, user string, c *Client) {
 	}
 }
 
-// Send 向单个连接发送消息（非阻塞，缓冲满则丢弃该连接）。
+// Send 向单个连接发送文本消息（非阻塞，缓冲满则丢弃该连接）。
 func (c *Client) Send(msg []byte) {
+	c.sendMsg(1, msg)
+}
+
+// SendBinary 向单个连接发送二进制消息（语音帧等；缓冲满则丢帧——音频允许）。
+func (c *Client) SendBinary(msg []byte) {
+	c.sendMsg(2, msg)
+}
+
+func (c *Client) sendMsg(typ int, msg []byte) {
 	select {
 	case <-c.close:
-	case c.send <- msg:
+	case c.send <- OutMsg{Typ: typ, Data: msg}:
 	default:
 		// 缓冲区满：丢弃
 	}
 }
 
 // SendChan 返回连接给写循环用的通道只读视图。
-func (c *Client) SendChan() <-chan []byte { return c.send }
+func (c *Client) SendChan() <-chan OutMsg { return c.send }
 
 // Closed 返回连接是否已关闭。
 func (c *Client) Closed() <-chan struct{} { return c.close }
@@ -132,6 +147,15 @@ func (h *Hub) SendToDevice(scope Scope, deviceID string, msg []byte) {
 
 // BroadcastUser 向指定用户的全部前端连接广播消息（与实例作用域无关，用于用户间 IM）。
 func (h *Hub) BroadcastUser(user string, msg []byte) {
+	h.broadcastUser(user, 1, msg)
+}
+
+// BroadcastUserBinary 向指定用户的全部前端连接广播二进制消息（通话语音帧中继）。
+func (h *Hub) BroadcastUserBinary(user string, msg []byte) {
+	h.broadcastUser(user, 2, msg)
+}
+
+func (h *Hub) broadcastUser(user string, typ int, msg []byte) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	for scope, m := range h.byIns {
@@ -139,7 +163,7 @@ func (h *Hub) BroadcastUser(user string, msg []byte) {
 			continue
 		}
 		for _, c := range m {
-			c.Send(msg)
+			c.sendMsg(typ, msg)
 		}
 	}
 }

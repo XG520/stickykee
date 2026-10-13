@@ -354,6 +354,13 @@ export function requestEntityRefresh(delay = 350) {
 let ws = null
 let wsTimer = null
 let retry = 1
+
+// 语音通话二进制上行：voice.js 经此把 Opus 帧写进与信令同一条 WS 连接（8080 中继）。
+export function wsSendBinary(bytes) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    try { ws.send(bytes) } catch { /* 忽略 */ }
+  }
+}
 let snapSeen = false // 是否已收到过首帧全量快照（用于记录首屏耗时并自动打印基准）
 let lastSeq = 0      // 增量流序号水位：后端按窗口合并推送并自增 seq，跳号即说明中间丢了帧
 
@@ -410,6 +417,7 @@ function connectWS() {
   lastSeq = 0 // 新连接会收到带 seq 的全量快照，水位从头开始
   mark('ws:connect')
   ws = new WebSocket(wsUrl(store.activeID, getDeviceId()))
+  ws.binaryType = 'arraybuffer' // 语音中继帧为二进制，需按 ArrayBuffer 接收
   ws.onopen = () => {
     backendOnline.value = true
     retry = 1
@@ -418,7 +426,12 @@ function connectWS() {
     startHeartbeat()
   }
   ws.onmessage = (ev) => {
-    lastMsgAt = Date.now() // 任何消息（含 pong）都续期活存
+    lastMsgAt = Date.now() // 任何消息（含 pong、语音帧）都续期活存
+    // 语音中继帧（二进制）：直进语音管线，不按 JSON 解析
+    if (ev.data instanceof ArrayBuffer) {
+      import('@/utils/voice').then((v) => v.feedVoiceRaw(ev.data)).catch(() => {})
+      return
+    }
     try {
       const m = JSON.parse(ev.data)
       count('ws:msg')

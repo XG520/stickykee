@@ -20,8 +20,11 @@ const (
 	sweepInterval  = 15 * time.Second
 )
 
-// PushFunc 由装配方注入：向指定用户的全部在线设备推送一个通话事件。
+// PushFunc 由装配方注入：向指定用户的全部在线设备推送一个通话事件（JSON 文本帧）。
 type PushFunc func(user string, ev map[string]any)
+
+// PushBinaryFunc 由装配方注入：向指定用户的全部在线连接转发一帧语音二进制（WS Binary）。
+type PushBinaryFunc func(user string, b []byte)
 
 // Room 表示一个通话房间。
 type Room struct {
@@ -78,16 +81,18 @@ func (r *Room) snapshot() (members []string, onlyOwnerJoined bool) {
 
 // Manager 是房间注册表。
 type Manager struct {
-	mu    sync.Mutex
-	rooms map[string]*Room
-	push  PushFunc
-	stop  chan struct{}
+	mu        sync.Mutex
+	rooms     map[string]*Room
+	push      PushFunc
+	audioPush PushBinaryFunc
+	stop      chan struct{}
 }
 
 // NewManager 构造房间管理器并启动超时清理协程。
-// push 用于向成员推送 ended 等生命周期事件（可为 nil：仅回收不通知）。
-func NewManager(push PushFunc) *Manager {
-	m := &Manager{rooms: map[string]*Room{}, push: push, stop: make(chan struct{})}
+// push 用于向成员推送 ended 等生命周期事件（可为 nil：仅回收不通知）；
+// audioPush 用于通话语音帧中继（可为 nil：不转发音频）。
+func NewManager(push PushFunc, audioPush PushBinaryFunc) *Manager {
+	m := &Manager{rooms: map[string]*Room{}, push: push, audioPush: audioPush, stop: make(chan struct{})}
 	go m.sweepLoop()
 	return m
 }
@@ -245,4 +250,35 @@ func (m *Manager) Leave(id, user string) (members []string, deleted bool) {
 		m.mu.Unlock()
 	}
 	return remain, end
+}
+
+// 音频帧头：1 字节版本 + 16 字节 roomID（ASCII，不足补 0），其后为 Opus 载荷。
+const audioHeaderLen = 17
+
+// AudioRoute 转发一帧通话语音：校验发送者是房间成员且帧内 roomID 匹配，
+// 然后向房间内其他成员的全部在线连接广播（8080 WS 中继，媒体不经 P2P）。
+// roomID 校验防伪造：非本房间成员/伪造房间号的帧直接丢弃。
+func (m *Manager) AudioRoute(sender string, frame []byte) {
+	if m.audioPush == nil || len(frame) < audioHeaderLen || frame[0] != 1 {
+		return
+	}
+	roomID := string(frame[1:audioHeaderLen])
+	m.mu.Lock()
+	r, ok := m.rooms[roomID]
+	if !ok {
+		m.mu.Unlock()
+		return
+	}
+	r.mu.RLock()
+	inRoom := r.members[sender]
+	r.mu.RUnlock()
+	m.mu.Unlock()
+	if !inRoom {
+		return
+	}
+	for _, u := range r.Members() {
+		if u != sender {
+			m.audioPush(u, frame)
+		}
+	}
 }

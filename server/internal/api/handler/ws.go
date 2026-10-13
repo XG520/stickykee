@@ -33,14 +33,15 @@ type WS struct {
 	manager      *ha.Manager
 	log          *slog.Logger
 	authenticate func(token string) (auth.Identity, bool) // 校验会话 token，返回身份
+	audio        func(user string, frame []byte)          // 通话语音二进制帧路由（可为 nil）
 }
 
-// NewWS 构造 WS handler。
-func NewWS(manager *ha.Manager, log *slog.Logger, authenticate func(token string) (auth.Identity, bool)) *WS {
+// NewWS 构造 WS handler。audio 用于把客户端上行语音帧交给 call.Manager 中继。
+func NewWS(manager *ha.Manager, log *slog.Logger, authenticate func(token string) (auth.Identity, bool), audio func(user string, frame []byte)) *WS {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &WS{manager: manager, log: log, authenticate: authenticate}
+	return &WS{manager: manager, log: log, authenticate: authenticate, audio: audio}
 }
 
 // ServeHTTP GET /api/v1/ws?instance={id}&token={token}
@@ -117,7 +118,7 @@ func (h *WS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			case msg := <-client.SendChan():
 				_ = conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
-				if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+				if err := conn.WriteMessage(msg.Typ, msg.Data); err != nil {
 					return
 				}
 			case <-ticker.C:
@@ -135,12 +136,19 @@ func (h *WS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return conn.SetReadDeadline(time.Now().Add(wsPongWait))
 	})
 	for {
-		_, raw, err := conn.ReadMessage()
+		msgType, raw, err := conn.ReadMessage()
 		if err != nil {
 			// 读错误触发关闭（包括客户端离开 / 心跳超时）。
 			break
 		}
 		_ = conn.SetReadDeadline(time.Now().Add(wsPongWait))
+		// 通话语音二进制帧：交给 call.Manager 按房间中继（8080 媒体中继）。
+		if msgType == websocket.BinaryMessage {
+			if h.audio != nil {
+				h.audio(ident.Username, raw)
+			}
+			continue
+		}
 		// 应用层心跳：前端发 JSON {"type":"ping"} 维持 TCP 活跃流量
 		// （WebSocket 控制帧 ping/pong 不计入运营商 NAT 空闲判定），
 		// 后端回 JSON {"type":"pong"} 让前端及时探测到连接存活。
