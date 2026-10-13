@@ -10,7 +10,6 @@ import (
 type Config struct {
 	HTTPAddr    string // HTTP 监听地址，如 :8080
 	DBPath      string // SQLite 数据库文件路径
-	JWTSecret   string // 前端会话签名密钥
 	LogLevel    string // 日志级别
 	SeedURL     string // 可选：种子 HA 实例地址
 	SeedToken   string // 可选：种子 HA 实例 Long-Lived Token
@@ -25,7 +24,6 @@ func Load() *Config {
 	return &Config{
 		HTTPAddr:    getenv("SN_HTTP_ADDR", ":8080"),
 		DBPath:      dbPath,
-		JWTSecret:   getenv("SN_JWT_SECRET", "dev-secret-change-me"),
 		LogLevel:    getenv("SN_LOG_LEVEL", "info"),
 		SeedURL:     os.Getenv("HA_DEFAULT_URL"),
 		SeedToken:   os.Getenv("HA_DEFAULT_TOKEN"),

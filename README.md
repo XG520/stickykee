@@ -45,11 +45,10 @@ go run ./cmd/server/main.go    # 监听 :8080，数据库 data/stickynuo.db
 # 构建（在仓库根目录）
 docker build -t stickynuo:latest .
 
-# 运行（SN_JWT_SECRET 务必固定一个随机长串，可用 openssl rand -hex 32 生成，不要每次重建都换）
+# 运行（会话 token 存 SQLite，无需配置签名密钥）
 docker run -d --name stickynuo \
   -p 8080:8080 \
   -v stickynuo-data:/data \
-  -e SN_JWT_SECRET=<改成随机长串> \
   -e TZ=Asia/Shanghai \
   --restart unless-stopped \
   stickynuo:latest
@@ -69,7 +68,6 @@ docker build -t stickynuo-server:latest ./server
 docker run -d --name stickynuo-server \
   -p 8080:8080 \
   -v stickynuo-data:/app/data \
-  -e SN_JWT_SECRET=<改成随机长串> \
   --restart unless-stopped \
   stickynuo-server:latest
 ```
@@ -82,7 +80,6 @@ docker run -d --name stickynuo-server \
 |---|---|---|
 | `SN_HTTP_ADDR` | `:8080` | HTTP 监听地址 |
 | `SN_DB_PATH` | `data/stickynuo.db` | SQLite 数据库路径（图标缓存默认建在其同目录） |
-| `SN_JWT_SECRET` | `dev-secret-change-me` | **生产必须改为随机长串**（`openssl rand -hex 32`），否则会话可被伪造 |
 | `SN_STATIC_DIR` | 空（不托管） | 设为前端 `dist/` 目录后由后端托管网页（合一镜像已内置 `/app/dist`） |
 | `SN_LOG_LEVEL` | `info` | 日志级别：debug / info / warn / error |
 | `SN_STANDALONE` | `0` | `1` 为无鉴权模式，仅限本地开发，生产禁用 |
