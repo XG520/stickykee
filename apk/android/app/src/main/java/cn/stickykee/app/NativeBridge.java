@@ -1150,6 +1150,20 @@ public class NativeBridge {
         }
     }
 
+    /** 返回系统级设备标识 ANDROID_ID（Settings.Secure）。
+     *  与应用签名+设备+用户绑定：卸载重装、清除应用数据后保持不变，
+     *  前端用它作为 device_id，避免多次安装产生重复设备。取不到返回空串（前端回退 localStorage）。 */
+    @JavascriptInterface
+    public String deviceUid() {
+        try {
+            return android.provider.Settings.Secure.getString(
+                    activity.getContentResolver(),
+                    android.provider.Settings.Secure.ANDROID_ID);
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
     /**
      * 下载最新 APK 并自动拉起系统安装器。
      * 进度经 window 事件 stickykee-apk 回传：{req, phase:'progress'|'done'|'error', pct, path, message}。

@@ -5,7 +5,9 @@ import api from '@/api'
 const DEV_ID_KEY = 'hc_device_id'
 const DEV_CACHE_KEY = 'hc_device'
 
-// 本地持久化唯一标识（同设备各浏览器独立）。
+// 本地唯一标识：APK 内优先系统级 ANDROID_ID（原生桥 deviceUid）——卸载重装、
+// 清应用数据后不变，避免多次安装产生重复设备；取不到再回退 localStorage UUID。
+// Web 端无原生桥，用 localStorage 持久化 UUID（同设备各浏览器独立）。
 function genId() {
   return (crypto.randomUUID && crypto.randomUUID())
     ? crypto.randomUUID()
@@ -13,6 +15,15 @@ function genId() {
 }
 export function getDeviceId() {
   try {
+    const n = window.StickyKeeNative
+    if (n && typeof n.deviceUid === 'function') {
+      const uid = (n.deviceUid() || '').trim()
+      if (uid) {
+        // 原生 UID 每次都稳定，但仍落一次 localStorage 作为原生桥异常时的兜底
+        if (localStorage.getItem(DEV_ID_KEY) !== uid) localStorage.setItem(DEV_ID_KEY, uid)
+        return uid
+      }
+    }
     let id = localStorage.getItem(DEV_ID_KEY)
     if (!id) { id = genId(); localStorage.setItem(DEV_ID_KEY, id) }
     return id
