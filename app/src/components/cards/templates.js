@@ -750,6 +750,122 @@ export const JS_FLIP_CLOCK = `// 翻页时钟：自走 1s 定时器驱动翻页�
   el._fcT = setInterval(tick, 1000)
 })()`
 
+// ================= 高德天气卡片（app 级：不依赖 HA 实体，用已配置的高德 Key 查询） =================
+// 链路：卡片 js → window.skAmapKey()（prefs.map_config.amap_key）→ 加载 AMap SDK →
+// CitySearch IP 定城市（adcode）→ Weather 插件实况 + 3 天预报。10 分钟自动刷新。
+export function tplAmapWeather() {
+  const html = `<div class="hc aw">
+  <div class="h-head">
+    <span class="h-ic material-symbols-outlined" style="color:var(--hc-info)">{{glyph}}</span>
+    <span class="h-mut aw-city">天气</span>
+  </div>
+  <div class="aw-body"><div class="aw-status">加载中…</div></div>
+  <div class="h-row" style="justify-content:space-between">
+    <span class="h-mut">高德天气</span>
+    <span class="h-mut aw-time"></span>
+  </div>
+</div>`
+  const css = shell + `.hc.aw{flex:1;min-height:0;display:flex;flex-direction:column;gap:4px;overflow:hidden;padding:8px}
+.h-head{display:flex;align-items:center;gap:4px}
+.h-ic{font-size:11px}
+.h-mut{font-size:8px;color:var(--hc-sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.h-row{display:flex;align-items:center;gap:4px}
+.aw-body{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;gap:3px}
+.aw-status{font-size:9px;color:var(--hc-sub);text-align:center;padding:0 4px}
+.aw-now{display:flex;align-items:center;justify-content:center;gap:10px}
+.aw-bigic{font-size:36px;color:var(--hc-info)}
+.aw-temp{font-size:36px;font-weight:600;color:var(--hc-text);line-height:1;font-variant-numeric:tabular-nums}
+.aw-temp i{font-style:normal;font-size:16px;color:var(--hc-sub);font-weight:400}
+.aw-desc{font-size:11px;font-weight:600;color:var(--hc-text);text-align:center}
+.aw-meta{font-size:9px;color:var(--hc-sub);text-align:center}
+.aw-fc{display:flex;gap:4px;margin-top:5px}
+.aw-day{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:1px;background:var(--hc-bg2);border:1px solid var(--hc-border);border-radius:8px;padding:5px 0 4px}
+.aw-dd{font-size:8px;color:var(--hc-sub);white-space:nowrap}
+.aw-di{font-size:15px;color:var(--hc-info)}
+.aw-dt{font-size:9px;color:var(--hc-text);font-variant-numeric:tabular-nums;white-space:nowrap}`
+  return { html, css }
+}
+
+export const JS_AMAP_WEATHER = `// 高德天气：IP 定城市 → 实况 + 3 天预报；10 分钟刷新，卡片卸载自动停
+;(function () {
+  var bodyEl = el.querySelector('.aw-body')
+  var cityEl = el.querySelector('.aw-city')
+  var timeEl = el.querySelector('.aw-time')
+  var busy = false
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[<>&"]/g, function (c) {
+      return { '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]
+    })
+  }
+  function say(msg) { if (bodyEl) bodyEl.innerHTML = '<div class="aw-status">' + esc(msg) + '</div>' }
+  function icon(txt) {
+    txt = String(txt || '')
+    if (/雷/.test(txt)) return 'thunderstorm'
+    if (/雨/.test(txt)) return 'rainy'
+    if (/雪/.test(txt)) return 'weather_snowy'
+    if (/雾|霾/.test(txt)) return 'foggy'
+    if (/沙|尘/.test(txt)) return 'dust'
+    if (/阴/.test(txt)) return 'cloud'
+    if (/云/.test(txt)) return 'partly_cloudy_day'
+    if (/晴/.test(txt)) return 'wb_sunny'
+    return 'cloud'
+  }
+  function render(live, fc) {
+    var days = (fc && fc.forecasts) || []
+    var h = '<div class="aw-now">'
+      + '<span class="material-symbols-outlined aw-bigic">' + icon(live.weather) + '</span>'
+      + '<span class="aw-temp">' + esc(live.temperature) + '<i>°C</i></span>'
+      + '</div>'
+      + '<div class="aw-desc">' + esc(live.weather) + '</div>'
+      + '<div class="aw-meta">' + esc(live.winddirection) + '风' + esc(live.windpower) + '级 · 湿度 ' + esc(live.humidity) + '%</div>'
+    if (days.length) {
+      h += '<div class="aw-fc">'
+      for (var i = 0; i < Math.min(days.length, 3); i++) {
+        var d = days[i]
+        h += '<div class="aw-day"><span class="aw-dd">' + (i === 0 ? '今天' : esc(String(d.date || '').slice(5))) + '</span>'
+          + '<span class="material-symbols-outlined aw-di">' + icon(d.dayweather) + '</span>'
+          + '<span class="aw-dt">' + esc(d.nighttemp) + '° / ' + esc(d.daytemp) + '°</span></div>'
+      }
+      h += '</div>'
+    }
+    if (bodyEl) bodyEl.innerHTML = h
+    if (timeEl) timeEl.textContent = '更新 ' + esc(String(live.reporttime || '').slice(11, 16))
+  }
+  function start() {
+    AMap.plugin('AMap.CitySearch', function () {
+      new AMap.CitySearch().getLocalCity(function (st, city) {
+        var code = city && city.adcode
+        if (!code) { busy = false; say('城市识别失败（网络或 IP 库未覆盖）'); return }
+        if (cityEl && city.city) cityEl.textContent = String(city.city).replace(/市$/, '')
+        AMap.plugin('AMap.Weather', function () {
+          var w = new AMap.Weather()
+          w.getLive(code, function (e1, live) {
+            if (e1 || !live || !live.temperature) { busy = false; say('实况获取失败，请检查 Key 类型（需 Web 服务）'); return }
+            w.getForecast(code, function (e2, fc) {
+              busy = false
+              render(live, (e2 || !fc) ? null : fc)
+            })
+          })
+        })
+      })
+    })
+  }
+  function load() {
+    if (busy || !el.isConnected) return
+    if (typeof window.skAmapKey !== 'function') { say('等待配置加载…'); return }
+    busy = true
+    Promise.resolve(window.skAmapKey()).then(function (key) {
+      if (!key) { busy = false; say('未配置高德 Key（设置 → 地图定位）'); return }
+      if (window.AMap) { start(); return }
+      window.skLoadAMap(key).then(function () { start() }).catch(function () { busy = false; say('地图 SDK 加载失败') })
+    }).catch(function () { busy = false; say('配置读取失败') })
+  }
+  clearInterval(el._awT)
+  load()
+  el._awT = setInterval(load, 600000)
+})()`
+
+
 // ================= 29. 基础日期卡片 =================
 export function tplDate() {
   const html = `<div class="hc">

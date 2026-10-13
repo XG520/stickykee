@@ -50,7 +50,7 @@
           v-for="s in scenes"
           :key="s._entity || s.name"
           class="bg-surface rounded-2xl p-5 relative overflow-hidden transition-all duration-200 group"
-          :class="[ s.disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer hover:shadow-lg hover:-translate-y-0.5 active:scale-[0.98]', s.on ? 'border border-primary/30' : 'border border-border hover:border-primary/40' ]"
+          :class="[ s.disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer active:scale-[0.98]', s.on ? 'border border-primary/30' : 'border border-border' ]"
           :style="s.on ? { borderColor: s.border } : {}"
           @click="runScene(s)"
         >

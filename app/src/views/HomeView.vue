@@ -849,15 +849,10 @@ onBeforeUnmount(() => {
   overflow: hidden;
   container-type: inline-size;
   border-radius: 16px;
+  /* 保留 transform 过渡：编辑模式拖拽换位时其余卡片让位仍靠它平滑动画 */
   transition: transform .16s ease, box-shadow .16s ease;
 }
-/* 悬停微抬升：暗示卡片可交互（编辑模式下同样生效，操作条随卡移动） */
-@media (hover: hover) {
-  .hc-card-holder:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 10px 28px -8px rgb(0 0 0 / .22);
-  }
-}
+/* 卡片悬停不做任何效果（按需求移除微抬升/阴影） */
 /* 编辑态：卡片可拖拽换位（手机桌面式）。禁用文字选中与触摸滚动，避免拖拽误操作 */
 .hc-card-editable {
   cursor: grab;

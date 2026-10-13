@@ -1,4 +1,6 @@
 // 高德地图 JS SDK 动态加载（单例，避免重复注入 script）。
+import { getPrefs } from '@/utils/prefs'
+
 let cache = null
 let promise = null
 
@@ -50,4 +52,25 @@ function waitReady(resolve, reject) {
     setTimeout(check, 100)
   }
   check()
+}
+
+// 读取实例配置里的高德 Key（prefs.map_config.amap_key），进程内缓存。
+let keyCache = null
+export async function getAmapKey() {
+  if (keyCache !== null) return keyCache
+  try {
+    const { data } = await getPrefs()
+    let mc = {}
+    if (data && data.map_config) { try { mc = JSON.parse(data.map_config) } catch { /* 忽略坏 JSON */ } }
+    keyCache = (mc.amap_key || '').trim()
+  } catch { keyCache = '' }
+  return keyCache
+}
+
+// 卡片 js（new Function 环境，无模块 import 能力）经 window 使用以上能力：
+//   window.skAmapKey()  → Promise<string> 当前配置的高德 Key
+//   window.skLoadAMap(k) → Promise<AMap> 加载 SDK
+if (typeof window !== 'undefined') {
+  window.skAmapKey = getAmapKey
+  window.skLoadAMap = loadAMap
 }

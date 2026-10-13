@@ -1012,7 +1012,7 @@ function overviewData({ all }) {
 // 基础卡默认头部图标（可被卡片自定义图标 card.icon 覆盖）
 const DEF_GLYPH = {
   greeting: 'home', weather: 'partly_cloudy_day',
-  clock: 'av_timer', date: 'calendar_month', overview: 'devices',
+  clock: 'av_timer', flipclock: 'flip', amapweather: 'weather', date: 'calendar_month', overview: 'devices',
 }
 
 // ================= 分发 =================
@@ -1023,6 +1023,7 @@ export function computeData(type, ctx) {
     case 'greeting': d = greetingData(ctx); break
     case 'weather': d = weatherData(ctx); break
     case 'map': d = {}; break
+    case 'amapweather': d = {}; break
     case 'toggle': d = toggleData(resolveToggleEntity(ctx), hasData); break
     case 'clock': d = clockData(ctx.now); break
     case 'flipclock': d = flipClockData(ctx.now); break

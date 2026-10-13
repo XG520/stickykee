@@ -7,7 +7,7 @@ import {
   tplToggle, tplSensor, tplBinary, tplClimate, tplCover, tplMedia, tplSecurity, tplCamera,
   tplVacuum, tplAction, tplGeneric, tplPerson, tplWeatherEntity, tplSelect, tplText,
   tplDatetime, tplTimer, tplCalendar, tplUpdate, tplEvent, tplPlant, tplLawnMower, tplSun,
-  tplImage, tplGreeting, tplWeather, tplMap, tplClock, tplFlipClock, tplDate, tplOverview, JS_COMMON, JS_FLIP_CLOCK,
+  tplImage, tplGreeting, tplWeather, tplMap, tplClock, tplFlipClock, tplDate, tplOverview, JS_COMMON, JS_FLIP_CLOCK, tplAmapWeather, JS_AMAP_WEATHER,
 } from './templates'
 
 export { computeData } from './data'
@@ -31,6 +31,8 @@ export const cardDefaults = {
   clock: mk({ label: '时钟', icon: 'av_timer', colorCls: 'text-info', w: 1, h: 1, needEntity: false, entityDomains: null, group: '基础仪表盘' }, tplClock),
   // 翻页时钟：默认 js 为翻页驱动逻辑（用户可改），其余同 mk 组装
   flipclock: { ...mk({ label: '翻页时钟', icon: 'flip', colorCls: 'text-info', w: 2, h: 1, needEntity: false, entityDomains: null, group: '基础仪表盘' }, tplFlipClock), js: JS_FLIP_CLOCK },
+  // 高德天气：app 级卡片，用实例配置的高德 Key 查询（不依赖 HA 天气实体）
+  amapweather: { ...mk({ label: '高德天气', icon: 'weather', colorCls: 'text-info', w: 1, h: 2, needEntity: false, entityDomains: null, group: '基础仪表盘' }, tplAmapWeather), js: JS_AMAP_WEATHER },
   date: mk({ label: '日期', icon: 'calendar_month', colorCls: 'text-warning', w: 1, h: 1, needEntity: false, entityDomains: null, group: '基础仪表盘' }, tplDate),
   overview: mk({ label: '设备概览', icon: 'devices', colorCls: 'text-success', w: 2, h: 1, needEntity: false, entityDomains: null, group: '基础仪表盘' }, tplOverview),
 
@@ -74,13 +76,22 @@ export function renderTemplate(html, data) {
 }
 
 // 把用户 CSS 作用到指定容器：#card-xxx 或 #preview-xxx。
-// 普通规则加作用域前缀；@media/@keyframes 保持原样。
+// 普通规则加作用域前缀；@keyframes 整块原样保留——否则步进选择器 from/to/0%
+// 会被「}选择器{」规则误加前缀，整个动画声明非法导致翻页等动画失效。
 export function scopeCss(css, holderSel) {
   try {
-    return String(css || '').replace(/(^|})([^@][^{}]*?)\{/g, (_, pre, sel) => {
-      const scoped = sel.split(',').map((s) => `${holderSel} ${s.trim()}`).join(',')
+    let s = String(css || '')
+    const frames = []
+    // 先摘出 @keyframes 整块（含嵌套的步进规则），用占位符顶替，作用域化后再还原
+    s = s.replace(/@keyframes\s+[\w-]+\s*\{(?:[^{}]*\{[^{}]*\})+\s*\}/g, (m) => {
+      frames.push(m)
+      return `\u0000${frames.length - 1}\u0000`
+    })
+    s = s.replace(/(^|})([^@][^{}]*?)\{/g, (_, pre, sel) => {
+      const scoped = sel.split(',').map((x) => `${holderSel} ${x.trim()}`).join(',')
       return `${pre}${scoped} {`
     })
+    return s.replace(/\u0000(\d+)\u0000/g, (_, n) => frames[+n])
   } catch {
     return css
   }
