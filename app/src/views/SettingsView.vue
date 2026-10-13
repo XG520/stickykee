@@ -705,14 +705,36 @@
         </div>
         <div class="rounded-xl bg-background border border-border px-3 py-2.5">
           <p class="text-muted text-xs mb-1">安卓 App</p>
-          <button v-if="apkAvailable" @click="downloadApk" :disabled="apkSaving"
-            class="text-primary text-sm font-semibold inline-flex items-center gap-1 hover:underline disabled:opacity-60">
-            <span v-if="apkSaving" class="hc-spinner"></span>
-            <span v-else class="material-symbols-outlined text-base">download</span>
-            {{ apkSaving ? '下载中…' : '下载安装包' }}
-          </button>
-          <p v-else-if="apkChecked" class="text-muted text-sm">未提供</p>
-          <p v-else class="text-muted text-sm">检测中…</p>
+          <!-- APK 内：发现新版本 → 一键更新（原生下载 + 拉起系统安装器） -->
+          <template v-if="canInAppUpdate">
+            <button v-if="apkUpdateAvailable && !apkUpdating" @click="updateApk"
+              class="text-primary text-sm font-semibold inline-flex items-center gap-1 hover:underline">
+              <span class="material-symbols-outlined text-base">system_update_alt</span>
+              发现新版本，立即更新
+            </button>
+            <div v-else-if="apkUpdating" class="text-sm">
+              <div class="flex items-center gap-2 text-muted">
+                <span class="hc-spinner"></span>
+                <span>下载中 {{ apkProgress }}%</span>
+              </div>
+              <div class="mt-1.5 h-1 rounded bg-border overflow-hidden">
+                <div class="h-full bg-primary transition-all duration-200" :style="{ width: apkProgress + '%' }"></div>
+              </div>
+            </div>
+            <p v-else-if="apkChecked" class="text-muted text-sm">已是最新</p>
+            <p v-else class="text-muted text-sm">检测中…</p>
+          </template>
+          <!-- Web 端：仅提供安装包下载 -->
+          <template v-else>
+            <button v-if="apkAvailable" @click="downloadApk" :disabled="apkSaving"
+              class="text-primary text-sm font-semibold inline-flex items-center gap-1 hover:underline disabled:opacity-60">
+              <span v-if="apkSaving" class="hc-spinner"></span>
+              <span v-else class="material-symbols-outlined text-base">download</span>
+              {{ apkSaving ? '下载中…' : '下载安装包' }}
+            </button>
+            <p v-else-if="apkChecked" class="text-muted text-sm">未提供</p>
+            <p v-else class="text-muted text-sm">检测中…</p>
+          </template>
         </div>
       </div>
       <p v-if="versionMismatch" class="mt-2 text-xs font-body text-warning">
@@ -847,7 +869,7 @@
 <script setup>
 import { ref, reactive, watch, onMounted, onUnmounted, computed } from 'vue'
 import ToggleRow from '@/components/ToggleRow.vue'
-import api from '@/api'
+import api, { getToken } from '@/api'
 import { listDevices, ensureDevice, renameDevice, deleteDevice, getDeviceId } from '@/utils/device'
 import { availableSensors, unavailableReason, startSensorMonitor, buildReportPayload } from '@/utils/sensors'
 import { showNotify, setBlackout, setScreenBrightness, setScreenWake, blackout, saveBlackoutDismiss, watchAmbientLight } from '@/utils/browserCommands'
@@ -1416,10 +1438,60 @@ async function loadVersion() {
 const apkAvailable = ref(false)
 const apkChecked = ref(false)
 const apkSaving = ref(false)
+// APK 应用内更新：服务端版本高于本机版本时提示，一键下载并拉起系统安装器
+// （isApk 已从 serverConfig 导入；canInAppUpdate 区分旧 APK 无原生下载能力的情形）
+const canInAppUpdate = !!window.StickyKeeNative?.downloadAndInstallApk
+const apkUpdateAvailable = ref(false)
+const apkUpdating = ref(false)
+const apkProgress = ref(0)
+let apkReq = ''
+// 版本比较：>0 表示 b 比 a 新（逐段数值比较，如 1.0.10 > 1.0.9）
+function cmpVer(a, b) {
+  const pa = String(a || '').split('.').map((n) => parseInt(n) || 0)
+  const pb = String(b || '').split('.').map((n) => parseInt(n) || 0)
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pb[i] || 0) - (pa[i] || 0)
+    if (d) return d
+  }
+  return 0
+}
+function onApkEvent(e) {
+  const d = e?.detail || {}
+  if (d.req !== apkReq) return
+  if (d.phase === 'progress') { apkProgress.value = d.pct || 0; return }
+  if (d.phase === 'done') {
+    apkUpdating.value = false
+    apkProgress.value = 100
+    flash('下载完成，请在弹出的界面确认安装', false)
+    return
+  }
+  if (d.phase === 'error') {
+    apkUpdating.value = false
+    flash(d.message || '更新下载失败', true)
+  }
+}
+// 立即更新：经原生桥下载（带进度）→ 完成后原生自动拉起系统安装器
+function updateApk() {
+  if (apkUpdating.value) return
+  apkUpdating.value = true
+  apkProgress.value = 0
+  apkReq = 'u' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+  try {
+    window.StickyKeeNative.downloadAndInstallApk(
+      location.origin + '/api/v1/app/download', getToken() || '', apkReq)
+  } catch {
+    apkUpdating.value = false
+    flash('更新失败：原生下载不可用', true)
+  }
+}
 async function loadAppInfo() {
   try {
     const { data } = await api.appInfo()
     apkAvailable.value = !!data?.apkAvailable
+    // APK 环境下比较服务端版本与本机版本：服务端更高即提示更新
+    if (isApk && data?.apkAvailable && data?.version) {
+      apkUpdateAvailable.value = cmpVer(appVersion, data.version) < 0
+    }
   } catch { /* 服务端旧版本无此接口：保持未提供 */ }
   apkChecked.value = true
 }
@@ -1478,6 +1550,7 @@ onMounted(() => {
   loadAppInfo()
   loadPrefs(); loadDevices(); loadSensors(); loadUsers()
   if (canPickRing) { loadRingNames(); window.addEventListener('stickykee-ring', onRingPicked) }
+  if (isApk) window.addEventListener('stickykee-apk', onApkEvent) // 应用内更新进度
   loadSiteName().then(() => { siteNameDraft.value = siteName.value }) // 同步后端权威值
   stopLightWatch = watchAmbientLight() // 面板打开期间持续读环境光，用于「实时值」显示
 })
@@ -1485,6 +1558,7 @@ onUnmounted(() => {
   if (stopMonitor) { stopMonitor(); stopMonitor = null }
   if (stopLightWatch) { stopLightWatch(); stopLightWatch = null }
   if (canPickRing) window.removeEventListener('stickykee-ring', onRingPicked)
+  if (isApk) window.removeEventListener('stickykee-apk', onApkEvent)
 })
 </script>
 

@@ -42,12 +42,17 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
+import androidx.core.content.FileProvider;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.HashMap;
@@ -1028,6 +1033,115 @@ public class NativeBridge {
                 }
             }
         });
+    }
+
+    // ==================== APK 应用内更新 ====================
+
+    /** 返回当前 APK 版本名（build.gradle 的 versionName，如 "1.0.5"）。 */
+    @JavascriptInterface
+    public String getAppVersion() {
+        try {
+            return activity.getPackageManager()
+                    .getPackageInfo(activity.getPackageName(), 0).versionName;
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    /**
+     * 下载最新 APK 并自动拉起系统安装器。
+     * 进度经 window 事件 stickykee-apk 回传：{req, phase:'progress'|'done'|'error', pct, path, message}。
+     *
+     * @param url   完整下载地址（location.origin + '/api/v1/app/download'）
+     * @param token 登录令牌（下载接口需鉴权）
+     * @param req   前端请求标识，事件回传用于配对
+     */
+    @JavascriptInterface
+    public void downloadAndInstallApk(final String url, final String token, final String req) {
+        final Context ctx = activity.getApplicationContext();
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                File dst = new File(ctx.getExternalFilesDir(null), "update" + File.separator + "update.apk");
+                try {
+                    dst.getParentFile().mkdirs();
+                    HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+                    if (token != null && !token.isEmpty()) {
+                        conn.setRequestProperty("Authorization", "Bearer " + token);
+                    }
+                    conn.setConnectTimeout(10000);
+                    conn.setReadTimeout(30000);
+                    int code = conn.getResponseCode();
+                    if (code < 200 || code >= 300) {
+                        dispatchApk(req, "error", 0, "服务端返回 " + code);
+                        return;
+                    }
+                    long total = conn.getContentLength();
+                    InputStream is = conn.getInputStream();
+                    OutputStream os = new FileOutputStream(dst);
+                    byte[] buf = new byte[8192];
+                    long read = 0;
+                    int n, lastPct = -1;
+                    while ((n = is.read(buf)) > 0) {
+                        os.write(buf, 0, n);
+                        read += n;
+                        if (total > 0) {
+                            int pct = (int) (read * 100 / total);
+                            if (pct != lastPct) {
+                                lastPct = pct;
+                                dispatchApk(req, "progress", pct, null);
+                            }
+                        }
+                    }
+                    os.close();
+                    is.close();
+                    dispatchApk(req, "done", 100, dst.getAbsolutePath());
+                    installApkFile(ctx, dst); // 下载完成自动拉起系统安装器
+                } catch (Exception e) {
+                    dispatchApk(req, "error", 0, e.getMessage() == null ? "下载失败" : e.getMessage());
+                }
+            }
+        }).start();
+    }
+
+    /** 向 JS 派发更新进度事件 stickykee-apk。 */
+    private void dispatchApk(final String req, final String phase, final int pct, final String extra) {
+        final WebView wv = webView;
+        if (wv == null) return;
+        final String js = "window.dispatchEvent(new CustomEvent('stickykee-apk',{detail:{"
+                + "req:" + JSONObject.quote(req == null ? "" : req)
+                + ",phase:" + JSONObject.quote(phase)
+                + ",pct:" + pct
+                + ",path:" + JSONObject.quote("done".equals(phase) && extra != null ? extra : "")
+                + ",message:" + JSONObject.quote("error".equals(phase) && extra != null ? extra : "")
+                + "}}))";
+        activity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    wv.evaluateJavascript(js, null);
+                } catch (Exception ignored) {
+                }
+            }
+        });
+    }
+
+    /** 经 FileProvider 拉起系统安装器；未授权「安装未知应用」时引导到系统设置页。 */
+    private void installApkFile(Context ctx, File apk) {
+        try {
+            Uri uri = FileProvider.getUriForFile(ctx, ctx.getPackageName() + ".fileprovider", apk);
+            Intent it = new Intent(Intent.ACTION_VIEW);
+            it.setDataAndType(uri, "application/vnd.android.package-archive");
+            it.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+            ctx.startActivity(it);
+        } catch (Exception e) {
+            try {
+                ctx.startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:" + ctx.getPackageName()))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            } catch (Exception ignored) {
+            }
+        }
     }
 
     // ==================== 通话铃声（铃声音量流 + 系统铃声选择器） ====================
