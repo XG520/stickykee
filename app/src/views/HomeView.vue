@@ -25,9 +25,9 @@
         :class="teleportToNav ? '' : 'mb-4'"
         @mouseenter="toolbarEnter" @mouseleave="toolbarLeave">
 
-        <!-- 页签区：外层不加边框/底色（只保留固定宽度与横向滚动），页签自身是胶囊样式 -->
+        <!-- 页签区：手机端 flex-1 与右侧图标按钮同行（消除独占一行的空档），sm 起固定宽度 -->
         <div v-if="loaded && (editing || pages.length > 1)"
-          class="flex w-full sm:w-80 shrink-0 items-center gap-1 min-w-0">
+          class="flex w-auto flex-1 sm:w-80 sm:flex-none shrink-0 items-center gap-1 min-w-0">
           <div ref="tabsEl" class="hc-tabs flex flex-1 min-w-0 items-center gap-1.5 overflow-x-auto">
             <div v-for="(p, i) in pages" :key="p.id"
               :data-active="i === currentPageIndex ? '1' : null"

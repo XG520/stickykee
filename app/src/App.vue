@@ -14,8 +14,8 @@
       <template v-if="!ui.immersive">
         <TheHeader />
 
-        <!-- 桌面端顶部导航 -->
-        <div class="max-w-screen-2xl mx-auto px-6 pt-4">
+        <!-- 桌面端顶部导航（手机端整个容器隐藏，避免留出 pt-4 空档） -->
+        <div class="hidden md:block max-w-screen-2xl mx-auto px-6 pt-4">
           <TheNavBar />
         </div>
       </template>
@@ -37,7 +37,7 @@
            表现为「闪现无样式的首页」；同步交换还能避免新旧重型页同帧挂载掉帧。
            keep-alive 缓存首页：仪表盘卡片数多（含地图卡），移动端切走再切回
            重新挂载+重新拉布局耗时过长；缓存后秒回，HA 实时数据仍经 store 推送保持新鲜。 -->
-      <main class="max-w-screen-2xl mx-auto px-6 pt-5 pb-10">
+      <main class="max-w-screen-2xl mx-auto px-6 pt-3 md:pt-5 pb-10">
         <router-view v-slot="{ Component }">
           <keep-alive include="HomeView">
             <component :is="Component" />
