@@ -357,11 +357,56 @@ let retry = 1
 let snapSeen = false // 是否已收到过首帧全量快照（用于记录首屏耗时并自动打印基准）
 let lastSeq = 0      // 增量流序号水位：后端按窗口合并推送并自增 seq，跳号即说明中间丢了帧
 
+// ---- 应用层心跳：维持 TCP 活跃流量 + 超时探测 ----
+// Android WebView 后台时 JS setInterval 被节流到 1min+，
+// 运营商 NAT 对"长时间只有 WebSocket 控制帧"的连接 5min 就掐。
+// 应用层 JSON ping 计入流量，每 25s 发一次；40s 没任何消息即判断主动重连。
+const HB_INTERVAL = 25000   // ping 发送间隔（ms）
+const HB_TIMEOUT = 40000    // 任何消息超时（超过则主动 close 触发重连）
+let hbTimer = null          // setInterval 句柄
+let lastMsgAt = 0           // 最后收到消息的时间戳
+
+function stopHeartbeat() {
+  if (hbTimer) { clearInterval(hbTimer); hbTimer = null }
+}
+function startHeartbeat() {
+  stopHeartbeat()
+  lastMsgAt = Date.now()
+  hbTimer = setInterval(() => {
+    // 超时探测：40s 内没有任何消息（含 pong 或业务数据）→ 连接已死
+    if (Date.now() - lastMsgAt > HB_TIMEOUT) {
+      stopHeartbeat()
+      try { ws && ws.close() } catch {}
+      return
+    }
+    // 发 JSON ping：计入运营商 NAT 活跃流量
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      try { ws.send(JSON.stringify({ type: 'ping' })) } catch {}
+    }
+  }, HB_INTERVAL)
+}
+
+// 探测活存：用于 visibilitychange 回到前台时快速确认连接是否真的通。
+// 发一次 ping，3s 内没收到任何消息就强制 close 触发重连。
+function probeLivenessThen() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return false
+  const before = lastMsgAt
+  try { ws.send(JSON.stringify({ type: 'ping' })) } catch { try { ws.close() } catch {} return false }
+  const guard = setTimeout(() => {
+    if (lastMsgAt === before) {
+      // 3s 内 lastMsgAt 没更新 → 连接已死
+      try { ws && ws.close() } catch {}
+    }
+  }, 3000)
+  ws.addEventListener('message', () => clearTimeout(guard), { once: true })
+  return true
+}
+
 function connectWS() {
   if (!store.ready || store.activeID <= 0) return
   // 未配置个人 HA token：不建立实时连接（后端不会为无 token 用户开连接）。
   if (!haTokenConfigured.value) return
-  if (ws) { try { ws.close() } catch {} }
+  if (ws) { stopHeartbeat(); try { ws.close() } catch {} }
   lastSeq = 0 // 新连接会收到带 seq 的全量快照，水位从头开始
   mark('ws:connect')
   ws = new WebSocket(wsUrl(store.activeID, getDeviceId()))
@@ -370,11 +415,14 @@ function connectWS() {
     retry = 1
     mark('ws:open')
     measure('boot:wsOpen', 'boot:js')
+    startHeartbeat()
   }
   ws.onmessage = (ev) => {
+    lastMsgAt = Date.now() // 任何消息（含 pong）都续期活存
     try {
       const m = JSON.parse(ev.data)
       count('ws:msg')
+      if (m.type === 'pong') return // 心跳应答，上面已续期时间戳
       if (m.type === 'state') {
         const list = m.data || []
         count('ws:entities', list.length)
@@ -411,6 +459,7 @@ function connectWS() {
     } catch { /* 忽略坏帧 */ }
   }
   ws.onclose = () => {
+    stopHeartbeat()
     ws = null
     // 指数退避重连（2s→4s→…→20s 封顶）
     const delay = Math.min(2 * retry, 20) * 1000
@@ -422,12 +471,18 @@ function connectWS() {
   ws.onerror = () => { try { ws.close() } catch {} }
 }
 
-// 回到前台立即恢复连接：后台被冻结期间 WS 可能已断，
-// 指数退避最长 20s 太慢，切回前台时直接重连。
+// 回到前台立即恢复/探测连接：后台被冻结期间 WS 可能已断，
+// visibilitychange 时：ws 不存在 → 直接重连；ws 存在 → 3s 探测活存，
+// 探测失败则强制 close 触发 onclose 的指数退避重连。
 if (typeof document !== 'undefined') {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible') return
-    if (ws || !store.ready || store.activeID <= 0 || !haTokenConfigured.value) return
+    if (!store.ready || store.activeID <= 0 || !haTokenConfigured.value) return
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      probeLivenessThen()
+      return
+    }
+    // ws 不存在或已关闭：重置退避并立即重连
     retry = 1
     if (wsTimer) { clearTimeout(wsTimer); wsTimer = null }
     connectWS()

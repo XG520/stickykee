@@ -135,11 +135,21 @@ func (h *WS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return conn.SetReadDeadline(time.Now().Add(wsPongWait))
 	})
 	for {
-		if _, _, err := conn.ReadMessage(); err != nil {
+		_, raw, err := conn.ReadMessage()
+		if err != nil {
 			// 读错误触发关闭（包括客户端离开 / 心跳超时）。
 			break
 		}
 		_ = conn.SetReadDeadline(time.Now().Add(wsPongWait))
+		// 应用层心跳：前端发 JSON {"type":"ping"} 维持 TCP 活跃流量
+		// （WebSocket 控制帧 ping/pong 不计入运营商 NAT 空闲判定），
+		// 后端回 JSON {"type":"pong"} 让前端及时探测到连接存活。
+		var probe struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(raw, &probe); err == nil && probe.Type == "ping" {
+			_ = writeJSON(conn, map[string]any{"type": "pong"})
+		}
 	}
 	<-writeDone
 }
