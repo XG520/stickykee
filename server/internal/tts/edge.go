@@ -4,8 +4,6 @@ package tts
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -34,22 +32,12 @@ func NewEdgeTTS() *EdgeTTS {
 const edgeTrustedToken = "6A5AA1D4EAFF4E9FB37E23D68491D6F4"
 
 // 鉴权所需的浏览器指纹常量（与微软 Read Aloud 扩展一致，过旧值会被 403 拒绝）。
+// 2026-10-10 起微软强制 v2 DRM token，版本号随 Edge 155。
 const (
-	edgeChromiumFullVersion = "143.0.3650.75"
-	edgeUserAgent           = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0"
+	edgeChromiumFullVersion = "155.0.4283.45"
+	edgeUserAgent           = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0"
 	edgeOrigin              = "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold"
 )
-
-// secMsgGEC 计算 Edge TTS 鉴权 token Sec-MS-GEC。
-// 公式（微软 Read Aloud 扩展 DRM）：取当前 UTC 时间 + Windows 纪元（11644473600s），
-// 向下对齐 5 分钟窗口，转 100ns ticks 后拼接受信 token 求 SHA-256，输出大写十六进制。
-// 该值必须随 URL 查询串传递（Sec-MS-GEC / Sec-MS-GEC-Version），放请求头会被 403 拒绝。
-func secMsgGEC(now time.Time) string {
-	sec := now.Unix() + 11644473600
-	sec -= sec % 300
-	sum := sha256.Sum256([]byte(fmt.Sprintf("%d%s", sec*10000000, edgeTrustedToken)))
-	return strings.ToUpper(hex.EncodeToString(sum[:]))
-}
 
 // Synth 合成语音，返回音频字节与 MIME。voice 为微软语音名（如 zh-CN-XiaoxiaoNeural）。
 func (e *EdgeTTS) Synth(ctx context.Context, text, voice string) ([]byte, string, error) {
@@ -62,10 +50,10 @@ func (e *EdgeTTS) Synth(ctx context.Context, text, voice string) ([]byte, string
 	}
 	connID := newUUID()
 	ts := fmt.Sprintf("%d", time.Now().UnixMilli())
-	gec := secMsgGEC(time.Now())
+	gec := secMsgGECv2(time.Now())
 
 	url := fmt.Sprintf(
-		"wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=%s&ConnectionId=%s&Sec-MS-GEC=%s&Sec-MS-GEC-Version=1-%s",
+		"wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=%s&ConnectionId=%s&Sec-MS-GEC=%s&Sec-MS-GEC-Version=2-%s",
 		edgeTrustedToken, connID, gec, edgeChromiumFullVersion)
 	header := http.Header{}
 	header.Set("User-Agent", edgeUserAgent)

@@ -190,7 +190,8 @@ public final class NativeSensorReporter {
     public static void report(Context ctx, final String trigger) {
         try {
             SharedPreferences p = prefs(ctx);
-            if (p.getInt(KEY_ON, 0) != 1) return;
+            // 追踪开关开启时即便未启用任何传感器也进入上报流程（仅做 device_tracker 位置上报）。
+            if (p.getInt(KEY_ON, 0) != 1 && p.getInt(KEY_TRACK, 0) != 1) return;
             if (!contextComplete(p)) return;
             if (!inFlight.compareAndSet(false, true)) return; // 上一次仍在进行
             final Context app = ctx.getApplicationContext();
@@ -199,7 +200,7 @@ public final class NativeSensorReporter {
                     @Override
                     public void run() {
                         try {
-                            doReport(app, trigger, null);
+                            doReport(app, trigger, null, true);
                         } catch (Exception ignored) {
                             inFlight.set(false);
                         }
@@ -230,7 +231,7 @@ public final class NativeSensorReporter {
                     @Override
                     public void run() {
                         try {
-                            doReport(app, trigger, cb);
+                            doReport(app, trigger, cb, false);
                         } catch (Exception e) {
                             inFlight.set(false);
                             if (cb != null) cb.onResult(false, 0, msgOf(e));
@@ -253,7 +254,7 @@ public final class NativeSensorReporter {
     }
 
     /** 单次上报：采集 → 组装 payload → POST。成功刷时间戳 / 401、403 清上下文。绝不抛出。 */
-    private static void doReport(Context ctx, String trigger, ReportCallback cb) {
+    private static void doReport(Context ctx, String trigger, ReportCallback cb, boolean includeLocation) {
         HttpURLConnection conn = null;
         int reported = 0;
         try {
@@ -271,36 +272,50 @@ public final class NativeSensorReporter {
             JSONObject sensors = collect(ctx, p, trigger);
             reported = sensors.length();
 
-            JSONObject body = new JSONObject();
-            body.put("device_id", dev);
-            if (nonEmpty(devName)) body.put("device_name", devName);
-            body.put("manufacturer", safe(Build.MANUFACTURER));
-            body.put("model", safe(Build.MODEL));
-            body.put("os_name", "android");
-            body.put("os_version", safe(Build.VERSION.RELEASE));
-            body.put("sensors", sensors);
+            if (reported > 0) {
+                JSONObject body = new JSONObject();
+                body.put("device_id", dev);
+                if (nonEmpty(devName)) body.put("device_name", devName);
+                body.put("manufacturer", safe(Build.MANUFACTURER));
+                body.put("model", safe(Build.MODEL));
+                body.put("os_name", "android");
+                body.put("os_version", safe(Build.VERSION.RELEASE));
+                body.put("sensors", sensors);
 
-            conn = (HttpURLConnection) new URL(
-                    base + "/api/v1/instances/" + inst + "/sensors/report").openConnection();
-            conn.setRequestMethod("POST");
-            conn.setConnectTimeout(10000);
-            conn.setReadTimeout(15000);
-            conn.setRequestProperty("Authorization", "Bearer " + token);
-            conn.setRequestProperty("Content-Type", "application/json");
-            conn.setDoOutput(true);
-            OutputStream os = conn.getOutputStream();
-            os.write(body.toString().getBytes(StandardCharsets.UTF_8));
-            os.flush();
-            os.close();
-            int code = conn.getResponseCode();
-            if (code >= 200 && code < 300) {
-                prefs(ctx).edit().putLong(KEY_LAST, System.currentTimeMillis()).apply();
-                if (cb != null) cb.onResult(true, reported, null);
-            } else if (code == 401 || code == 403) {
-                clearContext(ctx); // 会话失效：清上下文，等前端重新同步
-                if (cb != null) cb.onResult(false, reported, "auth");
-            } else {
-                if (cb != null) cb.onResult(false, reported, "http_" + code);
+                conn = (HttpURLConnection) new URL(
+                        base + "/api/v1/instances/" + inst + "/sensors/report").openConnection();
+                conn.setRequestMethod("POST");
+                conn.setConnectTimeout(10000);
+                conn.setReadTimeout(15000);
+                conn.setRequestProperty("Authorization", "Bearer " + token);
+                conn.setRequestProperty("Content-Type", "application/json");
+                conn.setDoOutput(true);
+                OutputStream os = conn.getOutputStream();
+                os.write(body.toString().getBytes(StandardCharsets.UTF_8));
+                os.flush();
+                os.close();
+                int code = conn.getResponseCode();
+                if (code >= 200 && code < 300) {
+                    prefs(ctx).edit().putLong(KEY_LAST, System.currentTimeMillis()).apply();
+                    if (cb != null) cb.onResult(true, reported, null);
+                } else if (code == 401 || code == 403) {
+                    clearContext(ctx); // 会话失效：清上下文，等前端重新同步
+                    if (cb != null) cb.onResult(false, reported, "auth");
+                } else {
+                    if (cb != null) cb.onResult(false, reported, "http_" + code);
+                }
+            }
+
+            // 设备追踪位置上报（update_location webhook → HA device_tracker → zone 判定）。
+            // geocoded_location 只是坐标型传感器，HA 不据其判定在家/离家；回家/离家自动化
+            // 依赖 device_tracker 的 zone 状态。WebView 退后台 pauseTimers 冻结前端的
+            // setInterval/watchPosition，后台无人上报 → 只有打开 APP 才触发回家自动化。
+            // 故由原生后台心跳在此直连上报，不依赖 WebView 存活（失败静默不影响传感器结果）。
+            if (includeLocation && p.getInt(KEY_TRACK, 0) == 1) {
+                try {
+                    reportDeviceLocation(ctx, base, token, inst, dev);
+                } catch (Exception ignored) {
+                }
             }
         } catch (Exception e) {
             if (cb != null) cb.onResult(false, reported, msgOf(e));
@@ -778,6 +793,64 @@ public final class NativeSensorReporter {
         } catch (Exception ignored) {
         }
         return "";
+    }
+
+    /**
+     * 设备追踪位置上报：经服务端 /api/v1/instances/{id}/location 转 HA 官方 mobile_app
+     * 的 update_location webhook，HA 据此更新 device_tracker 并按 zone 计算在家/离家
+     * （回家/离家自动化的触发源）。与 {@link #collectGeocodedLocation} 的区别：
+     * 后者只把坐标作为传感器值上报，HA 不据其判定 zone。
+     * 供后台保活心跳调用，不依赖 WebView 存活；失败静默返回 false，绝不抛出。
+     */
+    private static boolean reportDeviceLocation(Context ctx, String base, String token,
+                                                String inst, String dev) {
+        if (!nonEmpty(base) || !nonEmpty(token) || !nonEmpty(inst) || !nonEmpty(dev)) return false;
+        if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION)
+                != PackageManager.PERMISSION_GRANTED
+                && ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_COARSE_LOCATION)
+                != PackageManager.PERMISSION_GRANTED) {
+            return false;
+        }
+        Location loc = currentGpsLocation(ctx);
+        if (loc == null) return false;
+        double lat = loc.getLatitude();
+        double lng = loc.getLongitude();
+        if (lat == 0 && lng == 0) return false;
+        HttpURLConnection conn = null;
+        try {
+            JSONObject body = new JSONObject();
+            body.put("device_id", dev);
+            body.put("lat", lat);
+            body.put("lng", lng);
+            body.put("accuracy", (double) loc.getAccuracy());
+            conn = (HttpURLConnection) new URL(
+                    base + "/api/v1/instances/" + inst + "/location").openConnection();
+            conn.setRequestMethod("POST");
+            conn.setConnectTimeout(10000);
+            conn.setReadTimeout(15000);
+            conn.setRequestProperty("Authorization", "Bearer " + token);
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setDoOutput(true);
+            OutputStream os = conn.getOutputStream();
+            os.write(body.toString().getBytes(StandardCharsets.UTF_8));
+            os.flush();
+            os.close();
+            int code = conn.getResponseCode();
+            if (code == 401 || code == 403) {
+                clearContext(ctx); // 会话失效：清上下文，等前端重新同步（防止死 token 无限重试）
+                return false;
+            }
+            return code >= 200 && code < 300;
+        } catch (Exception ignored) {
+            return false;
+        } finally {
+            if (conn != null) {
+                try {
+                    conn.disconnect();
+                } catch (Exception ignored) {
+                }
+            }
+        }
     }
 
     // ==================== 小工具 ====================
