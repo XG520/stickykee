@@ -817,19 +817,21 @@
           </p>
           <p v-else class="text-muted text-sm">检测中…</p>
         </div>
-        <!-- 消息免打扰：仅静音消息通知（仍显示在通知栏），来电提醒不受影响；本机生效 -->
-        <div v-if="canInAppUpdate" class="rounded-xl bg-background border border-border px-3 py-2.5 flex items-center justify-between gap-3">
-          <div class="min-w-0">
+        <!-- 消息免打扰：仅静音消息通知（仍显示在通知栏），来电提醒不受影响；本机生效。
+             三列窄卡内不放「文本列+固定宽开关」横排（会把文本挤成单字竖排）：
+             标题与开关一行（放不下时开关 flex-wrap 换行），描述独占整卡宽度正常换行 -->
+        <div v-if="canInAppUpdate" class="rounded-xl bg-background border border-border px-3 py-2.5">
+          <div class="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
             <p class="text-muted text-xs">消息免打扰</p>
-            <p class="text-muted text-[11px] mt-0.5">开启后新消息通知不响铃不震动（仍显示在通知栏），来电提醒不受影响；仅对本手机生效</p>
+            <button @click="imDnd = !imDnd"
+              class="relative w-11 h-6 rounded-full transition-colors duration-200 shrink-0"
+              :class="imDnd ? 'bg-primary' : 'bg-muted/40'"
+              :aria-label="imDnd ? '关闭消息免打扰' : '开启消息免打扰'">
+              <span class="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all duration-200"
+                :class="imDnd ? 'left-[22px]' : 'left-0.5'"></span>
+            </button>
           </div>
-          <button @click="imDnd = !imDnd"
-            class="relative w-11 h-6 rounded-full transition-colors duration-200 shrink-0"
-            :class="imDnd ? 'bg-primary' : 'bg-muted/40'"
-            :aria-label="imDnd ? '关闭消息免打扰' : '开启消息免打扰'">
-            <span class="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all duration-200"
-              :class="imDnd ? 'left-[22px]' : 'left-0.5'"></span>
-          </button>
+          <p class="text-muted text-[11px] mt-1">开启后新消息通知不响铃不震动（仍显示在通知栏），来电提醒不受影响；仅对本手机生效</p>
         </div>
         <!-- 开机自启动：MIUI 等需手动允许，引导到应用详情 -->
         <div v-if="canInAppUpdate" class="rounded-xl bg-background border border-border px-3 py-2.5">

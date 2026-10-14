@@ -85,9 +85,11 @@
           </button>
         </div>
 
-        <!-- 操作按钮：编辑态常显，非编辑态感应式自动隐藏（仅桌面端导航栏内）；
+        <!-- 操作按钮：编辑态常显；非编辑态桌面端 Teleport 进导航栏感应式显隐，
+             手机/窄屏原地常显（触屏没有 hover 感应，且长按进编辑是隐藏手势，
+             必须有可见编辑入口，否则找不到添加卡片等编辑功能）；
              键盘 Tab 进入本组按钮时（focus-within）强制显示，避免焦点落在不可见按钮上 -->
-        <div v-if="!immersive && (editing || canEdit)"
+        <div v-if="!immersive"
           class="ml-auto flex flex-wrap items-center gap-1.5 sm:gap-2 transition-opacity duration-300"
           :class="btnVisible ? 'opacity-100' : 'opacity-0 pointer-events-none focus-within:opacity-100 focus-within:pointer-events-auto'">
           <template v-if="editing">
@@ -112,7 +114,7 @@
           </template>
           <template v-else>
             <!-- 非编辑态：定位自动执行（onMounted 每会话一次），全屏用顶栏按钮，这里只留编辑入口 -->
-            <button v-if="canEdit" @click="editing = true" class="inline-flex items-center justify-center h-11 px-4 rounded-xl bg-surface-alt border border-border hover:border-primary/40 text-sm text-on-surface transition-all active:scale-95" title="编辑仪表盘" aria-label="编辑仪表盘">
+            <button @click="editing = true" class="inline-flex items-center justify-center h-11 px-4 rounded-xl bg-surface-alt border border-border hover:border-primary/40 text-sm text-on-surface transition-all active:scale-95" title="编辑仪表盘" aria-label="编辑仪表盘">
               <span class="material-symbols-outlined text-lg" aria-hidden="true">edit_square</span>
               <span class="hidden sm:inline">编辑仪表盘</span>
             </button>
@@ -445,6 +447,7 @@ function onCardPointerMove(e) {
   drag.el.style.transform = `translate(${tx}px, ${ty}px) scale(1.04)`
   // 命中检测：指针落在哪张其它卡片上，就把拖拽卡实时移动到该位置
   const arr = cards.value
+  let hitAny = false
   for (let i = 0; i < arr.length; i++) {
     const c = arr[i]
     if (c === drag.card) continue
@@ -452,6 +455,7 @@ function onCardPointerMove(e) {
     if (!el) continue
     const r = el.getBoundingClientRect()
     if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
+      hitAny = true
       const from = arr.indexOf(drag.card)
       if (from >= 0 && from !== i) {
         arr.splice(from, 1)
@@ -462,6 +466,50 @@ function onCardPointerMove(e) {
         drag.el.style.transform = `translate(${e.clientX - drag.grabX - nl}px, ${e.clientY - drag.grabY - nt}px) scale(1.04)`
       }
       break
+    }
+  }
+  // 未命中任何卡片但指针仍在网格内：处理空白列/行尾空位——
+  // 如 4 列下第一排行尾空 1 格，1 宽卡片直接拖到空位即可落位，
+  // 不必绕道「拖到下一行首卡上」才生效（纯卡片矩形命中会漏掉空位）。
+  // 插入点：所在行内指针右侧最近的卡之前 → 行尾则下一行首卡之前 → 末行尾则数组末尾。
+  if (!hitAny
+    && e.clientX >= gridRect.left && e.clientX <= gridRect.right
+    && e.clientY >= gridRect.top && e.clientY <= gridRect.bottom) {
+    const others = []
+    for (const c of arr) {
+      if (c === drag.card) continue
+      const el = holderEl(c)
+      if (!el) continue
+      const r = el.getBoundingClientRect()
+      if (r.width > 0) others.push({ c, r })
+    }
+    let target = null // 插到该卡之前；null = 数组末尾
+    const sameRow = others.filter(o => o.r.top <= e.clientY && e.clientY <= o.r.bottom)
+    if (sameRow.length) {
+      const rowTop = Math.min(...sameRow.map(o => o.r.top))
+      const right = sameRow.filter(o => Math.abs(o.r.top - rowTop) < 4 && o.r.left >= e.clientX)
+        .sort((a, b) => a.r.left - b.r.left)
+      if (right.length) target = right[0].c
+    }
+    if (!target) {
+      const below = others.filter(o => o.r.top > e.clientY)
+      if (below.length) {
+        const nextTop = Math.min(...below.map(o => o.r.top))
+        target = below.filter(o => Math.abs(o.r.top - nextTop) < 4)
+          .sort((a, b) => a.r.left - b.r.left)[0].c
+      }
+    }
+    const from = arr.indexOf(drag.card)
+    if (from >= 0) {
+      let insert = target ? arr.indexOf(target) : arr.length
+      if (insert > from) insert-- // 移除自身后修正插入点
+      if (insert !== from) {
+        arr.splice(from, 1)
+        arr.splice(insert, 0, drag.card)
+        const nl = gridRect.left + drag.el.offsetLeft
+        const nt = gridRect.top + drag.el.offsetTop
+        drag.el.style.transform = `translate(${e.clientX - drag.grabX - nl}px, ${e.clientY - drag.grabY - nt}px) scale(1.04)`
+      }
     }
   }
 }
@@ -889,9 +937,9 @@ const teleportToNav = computed(() => isDesktop.value && !ui.immersive)
 // 仍占布局，会在顶栏与卡片之间撑出一条空白；桌面端整条 Teleport 进导航栏，保留感应隐藏。
 const btnVisible = computed(() => !teleportToNav.value || editing.value || toolbarShow.value)
 
-// 手机与平板（<1024px）禁用仪表盘编辑：触屏拖拽排版体验差，且窄屏下编辑工具条
-// 回落布局拥挤错位。桌面缩窗到平板宽度同样禁用，与响应式断点语义一致；
-// 断点跨越时强制退出编辑态，避免残留编辑 UI（FAB/编辑页签等均由 editing 门控）。
+// canEdit 仅表示「桌面宽度（≥1024px）」：桌面端非编辑态编辑入口 Teleport 进导航栏
+// 感应显隐；手机/平板编辑能力不受限（顶栏编辑按钮或长按卡片进入，底部操作栏承载
+// 添加/选中操作）。断点跨越时强制退出编辑态，避免残留编辑 UI（均由 editing 门控）。
 const canEdit = ref(window.matchMedia('(min-width: 1024px)').matches)
 let mqCanEdit = null
 function onMqCanEdit(e) {

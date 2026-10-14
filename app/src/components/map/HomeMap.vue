@@ -9,6 +9,13 @@
       <div class="flex items-center gap-2">
         <slot name="actions">
           <button
+            @click="toggleRoutePanel"
+            class="px-2.5 py-1.5 rounded-lg bg-surface hover:bg-surface-hover border border-border text-xs text-on-surface transition-colors flex items-center gap-1"
+            title="路线规划（驾车/骑行/公交/步行）"
+          >
+            <span class="material-symbols-outlined text-base">route</span>
+          </button>
+          <button
             @click="fitView"
             class="px-2.5 py-1.5 rounded-lg bg-surface hover:bg-surface-hover border border-border text-xs text-on-surface transition-colors flex items-center gap-1"
             title="聚焦家的范围与所有成员"
@@ -45,6 +52,48 @@
       :class="flat ? '' : 'rounded-xl'"
       :style="{ height: height === 'flex' ? undefined : height, flex: height === 'flex' ? '1 1 auto' : undefined, minHeight: height === 'flex' ? 0 : undefined }">
       <div ref="mapEl" class="w-full h-full"></div>
+
+      <!-- 路线规划面板：浮在地图上方。起点=我的位置（未定位自动定位），终点=家（默认）或地图点选；
+           驾车/骑行/公交/步行四种方式，经高德 JS 插件画线并展示距离与耗时 -->
+      <div v-if="configured && routePanel"
+        class="absolute left-3 right-3 top-3 z-10 rounded-xl bg-surface-alt/95 backdrop-blur-md border border-border shadow-lg p-3">
+        <div class="flex items-center gap-2 mb-2">
+          <span class="material-symbols-outlined text-primary text-lg">route</span>
+          <p class="flex-1 text-sm font-semibold text-on-surface">路线规划</p>
+          <button @click="toggleRoutePanel" class="w-8 h-8 rounded-lg flex items-center justify-center text-muted hover:text-on-surface hover:bg-primary/10 transition-colors" title="收起">
+            <span class="material-symbols-outlined text-lg">close</span>
+          </button>
+        </div>
+        <div class="flex items-center gap-1.5 mb-2 flex-wrap">
+          <button v-for="m in routeModes" :key="m.key" @click="setRouteMode(m.key)"
+            class="h-9 px-2.5 rounded-lg text-xs flex items-center gap-1 border transition-colors"
+            :class="routeMode === m.key ? 'bg-primary text-on-primary border-primary font-semibold' : 'bg-surface border-border text-muted hover:text-on-surface'">
+            <span class="material-symbols-outlined text-base">{{ m.icon }}</span>{{ m.label }}
+          </button>
+        </div>
+        <div class="flex items-center gap-1.5 text-xs text-muted mb-2 min-w-0">
+          <span class="material-symbols-outlined text-base text-primary shrink-0">trip_origin</span>
+          <span class="shrink-0">我的位置</span>
+          <button @click="togglePickEnd" class="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors"
+            :class="pickEnd ? 'text-primary bg-primary/10' : 'text-muted hover:text-on-surface hover:bg-primary/10'"
+            :title="pickEnd ? '取消选点' : '在地图上点选终点'">
+            <span class="material-symbols-outlined text-base">{{ pickEnd ? 'close' : 'adjust' }}</span>
+          </button>
+          <span class="material-symbols-outlined text-base text-amber-500 shrink-0">place</span>
+          <button @click="resetEnd" class="min-w-0 truncate hover:text-on-surface transition-colors"
+            :title="endPt ? '点击恢复终点为家' : '终点'">
+            {{ endPt ? '地图选点（点此恢复为家）' : (homeZone?.name || '家') }}
+          </button>
+        </div>
+        <button @click="planRoute" :disabled="routeLoading || pickEnd"
+          class="w-full h-10 rounded-lg bg-primary hover:bg-primary-hover text-on-primary text-sm font-semibold transition-colors flex items-center justify-center gap-1.5 disabled:opacity-60">
+          <span v-if="routeLoading" class="w-4 h-4 border-2 border-on-primary/40 border-t-on-primary rounded-full animate-spin"></span>
+          <span v-else class="material-symbols-outlined text-base">navigation</span>
+          {{ pickEnd ? '在地图上点击选择终点' : (routeLoading ? '规划中…' : '重新规划') }}
+        </button>
+        <p v-if="routeSummary" class="text-xs text-on-surface font-medium mt-2">{{ routeSummary }}</p>
+        <p v-if="routeError" class="text-xs text-error mt-2 break-words">{{ routeError }}</p>
+      </div>
       <div v-if="mapStatus !== 'ready'" class="absolute inset-0 bg-surface/80 backdrop-blur-sm flex items-center justify-center text-sm font-body text-muted">
         <span v-if="mapStatus === 'loading'" class="flex items-center gap-2">
           <span class="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin"></span> 地图加载中…
@@ -250,6 +299,7 @@ async function refreshLocation() {
 }
 
 function updateMyMarker(lat, lng, name) {
+  myGCJ = gcjPt(lng, lat) // 同步记录 GCJ-02 坐标，供路线规划作起点
   if (!map) return
   const AMap = window.AMap
   const [gLng, gLat] = gcjPt(lng, lat)
@@ -274,6 +324,168 @@ function maybeFit() {
     firstFitDone = true
   }
 }
+
+// ---- 路线规划（驾车/骑行/公交/步行）：高德 JS 插件画线，起点=我的位置，终点=家/地图选点 ----
+const routeModes = [
+  { key: 'driving', icon: 'directions_car', label: '驾车' },
+  { key: 'riding', icon: 'directions_bike', label: '骑行' },
+  { key: 'transfer', icon: 'directions_bus', label: '公交' },
+  { key: 'walking', icon: 'directions_walk', label: '步行' },
+]
+const ROUTE_PLUGINS = { driving: 'AMap.Driving', riding: 'AMap.Riding', transfer: 'AMap.Transfer', walking: 'AMap.Walking' }
+const routePanel = ref(false)
+const routeMode = ref('driving')
+const routeLoading = ref(false)
+const routeSummary = ref('')
+const routeError = ref('')
+const pickEnd = ref(false)
+const endPt = ref(null) // {lng,lat}（GCJ-02）；null=终点为家
+let routePlanner = null
+let myGCJ = null // 当前设备位置（GCJ-02），updateMyMarker 时同步
+let routeCity = '' // 公交规划用起点城市缓存
+
+const routeModeLabel = () => routeModes.find((m) => m.key === routeMode.value)?.label || ''
+
+function fmtDist(m) {
+  if (m == null) return ''
+  return m < 1000 ? `${Math.round(m)} 米` : `${(m / 1000).toFixed(1)} 公里`
+}
+
+function fmtDur(s) {
+  if (s == null) return ''
+  const min = Math.round(s / 60)
+  return min < 60 ? `${min} 分钟` : `${Math.floor(min / 60)} 小时 ${min % 60} 分钟`
+}
+
+function clearRoute() {
+  if (routePlanner) { try { routePlanner.clear() } catch { /* 忽略 */ } }
+  routeSummary.value = ''
+  routeError.value = ''
+}
+
+function toggleRoutePanel() {
+  routePanel.value = !routePanel.value
+  if (routePanel.value) planRoute()
+  else stopPickEnd(false) // 收起时取消选点模式，但保留已选终点
+}
+
+function stopPickEnd(clearFlag) {
+  if (map) map.off('click', onMapPickEnd)
+  pickEnd.value = false
+  if (clearFlag) endPt.value = null
+}
+
+function onMapPickEnd(e) {
+  stopPickEnd(false)
+  if (!e?.lnglat) return
+  endPt.value = { lng: e.lnglat.getLng(), lat: e.lnglat.getLat() }
+  planRoute()
+}
+
+function togglePickEnd() {
+  if (!map) return
+  if (pickEnd.value) { stopPickEnd(false); return }
+  pickEnd.value = true
+  statusOk.value = true
+  statusText.value = '请在地图上点击选择终点'
+  map.on('click', onMapPickEnd)
+}
+
+function resetEnd() {
+  endPt.value = null
+  planRoute()
+}
+
+// 起点所在城市（公交规划必需）：Geocoder 逆地理取 city，直辖市 city 为空时退回 province。
+function routeCityOf(lngLat) {
+  if (routeCity) return Promise.resolve(routeCity)
+  return new Promise((resolve) => {
+    window.AMap.plugin('AMap.Geocoder', () => {
+      try {
+        new window.AMap.Geocoder().getAddress(lngLat, (status, result) => {
+          if (status !== 'complete' || !result?.regeocode) return resolve('')
+          const comp = result.regeocode.addressComponent || {}
+          let c = comp.city
+          if (Array.isArray(c) || !c) c = comp.province || ''
+          routeCity = c
+          resolve(c)
+        })
+      } catch { resolve('') }
+    })
+  })
+}
+
+function setRouteMode(key) {
+  if (routeMode.value === key) return
+  routeMode.value = key
+  planRoute()
+}
+
+async function planRoute() {
+  if (!map || mapStatus.value !== 'ready' || routeLoading.value || pickEnd.value) return
+  const AMap = window.AMap
+  // 起点：我的位置（未定位则先定位一次）
+  if (!myGCJ) {
+    try {
+      const res = await syncCurrentLocation()
+      updateMyMarker(res.lat, res.lng, res.name || '当前设备')
+    } catch (e) {
+      routeError.value = '无法获取当前位置：' + (e.message || '定位失败')
+      return
+    }
+  }
+  // 终点：地图选点（已是 GCJ-02）或家（WGS-84 需转换）
+  let endGCJ = null
+  if (endPt.value) endGCJ = [endPt.value.lng, endPt.value.lat]
+  else if (homeZone.value) endGCJ = gcjPt(homeZone.value.lng, homeZone.value.lat)
+  if (!endGCJ) {
+    routeError.value = '没有可用的终点（未找到家的位置）'
+    return
+  }
+
+  routeLoading.value = true
+  routeError.value = ''
+  routeSummary.value = ''
+  clearRoute()
+  try {
+    const pluginName = ROUTE_PLUGINS[routeMode.value]
+    await new Promise((r) => AMap.plugin(pluginName, () => r()))
+    const Ctor = AMap[pluginName.split('.')[1]]
+    const opts = { map }
+    if (routeMode.value === 'transfer') {
+      const city = await routeCityOf(myGCJ)
+      if (!city) {
+        routeError.value = '无法识别起点所在城市，公交规划失败'
+        return
+      }
+      opts.city = city
+    }
+    routePlanner = new Ctor(opts)
+    const o = new AMap.LngLat(myGCJ[0], myGCJ[1])
+    const d = new AMap.LngLat(endGCJ[0], endGCJ[1])
+    await new Promise((resolve) => {
+      routePlanner.search(o, d, (status, result) => {
+        if (status !== 'complete' || !result) {
+          routeError.value = `${routeModeLabel()}路线规划失败（${result?.info || status}）`
+          return resolve()
+        }
+        const seg = result.routes?.[0] || result.plans?.[0]
+        if (!seg) {
+          routeError.value = '未找到可用路线'
+          return resolve()
+        }
+        routeSummary.value = `${fmtDist(seg.distance)} · 约 ${fmtDur(seg.time)}`
+        statusOk.value = true
+        statusText.value = `${routeModeLabel()}路线：${fmtDist(seg.distance)} · 约 ${fmtDur(seg.time)}`
+        try { if (seg.bounds || result.bounds) map.setBounds(seg.bounds || result.bounds) } catch { /* 忽略 */ }
+        resolve()
+      })
+    })
+  } finally {
+    routeLoading.value = false
+  }
+}
+
 const stopA = watch(markers, () => { renderMarkers(); maybeFit() }, { deep: true })
 const stopB = watch(zones, () => { renderHome(); maybeFit() }, { deep: true })
 

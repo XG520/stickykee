@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"stickynuo/server/internal/ha"
 	"stickynuo/server/internal/ha/client"
@@ -110,6 +111,13 @@ func (h *Location) Update(w http.ResponseWriter, r *http.Request) {
 		"lat":        p.Lat,
 		"lng":        p.Lng,
 	}, active)
+
+	// 到家距离传感器：后台计算上报（节流：位移>500m 或 >2h 才计算），尽力而为不阻塞响应
+	go func() {
+		dctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		maybePushDistance(dctx, rst, reg.WebhookID, username, dev.DevID, dev.Name, id, p.Lat, p.Lng)
+	}()
 }
 
 // pushLocation 经 mobile_app webhook 上报 update_location 命令。
