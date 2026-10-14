@@ -393,6 +393,9 @@ function holderStyle(card) {
   return {
     gridColumn: `span ${cw}`,
     gridRow: `span ${Math.min(3, card.h || 1)}`,
+    // 圆角对齐卡片壳视觉圆角（.hc 基础 14px × zoom 缩放）：holder 裁剪/悬停
+    // 边界与卡片圆角曲线重合，避免角部被平切出弦线或留缝透出页面底色
+    borderRadius: (14 * (zoomFactor.value || 1)).toFixed(2) + 'px',
     display: 'flex',
     flexDirection: 'column',
     minHeight: 0,
@@ -525,7 +528,15 @@ function onCardContextMenu(e) {
 function updateCols() {
   if (!gridEl.value) return
   const w = gridEl.value.clientWidth
-  cols.value = Math.max(1, Math.min(8, Math.floor(w / 120)))
+  // 手机窄屏按「物理宽度」定列数：不同厂商 DPR 策略不同（同为 6 寸屏 CSS 视口
+  // 可能在 360~443px 间浮动，系统「显示大小」缩放也会改变 CSS 宽度），按 CSS
+  // 宽度 ÷120 算列数会出现一台 3 列、一台 2 列的机型差异。物理宽度
+  // （CSS 宽 × devicePixelRatio）只取决于屏幕面板（≈1200px），跨机型稳定：
+  // ÷360 即等价于 CSS@3x 密度下 ÷120 的原口径。桌面宽屏维持 CSS 宽度口径
+  // （现网桌面布局已按 8 列上限适配，不受影响）。
+  const dpr = window.devicePixelRatio || 1
+  const basis = w < 480 ? (w * dpr) / 3 : w
+  cols.value = Math.max(1, Math.min(8, Math.floor(basis / 120)))
   // 减去列间距后单列的实际宽度 = 单格行高（正方形），约为原来的 1/2
   cellSize.value = (w - gridGap * (cols.value - 1)) / cols.value
 }
@@ -975,9 +986,13 @@ onBeforeUnmount(() => {
 }
 .hc-card-holder {
   position: relative;
-  overflow: hidden;
+  /* 不设 overflow:hidden：卡片壳自带贴边柔和落影，在此裁剪会把阴影在卡片边界
+     外硬切成一条暗带，与 1px 边框叠成「双线」观感；内容裁剪由卡片壳自身
+     （.hc{overflow:hidden}）负责，holder 无需重复裁剪 */
   container-type: inline-size;
-  border-radius: 16px;
+  /* 圆角由 holderStyle 按缩放系数动态对齐卡片壳视觉圆角（14px×zoom）：
+     固定 16px 在缩放后要么平切卡片圆角（z>1，角部出弦线）、要么留缝透底色 */
+  border-radius: 14px;
   -webkit-touch-callout: none; /* 触屏长按不弹系统预览菜单（长按进编辑模式的交互依赖） */
   /* 保留 transform 过渡：编辑模式拖拽换位时其余卡片让位仍靠它平滑动画 */
   transition: transform .16s ease, box-shadow .16s ease;
