@@ -49,31 +49,31 @@
                 :class="i === currentPageIndex ? 'text-primary font-semibold' : 'text-muted hover:text-on-surface'"
                 :title="p.name">{{ p.name }}</button>
               <button v-if="editing && renamingIndex !== i" @click="renamingIndex = i"
-                class="p-0.5 rounded-full text-muted hover:text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                class="w-8 h-8 flex items-center justify-center rounded-full text-muted hover:text-primary hover:bg-primary/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                 title="重命名" aria-label="重命名本页">
-                <span class="material-symbols-outlined text-sm" aria-hidden="true">edit</span>
+                <span class="material-symbols-outlined text-base" aria-hidden="true">edit</span>
               </button>
               <button v-if="editing" @click="movePage(i, -1)" :disabled="i === 0"
-                class="p-0.5 rounded-full text-muted hover:text-on-surface transition-colors disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                class="w-8 h-8 flex items-center justify-center rounded-full text-muted hover:text-on-surface hover:bg-surface-alt transition-colors disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                 title="左移" aria-label="本页左移">
-                <span class="material-symbols-outlined text-sm" aria-hidden="true">chevron_left</span>
+                <span class="material-symbols-outlined text-base" aria-hidden="true">chevron_left</span>
               </button>
               <button v-if="editing" @click="movePage(i, 1)" :disabled="i === pages.length - 1"
-                class="p-0.5 rounded-full text-muted hover:text-on-surface transition-colors disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                class="w-8 h-8 flex items-center justify-center rounded-full text-muted hover:text-on-surface hover:bg-surface-alt transition-colors disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                 title="右移" aria-label="本页右移">
-                <span class="material-symbols-outlined text-sm" aria-hidden="true">chevron_right</span>
+                <span class="material-symbols-outlined text-base" aria-hidden="true">chevron_right</span>
               </button>
               <button v-if="editing" @click="removePage(i)" :disabled="pages.length <= 1"
-                class="p-0.5 rounded-full text-muted hover:text-error transition-colors disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                class="w-8 h-8 flex items-center justify-center rounded-full text-muted hover:text-error hover:bg-error/10 transition-colors disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                 title="删除本页" aria-label="删除本页">
-                <span class="material-symbols-outlined text-sm" aria-hidden="true">close</span>
+                <span class="material-symbols-outlined text-base" aria-hidden="true">close</span>
               </button>
             </div>
           </div>
           <button v-if="editing" @click="addPage"
-            class="shrink-0 flex items-center gap-0.5 px-1.5 py-1 rounded-full text-primary hover:bg-primary/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+            class="shrink-0 flex items-center gap-0.5 h-8 px-2 rounded-full text-primary hover:bg-primary/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
             title="新增页" aria-label="新增页">
-            <span class="material-symbols-outlined text-base" aria-hidden="true">add</span>
+            <span class="material-symbols-outlined text-lg" aria-hidden="true">add</span>
             <span class="hidden sm:inline text-sm">新增页</span>
           </button>
         </div>
@@ -84,24 +84,27 @@
           class="ml-auto flex flex-wrap items-center gap-2 transition-opacity duration-300"
           :class="btnVisible ? 'opacity-100' : 'opacity-0 pointer-events-none focus-within:opacity-100 focus-within:pointer-events-auto'">
           <template v-if="editing">
-            <button @click="onExport" class="px-3 py-2 rounded-lg bg-surface-alt border border-border text-muted hover:text-on-surface text-sm transition-colors flex items-center gap-1.5" title="把当前仪表盘导出为 JSON 文件">
-              <span class="material-symbols-outlined text-base" aria-hidden="true">download</span> 导出
+            <!-- 触控规范：统一 44px 高度、圆角与按压反馈；导出/导入/排版为次级动作（浅底描边），完成为主色实心 -->
+            <button @click="onExport" class="inline-flex items-center justify-center h-11 px-3.5 rounded-xl bg-surface-alt border border-border text-muted hover:text-on-surface hover:border-primary/40 text-sm transition-all active:scale-95" title="把当前仪表盘导出为 JSON 文件">
+              <span class="material-symbols-outlined text-lg" aria-hidden="true">download</span>导出
             </button>
-            <button @click="pickImportFile" class="px-3 py-2 rounded-lg bg-surface-alt border border-border text-muted hover:text-on-surface text-sm transition-colors flex items-center gap-1.5" title="从 JSON 文件导入仪表盘">
-              <span class="material-symbols-outlined text-base" aria-hidden="true">upload</span> 导入
+            <button @click="pickImportFile" class="inline-flex items-center justify-center h-11 px-3.5 rounded-xl bg-surface-alt border border-border text-muted hover:text-on-surface hover:border-primary/40 text-sm transition-all active:scale-95" title="从 JSON 文件导入仪表盘">
+              <span class="material-symbols-outlined text-lg" aria-hidden="true">upload</span>导入
             </button>
-            <button @click="smartArrange" class="px-3 py-2 rounded-lg bg-surface-alt border border-border text-muted hover:text-on-surface text-sm transition-colors flex items-center gap-1.5" title="按当前 HA 实体自动设计并摆放卡片">
-              <span class="material-symbols-outlined text-base" aria-hidden="true">auto_awesome_mosaic</span> 智能排版
+            <button @click="smartArrange" class="inline-flex items-center justify-center h-11 px-3.5 rounded-xl bg-surface-alt border border-border text-muted hover:text-on-surface hover:border-primary/40 text-sm transition-all active:scale-95" title="按当前 HA 实体自动设计并摆放卡片">
+              <span class="material-symbols-outlined text-lg" aria-hidden="true">auto_awesome_mosaic</span>智能排版
             </button>
-            <button @click="resetLayout" class="px-3 py-2 rounded-lg bg-surface-alt border border-border text-muted hover:text-on-surface text-sm transition-colors">重置</button>
-            <button @click="saveLayout" class="px-4 py-2 rounded-lg bg-primary hover:bg-primary-hover text-on-primary text-sm font-semibold transition-colors flex items-center gap-1.5">
-              <span class="material-symbols-outlined text-base" aria-hidden="true">check</span> 完成
+            <button @click="resetLayout" class="inline-flex items-center justify-center h-11 px-3.5 rounded-xl bg-surface-alt border border-border text-muted hover:text-on-surface hover:border-error/40 hover:text-error text-sm transition-all active:scale-95" title="恢复默认仪表盘布局">
+              <span class="material-symbols-outlined text-lg" aria-hidden="true">restart_alt</span>重置
+            </button>
+            <button @click="saveLayout" class="inline-flex items-center justify-center h-11 px-4 rounded-xl bg-primary hover:bg-primary-hover text-on-primary text-sm font-semibold shadow-sm shadow-primary/25 transition-all active:scale-95">
+              <span class="material-symbols-outlined text-lg" aria-hidden="true">check</span>完成
             </button>
           </template>
           <template v-else>
             <!-- 非编辑态：定位自动执行（onMounted 每会话一次），全屏用顶栏按钮，这里只留编辑入口 -->
-            <button v-if="canEdit" @click="editing = true" class="px-4 py-2 rounded-lg bg-surface-alt border border-border hover:border-primary/40 text-sm text-on-surface transition-colors flex items-center gap-1.5" title="编辑仪表盘" aria-label="编辑仪表盘">
-              <span class="material-symbols-outlined text-base" aria-hidden="true">edit_square</span>
+            <button v-if="canEdit" @click="editing = true" class="inline-flex items-center justify-center h-11 px-4 rounded-xl bg-surface-alt border border-border hover:border-primary/40 text-sm text-on-surface transition-all active:scale-95" title="编辑仪表盘" aria-label="编辑仪表盘">
+              <span class="material-symbols-outlined text-lg" aria-hidden="true">edit_square</span>
               <span class="hidden sm:inline">编辑仪表盘</span>
             </button>
           </template>
@@ -111,25 +114,28 @@
 
     <!-- 沉浸模式由全局浮动退出按钮接管（App.vue） -->
 
-    <!-- 添加卡片：右下角悬浮 FAB，展开为浮层面板（不占用画布纵向空间，画布始终贴合视口） -->
-    <div v-if="editing" class="fixed bottom-5 right-5 z-40">
+    <!-- 编辑态底部操作栏：点按卡片选中后在此统一操作（替代旧「每卡悬浮工具条」——
+         悬浮条会遮挡卡片内容且在窄卡片上溢出截断）。所有按钮触控区 ≥44px，
+         深浅主题跟随 token，底部避让安全区（iOS / 手势条）。 -->
+    <div v-if="editing" class="fixed bottom-0 inset-x-0 z-40 pointer-events-none">
+      <!-- 添加卡片面板：从操作栏上方弹出，不占画布空间 -->
       <Transition name="hc-panel">
-        <div v-if="addPanel" class="absolute bottom-14 right-0 w-[20rem] max-w-[calc(100vw-2.5rem)] bg-surface-alt border border-border rounded-2xl shadow-2xl p-3">
+        <div v-if="addPanel" class="pointer-events-auto absolute bottom-full left-3 right-3 mx-auto max-w-[24rem] mb-2 bg-surface-alt border border-border rounded-2xl shadow-2xl p-3">
           <div class="flex items-center justify-between px-1 mb-2">
             <p class="text-muted text-xs font-body uppercase tracking-wider">添加卡片</p>
-            <button @click="addPanel = false" class="p-0.5 rounded-full text-muted hover:text-on-surface transition-colors" title="收起">
-              <span class="material-symbols-outlined text-lg">close</span>
+            <button @click="addPanel = false" class="w-9 h-9 -mr-1 flex items-center justify-center rounded-full text-muted hover:text-on-surface active:scale-90 transition-colors" title="收起" aria-label="收起添加面板">
+              <span class="material-symbols-outlined text-xl">close</span>
             </button>
           </div>
-          <div class="max-h-[55vh] overflow-y-auto -mr-1 pr-1">
+          <div class="max-h-[48vh] overflow-y-auto -mx-1 px-1 pb-1 hc-panel-scroll">
             <div v-for="g in addGroups" :key="g.name" class="mb-2.5">
-              <p class="text-muted text-[11px] font-body mb-1">{{ g.name }}</p>
-              <div class="flex flex-col gap-1">
+              <p class="text-muted text-[11px] font-body mb-1.5">{{ g.name }}</p>
+              <div class="flex flex-col gap-1.5">
                 <button
                   v-for="opt in g.items"
                   :key="opt.type"
                   @click="addCard(opt)"
-                  class="flex items-center gap-2.5 px-2.5 py-2 rounded-xl bg-surface border border-border hover:border-primary/50 hover:bg-primary/5 transition-all text-sm text-on-surface text-left"
+                  class="min-h-[44px] flex items-center gap-2.5 px-3 py-2 rounded-xl bg-surface border border-border hover:border-primary/50 hover:bg-primary/5 active:scale-[.98] transition-all text-sm text-on-surface text-left"
                 >
                   <span class="material-symbols-outlined text-lg shrink-0" :class="opt.colorCls">{{ opt.icon }}</span>
                   <span class="min-w-0 flex-1 truncate">{{ opt.label }}</span>
@@ -140,22 +146,77 @@
           </div>
         </div>
       </Transition>
-      <button @click="addPanel = !addPanel"
-        class="flex items-center gap-1.5 px-4 pl-3.5 py-3 rounded-full bg-primary hover:bg-primary-hover text-on-primary shadow-lg shadow-primary/30 transition-all active:scale-95">
-        <span class="material-symbols-outlined" :class="addPanel ? 'arrow_downward' : 'add'">add</span>
-        <span class="text-sm font-semibold">{{ addPanel ? '收起' : '添加卡片' }}</span>
-      </button>
+
+      <!-- 操作栏主体：未选中显示「添加 + 引导提示」；选中后显示卡片名与操作按钮 -->
+      <div class="pointer-events-auto mx-3 mb-3 rounded-2xl bg-surface-alt/95 backdrop-blur-md border border-border shadow-lg shadow-black/20"
+        style="padding-bottom: env(safe-area-inset-bottom)">
+        <div class="flex items-center gap-1.5 px-2 py-2">
+          <!-- 添加卡片入口：常驻（选中态压缩为纯图标，给操作按钮让位） -->
+          <button @click="addPanel = !addPanel"
+            class="shrink-0 flex items-center gap-1 h-11 rounded-xl bg-primary/12 text-primary font-semibold active:scale-95 transition-all"
+            :class="selectedCard ? 'w-11 justify-center' : 'px-3.5'"
+            :aria-expanded="addPanel ? 'true' : 'false'"
+            title="添加卡片" aria-label="添加卡片">
+            <span class="material-symbols-outlined text-[22px]">{{ addPanel ? 'arrow_downward' : 'add' }}</span>
+            <span v-if="!selectedCard" class="text-sm">添加卡片</span>
+          </button>
+
+          <!-- 未选中：操作引导 -->
+          <p v-if="!selectedCard" class="min-w-0 flex-1 text-muted text-xs leading-snug pl-1">
+            点按卡片选中进行编辑，按住卡片拖动可调整位置
+          </p>
+
+          <!-- 已选中：卡片名 + 分组操作 -->
+          <template v-else>
+            <div class="min-w-0 flex-1 flex items-center gap-2 pl-1.5">
+              <span class="material-symbols-outlined text-lg text-primary shrink-0">{{ selectedMeta.icon }}</span>
+              <span class="min-w-0 truncate text-sm text-on-surface font-medium">{{ selectedMeta.label }}</span>
+              <span class="shrink-0 text-[11px] text-muted font-body tabular-nums">{{ selectedCard.w }}×{{ selectedCard.h }}</span>
+            </div>
+            <span class="w-px h-6 bg-border shrink-0 mx-0.5"></span>
+            <button @click="moveCard(selectedCard, -1)" :disabled="isFirst(selectedCard)"
+              class="w-11 h-11 flex items-center justify-center rounded-xl text-on-surface hover:bg-primary/10 active:scale-90 transition disabled:opacity-25 disabled:active:scale-100"
+              title="前移" aria-label="卡片前移">
+              <span class="material-symbols-outlined text-[22px]">arrow_back</span>
+            </button>
+            <button @click="moveCard(selectedCard, 1)" :disabled="isLast(selectedCard)"
+              class="w-11 h-11 flex items-center justify-center rounded-xl text-on-surface hover:bg-primary/10 active:scale-90 transition disabled:opacity-25 disabled:active:scale-100"
+              title="后移" aria-label="卡片后移">
+              <span class="material-symbols-outlined text-[22px]">arrow_forward</span>
+            </button>
+            <button @click="openEditor(selectedCard)"
+              class="w-11 h-11 flex items-center justify-center rounded-xl text-on-surface hover:bg-primary/15 active:scale-90 transition"
+              title="编辑尺寸与代码" aria-label="编辑卡片">
+              <span class="material-symbols-outlined text-[22px]">tune</span>
+            </button>
+            <button @click="removeCard(selectedCard)"
+              class="w-11 h-11 flex items-center justify-center rounded-xl text-error hover:bg-error/12 active:scale-90 transition"
+              title="删除卡片" aria-label="删除卡片">
+              <span class="material-symbols-outlined text-[22px]">delete</span>
+            </button>
+            <button @click="selectedUid = ''"
+              class="w-9 h-11 flex items-center justify-center rounded-xl text-muted hover:text-on-surface active:scale-90 transition"
+              title="取消选中" aria-label="取消选中">
+              <span class="material-symbols-outlined text-xl">close</span>
+            </button>
+          </template>
+        </div>
+      </div>
     </div>
 
     <!-- 网格仪表盘：卡片从左向右排列，放不下的自动换到下一行；贴合视口不滚动
          加载完成（loaded）后才渲染，避免先闪现默认仪表盘 -->
-    <div v-if="loaded" ref="gridEl" class="dashboard-grid" :style="gridStyle"
+    <div v-if="loaded" ref="gridEl" class="dashboard-grid" :class="{ 'hc-grid-editing': editing }" :style="gridStyle"
       @touchstart.passive="onSwipeStart" @touchend="onSwipeEnd">
       <div
         v-for="card in cards"
         :key="card.uid"
         class="hc-card-holder"
-        :class="{ 'hc-card-editable': editing, 'hc-card-dragging': dragCard === card }"
+        :class="{
+          'hc-card-editable': editing,
+          'hc-card-dragging': dragCard === card,
+          'hc-card-selected': editing && selectedUid === card.uid,
+        }"
         :id="'card-' + card.uid"
         :data-type="card.type"
         :style="holderStyle(card)"
@@ -163,25 +224,6 @@
         @contextmenu="onCardContextMenu"
         @click.capture="onHolderClickCapture"
       >
-        <!-- 编辑态操作条：悬浮于卡片右下角（不占布局、不遮挡顶部标题） -->
-        <div v-if="editing"
-          class="hc-card-tools absolute z-30 bottom-2 right-2 flex items-center gap-0.5 bg-black/55 backdrop-blur-md border border-white/15 rounded-full px-1 py-0.5 shadow-lg shadow-black/30">
-          <button @click="moveCard(card, -1)" :disabled="isFirst(card)" class="p-1.5 rounded-full text-white/85 hover:bg-white/15 hover:text-white active:scale-90 transition disabled:opacity-25" title="左移">
-            <span class="material-symbols-outlined text-base">arrow_back</span>
-          </button>
-          <button @click="moveCard(card, 1)" :disabled="isLast(card)" class="p-1.5 rounded-full text-white/85 hover:bg-white/15 hover:text-white active:scale-90 transition disabled:opacity-25" title="右移">
-            <span class="material-symbols-outlined text-base">arrow_forward</span>
-          </button>
-          <!-- 分隔：移动与卡片操作分组，降低误触 -->
-          <span class="w-px h-4 bg-white/20 mx-0.5"></span>
-          <button @click="openEditor(card)" class="p-1.5 rounded-full text-white/85 hover:bg-primary/30 hover:text-white active:scale-90 transition" title="编辑尺寸与代码">
-            <span class="material-symbols-outlined text-base">tune</span>
-          </button>
-          <button @click="removeCard(card)" class="p-1.5 rounded-full text-white/85 hover:bg-error/40 hover:text-white active:scale-90 transition" title="删除">
-            <span class="material-symbols-outlined text-base">delete</span>
-          </button>
-        </div>
-
         <!-- 卡片实际内容：基准尺寸渲染 + zoom 等比缩放（窗口缩放不影响内部布局/换行） -->
         <div class="hc-card-zoom" :style="zoomStyle(card)">
           <CodeCard :card="card" :scope-id="'card-' + card.uid" @device-drawer="openDeviceDrawer" />
@@ -254,8 +296,12 @@ const currentPageIndex = ref(0)
 const cards = computed(() => pages.value[currentPageIndex.value]?.cards ?? [])
 const loaded = ref(false)
 const editing = ref(false)
-// 添加卡片悬浮面板开关：默认收起为右下角 FAB，展开为浮层面板（不占用画布纵向空间）
+// 添加卡片悬浮面板开关：收起为底部操作栏入口，展开为浮层面板（不占用画布纵向空间）
 const addPanel = ref(false)
+// 编辑态选中的卡片：底部操作栏针对该卡片操作（点按卡片选中/切换/取消，见 onCardPointerUp）
+const selectedUid = ref('')
+const selectedCard = computed(() => cards.value.find((c) => c.uid === selectedUid.value) || null)
+const selectedMeta = computed(() => meta(selectedCard.value ? selectedCard.value.type : 'greeting'))
 // 设备概览抽屉：Overview 卡片点击触发，携带点击格子的过滤条件（全局抽屉，见 App.vue）
 // 折叠工具栏：初始隐藏（折叠在导航栏下方），鼠标移到该行自动弹出，移开 3 秒后收起
 const { visible: toolbarShow, enter: toolbarEnter, leave: toolbarLeave } = useAutoHide(3000, false)
@@ -354,8 +400,6 @@ function onCardPointerDown(e, card) {
   lastPointerType = e.pointerType || ''
   onCardLongPressStart(e) // 非编辑态触屏：长按卡片进入编辑模式
   if (!editing.value || e.button !== 0) return
-  // 操作条内的按钮不触发拖拽（左移/右移/编辑/删除照常可点）
-  if (e.target.closest('.hc-card-tools')) return
   const el = e.currentTarget
   const rect = el.getBoundingClientRect()
   drag = {
@@ -410,6 +454,13 @@ function onCardPointerMove(e) {
   }
 }
 function onCardPointerUp() {
+  // 编辑态轻触（未拖动）：选中/切换/取消该卡片，操作交给底部操作栏（旧悬浮工具条会
+  // 遮挡卡片内容且在窄卡片上溢出）。选中与拖拽由 6px 移动阈值区分，互不干扰。
+  if (editing.value && drag && !drag.moved && !drag.active) {
+    const uid = drag.uid
+    selectedUid.value = selectedUid.value === uid ? '' : uid
+    try { navigator.vibrate?.(12) } catch { /* 不支持则忽略 */ }
+  }
   // 拖动过则记录时刻：随后派发的 click 会被抑制，避免松手时误触发卡片内部交互（开关等）
   if (drag && drag.moved) lastDragEnd = Date.now()
   if (drag?.el) drag.el.style.transform = ''
@@ -496,7 +547,13 @@ function addCard(opt) {
   cards.value.push(card)
   openEditor(card)
 }
-function removeCard(card) { const i = cards.value.indexOf(card); if (i >= 0) cards.value.splice(i, 1) }
+function removeCard(card) {
+  const i = cards.value.indexOf(card)
+  if (i < 0) return
+  cards.value.splice(i, 1)
+  // 移除的卡片若正处于选中态，同步取消选中（底部操作栏回到引导态）
+  if (selectedUid.value === card.uid) selectedUid.value = ''
+}
 function moveCard(card, dir) {
   const i = cards.value.indexOf(card)
   const t = i + dir
@@ -823,7 +880,10 @@ function onMqCanEdit(e) {
 
 // 沉浸/编辑状态改变会改变网格可用高度，重新测量
 watch(() => ui.immersive, () => nextTick(measure))
-watch(() => editing.value, () => { if (!editing.value) addPanel.value = false; nextTick(measure) })
+watch(() => editing.value, () => {
+  if (!editing.value) { addPanel.value = false; selectedUid.value = '' } // 退出编辑同步清掉面板与选中态
+  nextTick(measure)
+})
 
 // ---- 性能基准：首屏网格就绪时刻 + 本组件重渲染次数（与卡片重渲染次数对比可看出扇出规模）----
 watch(loaded, (v) => {
@@ -927,6 +987,17 @@ onBeforeUnmount(() => {
   transition: none !important;
   box-shadow: 0 18px 44px -8px rgb(0 0 0 / .45) !important;
 }
+/* 编辑态选中卡片：主色描边 + 轻微抬升，与底部操作栏联动（tap 选中 / 取消）。
+   用 outline 而非 box-shadow，避免与拖拽阴影互相覆盖 */
+.hc-card-selected {
+  outline: 2px solid rgb(var(--c-primary) / .9);
+  outline-offset: -2px;
+  z-index: 5;
+}
+/* 编辑态网格底部预留操作栏空间：滚动到最底部时最后一排卡片不被操作栏遮挡 */
+.dashboard-grid.hc-grid-editing {
+  padding-bottom: 96px;
+}
 /* 卡片过多时跳过视口外卡片的布局与绘制（滚入视口才渲染，滚出即回收渲染开销）。
    地图卡除外：其内部按容器尺寸测量定位，初始隐藏会导致尺寸为 0 */
 .hc-card-holder:not([data-type="map"]) {
@@ -938,8 +1009,18 @@ onBeforeUnmount(() => {
   flex: none;
   transform-origin: top left;
 }
-/* 添加卡片悬浮面板展开/收起动画 */
+/* 添加卡片面板展开/收起动画 */
 .hc-panel-enter-active { transition: opacity .16s ease, transform .16s cubic-bezier(.2,.8,.2,1); }
 .hc-panel-leave-active { transition: opacity .12s ease, transform .12s ease; }
 .hc-panel-enter-from, .hc-panel-leave-to { opacity: 0; transform: translateY(6px) scale(.98); }
+/* 添加卡片面板列表滚动条：细样式跟随主题边框色 */
+.hc-panel-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--c-border) / .5) transparent;
+  -webkit-overflow-scrolling: touch;
+}
+.hc-panel-scroll::-webkit-scrollbar { width: 4px; }
+.hc-panel-scroll::-webkit-scrollbar-thumb { border-radius: 2px; background: rgb(var(--c-border) / .4); }
+.hc-panel-scroll::-webkit-scrollbar-track { background: transparent; }
+
 </style>
