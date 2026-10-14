@@ -1088,7 +1088,10 @@ public class NativeBridge {
     }
 
     // ==================== 状态栏通知（IM 新消息） ====================
-    private static final String NOTIF_CHANNEL_ID = "im_messages";
+    // v2：旧渠道由历史版本创建，部分 ROM（MIUI）删除同 ID 渠道再重建会沿用旧的
+    // 无声/无震动配置（渠道墓碑机制），导致「修复无声」不生效；升 ID 强制全新渠道，
+    // 保证升级用户的消息通知恢复声音与震动
+    private static final String NOTIF_CHANNEL_ID = "im_messages_v2";
     private static final int NOTIF_ID = 9001;
     private static final int NOTIF_PERM_CODE = 4301;
 
@@ -1142,9 +1145,20 @@ public class NativeBridge {
         }
     }
 
-    /** 弹出状态栏通知。点击通知拉应用到前台。Android 13+ 需先授权 POST_NOTIFICATIONS。 */
+    /** 弹出状态栏通知（旧接口，带声音震动）。点击通知拉应用到前台。Android 13+ 需先授权 POST_NOTIFICATIONS。 */
     @JavascriptInterface
     public void showNotification(final String title, final String body) {
+        showNotification2(title, body, false);
+    }
+
+    /**
+     * 弹出状态栏通知（可静默）。点击通知拉应用到前台。Android 13+ 需先授权 POST_NOTIFICATIONS。
+     *
+     * @param silent true = 消息免打扰：只显示在通知栏（IMPORTANCE_LOW，无横幅、无声、无震动）；
+     *               false = 正常消息通知（系统通知音 + 震动）
+     */
+    @JavascriptInterface
+    public void showNotification2(final String title, final String body, final boolean silent) {
         activity.runOnUiThread(new Runnable() {
             @Override
             public void run() {
@@ -1162,43 +1176,72 @@ public class NativeBridge {
                     }
                     NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
                     if (nm == null) return;
-                    // 创建通知渠道（Android 8+ 必需）；显式指定系统默认提示音（通知音量流，非媒体音量）。
-                    // 渠道创建后声音不可改：旧版本创建的无声渠道删除重建一次（用户若自定义过会被重置，可接受）
+                    final String chId;
+                    // 创建通知渠道（Android 8+ 必需）。渠道创建后声音/震动不可改：
+                    // 无声渠道删除重建一次（用户若自定义过会被重置，可接受）
                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                        AudioAttributes attrs = new AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_NOTIFICATION)
-                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                            .build();
-                        NotificationChannel ch = nm.getNotificationChannel(NOTIF_CHANNEL_ID);
-                        if (ch == null) {
-                            ch = new NotificationChannel(
-                                NOTIF_CHANNEL_ID, "消息通知", NotificationManager.IMPORTANCE_HIGH);
-                            ch.setDescription("收到新消息时通知");
-                            ch.setSound(Settings.System.DEFAULT_NOTIFICATION_URI, attrs);
-                            ch.enableVibration(true);
-                            nm.createNotificationChannel(ch);
-                        } else if (ch.getSound() == null) {
-                            nm.deleteNotificationChannel(NOTIF_CHANNEL_ID);
-                            NotificationChannel fresh = new NotificationChannel(
-                                NOTIF_CHANNEL_ID, "消息通知", NotificationManager.IMPORTANCE_HIGH);
-                            fresh.setDescription("收到新消息时通知");
-                            fresh.setSound(Settings.System.DEFAULT_NOTIFICATION_URI, attrs);
-                            fresh.enableVibration(true);
-                            nm.createNotificationChannel(fresh);
+                        NotificationManager fNm = nm;
+                        if (silent) {
+                            // 免打扰渠道：低重要性——进通知栏不横幅、不响、不震
+                            chId = NOTIF_CHANNEL_ID + "_dnd";
+                            NotificationChannel dnd = fNm.getNotificationChannel(chId);
+                            if (dnd == null) {
+                                dnd = new NotificationChannel(chId, "消息通知（免打扰）",
+                                    NotificationManager.IMPORTANCE_LOW);
+                                dnd.setDescription("免打扰开启时新消息只显示不提醒");
+                                dnd.setSound(null, null);
+                                dnd.enableVibration(false);
+                                fNm.createNotificationChannel(dnd);
+                            }
+                        } else {
+                            chId = NOTIF_CHANNEL_ID;
+                            AudioAttributes attrs = new AudioAttributes.Builder()
+                                .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                                .build();
+                            NotificationChannel ch = fNm.getNotificationChannel(chId);
+                            if (ch == null) {
+                                ch = new NotificationChannel(chId, "消息通知",
+                                    NotificationManager.IMPORTANCE_HIGH);
+                                ch.setDescription("收到新消息时通知");
+                                ch.setSound(Settings.System.DEFAULT_NOTIFICATION_URI, attrs);
+                                ch.setVibrationPattern(new long[]{0, 350, 250, 350});
+                                ch.enableVibration(true);
+                                fNm.createNotificationChannel(ch);
+                            } else if (ch.getSound() == null) {
+                                fNm.deleteNotificationChannel(chId);
+                                NotificationChannel fresh = new NotificationChannel(chId, "消息通知",
+                                    NotificationManager.IMPORTANCE_HIGH);
+                                fresh.setDescription("收到新消息时通知");
+                                fresh.setSound(Settings.System.DEFAULT_NOTIFICATION_URI, attrs);
+                                fresh.setVibrationPattern(new long[]{0, 350, 250, 350});
+                                fresh.enableVibration(true);
+                                fNm.createNotificationChannel(fresh);
+                            }
                         }
+                    } else {
+                        chId = NOTIF_CHANNEL_ID; // Android 8 以下无渠道概念，setDefaults 走默认
                     }
                     // 点击通知拉应用到前台
                     Intent intent = new Intent(ctx, activity.getClass());
                     intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
                     PendingIntent pi = PendingIntent.getActivity(ctx, 0, intent,
                         PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-                    NotificationCompat.Builder b = new NotificationCompat.Builder(ctx, NOTIF_CHANNEL_ID)
+                    NotificationCompat.Builder b = new NotificationCompat.Builder(ctx, chId)
                         .setSmallIcon(android.R.drawable.ic_dialog_info)
                         .setContentTitle(title == null ? "新消息" : title)
                         .setContentText(body == null ? "" : body)
                         .setAutoCancel(true)
-                        .setPriority(NotificationCompat.PRIORITY_HIGH)
+                        .setPriority(silent ? NotificationCompat.PRIORITY_LOW : NotificationCompat.PRIORITY_HIGH)
                         .setContentIntent(pi);
+                    if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.O) {
+                        // Android 8 以下：渠道不生效，直接在通知上指定声音/震动/静默
+                        if (silent) {
+                            b.setDefaults(0);
+                        } else {
+                            b.setDefaults(NotificationCompat.DEFAULT_ALL);
+                        }
+                    }
                     nm.notify(NOTIF_ID, b.build());
                 } catch (Exception ignored) {
                 }

@@ -681,10 +681,16 @@ async function notifyNewIm() {
   const title = '收到来自 ' + sender + ' 的消息'
   const body = preview || '点击查看'
 
-  // APK 原生状态栏通知
+  // APK 原生状态栏通知：消息免打扰（本机开关）时走静默通知——只亮通知栏，不响铃不震动；
+  // 旧版 APK 无 showNotification2，回退旧接口（带声音）
   const native = window.StickyKeeNative
   if (native && typeof native.showNotification === 'function') {
-    native.showNotification(title, body)
+    const dnd = localStorage.getItem('hc_im_dnd') === '1'
+    if (typeof native.showNotification2 === 'function') {
+      native.showNotification2(title, body, dnd)
+    } else {
+      native.showNotification(title, body)
+    }
     return
   }
   // Web 端：Notification API（已授权时弹系统通知，否则回退应用内 toast）

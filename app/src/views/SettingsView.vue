@@ -817,6 +817,20 @@
           </p>
           <p v-else class="text-muted text-sm">检测中…</p>
         </div>
+        <!-- 消息免打扰：仅静音消息通知（仍显示在通知栏），来电提醒不受影响；本机生效 -->
+        <div v-if="canInAppUpdate" class="rounded-xl bg-background border border-border px-3 py-2.5 flex items-center justify-between gap-3">
+          <div class="min-w-0">
+            <p class="text-muted text-xs">消息免打扰</p>
+            <p class="text-muted text-[11px] mt-0.5">开启后新消息通知不响铃不震动（仍显示在通知栏），来电提醒不受影响；仅对本手机生效</p>
+          </div>
+          <button @click="imDnd = !imDnd"
+            class="relative w-11 h-6 rounded-full transition-colors duration-200 shrink-0"
+            :class="imDnd ? 'bg-primary' : 'bg-muted/40'"
+            :aria-label="imDnd ? '关闭消息免打扰' : '开启消息免打扰'">
+            <span class="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all duration-200"
+              :class="imDnd ? 'left-[22px]' : 'left-0.5'"></span>
+          </button>
+        </div>
         <!-- 开机自启动：MIUI 等需手动允许，引导到应用详情 -->
         <div v-if="canInAppUpdate" class="rounded-xl bg-background border border-border px-3 py-2.5">
           <p class="text-muted text-xs mb-1">开机自启动</p>
@@ -1692,6 +1706,15 @@ const notifOn = ref(null)
 function refreshNotif() {
   try { notifOn.value = !!window.StickyKeeNative?.notifEnabled?.() } catch { notifOn.value = null }
 }
+
+// 消息免打扰（本机开关，localStorage）：开启后新消息通知走静默渠道（不响不震，仍显示）
+const imDnd = ref(localStorage.getItem('hc_im_dnd') === '1')
+watch(imDnd, (v) => {
+  try {
+    if (v) localStorage.setItem('hc_im_dnd', '1')
+    else localStorage.removeItem('hc_im_dnd')
+  } catch { }
+})
 // 申请通知权限：首次弹系统框；被永久拒绝后原生会自动跳应用详情 → 回来时重查状态
 function askNotifPerm() {
   try { window.StickyKeeNative?.requestNotifPermission?.() } catch { /* 忽略 */ }
