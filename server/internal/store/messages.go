@@ -19,6 +19,7 @@ type Message struct {
 	Device    map[string]any `json:"device,omitempty"` // device 类型：{entity_id,name,icon,domain,device_class,...}
 	Image     map[string]any `json:"image,omitempty"`  // image 类型：{url,name}
 	Audio     map[string]any `json:"audio,omitempty"`  // audio 类型：{url,name,duration}
+	Targets   []string       `json:"targets,omitempty"` // share 类型：分享目标端（web/apk）
 }
 
 // Conversation 表示一个对话的聚合视图。
@@ -38,9 +39,9 @@ func NewMessageRepo(db *sql.DB) *MessageRepo { return &MessageRepo{db: db} }
 
 const msgCols = `id, from_user, to_user, msg_type, status, read, created_at`
 
-// fillMessage 依据类型回填 Content/Device/Image（share 不返回 payload 全文；
+// fillMessage 依据类型回填 Content/Device/Image/Targets（share 不返回 payload 全文；
 // 已撤回消息清空载荷，历史记录只留占位）。
-func fillMessage(m *Message, msgType, payload string) {
+func fillMessage(m *Message, msgType, payload, meta string) {
 	m.Type = msgType
 	if m.Status == "recalled" {
 		return
@@ -53,6 +54,11 @@ func fillMessage(m *Message, msgType, payload string) {
 		_ = json.Unmarshal([]byte(payload), &m.Image)
 	} else if msgType == "audio" {
 		_ = json.Unmarshal([]byte(payload), &m.Audio)
+	} else if msgType == "share" {
+		// meta 为 JSON 字符串数组 ["web","apk"]；旧消息无 meta（空），视为目标 Web 端（历史行为）
+		if meta != "" {
+			_ = json.Unmarshal([]byte(meta), &m.Targets)
+		}
 	}
 }
 
@@ -64,11 +70,11 @@ func scanMessage(row interface{ Scan(...any) error }) (Message, error) {
 	return m, err
 }
 
-// Create 写入一条消息，返回 id。
-func (r *MessageRepo) Create(ctx context.Context, from, to, msgType, payload, status string) (int64, error) {
+// Create 写入一条消息，返回 id。meta 为附加元数据 JSON（share 存目标端数组，其余空）。
+func (r *MessageRepo) Create(ctx context.Context, from, to, msgType, payload, status, meta string) (int64, error) {
 	res, err := r.db.ExecContext(ctx,
-		`INSERT INTO messages(from_user, to_user, msg_type, payload, status) VALUES(?,?,?,?,?)`,
-		from, to, msgType, payload, status)
+		`INSERT INTO messages(from_user, to_user, msg_type, payload, status, meta) VALUES(?,?,?,?,?,?)`,
+		from, to, msgType, payload, status, meta)
 	if err != nil {
 		return 0, err
 	}
@@ -76,15 +82,16 @@ func (r *MessageRepo) Create(ctx context.Context, from, to, msgType, payload, st
 	return id, err
 }
 
-// GetFull 查询单条完整消息（含 payload）。
+// GetFull 查询单条完整消息（含 payload 与 meta）。
 func (r *MessageRepo) GetFull(ctx context.Context, id int64) (Message, string, error) {
 	var m Message
 	var read int
-	var payload string
+	var payload, meta string
 	err := r.db.QueryRowContext(ctx,
-		`SELECT id, from_user, to_user, msg_type, payload, status, read, created_at FROM messages WHERE id=?`, id).
-		Scan(&m.ID, &m.From, &m.To, &m.Type, &payload, &m.Status, &read, &m.CreatedAt)
+		`SELECT id, from_user, to_user, msg_type, payload, meta, status, read, created_at FROM messages WHERE id=?`, id).
+		Scan(&m.ID, &m.From, &m.To, &m.Type, &payload, &meta, &m.Status, &read, &m.CreatedAt)
 	m.Read = read != 0
+	fillMessage(&m, m.Type, payload, meta)
 	return m, payload, err
 }
 
@@ -94,7 +101,7 @@ func (r *MessageRepo) History(ctx context.Context, me, other string, limit int, 
 	if limit <= 0 {
 		limit = 50
 	}
-	q := `SELECT id, from_user, to_user, msg_type, payload, status, read, created_at FROM messages
+	q := `SELECT id, from_user, to_user, msg_type, payload, meta, status, read, created_at FROM messages
 		 WHERE (from_user=? AND to_user=?) OR (from_user=? AND to_user=?)`
 	args := []any{me, other, other, me}
 	if before > 0 {
@@ -112,12 +119,12 @@ func (r *MessageRepo) History(ctx context.Context, me, other string, limit int, 
 	for rows.Next() {
 		var m Message
 		var read int
-		var payload string
-		if err := rows.Scan(&m.ID, &m.From, &m.To, &m.Type, &payload, &m.Status, &read, &m.CreatedAt); err != nil {
+		var payload, meta string
+		if err := rows.Scan(&m.ID, &m.From, &m.To, &m.Type, &payload, &meta, &m.Status, &read, &m.CreatedAt); err != nil {
 			return nil, err
 		}
 		m.Read = read != 0
-		fillMessage(&m, m.Type, payload)
+		fillMessage(&m, m.Type, payload, meta)
 		rev = append(rev, m)
 	}
 	if err := rows.Err(); err != nil {
@@ -134,7 +141,7 @@ func (r *MessageRepo) History(ctx context.Context, me, other string, limit int, 
 // Conversations 返回与我相关的全部对话（聚合出对端、未读、待处理共享、最后一条）。
 func (r *MessageRepo) Conversations(ctx context.Context, me string) ([]*Conversation, error) {
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, from_user, to_user, msg_type, status, read, created_at, payload
+		`SELECT id, from_user, to_user, msg_type, status, read, created_at, payload, meta
 		 FROM messages
 		 WHERE from_user=? OR to_user=?
 		 ORDER BY id ASC`, me, me)
@@ -146,17 +153,18 @@ func (r *MessageRepo) Conversations(ctx context.Context, me string) ([]*Conversa
 	type raw struct {
 		msg     Message
 		payload string
+		meta    string
 	}
 	list := []raw{}
 	for rows.Next() {
 		var m Message
 		var read int
-		var payload string
-		if err := rows.Scan(&m.ID, &m.From, &m.To, &m.Type, &m.Status, &read, &m.CreatedAt, &payload); err != nil {
+		var payload, meta string
+		if err := rows.Scan(&m.ID, &m.From, &m.To, &m.Type, &m.Status, &read, &m.CreatedAt, &payload, &meta); err != nil {
 			return nil, err
 		}
 		m.Read = read != 0
-		list = append(list, raw{msg: m, payload: payload})
+		list = append(list, raw{msg: m, payload: payload, meta: meta})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -185,7 +193,7 @@ func (r *MessageRepo) Conversations(ctx context.Context, me string) ([]*Conversa
 		}
 		// 最后一条按序累加（升序遍历，最后覆盖即最新）
 		c.Last = raw.msg
-		fillMessage(&c.Last, raw.msg.Type, raw.payload)
+		fillMessage(&c.Last, raw.msg.Type, raw.payload, raw.meta)
 		if raw.msg.Type == "share" {
 			c.CardCount = CardCount(raw.payload)
 		}

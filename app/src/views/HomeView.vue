@@ -160,6 +160,7 @@
         :data-type="card.type"
         :style="holderStyle(card)"
         @pointerdown="onCardPointerDown($event, card)"
+        @contextmenu="onCardContextMenu"
         @click.capture="onHolderClickCapture"
       >
         <!-- 编辑态操作条：悬浮于卡片右下角（不占布局、不遮挡顶部标题） -->
@@ -234,11 +235,12 @@ import { useAutoHide } from '@/composables/useAutoHide'
 import { mark, count, measure as perfMeasure } from '@/utils/perf'
 import { saveKV, loadKV } from '@/utils/snapshotCache'
 import { getPrefs, putPrefs } from '@/utils/prefs'
+import { isApk } from '@/utils/serverConfig'
 import { syncCurrentLocation, locErrorMessage, trackingEnabled } from '@/utils/location'
 import CodeCard from '@/components/cards/CodeCard.vue'
 import CardEditor from '@/components/cards/CardEditor.vue'
 import { cardDefaults } from '@/components/cards/defaults'
-import { newCard, newPage, migrateDashboard, serializeDashboard, downloadDashboard, parseImportPayload, autoComposeHomepage } from '@/utils/dashboard'
+import { newCard, newPage, migrateDashboard, serializeDashboard, downloadDashboard, parseImportPayload, autoComposeHomepage, layoutKey } from '@/utils/dashboard'
 
 function meta(type) { return cardDefaults[type] || cardDefaults.greeting }
 
@@ -347,7 +349,10 @@ const dragCard = ref(null)
 let drag = null // { card, el, uid, grabX, grabY, startX, startY, active, moved }
 let lastDragEnd = 0 // 最近一次拖动结束时刻：用于抑制随后的 click（自失效，不会泄漏）
 function holderEl(card) { return document.getElementById('card-' + card.uid) }
+let lastPointerType = ''
 function onCardPointerDown(e, card) {
+  lastPointerType = e.pointerType || ''
+  onCardLongPressStart(e) // 非编辑态触屏：长按卡片进入编辑模式
   if (!editing.value || e.button !== 0) return
   // 操作条内的按钮不触发拖拽（左移/右移/编辑/删除照常可点）
   if (e.target.closest('.hc-card-tools')) return
@@ -421,6 +426,42 @@ function onHolderClickCapture(e) {
     e.stopPropagation()
   }
 }
+// ---- 手机端长按卡片进入编辑模式 ----
+// 非编辑态下按住卡片 500ms 触发：震动反馈 + 提示引导；移动/松手即取消，
+// 触发后吞掉随后的 click，避免长按误触发卡片内部交互（开关/滑条等）。
+let lp = null // { timer, x, y, fired }
+function onCardLongPressStart(e) {
+  if (editing.value || e.pointerType !== 'touch') return
+  clearLongPress()
+  lp = { timer: 0, x: e.clientX, y: e.clientY, fired: false }
+  lp.timer = setTimeout(() => {
+    if (!lp) return
+    lp.fired = true
+    lastDragEnd = Date.now() // 吞掉随后派发的 click
+    editing.value = true
+    try { navigator.vibrate?.(30) } catch { /* 不支持则忽略 */ }
+    toast('已进入编辑模式：按住卡片拖动可调整位置，点「完成」保存')
+  }, 500)
+  window.addEventListener('pointermove', onCardLongPressMove)
+  window.addEventListener('pointerup', onCardLongPressEnd)
+  window.addEventListener('pointercancel', onCardLongPressEnd)
+}
+function onCardLongPressMove(e) {
+  // 手指移动超过 10px 视为滑动/滚动意图，取消长按
+  if (lp && !lp.fired && Math.hypot(e.clientX - lp.x, e.clientY - lp.y) > 10) clearLongPress()
+}
+function onCardLongPressEnd() { clearLongPress() }
+function clearLongPress() {
+  if (lp) clearTimeout(lp.timer)
+  lp = null
+  window.removeEventListener('pointermove', onCardLongPressMove)
+  window.removeEventListener('pointerup', onCardLongPressEnd)
+  window.removeEventListener('pointercancel', onCardLongPressEnd)
+}
+function onCardContextMenu(e) {
+  // 触屏长按期间 / 编辑态拖拽时不弹系统右键菜单（与长按进编辑、拖拽冲突）；桌面右键不受影响
+  if (lp || (editing.value && lastPointerType === 'touch')) e.preventDefault()
+}
 function updateCols() {
   if (!gridEl.value) return
   const w = gridEl.value.clientWidth
@@ -466,8 +507,11 @@ function moveCard(card, dir) {
 const isFirst = (c) => cards.value.indexOf(c) === 0
 const isLast = (c) => cards.value.indexOf(c) === cards.value.length - 1
 
-// 首页布局的本地缓存键：存与后端 dashboard 字段同格式的 JSON 字符串
-const LAYOUT_CACHE_KEY = 'dashboard-layout'
+// 双端独立布局：Web 端存 dashboard，手机端存 dashboard_apk，各自读写互不影响。
+// 手机端自身键为空时回退读 dashboard（升级过渡：首启两端从同一布局起步）。
+const DASH_KEY = layoutKey(isApk)
+const LAYOUT_CACHE_KEY = isApk ? 'dashboard-layout-apk' : 'dashboard-layout-web'
+const LEGACY_CACHE_KEY = 'dashboard-layout' // 升级前双端共用的旧缓存键，只读回退一次
 
 // 解析并应用一份布局 JSON（后端权威值与本地缓存走同一条路径：迁移 → 应用）。
 // 返回 { migrated } 表示应用成功，null 表示结构不可用。
@@ -496,15 +540,22 @@ async function loadLayout() {
   // 布局请求先发出去，再读本地缓存——两条线并行，缓存读取不会推迟网络请求
   const prefsPromise = getPrefs().catch(() => null)
   // 1) 本地缓存布局：先出画面，不等 /prefs 往返（与实体快照同一策略）。
+  //    本端缓存为空时读一次升级前的旧共享缓存（随后会写入本端新键）。
   //    这一步决定「网格就绪」的时刻——原先它必须等布局请求回来才开始渲染。
-  const cached = await loadKV(LAYOUT_CACHE_KEY).catch(() => null)
+  let cached = await loadKV(LAYOUT_CACHE_KEY).catch(() => null)
+  if (!cached?.dashboard) {
+    const legacy = await loadKV(LEGACY_CACHE_KEY).catch(() => null)
+    if (legacy?.dashboard) cached = legacy
+  }
   if (cached?.dashboard && !pages.value.length) {
     if (applyDashboardJson(cached.dashboard, cached.map_config)) mark('boot:layoutCached')
   }
   // 2) 后端权威值：到达后覆盖（正在编辑时不覆盖，避免打断操作）
   const res = await prefsPromise
   const data = res?.data || {}
-  const dash = data.dashboard || ''
+  // 本端布局键优先；手机端为空时回退旧共享键 dashboard（升级后首次打开）
+  let dash = data[DASH_KEY] || ''
+  if (!dash && isApk) dash = data.dashboard || ''
   const mapJson = data.map_config || ''
   let has = false
   let migrated = false
@@ -517,14 +568,14 @@ async function loadLayout() {
   loaded.value = true
   // 后端确有布局：落一份本地缓存，供下次打开即时绘制
   if (has) cacheLayout(dash, mapJson)
-  // 旧结构迁移后落库一次（只在确实迁移过时写，避免与「完成」保存竞争）
-  if (migrated) putPrefs({ dashboard: serializeDashboard(pages.value) }).catch(() => {})
+  // 旧结构迁移后落库一次到本端键（只在确实迁移过时写，避免与「完成」保存竞争）
+  if (migrated) putPrefs({ [DASH_KEY]: serializeDashboard(pages.value) }).catch(() => {})
 }
 async function saveLayout() {
   const json = serializeDashboard(pages.value)
   lastLocalSave = Date.now() // 本端刚保存：抑制随后服务端广播触发的重载，避免打断当前界面
   try {
-    await putPrefs({ dashboard: json })
+    await putPrefs({ [DASH_KEY]: json })
     cacheLayout(json)
     editing.value = false
   } catch { /* 静默 */ }
@@ -537,13 +588,14 @@ async function resetLayout() {
   const json = serializeDashboard(pages.value)
   lastLocalSave = Date.now()
   try {
-    await putPrefs({ dashboard: json })
+    await putPrefs({ [DASH_KEY]: json })
     cacheLayout(json)
   } catch { /* 离线：仅本次重置生效 */ }
 }
 
 // ---- 跨端热刷新：本人在其它设备保存/接受分享仪表盘后，这里自动重载 ----
-// 刚在本地保存（4s 内）或正在编辑时忽略广播，避免打断当前操作
+// 刚在本地保存（4s 内）或正在编辑时忽略广播，避免打断当前操作；
+// 广播按布局键过滤（store 层已保证只有本端键变更才递增 dashboardRev）
 let lastLocalSave = 0
 watch(dashboardRev, () => {
   if (editing.value || Date.now() - lastLocalSave < 4000) return
@@ -689,7 +741,7 @@ async function applyImport(nextPages, nextIndex, okMsg) {
   try {
     const json = serializeDashboard(pages.value)
     lastLocalSave = Date.now() // 抑制本端广播触发的重载
-    await putPrefs({ dashboard: json })
+    await putPrefs({ [DASH_KEY]: json })
     cacheLayout(json)
     importInfo.value = null
     editing.value = false
@@ -827,6 +879,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('fullscreenchange', onFsChange)
   if (mqDesktop) mqDesktop.removeEventListener('change', onMqDesktop)
   if (mqCanEdit) mqCanEdit.removeEventListener('change', onMqCanEdit)
+  clearLongPress() // 长按手势进行中卸载：摘掉 window 级监听
 })
 </script>
 
@@ -855,6 +908,7 @@ onBeforeUnmount(() => {
   overflow: hidden;
   container-type: inline-size;
   border-radius: 16px;
+  -webkit-touch-callout: none; /* 触屏长按不弹系统预览菜单（长按进编辑模式的交互依赖） */
   /* 保留 transform 过渡：编辑模式拖拽换位时其余卡片让位仍靠它平滑动画 */
   transition: transform .16s ease, box-shadow .16s ease;
 }

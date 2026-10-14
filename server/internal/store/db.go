@@ -92,6 +92,14 @@ func migrate(db *sql.DB) error {
 			return fmt.Errorf("migrate skip_tls: %w", err)
 		}
 	}
+	// 迁移：为旧库补充 meta 列（share 消息的分享目标端等附加元数据，JSON）
+	if has, err := hasColumn(db, "messages", "meta"); err != nil {
+		return err
+	} else if !has {
+		if _, err := db.Exec(`ALTER TABLE messages ADD COLUMN meta TEXT NOT NULL DEFAULT ''`); err != nil {
+			return fmt.Errorf("migrate messages.meta: %w", err)
+		}
+	}
 	return nil
 }
 

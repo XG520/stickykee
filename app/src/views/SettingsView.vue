@@ -324,6 +324,18 @@
         </select>
       </div>
 
+      <!-- 后台定位授权（原生采集模式）：授予「始终允许」后 geocoded_location 才能退后台刷新 -->
+      <div v-if="isNativeSensorMode()" class="flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl bg-background border border-border mb-1">
+        <div class="min-w-0">
+          <p class="text-on-surface text-xs font-semibold">后台定位权限</p>
+          <p class="text-muted text-xs mt-0.5 leading-relaxed">在系统设置中选「始终允许」，退后台才能刷新位置类传感器</p>
+        </div>
+        <button @click="askBgLocation"
+          class="shrink-0 px-2.5 py-1.5 rounded-lg bg-primary hover:bg-primary-hover text-on-primary text-xs font-semibold transition-all duration-200 active:scale-95">
+          去开启
+        </button>
+      </div>
+
       <div v-if="sensorDefs.length" class="space-y-1">
         <ToggleRow
           v-for="d in sensorDefs"
@@ -918,14 +930,14 @@ import { ref, reactive, watch, onMounted, onUnmounted, computed } from 'vue'
 import ToggleRow from '@/components/ToggleRow.vue'
 import api, { getToken } from '@/api'
 import { listDevices, ensureDevice, renameDevice, deleteDevice, getDeviceId, currentDevice, readCache } from '@/utils/device'
-import { availableSensors, unavailableReason, startSensorMonitor, buildReportPayload } from '@/utils/sensors'
+import { availableSensors, unavailableReason, startSensorMonitor, buildReportPayload, isNativeSensorMode } from '@/utils/sensors'
 import { showNotify, setBlackout, setScreenBrightness, setScreenWake, blackout, saveBlackoutDismiss, watchAmbientLight } from '@/utils/browserCommands'
 import { loadInstances, switchInstance, changePassword, authLogout, auth, store, backendOnline, haTokenConfigured, haTokenKnown, saveHAToken, siteName, loadSiteName, saveSiteName as persistSiteName } from '@/store'
 import { applyTheme, resolveTheme, THEMES, CUSTOM_COLOR_KEYS, DEFAULT_CUSTOM_COLORS } from '@/themes'
 import { getPrefs, putPrefs } from '@/utils/prefs'
 import { isApk, openServerSheet } from '@/utils/serverConfig'
 import { trackingEnabled, setTrackingEnabled } from '@/utils/location'
-import { applyTrackingPref, setSensorIntervalPref } from '@/utils/autoSync'
+import { applyTrackingPref, setSensorIntervalPref, syncNativeSensorConfig } from '@/utils/autoSync'
 
 // ---- 设备追踪开关（APK 默认开启、网页端默认关闭，localStorage 设备级偏好） ----
 // 切换后调 applyTrackingPref 即时启停定位链路（autoSync 的 watch/周期上报），无需刷新或重登
@@ -1158,7 +1170,7 @@ async function saveAlias(d) {
   try {
     const renamed = await renameDevice(d.device_id, name)
     d.name = renamed.name; d._draft = renamed.name
-    flash('设备别名已更新')
+    flash(renamed.ha_renamed ? '设备别名已更新，HA 设备名已同步' : `别名已更新；${renamed.ha_message || 'HA 设备名未同步'}`, !renamed.ha_renamed)
   } catch (e) { flash(e.message, true) }
 }
 async function removeDevice(d) {
@@ -1233,6 +1245,7 @@ async function loadSensors() {
     }
   } catch { /* 忽略坏配置 */ }
   syncMonitor()
+  syncNativeSensorConfig(true) // 原生采集模式：进入设置页即同步一次采集上下文（Web 模式为空操作）
   // 注册上报门控：仅当本机启用了传感器、或设备追踪开启（APK 默认开）时才上报一次，
   // 注册 mobile_app 设备（HA 中出现 Sticky Kee 设备）。
   // 网页端默认（无启用传感器 + 追踪关闭）完全不注册——设备列表与 HA 中都不会生成条目。
@@ -1261,12 +1274,17 @@ async function toggleSensor(key, on) {
   sensorConfig[key] = on
   try {
     await saveSensorConfig()
-    if (on) { syncMonitor(); reportNow(false) }
+    // 原生采集模式：把启用项清单同步给原生（原生立即按新清单上报一次）；
+    // Web 降级模式：有启用项时启动状态变化监听并即时上报一次。
+    if (isNativeSensorMode()) syncNativeSensorConfig(true)
+    else if (on) { syncMonitor(); reportNow(false) }
   } catch (e) { flash(e.message, true) }
 }
 
-// 有启用项时启动状态变化监听（变化即上报 + 60s 兜底），全部关闭时停止
+// 有启用项时启动状态变化监听（变化即上报 + 60s 兜底），全部关闭时停止。
+// 原生采集模式下采集/上报全由原生承担，不启动 Web 监听（见 docs/传感器原生采集开发规范.md）。
 function syncMonitor() {
+  if (isNativeSensorMode()) return
   const enabledKeys = sensorDefs.value.filter((d) => sensorConfig[d.key]).map((d) => d.key)
   if (enabledKeys.length && !stopMonitor) {
     stopMonitor = startSensorMonitor({
@@ -1286,6 +1304,25 @@ async function reportNow(showMsg = true, trigger = 'manual') {
   const enabled = sensorDefs.value.filter((d) => sensorConfig[d.key]).map((d) => d.key)
   // 手动点击且未启用任何传感器时给出提示；自动触发（注册设备）不受此限制
   if (!enabled.length && showMsg) { flash('请先启用至少一个传感器', true); return }
+  // 原生采集模式：采集与上报全部由原生承担，前端只同步采集上下文并触发一次原生上报
+  if (isNativeSensorMode()) {
+    reporting.value = true
+    try {
+      await syncNativeSensorConfig(true)
+      const res = await nativeReportNow(trigger)
+      if (res.ok) {
+        lastReport.value = new Date().toLocaleTimeString()
+        if (showMsg) flash(`设备传感器已上报（${res.reported} 项）`)
+      } else if (showMsg) {
+        flash(NATIVE_SENSOR_TIPS[res.error] || res.error || '传感器上报失败', true)
+      }
+    } catch (e) {
+      if (showMsg) flash(e.message, true)
+    } finally {
+      reporting.value = false
+    }
+    return
+  }
   reporting.value = true
   try {
     const { id, payload } = await buildReportPayload(store.activeID, enabled, { trigger, amapKey: map.amap_key.trim() })
@@ -1303,6 +1340,37 @@ async function reportNow(showMsg = true, trigger = 'manual') {
   } finally {
     reporting.value = false
   }
+}
+
+// 原生采集上报错误码 → 中文提示（错误码见 NativeSensorReporter.java 的 ReportCallback）
+const NATIVE_SENSOR_TIPS = {
+  no_context: '采集上下文未就绪，请稍后重试或重新登录',
+  busy: '上一次上报尚未完成，请稍后重试',
+  auth: '登录状态已失效，请重新登录',
+  unavailable: '当前环境不支持原生采集',
+  timeout: '上报超时，请检查网络连接',
+}
+// 触发一次原生即时上报并等待结果（stickykee-sensors 事件按 req 匹配；超时 20s 视为失败）。
+// 仅 APK 原生采集模式调用；纯浏览器环境走 reportNow 的 Web 路径。
+function nativeReportNow(trigger = 'manual', timeoutMs = 20000) {
+  return new Promise((resolve) => {
+    const nv = typeof window !== 'undefined' ? window.StickyKeeNative : null
+    if (!nv || typeof nv.reportSensorsNow !== 'function') { resolve({ ok: false, error: 'unavailable' }); return }
+    const req = 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+    const done = (r) => {
+      window.removeEventListener('stickykee-sensors', onEvt)
+      clearTimeout(timer)
+      resolve(r)
+    }
+    const onEvt = (e) => {
+      const d = e && e.detail
+      if (!d || d.req !== req) return
+      done({ ok: !!d.ok, reported: Number(d.reported) || 0, error: d.error || '' })
+    }
+    const timer = setTimeout(() => done({ ok: false, error: 'timeout' }), timeoutMs)
+    window.addEventListener('stickykee-sensors', onEvt)
+    try { nv.reportSensorsNow(trigger, req) } catch (e) { done({ ok: false, error: (e && e.message) || 'error' }) }
+  })
 }
 
 // ---- 浏览器命令（Browser_mod 风格）：本地自测 ----
@@ -1581,6 +1649,11 @@ function askNotifPerm() {
 // 开机自启动引导：MIUI 等需在应用详情手动开启
 function goAppDetails() {
   try { window.StickyKeeNative?.openAppDetails?.() } catch { /* 忽略 */ }
+}
+// 后台定位授权引导（原生采集模式）：Android 11+ 跳应用详情选「始终允许」，10 及以下弹运行时框
+function askBgLocation() {
+  try { window.StickyKeeNative?.requestBackgroundLocation?.() } catch { /* 忽略 */ }
+  flash('请在系统设置中将定位权限改为「始终允许」')
 }
 const onVisNotif = () => { if (document.visibilityState === 'visible') refreshNotif() }
 async function loadAppInfo() {

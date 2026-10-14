@@ -7,6 +7,7 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.Handler;
@@ -15,6 +16,7 @@ import android.os.Looper;
 
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.ServiceCompat;
+import androidx.core.content.ContextCompat;
 
 /**
  * 前台保活服务：登录后启动，持有前台服务让系统（尤其 MIUI 等激进省电 ROM）
@@ -23,10 +25,10 @@ import androidx.core.app.ServiceCompat;
  * 通知为低重要性（IMPORTANCE_LOW）常驻通知，无提示音不打扰；点击回到应用。
  * 登出时由前端经 NativeBridge.stopKeepAlive() 停止。
  *
- * 传感器后台心跳：WebView 退后台后 JS 定时器全部冻结（pauseTimers），
- * 传感器停止更新——服务以可配置间隔（sensor_interval，默认 60s）调用
- * NativeBridge.tickSensorsFromService()，经 evaluateJavascript 注入
- * window.__skSensorTick 驱动前端采集上报（显式注入不受 pauseTimers 影响）。
+ * 传感器后台心跳：传感器采集与上报完全由原生 NativeSensorReporter 承担
+ * （见 docs/传感器原生采集开发规范.md）。服务以可配置间隔（sensor_interval，默认 60s）
+ * 每次心跳调用 NativeSensorReporter.report() 采集启用项并直连服务端上报——
+ * 不依赖 WebView 存活，退后台/被划掉仍按周期刷新（与官方 App 同路）。
  * 间隔经 NativeBridge.setSensorInterval 由前端设置页修改，持久化在
  * SharedPreferences("stickykee")，服务重启后沿用。
  *
@@ -48,8 +50,10 @@ public class KeepAliveService extends Service {
     private final Runnable heartbeat = new Runnable() {
         @Override
         public void run() {
+            // 传感器采集与上报完全由原生统一采集器承担（不依赖 WebView 存活）：
+            // 每次心跳按启用项采集并直连服务端上报（见 NativeSensorReporter / 开发规范）。
             try {
-                NativeBridge.tickSensorsFromService();
+                NativeSensorReporter.report(getApplicationContext(), "periodic");
             } catch (Exception ignored) {
             }
             if (ticking) handler.postDelayed(this, intervalMs);
@@ -89,7 +93,7 @@ public class KeepAliveService extends Service {
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .build();
         ServiceCompat.startForeground(this, NOTIF_ID, n,
-                Build.VERSION.SDK_INT >= 29 ? ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC : 0);
+                Build.VERSION.SDK_INT >= 29 ? foregroundType() : 0);
 
         // 进程被杀后的服务自恢复：intent 为 null 说明是系统重启（非前端主动启动），
         // 主界面不在时尝试拉起——重建 WebView/连接后传感器与消息全部自动恢复。
@@ -124,6 +128,25 @@ public class KeepAliveService extends Service {
         handler.removeCallbacks(heartbeat);
         ticking = true;
         handler.postDelayed(heartbeat, intervalMs);
+    }
+
+    /**
+     * 前台服务类型掩码：始终 dataSync；定位权限已授予时叠加 location
+     * （geocoded_location 后台刷新需要）。未授予定位时只声明 dataSync——
+     * Android 14 对 location 类型要求持有定位权限，否则启动前台服务会被拒绝。
+     */
+    private int foregroundType() {
+        int type = ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC;
+        try {
+            if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION)
+                    == PackageManager.PERMISSION_GRANTED
+                    || ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION)
+                    == PackageManager.PERMISSION_GRANTED) {
+                type |= ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION;
+            }
+        } catch (Exception ignored) {
+        }
+        return type;
     }
 
     @Override

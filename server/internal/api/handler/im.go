@@ -185,7 +185,7 @@ func (h *Im) SendText(w http.ResponseWriter, r *http.Request) {
 	if !h.requireTarget(w, r, to) {
 		return
 	}
-	id, err := h.msgs.Create(r.Context(), me, to, "text", body.Content, "")
+	id, err := h.msgs.Create(r.Context(), me, to, "text", body.Content, "", "")
 	if err != nil {
 		WriteErr(w, 500, "internal", err.Error())
 		return
@@ -247,7 +247,7 @@ func (h *Im) ListTTS(w http.ResponseWriter, r *http.Request) {
 // 用户消息先落库 → 调 active 实例 /api/conversation/process（携带上次 conversation_id 保持上下文）
 // → 助手回复落库 → 实时通知本人 → 密文返回两条消息 id。
 func (h *Im) chatAssistant(w http.ResponseWriter, r *http.Request, me, text string) {
-	id1, err := h.msgs.Create(r.Context(), me, AssistantUser, "text", text, "")
+	id1, err := h.msgs.Create(r.Context(), me, AssistantUser, "text", text, "", "")
 	if err != nil {
 		WriteErr(w, 500, "internal", err.Error())
 		return
@@ -256,7 +256,7 @@ func (h *Im) chatAssistant(w http.ResponseWriter, r *http.Request, me, text stri
 	if err != nil {
 		// 连接不可用（未配实例/未填 Token）：以助手身份在会话内给出友好提示，
 		// 保证对话线程总能得到应答，而不是向用户抛英文原始错误。
-		id2, cerr := h.msgs.Create(r.Context(), AssistantUser, me, "text", haUnavailableReply(err), "")
+		id2, cerr := h.msgs.Create(r.Context(), AssistantUser, me, "text", haUnavailableReply(err), "", "")
 		if cerr != nil {
 			WriteErr(w, 500, "internal", cerr.Error())
 			return
@@ -276,7 +276,7 @@ func (h *Im) chatAssistant(w http.ResponseWriter, r *http.Request, me, text stri
 	if newCID != "" && newCID != cid {
 		_ = h.userPrefs.Set(r.Context(), me, "ha_chat_cid", newCID)
 	}
-	id2, err := h.msgs.Create(r.Context(), AssistantUser, me, "text", reply, "")
+	id2, err := h.msgs.Create(r.Context(), AssistantUser, me, "text", reply, "", "")
 	if err != nil {
 		WriteErr(w, 500, "internal", err.Error())
 		return
@@ -290,7 +290,7 @@ func (h *Im) chatAssistant(w http.ResponseWriter, r *http.Request, me, text stri
 // → 助手回复落库 → 实时通知本人 → 密文返回两条消息 id。
 // 识别失败时也以助手文字回复收尾，保证线程总能得到应答。
 func (h *Im) chatAssistantVoice(w http.ResponseWriter, r *http.Request, me string, audio []byte, mime, payload string) {
-	id1, err := h.msgs.Create(r.Context(), me, AssistantUser, "audio", payload, "")
+	id1, err := h.msgs.Create(r.Context(), me, AssistantUser, "audio", payload, "", "")
 	if err != nil {
 		WriteErr(w, 500, "internal", err.Error())
 		return
@@ -318,7 +318,7 @@ func (h *Im) chatAssistantVoice(w http.ResponseWriter, r *http.Request, me strin
 	if newCID != "" && newCID != cid {
 		_ = h.userPrefs.Set(r.Context(), me, "ha_chat_cid", newCID)
 	}
-	id2, err := h.msgs.Create(r.Context(), AssistantUser, me, "text", reply, "")
+	id2, err := h.msgs.Create(r.Context(), AssistantUser, me, "text", reply, "", "")
 	if err != nil {
 		WriteErr(w, 500, "internal", err.Error())
 		return
@@ -439,7 +439,7 @@ func (h *Im) SendDevice(w http.ResponseWriter, r *http.Request) {
 		WriteErr(w, 500, "internal", "serialize device failed")
 		return
 	}
-	id, err := h.msgs.Create(r.Context(), me, to, "device", string(payload), "")
+	id, err := h.msgs.Create(r.Context(), me, to, "device", string(payload), "", "")
 	if err != nil {
 		WriteErr(w, 500, "internal", err.Error())
 		return
@@ -448,7 +448,36 @@ func (h *Im) SendDevice(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, 200, map[string]any{"id": id})
 }
 
-// SendShare POST /messages/{user}/share  {dashboard}
+// shareTargetsValid 分享目标端取值集合。
+var shareTargetsValid = map[string]bool{"web": true, "apk": true}
+
+// normalizeShareTargets 规整目标端：小写、去重、仅保留 web/apk；
+// 未指定时默认仅 Web 端（兼容旧客户端）；给了非法值但无合法值时报错。
+func normalizeShareTargets(in []string) ([]string, bool) {
+	if len(in) == 0 {
+		return []string{"web"}, true
+	}
+	seen := map[string]bool{}
+	for _, t := range in {
+		t = strings.ToLower(strings.TrimSpace(t))
+		if t == "" || !shareTargetsValid[t] {
+			continue
+		}
+		seen[t] = true
+	}
+	switch {
+	case seen["web"] && seen["apk"]:
+		return []string{"web", "apk"}, true
+	case seen["apk"]:
+		return []string{"apk"}, true
+	case seen["web"]:
+		return []string{"web"}, true
+	}
+	return nil, false
+}
+
+// SendShare POST /messages/{user}/share  {dashboard, targets}
+// targets：分享目标端 ["web","apk"] 子集，决定接收方接受后覆盖哪一端的仪表盘。
 func (h *Im) SendShare(w http.ResponseWriter, r *http.Request) {
 	me := rUsername(r)
 	to := chi.URLParam(r, "user")
@@ -457,7 +486,8 @@ func (h *Im) SendShare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Dashboard string `json:"dashboard"`
+		Dashboard string   `json:"dashboard"`
+		Targets   []string `json:"targets"`
 	}
 	if err := DecodeBody(r, &body); err != nil {
 		WriteErr(w, 400, "bad_request", "bad payload")
@@ -467,16 +497,22 @@ func (h *Im) SendShare(w http.ResponseWriter, r *http.Request) {
 		WriteErr(w, 400, "bad_request", "dashboard required")
 		return
 	}
+	targets, ok := normalizeShareTargets(body.Targets)
+	if !ok {
+		WriteErr(w, 400, "bad_request", "targets 仅支持 web / apk")
+		return
+	}
 	if !h.requireTarget(w, r, to) {
 		return
 	}
-	id, err := h.msgs.Create(r.Context(), me, to, "share", body.Dashboard, "pending")
+	meta, _ := json.Marshal(targets)
+	id, err := h.msgs.Create(r.Context(), me, to, "share", body.Dashboard, "pending", string(meta))
 	if err != nil {
 		WriteErr(w, 500, "internal", err.Error())
 		return
 	}
 	h.notify(to)
-	WriteJSON(w, 200, map[string]any{"id": id, "card_count": store.CardCount(body.Dashboard)})
+	WriteJSON(w, 200, map[string]any{"id": id, "card_count": store.CardCount(body.Dashboard), "targets": targets})
 }
 
 // Accept POST /messages/{id}/accept   接收方同意：复制仪表盘并标记为已接受。
@@ -504,13 +540,31 @@ func (h *Im) Accept(w http.ResponseWriter, r *http.Request) {
 		WriteJSON(w, 200, map[string]any{"ok": true, "status": "accepted"})
 		return
 	}
-	if err := h.userPrefs.Set(r.Context(), me, "dashboard", dashboard); err != nil {
-		WriteErr(w, 500, "internal", err.Error())
-		return
+	// 目标端决定覆盖哪些键：web→dashboard，apk→dashboard_apk。
+	// 旧消息无 targets（空）按仅 Web 端处理（历史行为）。
+	targets := msg.Targets
+	if len(targets) == 0 {
+		targets = []string{"web"}
 	}
-	// 通知接收者本人全部设备热刷新仪表盘（含本机，前端对编辑态做保护）
-	if b, err := json.Marshal(map[string]any{"type": "prefs", "key": "dashboard"}); err == nil && h.hub != nil {
-		h.hub.BroadcastUser(me, b)
+	keys := make([]string, 0, len(targets))
+	for _, t := range targets {
+		k := "dashboard"
+		if t == "apk" {
+			k = "dashboard_apk"
+		}
+		if err := h.userPrefs.Set(r.Context(), me, k, dashboard); err != nil {
+			WriteErr(w, 500, "internal", err.Error())
+			return
+		}
+		keys = append(keys, k)
+	}
+	// 通知接收者本人全部设备热刷新仪表盘：keys 指明受影响的布局键
+	// （dashboard=Web 端 / dashboard_apk=手机端），前端按本端键过滤，
+	// 未受影响的端不重载（另端排版不受影响）。
+	if h.hub != nil {
+		if b, err := json.Marshal(map[string]any{"type": "prefs", "keys": keys}); err == nil {
+			h.hub.BroadcastUser(me, b)
+		}
 	}
 	if err := h.msgs.SetStatus(r.Context(), id, "accepted"); err != nil {
 		WriteErr(w, 500, "internal", err.Error())
@@ -622,7 +676,7 @@ func (h *Im) SendImage(w http.ResponseWriter, r *http.Request) {
 		"url":  "/api/v1/im-files/im/" + name,
 		"name": hdr.Filename,
 	})
-	id, err := h.msgs.Create(r.Context(), me, to, "image", string(payload), "")
+	id, err := h.msgs.Create(r.Context(), me, to, "image", string(payload), "", "")
 	if err != nil {
 		WriteErr(w, 500, "internal", err.Error())
 		return
@@ -717,7 +771,7 @@ func (h *Im) SendAudio(w http.ResponseWriter, r *http.Request) {
 		h.chatAssistantVoice(w, r, me, audioBytes, mimeFromExt(ext), string(payload))
 		return
 	}
-	id, err := h.msgs.Create(r.Context(), me, to, "audio", string(payload), "")
+	id, err := h.msgs.Create(r.Context(), me, to, "audio", string(payload), "", "")
 	if err != nil {
 		WriteErr(w, 500, "internal", err.Error())
 		return

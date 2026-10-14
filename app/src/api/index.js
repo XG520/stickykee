@@ -215,7 +215,7 @@ export const api = {
   sendAudio: (user, form) => postForm(`/messages/${encodeURIComponent(user)}/audio`, form),
   assistantTTS: (text, engine) => fetchBlob('GET', `/messages/assistant/tts?text=${encodeURIComponent(text)}${engine ? '&engine=' + encodeURIComponent(engine) : ''}`),
   recallMessage: (id) => api.post(`/messages/${id}/recall`),
-  sendShare: (user, dashboard) => api.post(`/messages/${encodeURIComponent(user)}/share`, { dashboard }),
+  sendShare: (user, dashboard, targets) => api.post(`/messages/${encodeURIComponent(user)}/share`, { dashboard, targets }),
   sendDevice: (user, device) => api.post(`/messages/${encodeURIComponent(user)}/device`, { device }),
   markMessageRead: (user) => api.post(`/messages/${encodeURIComponent(user)}/read`),
   acceptShare: (id) => api.post(`/messages/${id}/accept`),

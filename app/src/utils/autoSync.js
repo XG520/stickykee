@@ -2,21 +2,22 @@
 // 1) 自动定位：周期上报浏览器坐标到该设备的 device_tracker（HA 依据家 zone 判定在家/离家）。
 //    受「设备追踪开关」控制（utils/location.js trackingEnabled：APK 默认开、网页端默认关），
 //    关闭时不启动 watch/周期定位、不上报任何位置（手动同步按钮不受限）。
-// 2) 自动传感器：按后端 sensor_config 启用的项周期采集并上报（沿用 mobile_app 协议）。
+// 2) 自动传感器：Web 端按后端 sensor_config 启用的项周期采集并上报（沿用 mobile_app 协议）；
+//    APK 端由原生统一采集上报（见 docs/传感器原生采集开发规范.md），前端只同步采集上下文。
 // 定位/传感器在页面回到前台时补一次，保证离开标签页回来能及时刷新。
 import { watch } from 'vue'
-import api from '@/api'
+import api, { getToken } from '@/api'
 import { auth, store } from '@/store'
-import { getDeviceId } from '@/utils/device'
-import { getPrefs } from '@/utils/prefs'
+import { getDeviceId, currentDevice } from '@/utils/device'
+import { getPrefs, putPrefs } from '@/utils/prefs'
 import { syncCurrentLocation, reportLocation, nativeGps, trackingEnabled } from '@/utils/location'
-import { buildReportPayload } from '@/utils/sensors'
+import { buildReportPayload, isNativeSensorMode } from '@/utils/sensors'
 
 const LOC_INTERVAL = 5 * 60 * 1000 // 定位兜底周期：5 分钟
-// 传感器周期：默认 60s，可在设置页修改（prefs sensor_config.<deviceId>._interval，
-// 10~3600 秒）；APK 退后台后 JS 定时器冻结，由保活服务原生心跳按同间隔注入接管
+// 传感器周期（Web 端本地 timer 用）：默认 60s，可在设置页修改
+// （prefs sensor_config.<deviceId>._interval，10~3600 秒）。APK 端由原生保活服务按同间隔上报，
+// 不用本地 timer（见下方 syncNativeSensorConfig）。
 let sensorIntervalMs = 60 * 1000
-let lastSensorRun = 0              // 最近一次传感器上报发起时刻（后台 tick 防频次重合）
 const MOVE_THRESHOLD_M = 40        // 位置移动超过 ~40m 才上报（去抖动，避免静置反复上报）
 
 let locTimer = null
@@ -25,6 +26,7 @@ let unwatchActive = null
 let watchId = null
 let nativeWatchId = null // 原生 GPS 连续监听已启动标记
 let stopped = false
+let started = false
 let lastLoc = null   // 上一次已上报坐标 { lat, lng }
 let inFlight = { location: false, sensors: false }
 
@@ -95,12 +97,43 @@ async function syncLocation() {
   }
 }
 
+// ---- APK 原生统一采集上报（见 docs/传感器原生采集开发规范.md）----
+// APK 内传感器的采集与上报全部由原生 NativeSensorReporter 承担（不依赖 WebView 存活），
+// 前端只负责把「采集上下文」同步给原生：服务器地址 + 会话 token + 实例 + 设备ID/名 +
+// 启用项清单 + 追踪开关。原生据此在保活心跳中直连服务端上报（前台/后台同一链路）。
+// 上下文变化或每 10 次同步才写入（免频繁写 prefs）；原生写入后立即上报一次（开关即时生效）。
+let nativeCtxWritten = ''
+let nativeCtxCount = 0
+
+// 同步原生采集上下文；force=true 时忽略指纹比对强制写入（开关/追踪变化时用）。
+export async function syncNativeSensorConfig(force = false) {
+  if (!isNativeSensorMode()) return
+  const id = activeID()
+  const nv = nativeBridge()
+  if (!nv || !id || location.hostname === 'localhost') return // 未登录实例 / 壳页（origin 非服务器）
+  const keys = await enabledSensorKeys()
+  const csv = keys.join(',')
+  const track = trackingEnabled()
+  let devName = ''
+  try {
+    const dev = await currentDevice()
+    devName = dev.name || dev.dev_id || ''
+  } catch { /* 忽略 */ }
+  nativeCtxCount += 1
+  const ctx = [location.origin, getToken(), String(id), getDeviceId(), devName, csv, track ? '1' : '0'].join('|')
+  if (!force && ctx === nativeCtxWritten && nativeCtxCount % 10 !== 1) return
+  nativeCtxWritten = ctx
+  try {
+    nv.setSensorContext(location.origin, getToken(), String(id), getDeviceId(), devName, csv, track)
+  } catch { /* 忽略 */ }
+}
+
+// Web 降级：APK 内不使用（见 docs/传感器原生采集开发规范.md）——原生模式由原生采集上报。
 async function syncSensors() {
   if (inFlight.sensors || !canRun()) return
   const enabled = await enabledSensorKeys()
   if (!enabled.length) return // 未启用任何传感器则不采集（尊重用户配置）
   inFlight.sensors = true
-  lastSensorRun = Date.now()
   const id = activeID()
   try {
     const { payload } = await buildReportPayload(id, enabled, { trigger: 'periodic', amapKey: await mapKey(), debug: false })
@@ -115,7 +148,8 @@ async function syncSensors() {
 function onVisible() {
   if (!document.hidden) {
     syncLocation()
-    syncSensors()
+    if (isNativeSensorMode()) syncNativeSensorConfig()
+    else syncSensors()
   }
 }
 
@@ -161,26 +195,25 @@ function stopWatching() {
 
 // 启动自动同步；重复调用返回已存在的 stop。
 export function startAutoSync() {
-  if (locTimer || sensorTimer) return stopAutoSync
+  if (started) return stopAutoSync
+  started = true
   stopped = false
-  syncSensors()
+  // 传感器：原生模式仅同步采集上下文（采集/上报由原生 NativeSensorReporter 承担，不设本地 timer）；
+  // 纯浏览器环境走 Web 降级实现（本地周期采集上报）。
+  if (isNativeSensorMode()) syncNativeSensorConfig(true)
+  else syncSensors()
   applyTrackingPref() // 追踪开启（APK 默认）才启动定位链路；网页端默认关闭，不生成 device_tracker
   applySensorInterval() // 读取用户配置的上报间隔并同步给原生保活服务（APK 后台心跳）
-  sensorTimer = setInterval(syncSensors, sensorIntervalMs)
+  // Web 降级：本地周期 timer 仅非原生模式需要（原生模式由保活心跳上报）
+  if (!isNativeSensorMode()) sensorTimer = setInterval(syncSensors, sensorIntervalMs)
   document.addEventListener('visibilitychange', onVisible)
   // 实例就绪后才真正上报；activeID 变化时补跑一次
-  unwatchActive = watch(() => store.activeID, (v) => { if (v) { syncSensors(); applyTrackingPref() } })
-  // APK 后台心跳入口：保活服务按配置间隔经 evaluateJavascript 注入调用
-  // （退后台后 WebView 定时器全部冻结，原生显式注入不受影响，传感器因此实时更新）。
-  // 前台时与本地 timer 重合由频次校验吸收（半个间隔内的重复 tick 跳过）。
-  try {
-    window.__skSensorTick = () => {
-      if (!canRun()) return
-      const now = Date.now()
-      if (now - lastSensorRun < sensorIntervalMs / 2) return
-      syncSensors()
-    }
-  } catch { /* 非浏览器环境忽略 */ }
+  unwatchActive = watch(() => store.activeID, (v) => {
+    if (!v) return
+    if (isNativeSensorMode()) syncNativeSensorConfig(true)
+    else syncSensors()
+    applyTrackingPref()
+  })
   return stopAutoSync
 }
 
@@ -218,7 +251,6 @@ async function applySensorInterval() {
 export async function setSensorIntervalPref(sec) {
   const s = Math.max(10, Math.min(3600, parseInt(sec, 10) || 60))
   sensorIntervalMs = s * 1000
-  lastSensorRun = 0
   rescheduleSensorTimer()
   try {
     // 读-改-写 prefs（绕过本地缓存），避免覆盖其他设备的传感器配置
@@ -239,6 +271,8 @@ export async function setSensorIntervalPref(sec) {
 // 设备追踪开关应用：按 trackingEnabled() 启/停「定位链路」（GPS watch + 周期兜底）。
 // 传感器链路独立（由 sensor_config 控制），不受此开关影响。设置页切换后调用，即时生效。
 export function applyTrackingPref() {
+  // 原生采集模式：追踪开关变化需即时同步给原生（geocoded_location 采集据此启停）
+  if (isNativeSensorMode()) syncNativeSensorConfig(true)
   if (!canRun()) { stopLocSync(); return }
   if (!trackingEnabled()) { stopLocSync(); return }
   if (locTimer) return // 已在运行
@@ -255,9 +289,16 @@ function stopLocSync() {
 
 export function stopAutoSync() {
   stopped = true
+  started = false
   clearInterval(sensorTimer); sensorTimer = null
   stopLocSync()
   document.removeEventListener('visibilitychange', onVisible)
   if (unwatchActive) { unwatchActive(); unwatchActive = null }
-  try { delete window.__skSensorTick } catch { /* 忽略 */ }
+  // 登出/停止：清掉原生采集上下文与本地缓存指纹（重登后按新会话重写）
+  const nv = nativeBridge()
+  if (nv && typeof nv.clearSensorContext === 'function') {
+    try { nv.clearSensorContext() } catch { /* 忽略 */ }
+  }
+  nativeCtxWritten = ''
+  nativeCtxCount = 0
 }

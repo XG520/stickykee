@@ -11,10 +11,14 @@ public class MainActivity extends BridgeActivity {
     // 据此判断主界面是否需要重建——alive=false 说明用户划掉/进程被杀，尝试拉起自恢复
     public static volatile boolean alive = false;
 
+    // 应用前台标记：原生传感器采集器据此上报 screen_state（on=前台 / off=退后台）
+    public static volatile boolean foreground = false;
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         alive = true;
+        foreground = true;
         // 注册对所有源（壳页 + allowNavigation 远程页面）可用的极简原生桥，
         // 用于系统栏主题配色与 APK 原生 TTS；远程页没有 Capacitor JS 运行时，只能走 JavascriptInterface。
         nativeBridge = new NativeBridge(this);
@@ -62,12 +66,14 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onPause() {
         super.onPause();
+        foreground = false;
         if (nativeBridge != null) nativeBridge.onPause();
     }
 
     @Override
     public void onResume() {
         super.onResume();
+        foreground = true;
         if (nativeBridge != null) nativeBridge.onResume();
     }
 }

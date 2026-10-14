@@ -7,6 +7,8 @@ import { mark, measure, count, record, autoReportOnce } from '@/utils/perf'
 import { saveSnapshot, loadSnapshot, clearSnapshot, clearAll } from '@/utils/snapshotCache'
 import { getPrefs, putPrefs } from '@/utils/prefs'
 import { handshake, openEnvelope, withCrypto } from '@/utils/crypto'
+import { isApk } from '@/utils/serverConfig'
+import { layoutKey } from '@/utils/dashboard'
 
 mark('boot:store')
 
@@ -465,8 +467,13 @@ function connectWS() {
         // APK 不播 WebAudio 提示音（走媒体音量）：原生通知自带系统提示音（通知音量流）。
         if ((!imOpen.value || document.hidden) && !window.StickyKeeNative) playImBeep()
       }
-      // 仪表盘变更：本人在其它设备保存/接受分享后热刷新（HomeView 监听此版本号重载布局）
-      else if (m.type === 'prefs' && m.key === 'dashboard') dashboardRev.value++
+      // 仪表盘变更：本人在其它设备保存/接受分享后热刷新（HomeView 监听此版本号重载布局）。
+      // keys 为受影响的布局键数组（dashboard=Web 端 / dashboard_apk=手机端），
+      // 只有本端使用的键变更才重载；无 keys 的旧形式按 dashboard 处理（兼容旧版服务端）。
+      else if (m.type === 'prefs') {
+        const keys = Array.isArray(m.keys) ? m.keys : (m.key ? [m.key] : [])
+        if (keys.includes(layoutKey(isApk))) dashboardRev.value++
+      }
       // 通话信令：动态 import 避免 store ↔ call 模块循环依赖
       else if (m.type === 'call') import('@/utils/call').then((c) => c.handleCallEvent(m))
     } catch { /* 忽略坏帧 */ }

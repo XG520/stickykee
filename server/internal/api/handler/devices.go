@@ -142,7 +142,8 @@ func (h *Devices) Register(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, 200, d)
 }
 
-// Rename PUT /devices/{device_id}  {name}  修改设备别名（dev_id 保持不变）。
+// Rename PUT /devices/{device_id}  {name}  修改设备别名（dev_id 保持不变），
+// 并尽力把新名字同步到 HA 设备注册表（name_by_user，仅改显示名，不影响实体 ID）。
 func (h *Devices) Rename(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "device_id")
 	if id == "" {
@@ -169,11 +170,59 @@ func (h *Devices) Rename(w http.ResponseWriter, r *http.Request) {
 				WriteErr(w, 500, "internal", err.Error())
 				return
 			}
-			WriteJSON(w, 200, list[i])
+			// 同步 HA 设备名（尽力而为）：失败不影响本地别名，结果回传前端提示。
+			haRenamed, haMsg := h.syncHAName(r.Context(), list[i], list[i].Name)
+			slog.Info("device renamed", "user", username, "device", id, "name", list[i].Name, "ha_renamed", haRenamed, "ha", haMsg)
+			WriteJSON(w, 200, struct {
+				Device
+				HARenamed bool   `json:"ha_renamed"`
+				HAMsg     string `json:"ha_message"`
+			}{list[i], haRenamed, haMsg})
 			return
 		}
 	}
 	WriteErr(w, 404, "not_found", "device not found")
+}
+
+// syncHAName 把别名写入 HA 设备注册表的 name_by_user（尽力而为）。
+// 流程：WS config/device_registry/list 按 identifiers=["mobile_app","stickynuo_<dev_id>"]
+// 定位 HA 设备 → config/device_registry/update 写入 name_by_user。未配置实例/token、
+// HA 不可达或 token 无管理员权限时返回 false 与中文原因。
+func (h *Devices) syncHAName(ctx context.Context, dev Device, name string) (bool, string) {
+	if h.manager == nil {
+		return false, "服务未连接 HA"
+	}
+	// CallCommand 内部按当前用户个人 token 建连（id=0 取 active 实例）。
+	raw, err := h.manager.CallCommand(ctx, 0, "config/device_registry/list", nil)
+	if err != nil {
+		return false, "无法连接 Home Assistant：" + err.Error()
+	}
+	var devs []struct {
+		ID          string     `json:"id"`
+		Identifiers [][]string `json:"identifiers"`
+	}
+	if json.Unmarshal(raw, &devs) != nil {
+		return false, "HA 返回的设备注册表无法解析"
+	}
+	want := "stickynuo_" + dev.DevID
+	for _, d := range devs {
+		for _, ident := range d.Identifiers {
+			if len(ident) == 2 && ident[0] == "mobile_app" && ident[1] == want {
+				if _, err := h.manager.CallCommand(ctx, 0, "config/device_registry/update", map[string]any{
+					"device_id":    d.ID,
+					"name_by_user": name,
+				}); err != nil {
+					if strings.Contains(err.Error(), "unauthorized") || strings.Contains(err.Error(), "only_admin") || strings.Contains(err.Error(), "not_admin") {
+						return false, "HA 个人 token 需要管理员权限才能修改设备名"
+					}
+					return false, "HA 拒绝修改设备名：" + err.Error()
+				}
+				return true, ""
+			}
+		}
+	}
+	// HA 中不存在（尚未上报过位置或传感器，设备还没在 HA 注册）。
+	return false, "HA 中暂无该设备（先在地图上更新一次位置或开启传感器上报后再改名即可同步）"
 }
 
 // Delete DELETE /devices/{device_id}  删除设备并同步移除 HA 中的对应设备。

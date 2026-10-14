@@ -107,6 +107,9 @@
                         <span class="material-symbols-outlined text-primary text-base">dashboard</span> 仪表盘共享
                       </p>
                       <p class="mt-1 text-muted text-xs font-body">{{ shareStatus(m) }}</p>
+                      <p class="mt-0.5 text-muted text-[11px] font-body flex items-center gap-1">
+                        <span class="material-symbols-outlined text-xs shrink-0">devices</span>目标：{{ targetsLabel(m.targets) }}
+                      </p>
                       <div v-if="showActions(m)" class="mt-2 flex gap-2">
                         <button @click="doAccept(m)" class="flex-1 py-1.5 rounded-lg bg-primary hover:bg-primary-hover text-on-primary text-xs font-semibold transition-colors">接受</button>
                         <button @click="doDecline(m)" class="flex-1 py-1.5 rounded-lg border border-border text-muted hover:text-error hover:border-error/40 text-xs transition-colors">拒绝</button>
@@ -284,6 +287,31 @@
                   </div>
                 </Transition>
 
+                <!-- 仪表盘共享面板：选择目标端（接受后仅覆盖对方对应端排版，另端不受影响） -->
+                <Transition name="im-pop">
+                  <div v-if="showSharePanel" class="mb-2 rounded-xl border border-border bg-background p-3 shadow-lg">
+                    <div class="flex items-center justify-between mb-2 px-1">
+                      <span class="text-[10px] uppercase tracking-wide text-muted font-semibold font-body">共享仪表盘 · {{ shareCardCount }} 张卡片</span>
+                      <button @click="showSharePanel = false" class="text-muted hover:text-on-surface transition-colors" title="取消共享">
+                        <span class="material-symbols-outlined text-sm">close</span>
+                      </button>
+                    </div>
+                    <p class="px-1 mb-1.5 text-xs text-muted font-body">选择要覆盖对方哪一端的仪表盘，未选中的端保持不变</p>
+                    <div class="flex gap-2 px-1">
+                      <button v-for="(label, key) in shareTargetLabels" :key="key" @click="shareSel[key] = !shareSel[key]"
+                        class="flex-1 flex items-center justify-center gap-1.5 px-2 py-2 rounded-lg border text-sm transition-colors"
+                        :class="shareSel[key] ? 'bg-primary/10 border-primary/50 text-primary font-semibold' : 'bg-surface border-border text-muted hover:text-on-surface'">
+                        <span class="material-symbols-outlined text-base">{{ key === 'web' ? 'desktop_windows' : 'smartphone' }}</span>{{ label }}
+                        <span v-if="shareSel[key]" class="material-symbols-outlined text-base">check_circle</span>
+                      </button>
+                    </div>
+                    <button @click="confirmShare" :disabled="busy"
+                      class="mt-2.5 w-full py-2 rounded-lg bg-primary hover:bg-primary-hover text-on-primary text-sm font-semibold transition-colors disabled:opacity-50">
+                      发送共享
+                    </button>
+                  </div>
+                </Transition>
+
                 <!-- 加号功能面板（微信式网格） -->
                 <Transition name="im-pop">
                   <div v-if="showPlus" class="mb-2 grid grid-cols-4 gap-x-2 gap-y-3 rounded-xl border border-border bg-background p-3 shadow-lg">
@@ -377,8 +405,9 @@
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import api from '@/api'
 import { auth, imOpen, imRefresher, imConversations, closeIm, bumpIm, store, entityStates, requestEntityRefresh, refreshIm } from '@/store'
-import { dashboardCardCount } from '@/utils/dashboard'
+import { dashboardCardCount, layoutKey } from '@/utils/dashboard'
 import { getPrefs, putPrefs } from '@/utils/prefs'
+import { isApk } from '@/utils/serverConfig'
 import { VoiceRecorder, WavRecorder, NativeWavRecorder } from '@/utils/recorder'
 import { startCall } from '@/utils/call'
 import { openEnvelope, withCrypto } from '@/utils/crypto'
@@ -738,8 +767,8 @@ function shareLabel(st) {
   return st === 'accepted' ? '已接受' : st === 'declined' ? '已拒绝' : '待处理'
 }
 function shareStatus(m) {
-  if (m.from === auth.user) return `已发送给 ${m.to}（${shareLabel(m.status)}），共一次快照`
-  return `${m.from} 分享了一份仪表盘，接受后会覆盖你的仪表盘`
+  if (m.from === auth.user) return `已发送给 ${m.to}（${shareLabel(m.status)}），接受后覆盖对方对应端仪表盘`
+  return `${m.from} 分享了一份仪表盘，接受后会覆盖你 ${targetsLabel(m.targets)} 的现有排版`
 }
 function showActions(m) {
   return m.type === 'share' && m.status === 'pending' && m.from !== auth.user
@@ -799,6 +828,7 @@ async function openDevicePicker() {
   showEmoji.value = false
   showPlus.value = false
   showGroupPicker.value = false
+  showSharePanel.value = false
   if (showDevicePicker.value && !deviceCandidates.value.length) await reloadDevices()
 }
 async function reloadDevices() {
@@ -883,6 +913,7 @@ function closePanels() {
   showDevicePicker.value = false
   showPlus.value = false
   showGroupPicker.value = false
+  showSharePanel.value = false
 }
 function toggleVoiceMode() { voiceMode.value = !voiceMode.value; closePanels() }
 function toggleEmoji() {
@@ -890,12 +921,14 @@ function toggleEmoji() {
   showDevicePicker.value = false
   showPlus.value = false
   showGroupPicker.value = false
+  showSharePanel.value = false
 }
 function togglePlus() {
   showPlus.value = !showPlus.value
   showEmoji.value = false
   showDevicePicker.value = false
   showGroupPicker.value = false
+  showSharePanel.value = false
 }
 
 // ================= 语音通话 =================
@@ -909,6 +942,7 @@ function openGroupPicker() {
   showPlus.value = false
   showEmoji.value = false
   showDevicePicker.value = false
+  showSharePanel.value = false
 }
 function toggleGroupUser(u) { groupSel[u] = !groupSel[u] }
 async function startGroupCall() {
@@ -1231,19 +1265,53 @@ async function send() {
   finally { busy.value = false }
 }
 
+// ===== 仪表盘共享（目标端选择） =====
+// 本端布局键：Web 端分享 Web 端排版，手机端分享手机端排版（与首页双端独立布局一致）
+const myDashKey = layoutKey(isApk)
+const showSharePanel = ref(false)
+const shareDash = ref('')
+const shareCardCount = ref(0)
+const shareSel = reactive({ web: false, apk: false })
+const shareTargetLabels = { web: 'Web 端', apk: '手机端' }
+function targetsLabel(targets) {
+  const list = Array.isArray(targets) && targets.length ? targets : ['web'] // 旧消息无 targets：历史行为仅 Web 端
+  return list.map((t) => shareTargetLabels[t] || t).join('、')
+}
+
 async function share() {
+  if (!activeUser.value || busy.value) return
+  showPlus.value = false
+  try {
+    const { data } = await getPrefs()
+    // 本端布局为空时回退旧共享键（升级后手机端尚未保存过自身排版）
+    const dash = data?.[myDashKey] || (isApk ? data?.dashboard : '') || ''
+    const n = dashboardCardCount(dash)
+    if (!dash || n === 0) {
+      toast(`当前${isApk ? '手机' : 'Web'}端仪表盘为空，请先在首页编辑并保存`, true)
+      return
+    }
+    shareDash.value = dash
+    shareCardCount.value = n
+    // 默认勾选当前所在端
+    shareSel.web = !isApk
+    shareSel.apk = !!isApk
+    showEmoji.value = false
+    showDevicePicker.value = false
+    showGroupPicker.value = false
+    showSharePanel.value = true
+  } catch { toast('读取仪表盘失败', true) }
+}
+async function confirmShare() {
+  const targets = Object.keys(shareSel).filter((k) => shareSel[k])
+  if (!targets.length) { toast('请至少选择一个目标端', true); return }
   if (!activeUser.value || busy.value) return
   busy.value = true
   try {
-    const { data } = await getPrefs()
-    if (!data?.dashboard || dashboardCardCount(data.dashboard) === 0) {
-      toast('当前仪表盘为空，请先在首页编辑并保存', true)
-      return
-    }
-    await api.sendShare(activeUser.value, data.dashboard)
+    await api.sendShare(activeUser.value, shareDash.value, targets)
+    showSharePanel.value = false
     await loadMessages(activeUser.value)
     bumpIm()
-    toast('仪表盘已共享给对方')
+    toast(`仪表盘已共享给对方（${targetsLabel(targets)}）`)
   } catch (e) { toast(e.message || '共享失败', true) }
   finally { busy.value = false }
 }
@@ -1254,7 +1322,7 @@ async function doAccept(m) {
     await api.acceptShare(m.id)
     await loadMessages(activeUser.value)
     bumpIm()
-    toast('已接受，回到首页即为新的仪表盘')
+    toast(`已接受（覆盖${targetsLabel(m.targets)}仪表盘），回到首页即可看到新排版`)
   } catch (e) { toast(e.message || '接受失败', true) }
   finally { busy.value = false }
 }

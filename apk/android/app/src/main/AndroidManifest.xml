@@ -35,11 +35,12 @@
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
 
-        <!-- 前台保活服务：登录后启动，防后台冻结断连（通知低重要性无声音） -->
+        <!-- 前台保活服务：登录后启动，防后台冻结断连（通知低重要性无声音）。
+             dataSync 保连接；location 用于后台刷新所在位置（需已授予定位权限） -->
         <service
             android:name=".KeepAliveService"
             android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            android:foregroundServiceType="dataSync|location" />
 
         <!-- 开机自启动：重启后恢复保活服务并拉起主界面（MIUI 需用户开「自启动」） -->
         <receiver
@@ -56,9 +57,13 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- 前台保活服务（dataSync 类型，Android 14 要求声明对应权限） -->
+    <!-- 前台保活服务（dataSync 保连接 + location 后台刷新位置，Android 14 要求声明对应权限） -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <!-- 网络状态传感器（原生采集 connection_type / network_quality / wifi_ssid / bssid） -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <!-- 电池优化白名单：SOS/常驻后台（微信级保活），登录后引导用户豁免 -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- 应用内更新：下载 APK 后拉起系统安装器（Android 8+ 需用户允许安装未知应用） -->
@@ -70,6 +75,8 @@
          报 "User denied Geolocation"；首次定位时由 Capacitor 弹系统授权 -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- 后台定位：退后台后刷新所在位置（geocoded_location）需要；Android 11+ 需用户选「始终允许」 -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <!-- 状态栏通知：IM 新消息推送（Android 13+ 需运行时授权） -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- 开机自启动：重启后恢复常驻保活（前台服务 + 自动拉起主界面重建连接） -->

@@ -31,7 +31,8 @@ func NewPrefs(repo *store.InstanceRepo, userPrefs *store.UserPrefs, manager *ha.
 // 用户级偏好 key：按登录用户隔离；无值回退全局 prefs。
 // tts_engine（网页端引擎）与 tts_engine_apk（手机端引擎）都必须在列：
 // 缺失时手机端读不到自己的引擎设置，会错误回退到网页端引擎（如 Kokoro）。
-var userScoped = []string{"theme", "font", "icons", "floorplan", "floorplan_doc", "animation", "wakeWord", "dashboard", "tts_engine", "tts_engine_apk"}
+// dashboard（Web 端仪表盘）与 dashboard_apk（手机端仪表盘）分键存储，两端排版互不影响。
+var userScoped = []string{"theme", "font", "icons", "floorplan", "floorplan_doc", "animation", "wakeWord", "dashboard", "dashboard_apk", "tts_engine", "tts_engine_apk"}
 
 // 设备级偏好 key：按登录用户隔离（设备/传感器均属个人），无全局回退。
 var deviceScoped = []string{"devices", "sensor_config"}
@@ -193,7 +194,9 @@ func (h *Prefs) Put(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	isAdmin := auth.IsAdmin(r.Context())
-	dashChanged := false // 本次写入是否包含 dashboard
+	// 本次写入涉及哪些仪表盘键（dashboard=Web 端 / dashboard_apk=手机端）：
+	// 写库后按受影响端通知本人全部设备热刷新，未受影响的端不重载
+	dashKeys := []string{}
 
 	userSet := map[string]bool{}
 	for _, k := range userScoped {
@@ -205,8 +208,8 @@ func (h *Prefs) Put(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for k, v := range body {
-		if k == "dashboard" {
-			dashChanged = true // 仪表盘变更：写库后通知本人全部设备热刷新
+		if k == "dashboard" || k == "dashboard_apk" {
+			dashKeys = append(dashKeys, k) // 仪表盘变更：写库后通知本人全部设备热刷新
 		}
 		switch {
 		case k == "ha_token":
@@ -266,8 +269,10 @@ func (h *Prefs) Put(w http.ResponseWriter, r *http.Request) {
 	}
 	// 仪表盘已变更：经 WebSocket 通知本人全部设备热刷新（含发起保存的设备，
 	// 前端对「刚在本地保存过」的端做时间窗去重，不会打断当前界面）。
-	if dashChanged && h.hb != nil {
-		if b, err := json.Marshal(map[string]any{"type": "prefs", "key": "dashboard"}); err == nil {
+	// keys 指明受影响的布局键（dashboard=Web 端 / dashboard_apk=手机端），
+	// 前端按本端使用的键过滤，未受影响的端不重载。
+	if len(dashKeys) > 0 && h.hb != nil {
+		if b, err := json.Marshal(map[string]any{"type": "prefs", "keys": dashKeys}); err == nil {
 			h.hb.BroadcastUser(username, b)
 		}
 	}
@@ -314,7 +319,7 @@ func PublicCORS(next http.HandlerFunc) http.HandlerFunc {
 
 // Version 后端版本号：随发布递增，经 healthz 暴露，供前端设置页与 APK 壳页
 // 确认当前连接的服务端版本（排查「更新没生效」类问题）。
-const Version = "1.2.1"
+const Version = "1.4.0"
 
 // Healthz 存活探针（公开：附带后端版本号）。
 func (Health) Healthz(w http.ResponseWriter, r *http.Request) {

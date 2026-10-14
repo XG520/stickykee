@@ -10,6 +10,13 @@ export const DASH_VERSION = 2
 export const EXPORT_APP = 'lumina-home-app'
 export const EXPORT_KIND = 'dashboard'
 
+// ---- 双端独立布局键：Web 端沿用历史键 dashboard，手机端独立使用 dashboard_apk ----
+// 两端各存各的，卡片排列/页结构互不影响。手机端在自身键为空时回退读 dashboard
+// （升级过渡：两端从同一布局起步，随后各自独立演进）。
+export const LAYOUT_KEY_WEB = 'dashboard'
+export const LAYOUT_KEY_APK = 'dashboard_apk'
+export function layoutKey(isApk) { return isApk ? LAYOUT_KEY_APK : LAYOUT_KEY_WEB }
+
 let uidSeq = 0
 function uid() { return (++uidSeq).toString(36) + Date.now().toString(36) }
 

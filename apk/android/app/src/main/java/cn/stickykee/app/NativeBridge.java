@@ -119,34 +119,8 @@ public class NativeBridge {
         activeBridge = this;
     }
 
-    // ---- 服务→WebView 传感器心跳 ----
-    // KeepAliveService 在后台按配置间隔调用 tickSensorsFromService()，经此注入
-    // window.__skSensorTick 驱动前端采集上报。evaluateJavascript 是显式调用，
-    // 不受 WebView 后台 pauseTimers（JS 定时器全部冻结）影响——这是后台传感器
-    // 实时更新的关键：退后台后前端 setInterval 停摆，由原生心跳接管。
+    // 当前活跃桥：Activity 销毁时 release() 置空（供扩展的原生回调判定页面是否存活）
     private static volatile NativeBridge activeBridge;
-
-    /** 保活服务心跳入口：向当前活跃页面注入一次传感器 tick；无活跃页面时静默。 */
-    public static void tickSensorsFromService() {
-        NativeBridge b = activeBridge;
-        if (b != null) b.dispatchSensorTick();
-    }
-
-    private void dispatchSensorTick() {
-        activity.runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    WebView wv = webView;
-                    if (wv == null) return;
-                    // __skSensorTick 由 autoSync 在登录后挂载：内部做登录态/频次校验
-                    wv.evaluateJavascript(
-                        "if(window.__skSensorTick)try{window.__skSensorTick()}catch(e){}", null);
-                } catch (Exception ignored) {
-                }
-            }
-        });
-    }
 
     // ==================== 传感器上报间隔（后台心跳周期，前端可配） ====================
     // 前端设置页保存间隔时调用 setSensorInterval：落 SharedPreferences（跨进程持久），
@@ -176,6 +150,106 @@ public class NativeBridge {
         } catch (Exception e) {
             return 60;
         }
+    }
+
+    // ==================== 传感器采集上下文（原生统一采集上报） ====================
+    // 见 docs/传感器原生采集开发规范.md：APK 端传感器的采集与上报由原生
+    // NativeSensorReporter 统一承担（前端只负责配置与展示）。前端在登录、实例切换、
+    // 启用项变化、追踪开关变化时经 setSensorContext 写入采集上下文，原生据此采集
+    // 启用项并在保活心跳中直连服务端上报——不依赖 WebView 存活。
+
+    /** 能力版本号：前端据此判定原生侧支持「统一采集上报」（≥2 时启用原生模式）。 */
+    @JavascriptInterface
+    public int sensorApiVersion() {
+        return 2;
+    }
+
+    /**
+     * 写入采集上下文：服务器地址、Bearer token、实例ID、设备ID、设备名、启用项 CSV、追踪开关。
+     * 写入后原生立即触发一次上报（开关变化即时生效）。壳页（localhost）不写由前端保障。
+     */
+    @JavascriptInterface
+    public void setSensorContext(final String baseUrl, final String token, final String instanceId,
+                                 final String deviceId, final String deviceName,
+                                 final String enabledKeysCsv, final boolean tracking) {
+        NativeSensorReporter.setContext(activity.getApplicationContext(), baseUrl, token,
+                instanceId, deviceId, deviceName, enabledKeysCsv, tracking);
+    }
+
+    /** 登出/会话停止时清理采集上下文。 */
+    @JavascriptInterface
+    public void clearSensorContext() {
+        NativeSensorReporter.clearContext(activity.getApplicationContext());
+    }
+
+    /** 手动即时上报：结果经 stickykee-sensors 事件回传 {req, ok, reported, error}。 */
+    @JavascriptInterface
+    public void reportSensorsNow(final String trigger, final String req) {
+        try {
+            NativeSensorReporter.reportNow(activity.getApplicationContext(), trigger,
+                    new NativeSensorReporter.ReportCallback() {
+                        @Override
+                        public void onResult(boolean ok, int reported, String error) {
+                            dispatchSensors(req, ok, reported, error);
+                        }
+                    });
+        } catch (Exception ignored) {
+        }
+    }
+
+    private static final int BG_LOC_CODE = 4102;
+
+    /**
+     * 申请后台定位权限：Android 11+ 需在系统设置里选「始终允许」，跳应用详情页引导；
+     * Android 10 及以下与前台定位同一次运行时授权即可。授予后 geocoded_location 才能后台刷新。
+     */
+    @JavascriptInterface
+    public void requestBackgroundLocation() {
+        try {
+            if (ContextCompat.checkSelfPermission(activity, Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                    == PackageManager.PERMISSION_GRANTED) {
+                return;
+            }
+            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.parse("package:" + activity.getPackageName()));
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                activity.startActivity(i);
+            } else {
+                activity.runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            ActivityCompat.requestPermissions(activity,
+                                    new String[]{Manifest.permission.ACCESS_BACKGROUND_LOCATION}, BG_LOC_CODE);
+                        } catch (Exception ignored) {
+                        }
+                    }
+                });
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    /** 向 JS 派发传感器上报结果事件 stickykee-sensors。 */
+    private void dispatchSensors(final String req, final boolean ok, final int reported, final String error) {
+        final WebView wv = webView;
+        if (wv == null) return;
+        final String js = "window.dispatchEvent(new CustomEvent('stickykee-sensors',{detail:{"
+                + "req:" + JSONObject.quote(req == null ? "" : req)
+                + ",ok:" + ok
+                + ",reported:" + reported
+                + ",error:" + JSONObject.quote(error == null ? "" : error)
+                + "}}))";
+        activity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    wv.evaluateJavascript(js, null);
+                } catch (Exception ignored) {
+                }
+            }
+        });
     }
 
     private int parseHex(String s) {

@@ -1,5 +1,9 @@
 // 设备传感器：检测设备类型与浏览器能力，按启用项采集传感器值，
 // 并启动监听（状态变化立即回调 + 60s 周期兜底）。数据经后端 HA mobile_app 协议上报。
+//
+// ⚠️ Web 降级实现：APK 内不使用（见 docs/传感器原生采集开发规范.md）。
+// APK（isNativeSensorMode() 为真）内所有传感器的采集与上报全部由原生 NativeSensorReporter
+// 承担——本文件的 collect / startSensorMonitor / buildReportPayload 仅在纯浏览器环境生效。
 import { getDeviceId, currentDevice } from '@/utils/device'
 import { getCurrentPosition } from '@/utils/location'
 import { wgs84ToGcj02 } from '@/utils/gcj02'
@@ -15,18 +19,27 @@ export function detectDeviceType() {
   return 'desktop'
 }
 
+// ---- 原生统一采集模式（APK 且原生桥具备统一采集能力；见 docs/传感器原生采集开发规范.md）----
+// 原生模式下采集与上报全部由原生 NativeSensorReporter 承担，前端只负责配置与展示。
+export function isNativeSensorMode() {
+  const n = typeof window !== 'undefined' ? window.StickyKeeNative : null
+  return !!(n && typeof n.sensorApiVersion === 'function' && n.sensorApiVersion() >= 2)
+}
+
 // ---- 浏览器能力探测 ----
 export function detectCapabilities() {
   const type = detectDeviceType()
+  const nat = isNativeSensorMode() // APK 原生统一采集：对应能力由原生桥提供
   return {
-    battery: typeof navigator.getBattery === 'function', // 桌面 Chrome 也支持（Secure Context）
-    connection: !!(navigator.connection && typeof navigator.connection.addEventListener === 'function'),
+    native: nat,
+    battery: nat || typeof navigator.getBattery === 'function', // 桌面 Chrome 也支持（Secure Context）
+    connection: nat || !!(navigator.connection && typeof navigator.connection.addEventListener === 'function'),
     light: lightAvailable(), // APK 原生环境光优先，其次浏览器 Generic Sensor（仅安全上下文）
-    wakeLock: (typeof navigator.wakeLock === 'object' && typeof navigator.wakeLock.request === 'function')
+    wakeLock: nat || (typeof navigator.wakeLock === 'object' && typeof navigator.wakeLock.request === 'function')
       || nativeKeepScreenOn(), // APK 原生常亮兜底（http 下 Web WakeLock 不可用）
     visibility: true, // 页面可见性所有浏览器都支持
-    geolocation: typeof navigator.geolocation !== 'undefined',
-    mobile: type === 'mobile' || type === 'tablet',
+    geolocation: nat ? nativeGpsAvailable() : typeof navigator.geolocation !== 'undefined',
+    mobile: nat || type === 'mobile' || type === 'tablet',
   }
 }
 
@@ -40,7 +53,8 @@ export function availableSensors() {
   if (cap.connection) { keys.add('connection_type'); keys.add('network_quality'); keys.add('wifi_ssid'); keys.add('bssid') }
   if (cap.visibility) keys.add('screen_state')
   if (cap.mobile && cap.light) keys.add('light_sensor')
-  if (cap.mobile && cap.light) keys.add('proximity')
+  // 原生模式：接近感应为硬件接近传感器（与环境光无关）；Web 模式仍依赖环境光启发式
+  if (cap.native ? cap.mobile : (cap.mobile && cap.light)) keys.add('proximity')
   keys.add('public_ip')
   keys.add('current_time_zone')
   keys.add('last_update_trigger')
@@ -66,6 +80,7 @@ export function unavailableReason(key) {
       return cap.light ? '' : '当前浏览器不支持环境光传感器'
     case 'proximity':
       if (!cap.mobile) return '接近感应仅移动端可用'
+      if (cap.native) return '' // 原生模式为硬件接近传感器
       if (!cap.light) return '接近感应依赖环境光传感器'
       return cap.wakeLock ? '' : '当前浏览器不支持接近自动亮屏（需屏幕唤醒锁）'
     case 'geocoded_location':
@@ -95,6 +110,12 @@ function nativeLight() {
 function nativeKeepScreenOn() {
   const n = typeof window !== 'undefined' ? window.StickyKeeNative : null
   return !!(n && typeof n.keepScreenOn === 'function')
+}
+
+// APK 原生卫星定位能力（原生模式下 geolocation 的能力判据）
+function nativeGpsAvailable() {
+  const n = typeof window !== 'undefined' ? window.StickyKeeNative : null
+  return !!(n && typeof n.hasGps === 'function' && n.hasGps())
 }
 
 // 设备是否具备环境光读取能力（原生或浏览器）
@@ -177,8 +198,18 @@ export function currentLux() {
   return undefined
 }
 
-// 与后端 mobile_app 注册的 app_version 保持一致
-const SN_VERSION = '1.0.0'
+// app_version 取值：APK 取原生 versionName（与后端 mobile_app 注册一致），
+// Web 取构建版本（vite 构建时注入的 __APP_VERSION__）。
+function appVersionValue() {
+  try {
+    const n = typeof window !== 'undefined' ? window.StickyKeeNative : null
+    if (n && typeof n.getAppVersion === 'function') {
+      const v = n.getAppVersion()
+      if (v) return v
+    }
+  } catch { /* 忽略 */ }
+  return typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : ''
+}
 
 let cachedIP = ''
 let cachedIPAt = 0
@@ -363,6 +394,7 @@ export function startProximityScreenWake() {
 }
 
 // 采集启用项的当前值 → { key: { state, attributes? } }
+// Web 降级：APK 内不使用（见 docs/传感器原生采集开发规范.md）——原生模式由 NativeSensorReporter 采集。
 // trigger：本次上报触发原因（manual/event/periodic）；amapKey：高德 key（geocoded_location 需要）
 export async function collect(enabled, trigger = 'manual', amapKey = '') {
   const sensors = {}
@@ -432,7 +464,8 @@ export async function collect(enabled, trigger = 'manual', amapKey = '') {
   }
 
   if (has('app_version')) {
-    sensors.app_version = { state: SN_VERSION }
+    const v = appVersionValue()
+    if (v) sensors.app_version = { state: v }
   }
 
   if (has('bssid')) {
@@ -453,6 +486,7 @@ export async function collect(enabled, trigger = 'manual', amapKey = '') {
 }
 
 // 启动监听：状态变化立即触发 onChange('event')，另加 60s 周期兜底 onChange('periodic')。
+// Web 降级：APK 内不使用（见 docs/传感器原生采集开发规范.md）——原生模式由保活服务心跳驱动上报。
 // opts.scope：启用的传感器 key 集（用于接近感应等需监听并开唤醒锁的项）；opts.onError 接收可上报的错误。
 // 返回 stop 函数。
 export function startSensorMonitor({ onChange, onError, scope } = {}) {
@@ -516,6 +550,7 @@ export function startSensorMonitor({ onChange, onError, scope } = {}) {
 }
 
 // 组装上报请求体（device_id + 采集值 + 设备信息）。
+// Web 降级：APK 内不使用（见 docs/传感器原生采集开发规范.md）——原生模式由 NativeSensorReporter 组装上报。
 // opts.trigger：手动/事件/周期；opts.amapKey：高德 key（geocoded_location 需要）；opts.debug：是否打印采集日志（默认 true）。
 export async function buildReportPayload(activeID, enabled, opts = {}) {
   const dev = await currentDevice()
