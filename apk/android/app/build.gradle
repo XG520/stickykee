@@ -16,10 +16,26 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        // 统一签名：使用仓库内固定的 stickykee.keystore（即初始打包机器的 debug 密钥，
+        // 别名 androiddebugkey / 密码 android）。所有机器构建出的 APK 签名一致，
+        // 可直接覆盖安装，不再依赖各机器 %USERPROFILE%\.android\debug.keystore。
+        stickykee {
+            storeFile file('stickykee.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+    }
     buildTypes {
+        debug {
+            signingConfig signingConfigs.stickykee
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            // release 也用固定签名：产出可直接安装的已签名包，替代未签名的 app-release-unsigned.apk
+            signingConfig signingConfigs.stickykee
         }
     }
 }
