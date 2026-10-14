@@ -1,11 +1,18 @@
 <template>
   <div class="min-h-0">
-    <!-- 位置同步 Toast -->
-    <div v-if="locMsg" class="mb-4 flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-body animate-slide-in"
-      :class="locErr ? 'bg-error/10 border border-error/30 text-error' : 'bg-success/10 border border-success/30 text-success'">
-      <span class="material-symbols-outlined text-lg">{{ locErr ? 'location_off' : 'location_on' }}</span>
-      <span class="min-w-0">{{ locMsg }}</span>
-    </div>
+    <!-- 位置同步 Toast：悬浮抽屉（fixed 顶部居中，从页头下缘滑出）。
+         不占文档流、不挤压页面任何元素；展示 TOAST_MS 后自动收起，进出均有平滑过渡；
+         pointer-events-none 使悬浮期间不遮挡头部与页面交互，仅抽屉本体可点 -->
+    <transition name="hc-drawer">
+      <div v-if="locMsg" class="fixed inset-x-0 z-[80] flex justify-center pointer-events-none"
+        :class="ui.immersive ? 'top-2' : 'top-14'">
+        <div class="pointer-events-auto flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-body border shadow-xl backdrop-blur-xl w-fit max-w-[calc(100vw-2rem)] sm:max-w-md"
+          :class="locErr ? 'bg-error/15 border-error/40 text-error' : 'bg-success/15 border-success/40 text-success'">
+          <span class="material-symbols-outlined text-lg shrink-0">{{ locErr ? 'location_off' : 'location_on' }}</span>
+          <span class="min-w-0">{{ locMsg }}</span>
+        </div>
+      </div>
+    </transition>
 
     <!-- 未配置个人 HA Token 提示：只在确实取到后端权威值（haTokenKnown）且为否时才提示，
          否则刷新时首帧会误报 -->
@@ -81,23 +88,25 @@
         <!-- 操作按钮：编辑态常显，非编辑态感应式自动隐藏（仅桌面端导航栏内）；
              键盘 Tab 进入本组按钮时（focus-within）强制显示，避免焦点落在不可见按钮上 -->
         <div v-if="!immersive && (editing || canEdit)"
-          class="ml-auto flex flex-wrap items-center gap-2 transition-opacity duration-300"
+          class="ml-auto flex flex-wrap items-center gap-1.5 sm:gap-2 transition-opacity duration-300"
           :class="btnVisible ? 'opacity-100' : 'opacity-0 pointer-events-none focus-within:opacity-100 focus-within:pointer-events-auto'">
           <template v-if="editing">
-            <!-- 触控规范：统一 44px 高度、圆角与按压反馈；导出/导入/排版为次级动作（浅底描边），完成为主色实心 -->
-            <button @click="onExport" class="inline-flex items-center justify-center h-11 px-3.5 rounded-xl bg-surface-alt border border-border text-muted hover:text-on-surface hover:border-primary/40 text-sm transition-all active:scale-95" title="把当前仪表盘导出为 JSON 文件">
-              <span class="material-symbols-outlined text-lg" aria-hidden="true">download</span>导出
+            <!-- 触控规范：统一 44px 高度、圆角与按压反馈；导出/导入/排版为次级动作（浅底描边），完成为主色实心。
+                 手机窄屏压缩为单行：导出/导入/重置仅图标（w-11 保持触控面积），sm 起恢复图标+文字；
+                 智能排版/完成保留文字但收窄内边距，避免「完成」被挤到第二行 -->
+            <button @click="onExport" class="inline-flex items-center justify-center h-11 w-11 sm:w-auto sm:px-3.5 rounded-xl bg-surface-alt border border-border text-muted hover:text-on-surface hover:border-primary/40 text-sm transition-all active:scale-95" title="把当前仪表盘导出为 JSON 文件">
+              <span class="material-symbols-outlined text-lg" aria-hidden="true">download</span><span class="hidden sm:inline">导出</span>
             </button>
-            <button @click="pickImportFile" class="inline-flex items-center justify-center h-11 px-3.5 rounded-xl bg-surface-alt border border-border text-muted hover:text-on-surface hover:border-primary/40 text-sm transition-all active:scale-95" title="从 JSON 文件导入仪表盘">
-              <span class="material-symbols-outlined text-lg" aria-hidden="true">upload</span>导入
+            <button @click="pickImportFile" class="inline-flex items-center justify-center h-11 w-11 sm:w-auto sm:px-3.5 rounded-xl bg-surface-alt border border-border text-muted hover:text-on-surface hover:border-primary/40 text-sm transition-all active:scale-95" title="从 JSON 文件导入仪表盘">
+              <span class="material-symbols-outlined text-lg" aria-hidden="true">upload</span><span class="hidden sm:inline">导入</span>
             </button>
-            <button @click="smartArrange" class="inline-flex items-center justify-center h-11 px-3.5 rounded-xl bg-surface-alt border border-border text-muted hover:text-on-surface hover:border-primary/40 text-sm transition-all active:scale-95" title="按当前 HA 实体自动设计并摆放卡片">
+            <button @click="smartArrange" class="inline-flex items-center justify-center h-11 px-2 sm:px-3.5 rounded-xl bg-surface-alt border border-border text-muted hover:text-on-surface hover:border-primary/40 text-sm transition-all active:scale-95" title="按当前 HA 实体自动设计并摆放卡片">
               <span class="material-symbols-outlined text-lg" aria-hidden="true">auto_awesome_mosaic</span>智能排版
             </button>
-            <button @click="resetLayout" class="inline-flex items-center justify-center h-11 px-3.5 rounded-xl bg-surface-alt border border-border text-muted hover:text-on-surface hover:border-error/40 hover:text-error text-sm transition-all active:scale-95" title="恢复默认仪表盘布局">
-              <span class="material-symbols-outlined text-lg" aria-hidden="true">restart_alt</span>重置
+            <button @click="resetLayout" class="inline-flex items-center justify-center h-11 w-11 sm:w-auto sm:px-3.5 rounded-xl bg-surface-alt border border-border text-muted hover:text-on-surface hover:border-error/40 hover:text-error text-sm transition-all active:scale-95" title="恢复默认仪表盘布局">
+              <span class="material-symbols-outlined text-lg" aria-hidden="true">restart_alt</span><span class="hidden sm:inline">重置</span>
             </button>
-            <button @click="saveLayout" class="inline-flex items-center justify-center h-11 px-4 rounded-xl bg-primary hover:bg-primary-hover text-on-primary text-sm font-semibold shadow-sm shadow-primary/25 transition-all active:scale-95">
+            <button @click="saveLayout" class="inline-flex items-center justify-center h-11 px-2.5 sm:px-4 rounded-xl bg-primary hover:bg-primary-hover text-on-primary text-sm font-semibold shadow-sm shadow-primary/25 transition-all active:scale-95">
               <span class="material-symbols-outlined text-lg" aria-hidden="true">check</span>完成
             </button>
           </template>
@@ -835,10 +844,11 @@ const locating = ref(false)
 const locMsg = ref('')
 const locErr = ref(false)
 let locToastTimer = null
+const TOAST_MS = 6000 // 悬浮抽屉展示时长：到期自动收起隐藏
 function toast(msg, err = false) {
   locMsg.value = msg; locErr.value = err
   if (locToastTimer) clearTimeout(locToastTimer)
-  locToastTimer = setTimeout(() => (locMsg.value = ''), 6000)
+  locToastTimer = setTimeout(() => (locMsg.value = ''), TOAST_MS)
 }
 function autoLocateRan() { try { return sessionStorage.getItem('hc_autolocate_ran') === '1' } catch { return true } }
 function markAutoLocateRan() { try { sessionStorage.setItem('hc_autolocate_ran', '1') } catch {} }
@@ -1022,5 +1032,10 @@ onBeforeUnmount(() => {
 .hc-panel-scroll::-webkit-scrollbar { width: 4px; }
 .hc-panel-scroll::-webkit-scrollbar-thumb { border-radius: 2px; background: rgb(var(--c-border) / .4); }
 .hc-panel-scroll::-webkit-scrollbar-track { background: transparent; }
+
+/* 位置同步 Toast 悬浮抽屉：弹出自页头下缘滑入（带轻微上浮回落），收起反向淡出上移 */
+.hc-drawer-enter-active { transition: opacity .28s ease-out, transform .28s cubic-bezier(.21, 1.02, .73, 1); }
+.hc-drawer-leave-active { transition: opacity .22s ease-in, transform .22s ease-in; }
+.hc-drawer-enter-from, .hc-drawer-leave-to { opacity: 0; transform: translateY(-16px); }
 
 </style>

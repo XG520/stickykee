@@ -193,17 +193,13 @@
         </label>
       </div>
 
-      <span v-if="editMode" class="ml-auto text-[11px] font-body text-info flex items-center gap-1">
-        <span class="material-symbols-outlined text-sm" aria-hidden="true">info</span>
-        {{ toolHint }}
-      </span>
     </div>
 
     <div class="flex flex-1 min-h-0 flex-col lg:flex-row">
       <!-- 画布区 -->
       <section class="flex-1 min-w-0 flex flex-col min-h-0">
         <div class="flex-1 min-h-0 relative p-3 sm:p-4">
-          <div class="relative w-full h-full min-h-[16rem]">
+          <div class="relative w-full h-full min-h-[16rem]" @mouseenter="hintVisible = true" @mouseleave="hintVisible = false">
             <!-- 2D / 3D 懒挂载：切走即销毁 -->
             <FloorplanCanvas2D
               v-if="view === '2d'"
@@ -240,6 +236,18 @@
                 <span class="block text-muted text-[11px] font-body">{{ roomDetail }}</span>
               </span>
             </button>
+
+            <!-- 编辑工具提示（悬浮式）：绝对定位浮在画布上，不占排版空间；pointer-events-none
+                 不拦截任何画布交互；光标悬停/停留在画布时淡入，移出画布淡出 -->
+            <div
+              v-if="editMode"
+              class="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 pointer-events-none flex items-center gap-1 rounded-full border border-border bg-background/90 backdrop-blur-sm px-3 py-1.5 shadow-lg transition-opacity duration-300"
+              :class="hintVisible ? 'opacity-100' : 'opacity-0'"
+              aria-live="polite"
+            >
+              <span class="material-symbols-outlined text-sm text-info" aria-hidden="true">info</span>
+              <span class="text-[11px] font-body text-info whitespace-nowrap">{{ toolHint }}</span>
+            </div>
           </div>
         </div>
 
@@ -567,6 +575,9 @@ const toolHint = computed(() => {
   }
 })
 
+// 编辑提示可见性：光标悬停/停留在画布上才显示（悬浮式，见模板画布容器内的浮层）
+const hintVisible = ref(false)
+
 // 编辑能力门槛：粗指针（触屏）或窄屏禁用编辑
 function computeCanEdit() {
   return !(window.matchMedia('(pointer: coarse)').matches || window.innerWidth < 768)
@@ -586,6 +597,7 @@ function toggleEdit() {
   if (editMode.value) view.value = '2d'   // 编辑固定以 2D 为主，3D 作为右侧实时预览
   tool.value = ''
   clearSelection()
+  hintVisible.value = false               // 重置悬浮提示：下次进入编辑待光标悬停画布再显示
 }
 
 // ================= 历史：撤销 / 重做（统一文档快照栈） =================
