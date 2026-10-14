@@ -1142,7 +1142,7 @@ async function loadDevices() {
   try {
     // 注册门控：仅当设备追踪开启（APK 默认开）或本机已有注册记录时才 ensureDevice；
     // 网页端默认（追踪关 + 从未注册）只读列表，不生成本机设备条目
-    const cached = readDeviceCache()
+    const cached = readCache()
     const shouldEnsure = trackingEnabled() || !!(cached && cached.device_id)
     const [list, cur] = await Promise.all([
       listDevices(),
