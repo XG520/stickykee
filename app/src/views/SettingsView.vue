@@ -540,6 +540,38 @@
       </div>
     </section>
 
+    <!-- 仪表盘列数 -->
+    <section class="bg-surface-alt border border-border rounded-2xl p-5">
+      <div class="flex items-center gap-2.5 mb-4">
+        <div class="w-8 h-8 rounded-xl bg-accent/20 flex items-center justify-center">
+          <span class="material-symbols-outlined text-accent text-lg">grid_view</span>
+        </div>
+        <div>
+          <h2 class="font-headline text-on-background text-base font-semibold">仪表盘列数</h2>
+          <p class="text-muted text-xs mt-0.5">首页卡片每行显示的列数，仅对本设备生效</p>
+        </div>
+      </div>
+      <div class="grid grid-cols-3 sm:grid-cols-6 gap-3">
+        <button
+          v-for="o in dashColOptions"
+          :key="o.key"
+          @click="dashCols = o.key"
+          class="flex flex-col items-center gap-1.5 py-4 rounded-xl border-2 bg-surface hover:bg-surface-hover transition-all duration-200"
+          :class="dashCols === o.key ? 'border-primary bg-primary/10' : 'border-transparent'"
+        >
+          <span
+            class="grid gap-0.5"
+            :style="{ gridTemplateColumns: `repeat(${o.key === 'auto' ? 3 : parseInt(o.key, 10)}, 1fr)`, width: '18px' }"
+          >
+            <span v-for="i in (o.key === 'auto' ? 3 : parseInt(o.key, 10))" :key="i" class="w-1 h-1 rounded-[1px]" :class="dashCols === o.key ? 'bg-primary' : 'bg-muted/40'"></span>
+          </span>
+          <span class="text-sm font-medium" :class="dashCols === o.key ? 'text-primary' : 'text-on-surface'">{{ o.name }}</span>
+          <span class="text-muted text-xs">{{ o.note }}</span>
+        </button>
+      </div>
+      <p class="text-muted text-xs mt-3">自动：手机固定 3 列（跨机型一致），平板/桌面按屏幕宽度自适应；手动指定后所有屏幕都按所选列数显示</p>
+    </section>
+
     <!-- 图标风格 -->
     <section class="bg-surface-alt border border-border rounded-2xl p-5">
       <div class="flex items-center gap-2.5 mb-4">
@@ -1123,6 +1155,25 @@ const fontSizes = [
   { key: 'standard', name: '标准', note: '推荐' },
   { key: 'loose', name: '宽松', note: '适合老年' },
 ]
+
+// 仪表盘列数偏好：仅存本设备（localStorage），换设备互不影响；
+// auto 时首页窄屏固定 3 列、桌面按宽度自适应（见 HomeView.updateCols）
+const COLS_PREF_KEY = 'hc_dash_cols'
+const dashCols = ref(localStorage.getItem(COLS_PREF_KEY) || 'auto')
+const dashColOptions = [
+  { key: 'auto', name: '自动', note: '手机 3 列' },
+  { key: '2', name: '2 列', note: '大卡片' },
+  { key: '3', name: '3 列', note: '推荐' },
+  { key: '4', name: '4 列', note: '紧凑' },
+  { key: '5', name: '5 列', note: '细密' },
+  { key: '6', name: '6 列', note: '极细' },
+]
+watch(dashCols, (v) => {
+  try {
+    if (v === 'auto') localStorage.removeItem(COLS_PREF_KEY)
+    else localStorage.setItem(COLS_PREF_KEY, v)
+  } catch { }
+})
 
 const iconStyle = ref('linear')
 const iconStyles = [

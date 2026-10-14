@@ -528,15 +528,15 @@ function onCardContextMenu(e) {
 function updateCols() {
   if (!gridEl.value) return
   const w = gridEl.value.clientWidth
-  // 手机窄屏按「物理宽度」定列数：不同厂商 DPR 策略不同（同为 6 寸屏 CSS 视口
-  // 可能在 360~443px 间浮动，系统「显示大小」缩放也会改变 CSS 宽度），按 CSS
-  // 宽度 ÷120 算列数会出现一台 3 列、一台 2 列的机型差异。物理宽度
-  // （CSS 宽 × devicePixelRatio）只取决于屏幕面板（≈1200px），跨机型稳定：
-  // ÷360 即等价于 CSS@3x 密度下 ÷120 的原口径。桌面宽屏维持 CSS 宽度口径
-  // （现网桌面布局已按 8 列上限适配，不受影响）。
-  const dpr = window.devicePixelRatio || 1
-  const basis = w < 480 ? (w * dpr) / 3 : w
-  cols.value = Math.max(1, Math.min(8, Math.floor(basis / 120)))
+  // 列数优先级：用户自定义（设置 → 仪表盘列数，localStorage 仅本设备，2~8 生效）
+  // > 自适应。自适应口径：手机窄屏（<480）固定 3 列——各厂商 DPR 策略与系统
+  // 「显示大小」缩放会让 CSS 视口在 360~443px 间浮动，任何基于宽度的阈值除法
+  // 都会出现一台 3 列、一台 2 列的机型偏差，列数定死后跨机型渲染完全一致，
+  // 卡片内部靠 zoom 等比缩放自适应格子大小；平板/桌面/横屏按宽度阈值算列数。
+  const manual = parseInt(localStorage.getItem('hc_dash_cols') || '', 10)
+  cols.value = manual >= 2 && manual <= 8
+    ? manual
+    : (w < 480 ? 3 : Math.max(1, Math.min(8, Math.floor(w / 120))))
   // 减去列间距后单列的实际宽度 = 单格行高（正方形），约为原来的 1/2
   cellSize.value = (w - gridGap * (cols.value - 1)) / cols.value
 }

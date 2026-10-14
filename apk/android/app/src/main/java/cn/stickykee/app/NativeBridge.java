@@ -31,6 +31,7 @@ import android.os.Bundle;
 import android.os.PowerManager;
 import android.provider.Settings;
 import android.speech.tts.TextToSpeech;
+import android.speech.tts.UtteranceProgressListener;
 import android.util.Base64;
 import android.view.Window;
 import android.view.WindowManager;
@@ -85,6 +86,9 @@ public class NativeBridge {
     private final AppCompatActivity activity;
     private final EdgeTTS edgeTTS;
     private TextToSpeech sysTts;
+    // 系统 TTS 引擎可用标记：国产 ROM 默认引擎可能初始化失败或缺中文语音数据，
+    // 此时 speak() 是静默无操作（用户只看到「没声音」），必须按失败上报前端换路线
+    private volatile boolean sysTtsReady = false;
     private WebView webView;
     // 单线程线程池（newFixedThreadPool(1) 返回真实 ThreadPoolExecutor，
     // 以便 cancelTTS 时 clear 队列；newSingleThreadExecutor 的包装类不可取队列）
@@ -388,7 +392,25 @@ public class NativeBridge {
      */
     @JavascriptInterface
     public void speakSystem(final String text) {
-        if (text == null || text.trim().isEmpty()) return;
+        speakSystem2(text, null);
+    }
+
+    /**
+     * APK 系统 TTS（结果感知版）：初始化失败 / 缺中文语音数据 / 播报出错时，
+     * 经 stickykee-tts 事件回 ok:false（req 配对），前端据此落到下一路线；
+     * 旧版 speakSystem 在国产 ROM 默认引擎不可用时会静默无操作——
+     * 用户听不到声音、看不到提示、切引擎也「没效果」，此接口即为此根因而加。
+     * 成功路径在 onDone/onStop 后回 ok:true（播报被 stopSystem 打断也算已处理）。
+     *
+     * @param text 要朗读的文本
+     * @param req  前端请求标识，配对 stickykee-tts 结果事件
+     */
+    @JavascriptInterface
+    public void speakSystem2(final String text, final String req) {
+        if (text == null || text.trim().isEmpty()) {
+            dispatchTTS(req, "", "");
+            return;
+        }
         activity.runOnUiThread(new Runnable() {
             @Override
             public void run() {
@@ -398,22 +420,75 @@ public class NativeBridge {
                                 new TextToSpeech.OnInitListener() {
                                     @Override
                                     public void onInit(int status) {
-                                        if (status == TextToSpeech.SUCCESS) {
-                                            sysTts.setLanguage(Locale.CHINESE);
-                                            HashMap<String, String> params = new HashMap<>();
-                                            sysTts.speak(text, TextToSpeech.QUEUE_FLUSH, params);
+                                        if (status != TextToSpeech.SUCCESS) {
+                                            sysTtsReady = false;
+                                            dispatchTTS(req, "", "");
+                                            return;
                                         }
+                                        setupSysTts(req, text);
                                     }
                                 });
                     } else {
-                        sysTts.setLanguage(Locale.CHINESE);
-                        HashMap<String, String> params = new HashMap<>();
-                        sysTts.speak(text, TextToSpeech.QUEUE_FLUSH, params);
+                        if (!sysTtsReady) {
+                            dispatchTTS(req, "", "");
+                            return;
+                        }
+                        setupSysTts(req, text);
                     }
-                } catch (Exception ignored) {
+                } catch (Exception e) {
+                    sysTtsReady = false;
+                    dispatchTTS(req, "", "");
                 }
             }
         });
+    }
+
+    /** 系统 TTS 就绪后的语言检查 + 播报；结果经 UtteranceProgressListener 回传前端。 */
+    private void setupSysTts(final String req, final String text) {
+        try {
+            int r = sysTts.setLanguage(Locale.CHINESE);
+            if (r == TextToSpeech.LANG_MISSING_DATA || r == TextToSpeech.LANG_NOT_SUPPORTED) {
+                sysTtsReady = false;
+                dispatchTTS(req, "", "");
+                return;
+            }
+            sysTts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+                @Override
+                public void onStart(String utteranceId) { }
+                @Override
+                public void onDone(String utteranceId) {
+                    dispatchTTS(utteranceId, "ok", "");
+                }
+                @Override
+                public void onError(String utteranceId) {
+                    sysTtsReady = false;
+                    dispatchTTS(utteranceId, "", "");
+                }
+                @Override
+                public void onError(String utteranceId, int errorCode) {
+                    sysTtsReady = false;
+                    dispatchTTS(utteranceId, "", "");
+                }
+                @Override
+                public void onStop(String utteranceId, boolean interrupted) {
+                    // stopSystem() 打断播报：对等待中的前端而言算「已处理」，立即解除等待
+                    dispatchTTS(utteranceId, "ok", "");
+                }
+            });
+            Bundle params = new Bundle();
+            String uttId = req == null || req.isEmpty() ? "sys" + System.currentTimeMillis() : req;
+            int q = sysTts.speak(text, TextToSpeech.QUEUE_FLUSH, params, uttId);
+            if (q < 0) {
+                sysTtsReady = false;
+                dispatchTTS(req, "", "");
+                return;
+            }
+            sysTtsReady = true;
+            // 成功不在此处派发：等待 onDone/onStop/onError（前端 await 到结果为止）
+        } catch (Exception e) {
+            sysTtsReady = false;
+            dispatchTTS(req, "", "");
+        }
     }
 
     /** 停止系统 TTS 朗读 */

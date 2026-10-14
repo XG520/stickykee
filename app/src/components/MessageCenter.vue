@@ -512,6 +512,9 @@ async function loadTTS() {
 async function saveTTS() {
   stopTTS() // 切换引擎立即生效：停掉当前朗读，下一条用新引擎
   try { await putPrefs({ [TTS_PREF_KEY]: ttsSel.value }) } catch { /* 静默：失败下次重选 */ }
+  // 切换即试听：立刻用新引擎读一句测试语——切换是否生效当场可闻；
+  // 新链路全部失败时也会 toast 具体是哪些引擎不可用，不再无声无息
+  speak('你好，朗读引擎已切换。', 0)
 }
 
 // ASSISTANT 与后端保留虚拟用户名一致（handler.AssistantUser）。
@@ -1051,10 +1054,11 @@ function stopTTS() {
   ttsPlayingId.value = 0
 }
 
-// 异步调用 APK 原生 TTS（speakEdge2）：合成在原生后台线程执行，完成后
+// 异步调用 APK 原生 TTS（speakEdge2/speakSystem2）：合成/播报在原生执行，完成后
 // 经 NativeBridge 派发 window 事件 stickykee-tts（{req, ok, audio, mime}）。避免旧同步
 // 接口在合成期间阻塞 WebView JS 线程（整页冻结 1~30 秒）。超时/失败 resolve null。
-function nativeTTSAsync(native, fnName, args, mime) {
+// ok=true 即「已处理」（音频数据或系统 TTS 播报完成/被停止），无需携带音频内容。
+function nativeTTSAsync(native, fnName, args, mime, timeoutMs = 60000) {
   return new Promise((resolve) => {
     if (!native || typeof native[fnName] !== 'function') { resolve(null); return }
     const req = 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
@@ -1066,9 +1070,9 @@ function nativeTTSAsync(native, fnName, args, mime) {
     const onEvt = (e) => {
       if (!e || !e.detail || e.detail.req !== req) return
       cleanup()
-      resolve(e.detail.ok && e.detail.audio ? { b64: e.detail.audio, mime: e.detail.mime || mime } : null)
+      resolve(e.detail.ok ? { b64: e.detail.audio || 'ack', mime: e.detail.mime || mime } : null)
     }
-    timer = setTimeout(() => { cleanup(); resolve(null) }, 60000)
+    timer = setTimeout(() => { cleanup(); resolve(null) }, timeoutMs || 60000)
     window.addEventListener('stickykee-tts', onEvt)
     try { native[fnName](...args, req) } catch { cleanup(); resolve(null) }
   })
@@ -1103,8 +1107,16 @@ async function speak(text, msgId = 0) {
   }
 
   // ---- 路线 1：系统/浏览器自带语音（离线可用；APK 走原生 speakSystem，网页走 Web Speech API）----
+  const tried = [] // 已失败引擎清单：所有路线都不通时 toast 展示，失败不再无声无息
   if (engine === 'sys') {
-    if (isApk && native && typeof native.speakSystem === 'function') {
+    if (isApk && native && typeof native.speakSystem2 === 'function') {
+      // 系统 TTS 结果感知：初始化失败/缺中文语音数据 → ok:false 落到下一路线
+      // （旧版 speakSystem 在国产 ROM 上静默无操作，「切换没效果、始终没声音」的根因）
+      const r = await nativeTTSAsync(native, 'speakSystem2', [text], '', 600000)
+      if (seq !== ttsSeq) return
+      if (r) return
+      tried.push('系统 TTS')
+    } else if (isApk && native && typeof native.speakSystem === 'function') {
       try { native.speakSystem(text); return } catch { /* fallthrough */ }
     }
     if (ttsSupported) {
@@ -1136,6 +1148,7 @@ async function speak(text, msgId = 0) {
       }
       if (r) { await playB64(r.b64, r.mime); return }
     } catch { /* fallthrough */ }
+    tried.push('内置 Edge TTS')
   }
 
   // ---- 路线 3：后端 TTS（Edge TTS / HA TTS，engine 为空时智能选择）----
@@ -1155,9 +1168,18 @@ async function speak(text, msgId = 0) {
     await ttsAudio.play()
   } catch (err) {
     // 记录失败原因：此前完全静默，用户只能看到「没声音」而无从排查
+    tried.push('服务端 TTS')
     console.warn('[TTS] 合成失败，尝试回退：', err?.message || err)
-    // 回退 1：APK 系统 TTS（离线，依赖系统已装 TTS 引擎）
-    if (native && typeof native.speakSystem === 'function') {
+    // 回退 1：APK 系统 TTS（结果感知版；失败继续走下面的浏览器回退/最终提示，
+    // 旧版调用后立即 return，系统引擎静默坏掉时整条链路无声无息）
+    if (native && typeof native.speakSystem2 === 'function') {
+      try {
+        const r = await nativeTTSAsync(native, 'speakSystem2', [text], '', 600000)
+        if (seq !== ttsSeq) return
+        if (r) { toast('在线引擎朗读失败，已用系统语音：' + (err?.message || '')); return }
+        tried.push('系统 TTS')
+      } catch { tried.push('系统 TTS') }
+    } else if (native && typeof native.speakSystem === 'function') {
       try { native.speakSystem(text); return } catch { /* fallthrough */ }
     }
     // 回退 2：浏览器原生 SpeechSynthesis
@@ -1174,7 +1196,7 @@ async function speak(text, msgId = 0) {
       } catch { ttsPlayingId.value = 0 }
     } else {
       ttsPlayingId.value = 0
-      toast('语音朗读失败：' + (err?.message || '所有 TTS 引擎均不可用'), true)
+      toast('朗读失败：' + (tried.join('、') || '全部引擎') + ' 均不可用，请检查网络或系统 TTS', true)
     }
   }
 }
