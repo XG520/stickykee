@@ -116,7 +116,7 @@ import api from '@/api'
 import { store } from '@/store'
 import { loadAMap } from '@/utils/amap'
 import { getPrefs } from '@/utils/prefs'
-import { syncCurrentLocation } from '@/utils/location'
+import { isCapDevice, locateOnly, syncCurrentLocation, locErrorMessage } from '@/utils/location'
 import { wgs84ToGcj02 } from '@/utils/gcj02'
 import { usePersonMarkers, useZones } from '@/composables/useLive'
 
@@ -424,13 +424,15 @@ function setRouteMode(key) {
 async function planRoute() {
   if (!map || mapStatus.value !== 'ready' || routeLoading.value || pickEnd.value) return
   const AMap = window.AMap
-  // 起点：我的位置（未定位则先定位一次）
+  // 起点：我的位置（未定位则先定位一次）。
+  // APP 端原生卫星定位精度高，定位即上报 HA（对齐官方 App，device_tracker 实时更新）；
+  // Web 端浏览器定位精度差（Wi-Fi 级常漂出 zone），不上报以免把在家用户误判为离家。
   if (!myGCJ) {
     try {
-      const res = await syncCurrentLocation()
+      const res = isCapDevice() ? await syncCurrentLocation() : await locateOnly()
       updateMyMarker(res.lat, res.lng, res.name || '当前设备')
     } catch (e) {
-      routeError.value = '无法获取当前位置：' + (e.message || '定位失败')
+      routeError.value = '无法获取当前位置：' + locErrorMessage(e)
       return
     }
   }

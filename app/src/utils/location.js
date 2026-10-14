@@ -195,3 +195,13 @@ export async function syncCurrentLocation() {
     address,
   }
 }
+
+// locateOnly：仅获取定位，不逆地理、不上报 HA device_tracker。
+// 供路线规划起点等「只需要坐标、绝不能有上报副作用」的场景——
+// Web 端浏览器定位精度差（Wi-Fi 级常漂出 zone），一旦上报会把用户误判为离家。
+// 返回 { lat, lng, accuracy }
+export async function locateOnly() {
+  const pos = await getCurrentPosition()
+  const { latitude, longitude, accuracy } = pos.coords
+  return { lat: latitude, lng: longitude, accuracy: Math.round(accuracy) }
+}
