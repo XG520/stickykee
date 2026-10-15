@@ -126,6 +126,25 @@ public class NativeBridge {
     // 当前活跃桥：Activity 销毁时 release() 置空（供扩展的原生回调判定页面是否存活）
     private static volatile NativeBridge activeBridge;
 
+    /**
+     * 后台 WebSocket 保活：由 KeepAliveService 每次心跳（默认 60s，主线程）调用。
+     * WebView 退后台后 pauseTimers 冻结 JS 定时器，前端心跳/重连停摆，服务端
+     * 90s 读超时后注销连接 → 对端通话显示离线。evaluateJavascript 的显式注入
+     * 不受 pauseTimers 影响，由页面侧 window.__hcWsKeepalive 发应用层 ping
+     * 或在连接已断时立即重建。桥/页面未就绪（壳页/未登录）时静默跳过。
+     */
+    static void keepaliveWebSocket() {
+        final NativeBridge b = activeBridge;
+        if (b == null) return;
+        final WebView wv = b.webView;
+        if (wv == null) return;
+        try {
+            wv.evaluateJavascript(
+                    "(window.__hcWsKeepalive&&window.__hcWsKeepalive());", null);
+        } catch (Exception ignored) {
+        }
+    }
+
     // ==================== 传感器上报间隔（后台心跳周期，前端可配） ====================
     // 前端设置页保存间隔时调用 setSensorInterval：落 SharedPreferences（跨进程持久），
     // 并重启保活服务传递新间隔（onStartCommand 按它重新排程心跳）。

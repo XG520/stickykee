@@ -46,8 +46,8 @@
         </router-view>
       </main>
 
-      <!-- 移动端底部 Tab（沉浸模式折叠，保留桌面导航用处有限，故同样隐藏） -->
-      <MobileTabBar v-if="!ui.immersive" />
+      <!-- 移动端底部 Tab（沉浸模式 / 首页仪表盘编辑态折叠：编辑操作栏在同一位置，避免互相遮挡） -->
+      <MobileTabBar v-if="!ui.immersive && !ui.dashEditing" />
 
       <!-- 全局设备抽屉：概览卡/统计卡/房间概览点击后按条件过滤展示设备（store.deviceDrawer 驱动） -->
       <DeviceDrawer />

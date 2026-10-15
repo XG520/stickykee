@@ -509,6 +509,35 @@ if (typeof document !== 'undefined') {
   })
 }
 
+// 原生后台心跳保活入口（仅 APK 调用）：WebView 退后台后 pauseTimers 冻结全部
+// JS 定时器——上面的 25s 应用层 ping 与 onclose 重连都停摆，时间一久服务端
+// 90s 读超时注销连接，对端通话/邀请就显示该用户「离线」。KeepAliveService 的
+// 原生心跳（主线程 Handler，不被冻结）每 60s 经 evaluateJavascript 调本函数：
+//   - 连接 OPEN：发一帧应用层 ping（上行帧续服务端读超时 + 维持运营商 NAT 活跃）；
+//   - 连接缺失/卡住（含 CONNECTING 超过一个心跳周期）：摘掉旧连接回调后立即重建，
+//     避免旧连接延迟 onclose 把新连接的 ws 变量置空的竞态。
+if (typeof window !== 'undefined') {
+  window.__hcWsKeepalive = function () {
+    if (!store.ready || store.activeID <= 0 || !haTokenConfigured.value) return
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      try { ws.send(JSON.stringify({ type: 'ping' })) } catch { /* 忽略 */ }
+      return
+    }
+    if (ws) {
+      stopHeartbeat()
+      // 先摘掉回调再 close：否则旧连接异步 onclose 会执行 ws=null 误杀随后新建的连接
+      try {
+        ws.onopen = null; ws.onmessage = null; ws.onclose = null; ws.onerror = null
+        ws.close()
+      } catch { /* 忽略 */ }
+      ws = null
+    }
+    retry = 1
+    if (wsTimer) { clearTimeout(wsTimer); wsTimer = null }
+    connectWS()
+  }
+}
+
 // 拉取实例列表并建立实时连接。
 export async function loadInstances() {
   store.error = ''
@@ -596,7 +625,9 @@ export default store
 
 // 首页沉浸/全屏模式状态：为 true 时 App 外壳折叠顶部栏与导航（App.vue 据此渲染），
 // 首页同时隐藏仪表盘编辑按钮，进入全屏显示。
-export const ui = reactive({ immersive: false })
+// dashEditing：首页仪表盘编辑态。为 true 时手机端隐藏底部 Tab 栏——
+// 编辑操作栏 fixed 在 bottom-0（z-40），会被 z-50 的 Tab 栏整个盖住。
+export const ui = reactive({ immersive: false, dashEditing: false })
 
 // 全局设备抽屉：概览卡/统计卡/房间概览点击后按条件过滤展示设备。
 // 挂在 App.vue 外壳内，任何页面都能通过 openDeviceDrawer(filter) 打开。

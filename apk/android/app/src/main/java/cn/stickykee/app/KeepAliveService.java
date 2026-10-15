@@ -56,6 +56,13 @@ public class KeepAliveService extends Service {
                 NativeSensorReporter.report(getApplicationContext(), "periodic");
             } catch (Exception ignored) {
             }
+            // 通话/消息 WebSocket 保活：后台 pauseTimers 冻结页面 JS 心跳与重连，
+            // 经 evaluateJavascript（不被冻结）注入发送应用层 ping / 断线立即重建，
+            // 否则服务端 90s 读超时注销连接后对端显示「离线」、来电判离线。
+            try {
+                NativeBridge.keepaliveWebSocket();
+            } catch (Exception ignored) {
+            }
             if (ticking) handler.postDelayed(this, intervalMs);
         }
     };

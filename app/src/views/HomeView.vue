@@ -85,11 +85,10 @@
           </button>
         </div>
 
-        <!-- 操作按钮：编辑态常显；非编辑态桌面端 Teleport 进导航栏感应式显隐，
-             手机/窄屏原地常显（触屏没有 hover 感应，且长按进编辑是隐藏手势，
-             必须有可见编辑入口，否则找不到添加卡片等编辑功能）；
-             键盘 Tab 进入本组按钮时（focus-within）强制显示，避免焦点落在不可见按钮上 -->
-        <div v-if="!immersive"
+        <!-- 操作按钮：编辑态常显；非编辑态仅桌面端渲染（Teleport 进导航栏，感应式显隐）。
+             手机/窄屏非编辑态不显示编辑按钮——触屏端靠「长按卡片 500ms」进入编辑模式，
+             编辑操作（含添加卡片入口）由编辑态底部操作栏承载 -->
+        <div v-if="!immersive && (editing || canEdit)"
           class="ml-auto flex flex-wrap items-center gap-1.5 sm:gap-2 transition-opacity duration-300"
           :class="btnVisible ? 'opacity-100' : 'opacity-0 pointer-events-none focus-within:opacity-100 focus-within:pointer-events-auto'">
           <template v-if="editing">
@@ -281,7 +280,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, onUpdated, onActivated, nextTick } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, onUpdated, onActivated, onDeactivated, nextTick } from 'vue'
 import { ui, entityStates, entityList, registryDevices, loadRegistry, haTokenConfigured, haTokenKnown, auth, openDeviceDrawer, dashboardRev } from '@/store'
 import { useEntities } from '@/composables/useLive'
 import { useAutoHide } from '@/composables/useAutoHide'
@@ -551,7 +550,7 @@ function onCardLongPressStart(e) {
     lastDragEnd = Date.now() // 吞掉随后派发的 click
     editing.value = true
     try { navigator.vibrate?.(30) } catch { /* 不支持则忽略 */ }
-    toast('已进入编辑模式：按住卡片拖动可调整位置，点「完成」保存')
+    toast('已进入编辑模式：底部「添加卡片」可新增卡片，按住卡片可拖动位置，点「完成」保存')
   }, 500)
   window.addEventListener('pointermove', onCardLongPressMove)
   window.addEventListener('pointerup', onCardLongPressEnd)
@@ -938,8 +937,8 @@ const teleportToNav = computed(() => isDesktop.value && !ui.immersive)
 const btnVisible = computed(() => !teleportToNav.value || editing.value || toolbarShow.value)
 
 // canEdit 仅表示「桌面宽度（≥1024px）」：桌面端非编辑态编辑入口 Teleport 进导航栏
-// 感应显隐；手机/平板编辑能力不受限（顶栏编辑按钮或长按卡片进入，底部操作栏承载
-// 添加/选中操作）。断点跨越时强制退出编辑态，避免残留编辑 UI（均由 editing 门控）。
+// 感应显隐；手机端非编辑态不显示编辑按钮（长按卡片进入编辑，见 onCardLongPressStart），
+// 编辑能力本身不受限。断点跨越时强制退出编辑态，避免残留编辑 UI（均由 editing 门控）。
 const canEdit = ref(window.matchMedia('(min-width: 1024px)').matches)
 let mqCanEdit = null
 function onMqCanEdit(e) {
@@ -951,6 +950,7 @@ function onMqCanEdit(e) {
 watch(() => ui.immersive, () => nextTick(measure))
 watch(() => editing.value, () => {
   if (!editing.value) { addPanel.value = false; selectedUid.value = '' } // 退出编辑同步清掉面板与选中态
+  ui.dashEditing = editing.value // 同步给 App.vue：编辑态隐藏手机底部 Tab 栏，露出底部操作栏
   nextTick(measure)
 })
 
@@ -994,7 +994,12 @@ onMounted(async () => {
 // 视口可能在缓存期间变化（旋转/缩放），重新测量网格；隐藏期间 resize 事件仍会
 // 到达但 clientWidth 为 0，测量无意义且会写入错误的 cols，直接跳过。
 defineOptions({ name: 'HomeView' })
-onActivated(() => { nextTick(measure) })
+onActivated(() => {
+  ui.dashEditing = editing.value // 切回本页：恢复 Tab 栏隐藏态（编辑可能在缓存期间仍保持）
+  nextTick(measure)
+})
+// keep-alive 切走：恢复底部 Tab 栏（editing 状态本身保留，切回仍在编辑态）
+onDeactivated(() => { ui.dashEditing = false })
 let measurePending = false
 function onResize() {
   if (measurePending) return
@@ -1008,6 +1013,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('fullscreenchange', onFsChange)
   if (mqDesktop) mqDesktop.removeEventListener('change', onMqDesktop)
   if (mqCanEdit) mqCanEdit.removeEventListener('change', onMqCanEdit)
+  ui.dashEditing = false
   clearLongPress() // 长按手势进行中卸载：摘掉 window 级监听
 })
 </script>
