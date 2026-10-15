@@ -17,10 +17,20 @@
       </nav>
     </div>
 
+    <!-- 锚点导航：吸顶横向滚动，点击跳转到对应区块（随当前标签页切换锚点列表） -->
+    <nav v-if="anchors[activeTab]" class="sticky top-14 z-30 py-2 overflow-x-auto hc-hide-bar">
+      <div class="flex items-center gap-1.5 w-fit">
+        <button v-for="a in anchors[activeTab]" :key="a.id" @click="scrollToSection(a.id)"
+          class="whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium border border-border text-muted hover:text-on-surface hover:border-primary/40 transition-colors">
+          {{ a.label }}
+        </button>
+      </div>
+    </nav>
+
     <!-- ===== 连接与设备 ===== -->
     <div v-show="activeTab === 'connect'" class="space-y-6">
     <!-- 我的 HA Token：地址管理员全局配置，密钥属个人（所有用户可见，可自配或管理员代配） -->
-    <section class="bg-surface-alt border border-border rounded-2xl p-5">
+    <section id="sec-ha-token" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
       <div class="flex items-center gap-2.5 mb-3">
         <div class="w-8 h-8 rounded-xl bg-primary/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-primary text-lg">key</span>
@@ -52,7 +62,7 @@
     </section>
 
     <!-- 服务器地址（APK 壳页地址簿同步显示） -->
-    <section class="bg-surface-alt border border-border rounded-2xl p-5">
+    <section id="sec-server" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
       <div class="flex items-center gap-2.5 mb-3">
         <div class="w-8 h-8 rounded-xl bg-accent/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-accent text-lg">dns</span>
@@ -80,7 +90,7 @@
     </section>
 
     <!-- 通话铃声（仅 APK）：来电铃声与呼叫彩铃，走系统铃声音量流 -->
-    <section v-if="canPickRing" class="bg-surface-alt border border-border rounded-2xl p-5">
+    <section v-if="canPickRing" id="sec-ring" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
       <div class="flex items-center gap-2.5 mb-3">
         <div class="w-8 h-8 rounded-xl bg-accent/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-accent text-lg">ring_volume</span>
@@ -111,7 +121,7 @@
     </section>
 
     <!-- Home Assistant 连接管理（仅管理员可见） -->
-    <section v-if="auth.isAdmin" class="bg-surface-alt border border-border rounded-2xl p-5">
+    <section v-if="auth.isAdmin" id="sec-ha-conn" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
       <div class="flex items-center justify-between mb-4">
         <div class="flex items-center gap-2.5">
           <div class="w-8 h-8 rounded-xl bg-primary/20 flex items-center justify-center">
@@ -187,7 +197,7 @@
     </section>
 
     <!-- 高德地图 & 位置同步 -->
-    <section class="bg-surface-alt border border-border rounded-2xl p-5">
+    <section id="sec-map" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
       <div class="flex items-center gap-2.5 mb-4">
         <div class="w-8 h-8 rounded-xl bg-accent/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-accent text-lg">map</span>
@@ -246,7 +256,7 @@
     </section>
 
     <!-- 设备列表（自动识别、去重、别名） -->
-    <section class="bg-surface-alt border border-border rounded-2xl p-5">
+    <section id="sec-devices" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
       <div class="flex items-center justify-between mb-4">
         <div class="flex items-center gap-2.5">
           <div class="w-8 h-8 rounded-xl bg-primary/20 flex items-center justify-center">
@@ -293,7 +303,7 @@
     </section>
 
     <!-- 设备传感器（官方 App 同款：按设备类型提供不同传感器，可开关） -->
-    <section class="bg-surface-alt border border-border rounded-2xl p-5">
+    <section id="sec-sensors" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
       <div class="flex items-center justify-between mb-4">
         <div class="flex items-center gap-2.5">
           <div class="w-8 h-8 rounded-xl bg-info/20 flex items-center justify-center">
@@ -358,7 +368,7 @@
     </section>
 
     <!-- 浏览器命令（Browser_mod 风格）：HA 侧经事件总线向本设备下发命令 -->
-    <section class="bg-surface-alt border border-border rounded-2xl p-5">
+    <section id="sec-browser" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
       <div class="flex items-center gap-2.5 mb-3">
         <div class="w-8 h-8 rounded-xl bg-warning/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-warning text-lg">contrast</span>
@@ -430,7 +440,7 @@
     <!-- ===== 个性化 ===== -->
     <div v-show="activeTab === 'personal'" class="space-y-6">
     <!-- 主题风格 -->
-    <section class="bg-surface-alt border border-border rounded-2xl p-5">
+    <section id="sec-theme" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
       <div class="flex items-center gap-2.5 mb-4">
         <div class="w-8 h-8 rounded-xl bg-primary/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-primary text-lg">palette</span>
@@ -511,7 +521,7 @@
     </section>
 
     <!-- 字体大小 -->
-    <section class="bg-surface-alt border border-border rounded-2xl p-5">
+    <section id="sec-font" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
       <div class="flex items-center gap-2.5 mb-4">
         <div class="w-8 h-8 rounded-xl bg-accent/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-accent text-lg">text_fields</span>
@@ -541,7 +551,7 @@
     </section>
 
     <!-- 仪表盘列数 -->
-    <section class="bg-surface-alt border border-border rounded-2xl p-5">
+    <section id="sec-cols" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
       <div class="flex items-center gap-2.5 mb-4">
         <div class="w-8 h-8 rounded-xl bg-accent/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-accent text-lg">grid_view</span>
@@ -573,7 +583,7 @@
     </section>
 
     <!-- 图标风格 -->
-    <section class="bg-surface-alt border border-border rounded-2xl p-5">
+    <section id="sec-icon-style" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
       <div class="flex items-center gap-2.5 mb-4">
         <div class="w-8 h-8 rounded-xl bg-info/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-info text-lg">dashboard</span>
@@ -602,7 +612,7 @@
     </section>
 
     <!-- 户型图风格 -->
-    <section class="bg-surface-alt border border-border rounded-2xl p-5">
+    <section id="sec-floorplan" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
       <div class="flex items-center gap-2.5 mb-4">
         <div class="w-8 h-8 rounded-xl bg-warning/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-warning text-lg">apartment</span>
@@ -631,7 +641,7 @@
     </section>
 
     <!-- 动画效果 -->
-    <section class="bg-surface-alt border border-border rounded-2xl p-5">
+    <section id="sec-animation" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
       <div class="flex items-center gap-2.5 mb-4">
         <div class="w-8 h-8 rounded-xl bg-error/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-error text-lg">animation</span>
@@ -647,7 +657,7 @@
     </section>
 
     <!-- 语音助手 -->
-    <section class="bg-surface-alt border border-border rounded-2xl p-5">
+    <section id="sec-voice" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
       <div class="flex items-center gap-2.5 mb-4">
         <div class="w-8 h-8 rounded-xl bg-success/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-success text-lg">mic</span>
@@ -717,7 +727,7 @@
     <!-- ===== 账户 ===== -->
     <div v-show="activeTab === 'account'" class="space-y-6">
     <!-- 账号与安全 -->
-    <section class="bg-surface-alt border border-border rounded-2xl p-5">
+    <section id="sec-account" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
       <div class="flex items-center gap-2.5 mb-4">
         <div class="w-8 h-8 rounded-xl bg-primary/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-primary text-lg">shield_person</span>
@@ -747,7 +757,7 @@
     </section>
 
     <!-- 系统信息：前后端版本号，用于确认部署是否已更新 -->
-    <section class="bg-surface-alt border border-border rounded-2xl p-5">
+    <section id="sec-sysinfo" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
       <div class="flex items-center gap-2.5 mb-3">
         <div class="w-8 h-8 rounded-xl bg-primary/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-primary text-lg">info</span>
@@ -853,7 +863,7 @@
     <!-- ===== 用户管理（仅管理员） ===== -->
     <div v-if="auth.isAdmin" v-show="activeTab === 'users'" class="space-y-6">
     <!-- 系统名称（全局）：改后所有用户的顶栏/登录页/浏览器标题同步更新 -->
-    <section class="bg-surface-alt border border-border rounded-2xl p-5">
+    <section id="sec-sysname" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
       <div class="flex items-center gap-2.5 mb-3">
         <div class="w-8 h-8 rounded-xl bg-primary/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-primary text-lg">badge</span>
@@ -873,7 +883,7 @@
       </div>
       <p v-if="siteNameMsg" class="mt-2 text-xs font-body" :class="siteNameErr ? 'text-error' : 'text-success'">{{ siteNameMsg }}</p>
     </section>
-    <section class="bg-surface-alt border border-border rounded-2xl p-5">
+    <section id="sec-users" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
       <div class="flex items-center gap-2.5 mb-4">
         <div class="w-8 h-8 rounded-xl bg-info/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-info text-lg">group</span>
@@ -1147,6 +1157,40 @@ const tabs = [
   ...(auth.isAdmin ? [{ key: 'users', icon: 'group', label: '用户管理' }] : []),
 ]
 const activeTab = ref('connect')
+// 锚点导航：每个标签页的区块快捷跳转列表
+const anchors = {
+  connect: [
+    { id: 'sec-ha-token', label: 'HA Token' },
+    { id: 'sec-server', label: '服务器' },
+    { id: 'sec-ring', label: '铃声' },
+    { id: 'sec-ha-conn', label: 'HA 连接' },
+    { id: 'sec-map', label: '地图' },
+    { id: 'sec-devices', label: '设备' },
+    { id: 'sec-sensors', label: '传感器' },
+    { id: 'sec-browser', label: '浏览器' },
+  ],
+  personal: [
+    { id: 'sec-theme', label: '主题' },
+    { id: 'sec-font', label: '字体' },
+    { id: 'sec-cols', label: '列数' },
+    { id: 'sec-icon-style', label: '图标' },
+    { id: 'sec-floorplan', label: '户型图' },
+    { id: 'sec-animation', label: '动画' },
+    { id: 'sec-voice', label: '语音' },
+  ],
+  account: [
+    { id: 'sec-account', label: '账号' },
+    { id: 'sec-sysinfo', label: '系统信息' },
+  ],
+  users: [
+    { id: 'sec-sysname', label: '系统名称' },
+    { id: 'sec-users', label: '用户管理' },
+  ],
+}
+function scrollToSection(id) {
+  const el = document.getElementById(id)
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
 // 9 套主题（与 src/themes.js THEMES 同源，新增主题只需维护 THEMES）
 const themeOptions = Object.values(THEMES)
 const colors = [

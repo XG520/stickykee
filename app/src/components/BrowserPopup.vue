@@ -12,7 +12,7 @@
       <div class="flex items-center gap-3 px-4 py-3 border-b border-border shrink-0">
         <span v-if="!hideHeader" class="material-symbols-outlined text-primary text-xl shrink-0" aria-hidden="true">chat_bubble</span>
         <h2 class="flex-1 min-w-0 font-headline font-bold text-base text-on-background truncate">{{ title || '通知' }}</h2>
-        <button class="shrink-0 w-9 h-9 rounded-xl flex items-center justify-center text-muted hover:text-on-surface hover:bg-faint/40 transition-colors"
+        <button class="shrink-0 w-10 h-10 rounded-xl flex items-center justify-center text-muted hover:text-on-surface hover:bg-faint/40 transition-colors"
           @click="close" aria-label="关闭弹窗">
           <span class="material-symbols-outlined text-2xl" aria-hidden="true">close</span>
         </button>

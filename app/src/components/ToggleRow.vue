@@ -1,7 +1,7 @@
 <template>
   <div class="flex items-center justify-between py-3 px-3 rounded-xl hover:bg-surface transition-colors" :class="{ 'opacity-55': disabled }">
     <div class="flex items-center gap-3">
-      <div class="w-9 h-9 rounded-xl flex items-center justify-center" :class="color">
+      <div class="w-9 h-9 rounded-lg flex items-center justify-center" :class="color">
         <span class="material-symbols-outlined text-lg">{{ icon }}</span>
       </div>
       <div>

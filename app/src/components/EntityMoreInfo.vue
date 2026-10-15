@@ -8,14 +8,14 @@
     <div class="relative w-full sm:max-w-md max-h-[88vh] sm:max-h-[85vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl bg-background border border-border shadow-2xl">
       <!-- 头部 -->
       <div class="sticky top-0 z-10 flex items-center gap-3 px-4 py-3 bg-background/95 backdrop-blur border-b border-border">
-        <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-surface-alt border border-border">
+        <div class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 bg-surface-alt border border-border">
           <span class="material-symbols-outlined text-xl" :class="accentText">{{ glyph }}</span>
         </div>
         <div class="flex-1 min-w-0">
           <h2 class="font-headline font-bold text-base text-on-background truncate leading-tight">{{ name }}</h2>
           <p class="font-body text-xs text-muted truncate">{{ entity.entity_id }}</p>
         </div>
-        <button class="shrink-0 w-9 h-9 rounded-xl flex items-center justify-center text-muted hover:text-on-surface hover:bg-faint/40 transition-colors" @click="$emit('close')" aria-label="关闭">
+        <button class="shrink-0 w-10 h-10 rounded-xl flex items-center justify-center text-muted hover:text-on-surface hover:bg-faint/40 transition-colors" @click="$emit('close')" aria-label="关闭">
           <span class="material-symbols-outlined text-2xl">close</span>
         </button>
       </div>

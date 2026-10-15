@@ -4,11 +4,11 @@
          标题放在本行内部，避免成为 space-y-4 的多余子项而多出一段间距 -->
     <div class="flex items-center justify-end">
       <h1 class="sr-only">场景与自动化</h1>
-      <div class="flex items-center gap-2 text-xs text-muted font-body">
-        <span class="material-symbols-outlined text-base">schedule</span>
-        上次同步：刚刚
+      <div class="flex items-center gap-2 text-xs font-body" :class="syncFailed ? 'text-error' : 'text-muted'">
+        <span class="material-symbols-outlined text-base">{{ syncFailed ? 'sync_problem' : 'schedule' }}</span>
+        上次同步：{{ syncAgoText }}
         <span class="w-1 h-1 rounded-full bg-faint"></span>
-        <span class="text-success">✓ 已连接</span>
+        <span :class="syncFailed ? 'text-error' : 'text-success'">{{ syncFailed ? '✕ 同步失败' : '✓ 已连接' }}</span>
       </div>
     </div>
 
@@ -19,7 +19,7 @@
         :key="s.label"
         class="bg-surface border border-border rounded-2xl p-4 flex items-center gap-3"
       >
-        <div class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" :class="s.iconBg">
+        <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0" :class="s.iconBg">
           <span class="material-symbols-outlined text-xl" :class="s.iconColor">{{ s.icon }}</span>
         </div>
         <div>
@@ -34,7 +34,7 @@
       <div class="flex items-center justify-between mb-4">
         <div class="flex items-center gap-2">
           <h2 class="font-headline text-lg font-semibold text-on-background">预设场景</h2>
-          <span class="text-xs text-muted font-body bg-surface border border-border px-2 py-0.5 rounded-full">{{ scenes.length }} 个</span>
+          <span class="text-xs text-muted font-body bg-surface-alt border border-border px-2 py-0.5 rounded-full">{{ scenes.length }} 个</span>
         </div>
         <button
           class="text-xs text-muted font-body hover:text-primary transition-colors flex items-center gap-1"
@@ -75,7 +75,7 @@
           </div>
         </div>
       </div>
-      <p v-else class="text-muted text-xs font-body">暂无场景</p>
+      <EmptyState v-else compact icon="magic_button" title="暂无场景" desc="从 Home Assistant 同步的预设场景将显示在此处" />
     </section>
 
     <!-- Automation Rules -->
@@ -83,7 +83,7 @@
       <div class="flex items-center justify-between mb-4">
         <div class="flex items-center gap-2">
           <h2 class="font-headline text-lg font-semibold text-on-background">自动化规则</h2>
-          <span class="text-xs text-muted font-body bg-surface border border-border px-2 py-0.5 rounded-full">{{ rules.length }} 条</span>
+          <span class="text-xs text-muted font-body bg-surface-alt border border-border px-2 py-0.5 rounded-full">{{ rules.length }} 条</span>
         </div>
         <div class="flex items-center gap-2">
           <select
@@ -112,7 +112,7 @@
           :class="[ r.on ? 'border border-success/20 hover:border-success/40' : 'border border-border hover:border-muted/20 opacity-70' ]"
         >
           <div class="flex items-center gap-3 flex-1 min-w-0">
-            <div class="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" :class="r.on ? 'bg-success/10' : 'bg-faint/20 border border-border'">
+            <div class="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" :class="r.on ? 'bg-success/10' : 'bg-faint/20 border border-border'">
               <span class="material-symbols-outlined text-lg" :class="r.on ? 'text-success' : 'text-faint'">{{ r.icon }}</span>
             </div>
             <div class="min-w-0">
@@ -158,7 +158,7 @@
         </div>
       </div>
 
-      <p v-else class="text-muted text-xs font-body">暂无自动化规则</p>
+      <EmptyState v-else compact icon="account_tree" title="暂无自动化规则" desc="点击「新建自动化」创建你的第一条规则" />
     </section>
 
     <!-- Execution Log -->
@@ -166,7 +166,7 @@
       <div class="flex items-center justify-between mb-4">
         <div class="flex items-center gap-2">
           <h2 class="font-headline text-lg font-semibold text-on-background">最近执行日志</h2>
-          <span class="text-xs text-muted font-body bg-surface border border-border px-2 py-0.5 rounded-full">最近24小时</span>
+          <span class="text-xs text-muted font-body bg-surface-alt border border-border px-2 py-0.5 rounded-full">最近24小时</span>
         </div>
         <button class="text-xs text-muted font-body hover:text-primary transition-colors" @click="loadLogs">
           刷新
@@ -189,7 +189,7 @@
           <span class="text-xs text-faint font-body flex-shrink-0">{{ fmtTime(log.time) }}</span>
         </div>
       </div>
-      <p v-else class="text-muted text-xs font-body">暂无执行日志</p>
+      <EmptyState v-else compact icon="history" title="暂无执行日志" desc="最近 24 小时内暂无自动化执行记录" />
     </section>
 
     <!-- 新建/编辑自动化向导 -->
@@ -980,10 +980,11 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import api from '@/api'
 import { store } from '@/store'
 import { isOn, iconFor, attr } from '@/utils/entities'
+import EmptyState from '@/components/EmptyState.vue'
 
 // 场景卡配色轮换。
 const scenePalettes = [
@@ -999,6 +1000,22 @@ const scenes = ref([])
 const rules = ref([])
 const logs = ref([])
 const stateFilter = ref('')
+
+// 同步状态：记录上次成功同步时间戳与失败标记，驱动顶部相对时间显示
+const lastSync = ref(0)
+const syncFailed = ref(false)
+const syncTick = ref(0) // 每 30s 自增，触发相对时间重新计算
+let syncTimer = null
+// 相对时间文案：刚刚 / N分钟前 / N小时前
+const syncAgoText = computed(() => {
+  syncTick.value // 依赖 tick 触发重算
+  if (!lastSync.value) return '尚未同步'
+  const diff = Date.now() - lastSync.value
+  if (diff < 30000) return '刚刚'
+  if (diff < 3600000) return Math.floor(diff / 60000) + ' 分钟前'
+  if (diff < 86400000) return Math.floor(diff / 3600000) + ' 小时前'
+  return Math.floor(diff / 86400000) + ' 天前'
+})
 
 // 顶部 Toast（自包含实现，2.2s 自动消失）。
 const toast = reactive({ show: false, text: '' })
@@ -1051,7 +1068,8 @@ async function loadScenes() {
   try {
     const { data } = await api.scenes(store.activeID)
     scenes.value = Array.isArray(data) ? data.map((e, i) => sceneFromEntity(e, i)) : []
-  } catch { scenes.value = [] }
+    syncFailed.value = false
+  } catch { scenes.value = []; syncFailed.value = true }
 }
 
 async function loadAutomations() {
@@ -1069,7 +1087,8 @@ async function loadAutomations() {
         lastTriggered: last ? new Date(last).toLocaleString('zh-CN', { hour12: false }) : '',
       }
     }) : []
-  } catch { rules.value = [] }
+    syncFailed.value = false
+  } catch { rules.value = []; syncFailed.value = true }
 }
 
 async function loadLogs() {
@@ -1791,7 +1810,17 @@ const stats = computed(() => {
   ]
 })
 
-onMounted(() => { loadScenes(); loadAutomations(); loadLogs() })
+// 统一加载并更新同步时间戳
+async function loadAll() {
+  await Promise.all([loadScenes(), loadAutomations(), loadLogs()])
+  if (!syncFailed.value) lastSync.value = Date.now()
+}
+onMounted(() => {
+  loadAll()
+  // 每 30s 自增 tick，驱动相对时间文案刷新
+  syncTimer = setInterval(() => { syncTick.value++ }, 30000)
+})
+onUnmounted(() => { if (syncTimer) clearInterval(syncTimer) })
 </script>
 
 <style scoped>

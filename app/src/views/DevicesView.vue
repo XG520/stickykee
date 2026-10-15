@@ -3,10 +3,8 @@
     <!-- 页面标题只保留给屏读器：可见标题行占的垂直空间已省掉，文档大纲与无障碍不受影响 -->
     <h1 class="sr-only">设备管理</h1>
 
-    <p v-if="!backendOnline" class="mb-4 text-error text-sm font-body">后端不可达，无法加载设备数据。请先启动 Go 后端并在「设置」中配置 Home Assistant 实例。</p>
-    <p v-else-if="loadedOnce && !devices.length" class="mb-4 text-muted text-sm font-body">暂无设备数据。请确认 Home Assistant 实例可访问且设备注册表非空。</p>
-    <!-- 搜索 + 类型筛选 -->
-    <div class="flex flex-col gap-3 mb-5">
+    <!-- 搜索 + 类型筛选：后端在线且加载完成后才显示 -->
+    <div v-if="backendOnline && loadedOnce" class="flex flex-col gap-3 mb-5">
       <div class="flex items-center gap-2 w-full">
         <div class="relative flex-1">
           <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-muted text-lg pointer-events-none">search</span>
@@ -16,12 +14,12 @@
             placeholder="搜索设备 / 实体 / 厂商 / 房间…"
             class="w-full pl-9 pr-9 py-2 rounded-xl bg-surface-alt border border-border text-sm font-body text-on-background placeholder:text-faint outline-none focus:border-primary transition-colors"
           />
-          <button v-if="keyword" class="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-on-surface" @click="keyword = ''">
+          <button v-if="keyword" class="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 -mr-1 flex items-center justify-center rounded-full text-muted hover:text-on-surface hover:bg-surface-hover transition-colors" @click="keyword = ''" aria-label="清除搜索">
             <span class="material-symbols-outlined text-base">close</span>
           </button>
         </div>
         <!-- 设备计数从已删除的标题行移到搜索行右侧，不额外占一行高度 -->
-        <span v-if="backendOnline" class="hidden sm:inline shrink-0 font-body text-xs text-muted whitespace-nowrap">
+        <span class="hidden sm:inline shrink-0 font-body text-xs text-muted whitespace-nowrap">
           共 {{ devices.length }} 台 · {{ onDeviceCount }} 在线
         </span>
       </div>
@@ -47,6 +45,20 @@
       <!-- 左列：按房间分组的设备列表。桌面端高度由父级 flex 决定（与右侧详情严格等高、随窗口变化），
            自身成为独立滚动区：滚轮落在列表上只滚动列表，不带动页面与右侧详情（overscroll-contain 阻止滚动链） -->
       <div class="hc-hide-bar lg:w-80 lg:shrink-0 lg:overflow-y-auto lg:overscroll-contain">
+        <!-- 加载骨架屏：后端在线但首次加载未完成时显示 -->
+        <div v-if="backendOnline && !loadedOnce" class="space-y-3">
+          <div v-for="i in 6" :key="i" class="flex items-center gap-3 rounded-xl border border-border bg-surface-alt/40 p-3">
+            <div class="w-10 h-10 rounded-lg bg-surface-alt animate-pulse"></div>
+            <div class="flex-1 space-y-1.5">
+              <div class="h-3.5 rounded bg-surface-alt animate-pulse" :style="{ width: 40 + (i * 7) % 30 + '%' }"></div>
+              <div class="h-3 rounded bg-surface-alt/70 animate-pulse w-1/2"></div>
+            </div>
+          </div>
+        </div>
+        <!-- 后端不可达 -->
+        <EmptyState v-else-if="!backendOnline" icon="cloud_off" title="后端不可达" desc="无法加载设备数据。请先启动 Go 后端并在「设置」中配置 Home Assistant 实例。" tone="error" />
+        <!-- 暂无设备 -->
+        <EmptyState v-else-if="loadedOnce && !devices.length" icon="devices_off" title="暂无设备" desc="请确认 Home Assistant 实例可访问且设备注册表非空。" />
         <div v-for="room in rooms" :key="room.id" v-show="room.visible" class="mb-5">
           <!-- 房间头：点击整块折叠 -->
           <button
@@ -72,7 +84,7 @@
               @click="openDetail(d)"
             >
               <div class="flex items-start gap-3">
-                <div class="relative w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                <div class="relative w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
                   :class="d.active_count > 0 ? iconBox(d) : 'bg-faint/15 border border-border'">
                   <span class="material-symbols-outlined text-xl" :class="d.active_count > 0 ? iconColor(d) : 'text-faint'">{{ deviceGlyph(d) }}</span>
                   <span
@@ -83,8 +95,8 @@
                 <div class="flex-1 min-w-0">
                   <div class="flex items-center gap-2 flex-wrap">
                     <h3 class="font-body font-semibold text-sm text-on-background truncate">{{ d.display_name }}</h3>
-                    <span v-if="d.disabled" class="font-body text-[10px] px-1.5 py-0.5 rounded-md bg-faint/30 text-faint border border-border font-medium">已禁用</span>
-                    <span v-if="domainBadge(d)" class="font-body text-[10px] px-1.5 py-0.5 rounded-md border font-medium" :class="domainBadgeCls(d)">{{ domainBadge(d) }}</span>
+                    <span v-if="d.disabled" class="font-body text-[10px] px-1.5 py-0.5 rounded-full bg-faint/30 text-faint border border-border font-medium">已禁用</span>
+                    <span v-if="domainBadge(d)" class="font-body text-[10px] px-1.5 py-0.5 rounded-full border font-medium" :class="domainBadgeCls(d)">{{ domainBadge(d) }}</span>
                   </div>
                   <p class="font-body text-[11px] mt-0.5 text-muted truncate">{{ deviceMeta(d) }}</p>
                   <p class="font-body text-[10px] mt-0.5 text-faint truncate">{{ d.entity_count }} 个实体</p>
@@ -139,7 +151,7 @@
               返回
             </button>
             <div class="flex items-center gap-2.5 flex-1 min-w-0">
-              <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+              <div class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
                 :class="detail.active_count > 0 ? iconBox(detail) : 'bg-faint/15 border border-border'">
                 <span class="material-symbols-outlined text-xl" :class="detail.active_count > 0 ? iconColor(detail) : 'text-faint'">{{ deviceGlyph(detail) }}</span>
               </div>
@@ -151,7 +163,7 @@
                 <p class="font-body text-xs text-muted truncate">{{ deviceMeta(detail) }}</p>
               </div>
             </div>
-            <button class="lg:hidden shrink-0 w-9 h-9 rounded-xl flex items-center justify-center text-muted hover:text-on-surface hover:bg-faint/40 transition-colors" @click="detail = null" aria-label="关闭">
+            <button class="lg:hidden shrink-0 w-10 h-10 rounded-xl flex items-center justify-center text-muted hover:text-on-surface hover:bg-faint/40 transition-colors" @click="detail = null" aria-label="关闭">
               <span class="material-symbols-outlined text-2xl">close</span>
             </button>
           </div>
@@ -244,6 +256,7 @@ import { store, backendOnline, onEntityChange, refreshEntities, entityStates } f
 import { isOn, isAvailable, iconFor, domainGlyph } from '@/utils/entities'
 import { buildControls } from '@/utils/entityControls'
 import EntityMoreInfo from '@/components/EntityMoreInfo.vue'
+import EmptyState from '@/components/EmptyState.vue'
 
 const filter = ref('all')
 const keyword = ref('')

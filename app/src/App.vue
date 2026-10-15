@@ -46,14 +46,38 @@
         </router-view>
       </main>
 
-      <!-- 移动端底部 Tab（沉浸模式 / 首页仪表盘编辑态折叠：编辑操作栏在同一位置，避免互相遮挡） -->
-      <MobileTabBar v-if="!ui.immersive && !ui.dashEditing" />
+      <!-- 移动端底部 Tab（沉浸模式 / 首页仪表盘编辑态折叠：编辑操作栏在同一位置，避免互相遮挡）。
+           外包 transition：进出时向下滑出/滑入，避免突兀消失 -->
+      <transition name="hc-slide-up">
+        <MobileTabBar v-if="!ui.immersive && !ui.dashEditing" />
+      </transition>
 
       <!-- 全局设备抽屉：概览卡/统计卡/房间概览点击后按条件过滤展示设备（store.deviceDrawer 驱动） -->
       <DeviceDrawer />
 
       <!-- 全局语音通话覆盖层（来电/通话中界面，WebRTC mesh） -->
       <CallOverlay />
+
+      <!-- APK 版本更新提示弹窗：启动时检测到新版本自动弹出 -->
+      <transition name="hc-modal">
+        <div v-if="apkUpdate" class="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
+          <div class="w-full max-w-sm rounded-2xl bg-surface border border-border shadow-2xl p-6 text-center">
+            <span class="material-symbols-outlined text-4xl text-primary mb-2" aria-hidden="true">system_update</span>
+            <h3 class="text-lg font-semibold text-on-surface mb-1">发现新版本</h3>
+            <p class="text-sm text-muted mb-4">v{{ apkUpdate.version }} 已发布，更新以获得最新功能与修复。</p>
+            <div v-if="apkDownloading" class="mb-4">
+              <div class="h-2 rounded-full bg-surface-alt overflow-hidden">
+                <div class="h-full bg-primary transition-all duration-200" :style="{ width: apkPct + '%' }"></div>
+              </div>
+              <p class="text-xs text-muted mt-1.5">下载中 {{ apkPct }}%</p>
+            </div>
+            <div v-else class="flex gap-2">
+              <button @click="dismissApkUpdate" class="flex-1 h-11 rounded-xl bg-surface-alt border border-border text-muted text-sm font-medium hover:text-on-surface transition-colors">稍后</button>
+              <button @click="startApkUpdate" class="flex-1 h-11 rounded-xl bg-primary text-on-primary text-sm font-semibold shadow-sm hover:opacity-90 transition-opacity">立即更新</button>
+            </div>
+          </div>
+        </div>
+      </transition>
     </template>
 
     <!-- APK 服务器地址簿抽屉：登录页（公开页）与登录后都可用，Web 端不渲染 -->
@@ -62,7 +86,7 @@
 </template>
 
 <script setup>
-import { computed, watch, onMounted } from 'vue'
+import { computed, ref, watch, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import TheHeader from '@/components/TheHeader.vue'
 import TheNavBar from '@/components/TheNavBar.vue'
@@ -73,6 +97,23 @@ import ServerManagerSheet from '@/components/ServerManagerSheet.vue'
 import { auth, loadInstances, ui } from '@/store'
 import { useFullscreen } from '@/composables/useFullscreen'
 import { useAutoHide } from '@/composables/useAutoHide'
+import { checkApkUpdate, downloadAndInstallApk } from '@/utils/appUpdate'
+
+// APK 更新提示：登录后自动检测一次（每会话），发现新版本弹窗提示一键更新
+const apkUpdate = ref(null) // { version } 或 null
+const apkDownloading = ref(false)
+const apkPct = ref(0)
+function dismissApkUpdate() { apkUpdate.value = null }
+function startApkUpdate() {
+  if (apkDownloading.value) return
+  apkDownloading.value = true
+  apkPct.value = 0
+  downloadAndInstallApk(
+    (pct) => { apkPct.value = pct },
+    () => { apkDownloading.value = false; apkPct.value = 100; apkUpdate.value = null },
+    (msg) => { apkDownloading.value = false; console.warn('[appUpdate]', msg) },
+  )
+}
 import { applyTheme, resolveTheme, loadThemeFromCache } from '@/themes'
 import { startAutoSync, stopAutoSync } from '@/utils/autoSync'
 import { startProximityScreenWake } from '@/utils/sensors'
@@ -106,6 +147,8 @@ watch(
       startAutoSync()
       // 人接近自动亮屏（依赖环境光阴影 + 屏幕唤醒锁，不支持时返回 null）
       stopProx = startProximityScreenWake()
+      // APK：登录后自动检测版本，发现新版本弹窗提示更新（每会话只检测一次）
+      checkApkUpdate().then((info) => { if (info?.available) apkUpdate.value = { version: info.version } })
     } else {
       stopAutoSync() // 登出/无会话时停止自动同步
       if (stopProx) { stopProx(); stopProx = null } // 释放屏幕唤醒锁

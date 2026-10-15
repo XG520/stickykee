@@ -7,14 +7,14 @@
     <div class="relative w-full sm:max-w-lg max-h-[88vh] overflow-y-auto overscroll-contain rounded-t-2xl sm:rounded-2xl bg-background border border-border shadow-2xl">
       <!-- 头部 -->
       <div class="sticky top-0 z-10 flex items-center gap-3 px-4 py-3 bg-background/95 backdrop-blur border-b border-border">
-        <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-surface-alt border border-border overflow-hidden">
+        <div class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 bg-surface-alt border border-border overflow-hidden">
           <DeviceIconRenderer :device="device" :entity="entity" :size="32" />
         </div>
         <div class="flex-1 min-w-0">
           <h2 class="font-headline font-bold text-base text-on-background truncate leading-tight">{{ name }}</h2>
           <p class="font-body text-xs text-muted truncate">{{ device.entityId || '未绑定实体' }}</p>
         </div>
-        <button class="shrink-0 w-9 h-9 rounded-xl flex items-center justify-center text-muted hover:text-on-surface hover:bg-faint/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40" @click="$emit('close')" aria-label="关闭设置">
+        <button class="shrink-0 w-10 h-10 rounded-xl flex items-center justify-center text-muted hover:text-on-surface hover:bg-faint/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40" @click="$emit('close')" aria-label="关闭设置">
           <span class="material-symbols-outlined text-2xl">close</span>
         </button>
       </div>

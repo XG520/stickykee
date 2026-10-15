@@ -3,7 +3,7 @@
     <!-- 页面标题只保留给屏读器（可见标题行占的垂直空间已省掉）；时间范围切换保留并右对齐。
          标题放在本行内部，避免成为 space-y-5 的多余子项而多出一段间距 -->
     <div class="flex items-center justify-end gap-4 flex-wrap">
-      <h2 class="sr-only">能耗总览</h2>
+      <h1 class="sr-only">能耗总览</h1>
       <div class="flex items-center gap-1 p-1 bg-surface rounded-xl border border-border">
         <button
           v-for="r in ranges"
@@ -25,7 +25,7 @@
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
       <button class="text-left bg-surface border border-border rounded-2xl p-4 transition-colors duration-200 hover:border-primary/50" @click="openDeviceDrawer('power')" title="点击查看有功耗的设备">
         <div class="flex items-center justify-between mb-3">
-          <div class="w-9 h-9 rounded-xl bg-primary/15 flex items-center justify-center">
+          <div class="w-9 h-9 rounded-lg bg-primary/15 flex items-center justify-center">
             <span class="material-symbols-outlined text-primary text-lg">bolt</span>
           </div>
         </div>
@@ -35,7 +35,7 @@
 
       <button class="text-left bg-surface border border-border rounded-2xl p-4 transition-colors duration-200 hover:border-primary/50" @click="openDeviceDrawer('active')" title="点击查看开启中的设备">
         <div class="flex items-center justify-between mb-3">
-          <div class="w-9 h-9 rounded-xl bg-accent/15 flex items-center justify-center">
+          <div class="w-9 h-9 rounded-lg bg-accent/15 flex items-center justify-center">
             <span class="material-symbols-outlined text-accent text-lg">devices</span>
           </div>
         </div>
@@ -45,7 +45,7 @@
 
       <button class="text-left bg-surface border border-border rounded-2xl p-4 transition-colors duration-200 hover:border-primary/50" @click="openDeviceDrawer('all')" title="点击查看全部设备">
         <div class="flex items-center justify-between mb-3">
-          <div class="w-9 h-9 rounded-xl bg-info/15 flex items-center justify-center">
+          <div class="w-9 h-9 rounded-lg bg-info/15 flex items-center justify-center">
             <span class="material-symbols-outlined text-info text-lg">category</span>
           </div>
         </div>
@@ -55,7 +55,7 @@
 
       <div class="bg-surface border border-border rounded-2xl p-4 transition-colors duration-200">
         <div class="flex items-center justify-between mb-3">
-          <div class="w-9 h-9 rounded-xl bg-success/15 flex items-center justify-center">
+          <div class="w-9 h-9 rounded-lg bg-success/15 flex items-center justify-center">
             <span class="material-symbols-outlined text-success text-lg">thermostat</span>
           </div>
         </div>
@@ -131,7 +131,7 @@
             class="flex items-center gap-4 p-3 rounded-xl border transition-colors duration-200"
             :class="d.top ? 'bg-surface-alt/60 border-border/60' : 'bg-surface-alt/30 border-border/30'"
           >
-            <div class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" :class="d.iconBg">
+            <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0" :class="d.iconBg">
               <span class="material-symbols-outlined text-lg" :class="d.iconColor">{{ d.icon }}</span>
             </div>
             <div class="flex-1 min-w-0">

@@ -1,5 +1,7 @@
 <template>
   <div class="min-h-0">
+    <!-- 页面标题只保留给屏读器：可见标题行占的垂直空间已省掉 -->
+    <h1 class="sr-only">仪表盘</h1>
     <!-- 位置同步 Toast：悬浮抽屉（fixed 顶部居中，从页头下缘滑出）。
          不占文档流、不挤压页面任何元素；展示 TOAST_MS 后自动收起，进出均有平滑过渡；
          pointer-events-none 使悬浮期间不遮挡头部与页面交互，仅抽屉本体可点 -->
@@ -35,10 +37,10 @@
         <!-- 页签区：手机端 flex-1 与右侧图标按钮同行（消除独占一行的空档），sm 起固定宽度 -->
         <div v-if="loaded && (editing || pages.length > 1)"
           class="flex w-auto flex-1 sm:w-80 sm:flex-none shrink-0 items-center gap-1 min-w-0">
-          <div ref="tabsEl" class="hc-tabs flex flex-1 min-w-0 items-center gap-1.5 overflow-x-auto">
+          <div ref="tabsEl" class="hc-tabs flex flex-1 min-w-0 items-center gap-2 overflow-x-auto">
             <div v-for="(p, i) in pages" :key="p.id"
               :data-active="i === currentPageIndex ? '1' : null"
-              class="flex shrink-0 items-center gap-0.5 rounded-full border px-1 py-0.5 transition-colors"
+              class="flex shrink-0 items-center gap-1 rounded-full border px-1 py-0.5 transition-colors"
               :class="i === currentPageIndex ? 'bg-primary/15 border-primary/40' : 'bg-surface border-border'">
               <input v-if="editing && renamingIndex === i" :value="p.name"
                 :ref="focusEl"
@@ -55,23 +57,23 @@
                 class="px-2.5 py-1 rounded-full text-sm transition-colors truncate max-w-[8rem] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                 :class="i === currentPageIndex ? 'text-primary font-semibold' : 'text-muted hover:text-on-surface'"
                 :title="p.name">{{ p.name }}</button>
-              <button v-if="editing && renamingIndex !== i" @click="renamingIndex = i"
-                class="w-8 h-8 flex items-center justify-center rounded-full text-muted hover:text-primary hover:bg-primary/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+              <button v-if="editing && i === currentPageIndex && renamingIndex !== i" @click="renamingIndex = i"
+                class="w-10 h-10 flex items-center justify-center rounded-full text-muted hover:text-primary hover:bg-primary/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                 title="重命名" aria-label="重命名本页">
                 <span class="material-symbols-outlined text-base" aria-hidden="true">edit</span>
               </button>
-              <button v-if="editing" @click="movePage(i, -1)" :disabled="i === 0"
-                class="w-8 h-8 flex items-center justify-center rounded-full text-muted hover:text-on-surface hover:bg-surface-alt transition-colors disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+              <button v-if="editing && i === currentPageIndex" @click="movePage(i, -1)" :disabled="i === 0"
+                class="w-10 h-10 flex items-center justify-center rounded-full text-muted hover:text-on-surface hover:bg-surface-alt transition-colors disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                 title="左移" aria-label="本页左移">
                 <span class="material-symbols-outlined text-base" aria-hidden="true">chevron_left</span>
               </button>
-              <button v-if="editing" @click="movePage(i, 1)" :disabled="i === pages.length - 1"
-                class="w-8 h-8 flex items-center justify-center rounded-full text-muted hover:text-on-surface hover:bg-surface-alt transition-colors disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+              <button v-if="editing && i === currentPageIndex" @click="movePage(i, 1)" :disabled="i === pages.length - 1"
+                class="w-10 h-10 flex items-center justify-center rounded-full text-muted hover:text-on-surface hover:bg-surface-alt transition-colors disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                 title="右移" aria-label="本页右移">
                 <span class="material-symbols-outlined text-base" aria-hidden="true">chevron_right</span>
               </button>
-              <button v-if="editing" @click="removePage(i)" :disabled="pages.length <= 1"
-                class="w-8 h-8 flex items-center justify-center rounded-full text-muted hover:text-error hover:bg-error/10 transition-colors disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+              <button v-if="editing && i === currentPageIndex" @click="removePage(i)" :disabled="pages.length <= 1"
+                class="w-10 h-10 flex items-center justify-center rounded-full text-muted hover:text-error hover:bg-error/10 transition-colors disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                 title="删除本页" aria-label="删除本页">
                 <span class="material-symbols-outlined text-base" aria-hidden="true">close</span>
               </button>
@@ -109,21 +111,36 @@
                 <option v-for="d in apkDevices" :key="d.device_id" :value="d.device_id">{{ d.name }}</option>
               </select>
             </div>
-            <!-- 触控规范：统一 44px 高度、圆角与按压反馈；导出/导入/排版为次级动作（浅底描边），完成为主色实心。
-                 手机窄屏压缩为单行：导出/导入/重置仅图标（w-11 保持触控面积），sm 起恢复图标+文字；
-                 智能排版/完成保留文字但收窄内边距，避免「完成」被挤到第二行 -->
-            <button @click="onExport" class="inline-flex items-center justify-center h-11 w-11 sm:w-auto sm:px-3.5 rounded-xl bg-surface-alt border border-border text-muted hover:text-on-surface hover:border-primary/40 text-sm transition-all active:scale-95" title="把当前仪表盘导出为 JSON 文件">
-              <span class="material-symbols-outlined text-lg" aria-hidden="true">download</span><span class="hidden sm:inline">导出</span>
-            </button>
-            <button @click="pickImportFile" class="inline-flex items-center justify-center h-11 w-11 sm:w-auto sm:px-3.5 rounded-xl bg-surface-alt border border-border text-muted hover:text-on-surface hover:border-primary/40 text-sm transition-all active:scale-95" title="从 JSON 文件导入仪表盘">
-              <span class="material-symbols-outlined text-lg" aria-hidden="true">upload</span><span class="hidden sm:inline">导入</span>
-            </button>
+            <!-- 触控规范：统一 44px 高度、圆角与按压反馈；智能排版为主级动作，完成为主色实心；
+                 导出/导入/重置收纳进「⋯更多」下拉，降低工具栏视觉噪音 -->
             <button @click="smartArrange" class="inline-flex items-center justify-center h-11 px-2 sm:px-3.5 rounded-xl bg-surface-alt border border-border text-muted hover:text-on-surface hover:border-primary/40 text-sm transition-all active:scale-95" title="按当前 HA 实体自动设计并摆放卡片">
               <span class="material-symbols-outlined text-lg" aria-hidden="true">auto_awesome_mosaic</span>智能排版
             </button>
-            <button @click="resetLayout" class="inline-flex items-center justify-center h-11 w-11 sm:w-auto sm:px-3.5 rounded-xl bg-surface-alt border border-border text-muted hover:text-on-surface hover:border-error/40 hover:text-error text-sm transition-all active:scale-95" title="恢复默认仪表盘布局">
-              <span class="material-symbols-outlined text-lg" aria-hidden="true">restart_alt</span><span class="hidden sm:inline">重置</span>
-            </button>
+            <!-- ⋯更多：导出/导入/重置等次级操作收纳 -->
+            <div class="relative shrink-0">
+              <button @click="moreMenuOpen = !moreMenuOpen"
+                class="inline-flex items-center justify-center h-11 w-11 rounded-xl bg-surface-alt border border-border text-muted hover:text-on-surface hover:border-primary/40 text-sm transition-all active:scale-95"
+                :class="moreMenuOpen ? 'border-primary/40 text-on-surface' : ''"
+                title="更多操作" aria-label="更多操作" :aria-expanded="moreMenuOpen ? 'true' : 'false'">
+                <span class="material-symbols-outlined text-lg" aria-hidden="true">more_horiz</span>
+              </button>
+              <transition name="fade">
+                <div v-if="moreMenuOpen" class="absolute right-0 top-full mt-1 z-50 min-w-[10rem] rounded-xl bg-surface border border-border shadow-2xl py-1 overflow-hidden">
+                  <button @click="onExport(); moreMenuOpen = false" class="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-on-surface hover:bg-surface-alt transition-colors text-left">
+                    <span class="material-symbols-outlined text-lg text-muted">download</span>导出布局
+                  </button>
+                  <button @click="pickImportFile(); moreMenuOpen = false" class="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-on-surface hover:bg-surface-alt transition-colors text-left">
+                    <span class="material-symbols-outlined text-lg text-muted">upload</span>导入布局
+                  </button>
+                  <div class="my-1 h-px bg-border/60"></div>
+                  <button @click="resetLayout(); moreMenuOpen = false" class="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-error hover:bg-error/10 transition-colors text-left">
+                    <span class="material-symbols-outlined text-lg">restart_alt</span>恢复默认
+                  </button>
+                </div>
+              </transition>
+              <!-- 点击遮罩关闭下拉 -->
+              <div v-if="moreMenuOpen" class="fixed inset-0 z-40" @click="moreMenuOpen = false"></div>
+            </div>
             <button @click="saveLayout" class="inline-flex items-center justify-center h-11 px-2.5 sm:px-4 rounded-xl bg-primary hover:bg-primary-hover text-on-primary text-sm font-semibold shadow-sm shadow-primary/25 transition-all active:scale-95">
               <span class="material-symbols-outlined text-lg" aria-hidden="true">check</span>完成
             </button>
@@ -154,7 +171,7 @@
         <div v-if="addPanel" class="pointer-events-auto absolute bottom-full left-3 right-3 mx-auto max-w-[24rem] mb-2 bg-surface-alt border border-border rounded-2xl shadow-2xl p-3">
           <div class="flex items-center justify-between px-1 mb-2">
             <p class="text-muted text-xs font-body uppercase tracking-wider">添加卡片</p>
-            <button @click="addPanel = false" class="w-9 h-9 -mr-1 flex items-center justify-center rounded-full text-muted hover:text-on-surface active:scale-90 transition-colors" title="收起" aria-label="收起添加面板">
+            <button @click="addPanel = false" class="w-10 h-10 -mr-1 flex items-center justify-center rounded-full text-muted hover:text-on-surface active:scale-90 transition-colors" title="收起" aria-label="收起添加面板">
               <span class="material-symbols-outlined text-xl">close</span>
             </button>
           </div>
@@ -188,7 +205,7 @@
             :class="selectedCard ? 'w-11 justify-center' : 'px-3.5'"
             :aria-expanded="addPanel ? 'true' : 'false'"
             title="添加卡片" aria-label="添加卡片">
-            <span class="material-symbols-outlined text-[22px]">{{ addPanel ? 'arrow_downward' : 'add' }}</span>
+            <span class="material-symbols-outlined text-xl">{{ addPanel ? 'arrow_downward' : 'add' }}</span>
             <span v-if="!selectedCard" class="text-sm">添加卡片</span>
           </button>
 
@@ -208,22 +225,22 @@
             <button @click="moveCard(selectedCard, -1)" :disabled="isFirst(selectedCard)"
               class="w-11 h-11 flex items-center justify-center rounded-xl text-on-surface hover:bg-primary/10 active:scale-90 transition disabled:opacity-25 disabled:active:scale-100"
               title="前移" aria-label="卡片前移">
-              <span class="material-symbols-outlined text-[22px]">arrow_back</span>
+              <span class="material-symbols-outlined text-xl">arrow_back</span>
             </button>
             <button @click="moveCard(selectedCard, 1)" :disabled="isLast(selectedCard)"
               class="w-11 h-11 flex items-center justify-center rounded-xl text-on-surface hover:bg-primary/10 active:scale-90 transition disabled:opacity-25 disabled:active:scale-100"
               title="后移" aria-label="卡片后移">
-              <span class="material-symbols-outlined text-[22px]">arrow_forward</span>
+              <span class="material-symbols-outlined text-xl">arrow_forward</span>
             </button>
             <button @click="openEditor(selectedCard)"
               class="w-11 h-11 flex items-center justify-center rounded-xl text-on-surface hover:bg-primary/15 active:scale-90 transition"
               title="编辑尺寸与代码" aria-label="编辑卡片">
-              <span class="material-symbols-outlined text-[22px]">tune</span>
+              <span class="material-symbols-outlined text-xl">tune</span>
             </button>
             <button @click="removeCard(selectedCard)"
               class="w-11 h-11 flex items-center justify-center rounded-xl text-error hover:bg-error/12 active:scale-90 transition"
               title="删除卡片" aria-label="删除卡片">
-              <span class="material-symbols-outlined text-[22px]">delete</span>
+              <span class="material-symbols-outlined text-xl">delete</span>
             </button>
             <button @click="selectedUid = ''"
               class="w-9 h-11 flex items-center justify-center rounded-xl text-muted hover:text-on-surface active:scale-90 transition"
@@ -243,8 +260,15 @@
       </div>
     </div>
 
+    <!-- 加载骨架屏：首次加载未完成时渲染灰色脉冲占位格子，避免空白闪烁 -->
+    <div v-if="!loaded" class="dashboard-grid gap-3">
+      <div v-for="i in 6" :key="i" class="rounded-xl border border-border bg-surface-alt/40 animate-pulse"
+        :style="{ height: (i % 3 === 0 ? 160 : 110) + 'px' }"></div>
+    </div>
+
     <!-- 网格仪表盘：卡片从左向右排列，放不下的自动换到下一行；贴合视口不滚动
          加载完成（loaded）后才渲染，避免先闪现默认仪表盘 -->
+    <EmptyState v-if="loaded && !cards.length && !editing" icon="dashboard_customize" title="空仪表盘" desc="点击「编辑仪表盘」开始添加卡片，或使用智能排版自动生成布局" :cta-label="canEdit ? '编辑仪表盘' : ''" cta-icon="edit_square" @cta="editing = true" />
     <div v-if="loaded" ref="gridEl" class="dashboard-grid" :class="{ 'hc-grid-editing': editing, 'hc-phone-preview': isApkEdit }" :style="gridStyle"
       @touchstart.passive="onSwipeStart" @touchend="onSwipeEnd">
       <div
@@ -321,6 +345,7 @@ import { syncCurrentLocation, locErrorMessage, trackingEnabled } from '@/utils/l
 import CodeCard from '@/components/cards/CodeCard.vue'
 import CardEditor from '@/components/cards/CardEditor.vue'
 import { cardDefaults } from '@/components/cards/defaults'
+import EmptyState from '@/components/EmptyState.vue'
 import { newCard, newPage, migrateDashboard, serializeDashboard, downloadDashboard, parseImportPayload, autoComposeHomepage, LAYOUT_KEY_WEB, LAYOUT_KEY_APK, layoutKeyFor, colsKeyFor } from '@/utils/dashboard'
 import { getDeviceId, listDevices } from '@/utils/device'
 
@@ -338,6 +363,8 @@ const loaded = ref(false)
 const editing = ref(false)
 // 添加卡片悬浮面板开关：收起为底部操作栏入口，展开为浮层面板（不占用画布纵向空间）
 const addPanel = ref(false)
+// 编辑工具栏「⋯更多」下拉开关：收纳导出/导入/重置等次级操作
+const moreMenuOpen = ref(false)
 // 编辑态选中的卡片：底部操作栏针对该卡片操作（点按卡片选中/切换/取消，见 onCardPointerUp）
 const selectedUid = ref('')
 const selectedCard = computed(() => cards.value.find((c) => c.uid === selectedUid.value) || null)

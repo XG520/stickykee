@@ -60,7 +60,7 @@
         <div class="flex items-center gap-2 mb-2">
           <span class="material-symbols-outlined text-primary text-lg">route</span>
           <p class="flex-1 text-sm font-semibold text-on-surface">路线规划</p>
-          <button @click="toggleRoutePanel" class="w-8 h-8 rounded-lg flex items-center justify-center text-muted hover:text-on-surface hover:bg-primary/10 transition-colors" title="收起">
+          <button @click="toggleRoutePanel" class="w-10 h-10 rounded-lg flex items-center justify-center text-muted hover:text-on-surface hover:bg-primary/10 transition-colors" title="收起">
             <span class="material-symbols-outlined text-lg">close</span>
           </button>
         </div>

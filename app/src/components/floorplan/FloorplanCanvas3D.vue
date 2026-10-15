@@ -12,7 +12,7 @@
         class="flex items-center justify-center w-7 h-7 rounded-md text-muted hover:bg-primary/10 hover:text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
         :title="b.title" :aria-label="b.title" :aria-pressed="false"
         @click="b.kind === 'shot' ? onCapture() : setViewPreset(b.kind)">
-        <span class="material-symbols-outlined text-[18px]" aria-hidden="true">{{ b.icon }}</span>
+        <span class="material-symbols-outlined text-lg" aria-hidden="true">{{ b.icon }}</span>
       </button>
     </div>
   </div>

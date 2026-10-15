@@ -14,7 +14,7 @@
           <div :class="['flex-1 min-h-0 flex-col bg-surface-alt/60', listVisible ? 'flex' : 'hidden']">
             <div class="flex items-center justify-between px-4 py-3 border-b border-border">
               <h2 class="font-headline text-on-background font-semibold text-base">消息与共享</h2>
-              <button @click="closeIm" title="关闭" class="w-8 h-8 rounded-full hover:bg-surface flex items-center justify-center text-muted hover:text-on-surface transition-colors">
+              <button @click="closeIm" title="关闭" class="w-10 h-10 rounded-full hover:bg-surface flex items-center justify-center text-muted hover:text-on-surface transition-colors">
                 <span class="material-symbols-outlined">close</span>
               </button>
             </div>
@@ -52,7 +52,7 @@
                 </div>
                 <div class="flex flex-col items-end gap-0.5 shrink-0">
                   <span class="text-muted text-[10px] font-body">{{ fmtTime(c.last.created_at) }}</span>
-                  <span v-if="c.unread > 0" class="w-5 h-5 rounded-full bg-error text-background text-[10px] font-bold flex items-center justify-center">{{ c.unread > 9 ? '9+' : c.unread }}</span>
+                  <span v-if="c.unread > 0" class="w-5 h-5 rounded-full bg-error text-white text-[10px] font-bold flex items-center justify-center">{{ c.unread > 9 ? '9+' : c.unread }}</span>
                 </div>
               </button>
               <p v-if="!conversations.length" class="px-4 py-6 text-muted text-xs text-center font-body">暂无会话</p>
@@ -63,7 +63,7 @@
           <div :class="['flex-1 min-h-0 flex-col min-w-0', threadVisible ? 'flex' : 'hidden']">
             <template v-if="activeUser">
               <div class="flex items-center gap-2 px-4 py-3 border-b border-border">
-                <button @click="backToList" title="返回会话列表" class="w-9 h-9 rounded-full -ml-1 hover:bg-surface-hover flex items-center justify-center text-muted hover:text-on-surface transition-colors shrink-0">
+                <button @click="backToList" title="返回会话列表" class="w-10 h-10 rounded-full -ml-1 hover:bg-surface-hover flex items-center justify-center text-muted hover:text-on-surface transition-colors shrink-0">
                   <span class="material-symbols-outlined">arrow_back</span>
                 </button>
                 <span class="material-symbols-outlined text-lg"
@@ -345,7 +345,7 @@
                 <!-- 输入行 -->
                 <div class="flex items-center gap-2">
                   <button @click="toggleVoiceMode" :title="voiceMode ? '切换键盘' : '切换语音'"
-                    class="w-9 h-9 shrink-0 rounded-full text-muted hover:text-primary hover:bg-primary/10 flex items-center justify-center transition-colors">
+                    class="w-10 h-10 shrink-0 rounded-full text-muted hover:text-primary hover:bg-primary/10 flex items-center justify-center transition-colors">
                     <span class="material-symbols-outlined text-xl">{{ voiceMode ? 'keyboard' : 'mic' }}</span>
                   </button>
 
@@ -361,7 +361,7 @@
                   </button>
 
                   <button @click="toggleEmoji" @mousedown.prevent :disabled="busy" title="表情"
-                    class="w-9 h-9 shrink-0 rounded-full flex items-center justify-center transition-colors"
+                    class="w-10 h-10 shrink-0 rounded-full flex items-center justify-center transition-colors"
                     :class="showEmoji ? 'text-primary bg-primary/10' : 'text-muted hover:text-primary'">
                     <span class="material-symbols-outlined text-xl">mood</span>
                   </button>
@@ -369,7 +369,7 @@
                   <button v-if="!voiceMode && compose.trim()" @click="send"
                     class="shrink-0 px-3.5 py-2 rounded-xl bg-primary hover:bg-primary-hover text-on-primary text-sm font-semibold transition-colors">发送</button>
                   <button v-else-if="!isAssistant" @click="togglePlus" :disabled="busy" title="更多功能"
-                    class="w-9 h-9 shrink-0 rounded-full flex items-center justify-center transition-colors"
+                    class="w-10 h-10 shrink-0 rounded-full flex items-center justify-center transition-colors"
                     :class="showPlus ? 'text-primary bg-primary/10' : 'text-muted hover:text-primary'">
                     <span class="material-symbols-outlined text-xl">add</span>
                   </button>

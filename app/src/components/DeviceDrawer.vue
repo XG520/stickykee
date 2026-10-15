@@ -15,10 +15,10 @@
               </button>
             </span>
             <span class="text-muted text-xs font-body">共 {{ totalCount }} 台<template v-if="activeFilter === 'all'"> · {{ onlineCount }} 在线</template></span>
-            <button @click="reload" title="刷新" class="ml-auto w-8 h-8 rounded-full hover:bg-surface-hover flex items-center justify-center text-muted hover:text-on-surface transition-colors">
+            <button @click="reload" title="刷新" class="ml-auto w-10 h-10 rounded-full hover:bg-surface-hover flex items-center justify-center text-muted hover:text-on-surface transition-colors">
               <span class="material-symbols-outlined text-base" :class="{ 'animate-spin': loading }">refresh</span>
             </button>
-            <button @click="close" title="关闭" class="w-8 h-8 rounded-full hover:bg-surface-hover flex items-center justify-center text-muted hover:text-on-surface transition-colors">
+            <button @click="close" title="关闭" class="w-10 h-10 rounded-full hover:bg-surface-hover flex items-center justify-center text-muted hover:text-on-surface transition-colors">
               <span class="material-symbols-outlined text-base">close</span>
             </button>
           </div>
@@ -75,7 +75,7 @@
               <!-- 小屏返回栏 -->
               <div class="lg:hidden flex items-center gap-1 px-2 py-2 border-b border-border">
                 <button @click="detail = null" title="返回设备列表"
-                  class="w-8 h-8 rounded-full hover:bg-surface-hover flex items-center justify-center text-muted hover:text-on-surface transition-colors">
+                  class="w-10 h-10 rounded-full hover:bg-surface-hover flex items-center justify-center text-muted hover:text-on-surface transition-colors">
                   <span class="material-symbols-outlined text-lg">arrow_back</span>
                 </button>
                 <span class="text-sm text-on-surface font-medium truncate">{{ detail.display_name }}</span>

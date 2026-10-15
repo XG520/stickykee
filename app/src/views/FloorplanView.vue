@@ -3,6 +3,9 @@
      查看态：点击设备图标弹控制窗（复用 EntityMoreInfo）、房间高亮浮层、移动端底部胶囊条。
      编辑态（仅桌面）：拖放设备、画墙/画房间、背景图上传、设备图标自定义。 -->
 <template>
+  <div>
+    <!-- 页面标题只保留给屏读器 -->
+    <h1 class="sr-only">户型图</h1>
   <!-- 高度必须是确定值：移动端也要给 h-*（仅 min-h 会让 h-full 百分比链失效，
        画布 holder 塌陷为 0 高 → 缩放控件锚到顶部压住工具条、画布不可见） -->
   <div class="flex flex-col border border-border rounded-2xl overflow-hidden h-[calc(100dvh-12rem)] min-h-[24rem] lg:h-[calc(100vh-13rem)] lg:min-h-[26rem] bg-background/30">
@@ -298,7 +301,7 @@
             <!-- 场景光照预设：一键切换白天/黄昏/夜晚 -->
             <div class="flex items-center gap-1 mb-2.5" role="group" aria-label="光照场景预设">
               <button v-for="p in LIGHT_PRESETS" :key="p.key" type="button"
-                class="flex items-center gap-1 px-2 py-1 rounded-md border text-[11px] font-body transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                class="flex items-center gap-1 px-2 py-1 rounded-full border text-[11px] font-body transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                 :class="lightPresetKey === p.key ? 'border-info/60 bg-info/10 text-info' : 'border-border bg-surface-alt text-muted hover:text-on-surface'"
                 @click="applyLightPreset(p)">
                 <span class="material-symbols-outlined text-sm" aria-hidden="true">{{ p.icon }}</span>
@@ -388,7 +391,7 @@
           <template v-if="!editMode">
             <div class="flex items-center justify-between mb-3">
               <div class="min-w-0">
-                <h1 class="font-headline text-lg font-bold text-on-background truncate">{{ floor.name }} · 设备</h1>
+                <h2 class="font-headline text-lg font-bold text-on-background truncate">{{ floor.name }} · 设备</h2>
                 <p class="text-muted text-xs font-body mt-0.5">{{ rows.length ? `${rows.length} 台设备` : '编辑模式下拖入设备' }}</p>
               </div>
             </div>
@@ -413,7 +416,7 @@
 
           <!-- 编辑态：设备 / 家具拖放面板 -->
           <template v-else>
-            <h1 class="font-headline text-lg font-bold text-on-background mb-2">添加</h1>
+            <h2 class="font-headline text-lg font-bold text-on-background mb-2">添加</h2>
             <div class="flex rounded-lg border border-border overflow-hidden mb-3" role="tablist" aria-label="添加类型">
               <button
                 class="flex-1 py-1.5 text-xs font-body font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
@@ -515,6 +518,7 @@
         </button>
       </div>
     </template>
+  </div>
   </div>
 </template>
 
