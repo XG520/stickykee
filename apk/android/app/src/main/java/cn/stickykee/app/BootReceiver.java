@@ -18,7 +18,13 @@ import androidx.core.content.ContextCompat;
 public class BootReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
-        if (!Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) return;
+        // BOOT_COMPLETED / QUICKBOOT_POWERON（部分 ROM）/ MY_PACKAGE_REPLACED（覆盖更新后）
+        String action = intent != null ? intent.getAction() : null;
+        if (!Intent.ACTION_BOOT_COMPLETED.equals(action)
+                && !"android.intent.action.QUICKBOOT_POWERON".equals(action)
+                && !Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) {
+            return;
+        }
         try {
             ContextCompat.startForegroundService(context,
                     new Intent(context, KeepAliveService.class));

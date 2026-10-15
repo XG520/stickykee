@@ -32,6 +32,11 @@ import androidx.core.content.ContextCompat;
  * 间隔经 NativeBridge.setSensorInterval 由前端设置页修改，持久化在
  * SharedPreferences("stickykee")，服务重启后沿用。
  *
+ * Doze 兜底（位置空白期修复）：Handler 心跳在熄屏 CPU suspend / Doze 下会被冻结到
+ * 维护窗口（实测可空 ~50 分钟）。故另排一个 setExactAndAllowWhileIdle 链式精确闹钟
+ * （见 HeartbeatAlarm / HeartbeatReceiver），深睡中也能唤醒触发心跳；两路心跳
+ * 用 {@link #lastTickAt} 节流去重。
+ *
  * 进程被杀自恢复：START_STICKY 下系统稍后重启服务时 intent 为 null，
  * 此时若主界面不在（MainActivity.alive == false，用户划掉/被杀），
  * 尝试拉起 MainActivity 重建 WebView 与连接——自启动恢复链路
@@ -43,29 +48,48 @@ public class KeepAliveService extends Service {
     private static final int NOTIF_ID = 20260101;
     private static final int DEFAULT_INTERVAL_SEC = 60;
 
+    /** 闹钟唤醒心跳的 action（见 HeartbeatReceiver）。 */
+    static final String ACTION_TICK = "cn.stickykee.app.TICK";
+
     private final Handler handler = new Handler(Looper.getMainLooper());
     private long intervalMs = DEFAULT_INTERVAL_SEC * 1000L;
     private boolean ticking = false;
+    /** 上一次实际心跳的 elapsedRealtime，Handler 与精确闹钟两路触发共用去重。 */
+    private static volatile long lastTickAt = 0L;
 
     private final Runnable heartbeat = new Runnable() {
         @Override
         public void run() {
-            // 传感器采集与上报完全由原生统一采集器承担（不依赖 WebView 存活）：
-            // 每次心跳按启用项采集并直连服务端上报（见 NativeSensorReporter / 开发规范）。
-            try {
-                NativeSensorReporter.report(getApplicationContext(), "periodic");
-            } catch (Exception ignored) {
-            }
-            // 通话/消息 WebSocket 保活：后台 pauseTimers 冻结页面 JS 心跳与重连，
-            // 经 evaluateJavascript（不被冻结）注入发送应用层 ping / 断线立即重建，
-            // 否则服务端 90s 读超时注销连接后对端显示「离线」、来电判离线。
-            try {
-                NativeBridge.keepaliveWebSocket();
-            } catch (Exception ignored) {
-            }
+            doTick();
             if (ticking) handler.postDelayed(this, intervalMs);
         }
     };
+
+    /** 执行一次心跳（传感器上报 + WS 保活 + 持续定位监听保活），两路触发节流去重。 */
+    private void doTick() {
+        long now = android.os.SystemClock.elapsedRealtime();
+        if (now - lastTickAt < Math.max(5_000L, intervalMs / 2)) return;
+        lastTickAt = now;
+        // 持续低频定位监听：追踪/位置传感器开启期间保持 GPS fix 新鲜，
+        // 否则深睡中单次 8s 取星常失败 → 位置项整体缺失（空白期的另一半根因）。
+        try {
+            NativeSensorReporter.syncLocationTracking(getApplicationContext());
+        } catch (Exception ignored) {
+        }
+        // 传感器采集与上报完全由原生统一采集器承担（不依赖 WebView 存活）：
+        // 每次心跳按启用项采集并直连服务端上报（见 NativeSensorReporter / 开发规范）。
+        try {
+            NativeSensorReporter.report(getApplicationContext(), "periodic");
+        } catch (Exception ignored) {
+        }
+        // 通话/消息 WebSocket 保活：后台 pauseTimers 冻结页面 JS 心跳与重连，
+        // 经 evaluateJavascript（不被冻结）注入发送应用层 ping / 断线立即重建，
+        // 否则服务端 90s 读超时注销连接后对端显示「离线」、来电判离线。
+        try {
+            NativeBridge.keepaliveWebSocket();
+        } catch (Exception ignored) {
+        }
+    }
 
     @Override
     public IBinder onBind(Intent intent) {
@@ -127,14 +151,19 @@ public class KeepAliveService extends Service {
         }
         intervalMs = Math.max(10, Math.min(3600, sec)) * 1000L;
         startHeartbeat();
+        // 闹钟唤醒：正常心跳外的 Doze 兜底（HeartbeatReceiver 链式自延续）。
+        if (ACTION_TICK.equals(intent != null ? intent.getAction() : null)) {
+            doTick();
+        }
         return START_STICKY;
     }
 
-    /** 重排后台心跳（间隔变化/服务重启都会走到）。 */
+    /** 重排后台心跳（间隔变化/服务重启都会走到）：Handler 正常心跳 + 精确闹钟 Doze 兜底。 */
     private void startHeartbeat() {
         handler.removeCallbacks(heartbeat);
         ticking = true;
         handler.postDelayed(heartbeat, intervalMs);
+        HeartbeatAlarm.schedule(getApplicationContext(), intervalMs);
     }
 
     /**
@@ -160,6 +189,7 @@ public class KeepAliveService extends Service {
     public void onDestroy() {
         ticking = false;
         handler.removeCallbacks(heartbeat);
+        HeartbeatAlarm.cancel(getApplicationContext());
         super.onDestroy();
     }
 }

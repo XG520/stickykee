@@ -50,6 +50,18 @@
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <!-- 应用更新覆盖安装后自动恢复常驻（无需再次重启手机） -->
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Doze 深睡唤醒心跳：精确闹钟投递（链式自延续，见 HeartbeatAlarm） -->
+        <receiver
+            android:name=".HeartbeatReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="cn.stickykee.app.HEARTBEAT" />
             </intent-filter>
         </receiver>
     </application>
@@ -81,4 +93,9 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- 开机自启动：重启后恢复常驻保活（前台服务 + 自动拉起主界面重建连接） -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Doze 精确闹钟：深睡中唤醒心跳，修复熄屏后位置/在线状态空白期。
+         Android 12+ 的 SCHEDULE_EXACT_ALARM 需用户在「闹钟与提醒」中允许（启动保活时引导）；
+         USE_EXACT_ALARM 在 13+ 安装即授予，本应用为自分发（非应用商店），声明之。 -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 </manifest>

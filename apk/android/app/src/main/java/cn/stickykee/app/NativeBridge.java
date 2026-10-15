@@ -1,6 +1,7 @@
 package cn.stickykee.app;
 
 import android.Manifest;
+import android.app.AlarmManager;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
@@ -27,6 +28,7 @@ import android.media.audiofx.AcousticEchoCanceler;
 import android.media.audiofx.AutomaticGainControl;
 import android.media.audiofx.NoiseSuppressor;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.PowerManager;
 import android.provider.Settings;
@@ -1134,6 +1136,20 @@ public class NativeBridge {
                 activity.startActivity(new Intent(
                         Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
                         Uri.parse("package:" + pkg)));
+            }
+        } catch (Exception ignored) {
+        }
+        // 精确闹钟授权（Android 12+）：Doze 深睡下唤醒心跳的前提，未授权时熄屏久置
+        // 仍会出现位置空白。安装时已声明 USE_EXACT_ALARM（13+ 通常即授予），
+        // 走到这里说明被系统/用户关闭，引导到「闹钟与提醒」开关页。
+        try {
+            if (Build.VERSION.SDK_INT >= 31) {
+                AlarmManager am = (AlarmManager) activity.getSystemService(Context.ALARM_SERVICE);
+                if (am != null && !am.canScheduleExactAlarms()) {
+                    activity.startActivity(new Intent(
+                            Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                            Uri.parse("package:" + activity.getPackageName())));
+                }
             }
         } catch (Exception ignored) {
         }

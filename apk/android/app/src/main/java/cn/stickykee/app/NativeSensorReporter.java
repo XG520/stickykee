@@ -24,6 +24,7 @@ import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.HandlerThread;
 import android.os.Looper;
 import android.telephony.TelephonyManager;
 
@@ -132,6 +133,20 @@ public final class NativeSensorReporter {
         }
     };
 
+    // ---- 持续低频定位监听：追踪/位置传感器开启时保 GPS fix 新鲜 ----
+    // 深睡中 getLastKnownLocation 常为旧值、单次 8s 冷取星又常超时失败，
+    // 是「熄屏后位置空白、点开 App 才刷新」的另一半根因（另一半是心跳被 Doze 冻结，
+    // 由 HeartbeatAlarm 解决）。前台服务带 location 类型时，持续订阅可在后台持续出 fix。
+    private static final long LOC_MIN_INTERVAL_MS = 60_000L;
+    private static final long LOC_MAX_INTERVAL_MS = 300_000L;
+    private static HandlerThread locThread;
+    private static Handler locHandler;
+    private static LocationManager locManager;
+    private static LocationListener locListener;
+    private static volatile boolean locTrackingOn = false;
+    private static volatile Location latestFix;
+    private static volatile long latestFixAt = 0L;
+
     /** 手动上报结果回调（在后台线程触发，调用方负责切回 UI 线程派发事件）。 */
     public interface ReportCallback {
         void onResult(boolean ok, int reported, String error);
@@ -165,6 +180,7 @@ public final class NativeSensorReporter {
         } catch (Exception ignored) {
             return;
         }
+        syncLocationTracking(ctx.getApplicationContext());
         report(ctx.getApplicationContext(), "event");
     }
 
@@ -179,6 +195,123 @@ public final class NativeSensorReporter {
                     .apply();
         } catch (Exception ignored) {
         }
+        stopLocationTracking();
+    }
+
+    // ==================== 持续低频定位监听 ====================
+
+    /**
+     * 按当前配置启停持续定位监听（保活心跳每次调用，幂等）。
+     * 仅当设备追踪开启或启用了 geocoded_location 传感器、且已授予定位权限时启动；
+     * 其余情况（登出/关闭追踪/权限被撤）立即停止，避免无谓耗电。
+     */
+    public static void syncLocationTracking(Context ctx) {
+        try {
+            SharedPreferences p = prefs(ctx);
+            boolean track = p.getInt(KEY_TRACK, 0) == 1;
+            boolean needGeo = parseKeys(p.getString(KEY_KEYS, "")).contains("geocoded_location");
+            boolean perm = ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION)
+                    == PackageManager.PERMISSION_GRANTED
+                    || ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_COARSE_LOCATION)
+                    == PackageManager.PERMISSION_GRANTED;
+            if ((track || needGeo) && perm) {
+                if (!locTrackingOn) startLocationTracking(ctx, p);
+            } else if (locTrackingOn) {
+                stopLocationTracking();
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    private static synchronized void startLocationTracking(Context ctx, SharedPreferences p) {
+        if (locTrackingOn) return;
+        LocationManager lm = (LocationManager) ctx.getSystemService(Context.LOCATION_SERVICE);
+        if (lm == null) return;
+        long interval;
+        try {
+            interval = Math.max(LOC_MIN_INTERVAL_MS, Math.min(LOC_MAX_INTERVAL_MS,
+                    p.getInt("sensor_interval", 60) * 1000L));
+        } catch (Exception e) {
+            interval = LOC_MIN_INTERVAL_MS;
+        }
+        LocationListener l = new LocationListener() {
+            @Override
+            public void onLocationChanged(Location loc) {
+                if (loc == null) return;
+                // 只采信卫星 fix：PASSIVE 也可能送来 network/fused 结果，
+                // 本项目位置严禁网络定位顶替（地址/坐标一致性）。
+                if (!LocationManager.GPS_PROVIDER.equals(loc.getProvider())) return;
+                Location prev = latestFix;
+                if (prev == null || loc.getTime() >= prev.getTime()) {
+                    latestFix = loc;
+                    latestFixAt = System.currentTimeMillis();
+                }
+            }
+
+            @Override
+            public void onStatusChanged(String provider, int status, Bundle extras) {
+            }
+
+            @Override
+            public void onProviderEnabled(String provider) {
+            }
+
+            @Override
+            public void onProviderDisabled(String provider) {
+            }
+        };
+        HandlerThread t = new HandlerThread("sk-loc");
+        t.start();
+        Looper looper = t.getLooper();
+        boolean fine = ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED;
+        boolean coarse = ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_COARSE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED;
+        boolean registered = false;
+        try {
+            // 卫星定位：本项目位置严禁网络定位顶替；FINE 才订阅 GPS。
+            if (fine) {
+                lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, interval, 0f, l, looper);
+                registered = true;
+            }
+            // PASSIVE：搭车其他 App/系统的定位结果（近乎零耗电），粗定位权限也可收。
+            if (fine || coarse) {
+                lm.requestLocationUpdates(LocationManager.PASSIVE_PROVIDER,
+                        Math.max(30_000L, interval), 0f, l, looper);
+                registered = true;
+            }
+        } catch (Exception e) {
+            registered = false;
+        }
+        if (!registered) {
+            t.quit();
+            return;
+        }
+        locThread = t;
+        locHandler = new Handler(looper);
+        locManager = lm;
+        locListener = l;
+        locTrackingOn = true;
+    }
+
+    static synchronized void stopLocationTracking() {
+        if (!locTrackingOn) return;
+        locTrackingOn = false;
+        try {
+            if (locManager != null && locListener != null) {
+                locManager.removeUpdates(locListener);
+            }
+        } catch (Exception ignored) {
+        }
+        locManager = null;
+        locListener = null;
+        locHandler = null;
+        if (locThread != null) {
+            locThread.quit();
+            locThread = null;
+        }
+        latestFix = null;
+        latestFixAt = 0L;
     }
 
     // ==================== 上报入口 ====================
@@ -715,8 +848,14 @@ public final class NativeSensorReporter {
         }
     }
 
-    /** 取当前卫星定位：优先近 10 分钟内的 GPS 缓存，否则请求一次单次 fix（8s 超时）。 */
+    /** 取当前卫星定位：优先持续监听缓存的新鲜 fix / 近 10 分钟 GPS 缓存，否则单次 fix（8s）。 */
     private static Location currentGpsLocation(Context app) {
+        // 持续低频监听（追踪开启时）缓存的最新卫星 fix——深睡中这是最可靠的来源。
+        Location live = latestFix;
+        if (live != null && latestFixAt > 0
+                && System.currentTimeMillis() - latestFixAt < 10 * 60 * 1000) {
+            return live;
+        }
         LocationManager lm = (LocationManager) app.getSystemService(Context.LOCATION_SERVICE);
         if (lm == null) return null;
         Location best = null;
