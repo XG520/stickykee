@@ -37,3 +37,25 @@ func (r *UserPrefs) DeleteUser(ctx context.Context, username string) error {
 	_, err := r.db.ExecContext(ctx, `DELETE FROM user_prefs WHERE username=?`, username)
 	return err
 }
+
+// AllForUser 列出某用户的全部个性化键值对。
+// 用于扫描键名随设备 ID 动态变化的按设备隔离键（dashboard_apk_<deviceId> 布局 /
+// dashboard_apk_cols_<deviceId> 列数）：这些键无法列入固定白名单，GET 时全量取出
+// 后按前缀过滤返回前端。用户级偏好量级很小（数十键），全量扫描代价可忽略。
+func (r *UserPrefs) AllForUser(ctx context.Context, username string) (map[string]string, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT key, value FROM user_prefs WHERE username=?`, username)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var k, v string
+		if err := rows.Scan(&k, &v); err != nil {
+			return nil, err
+		}
+		out[k] = v
+	}
+	return out, nil
+}

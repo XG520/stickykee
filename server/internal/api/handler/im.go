@@ -540,8 +540,11 @@ func (h *Im) Accept(w http.ResponseWriter, r *http.Request) {
 		WriteJSON(w, 200, map[string]any{"ok": true, "status": "accepted"})
 		return
 	}
-	// 目标端决定覆盖哪些键：web→dashboard，apk→dashboard_apk。
-	// 旧消息无 targets（空）按仅 Web 端处理（历史行为）。
+	// 目标端决定覆盖哪些键：web→dashboard，apk→dashboard_apk（全局回退键）。
+	// apk 写入 dashboard_apk 而非某台设备的 dashboard_apk_<deviceId>，因为分享时无法
+	// 指定具体设备——写入全局回退键后，所有尚未单独定制的手机都会经回退链
+	// （dashboard_apk_<deviceId> → dashboard_apk → dashboard）拾取这份共享布局；
+	// 已单独定制的手机不受影响（其自身键优先）。旧消息无 targets 按仅 Web 端处理。
 	targets := msg.Targets
 	if len(targets) == 0 {
 		targets = []string{"web"}
@@ -559,7 +562,7 @@ func (h *Im) Accept(w http.ResponseWriter, r *http.Request) {
 		keys = append(keys, k)
 	}
 	// 通知接收者本人全部设备热刷新仪表盘：keys 指明受影响的布局键
-	// （dashboard=Web 端 / dashboard_apk=手机端），前端按本端键过滤，
+	// （dashboard=Web 端 / dashboard_apk=手机端全局回退），前端按本端键前缀过滤，
 	// 未受影响的端不重载（另端排版不受影响）。
 	if h.hub != nil {
 		if b, err := json.Marshal(map[string]any{"type": "prefs", "keys": keys}); err == nil {

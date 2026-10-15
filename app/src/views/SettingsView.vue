@@ -983,6 +983,7 @@ import { showNotify, setBlackout, setScreenBrightness, setScreenWake, blackout, 
 import { loadInstances, switchInstance, changePassword, authLogout, auth, store, backendOnline, haTokenConfigured, haTokenKnown, saveHAToken, siteName, loadSiteName, saveSiteName as persistSiteName } from '@/store'
 import { applyTheme, resolveTheme, THEMES, CUSTOM_COLOR_KEYS, DEFAULT_CUSTOM_COLORS } from '@/themes'
 import { getPrefs, putPrefs } from '@/utils/prefs'
+import { colsKeyFor } from '@/utils/dashboard'
 import { isApk, openServerSheet } from '@/utils/serverConfig'
 import { trackingEnabled, setTrackingEnabled } from '@/utils/location'
 import { applyTrackingPref, setSensorIntervalPref, syncNativeSensorConfig } from '@/utils/autoSync'
@@ -1189,6 +1190,11 @@ watch(dashCols, (v) => {
     if (v === 'auto') localStorage.removeItem(COLS_PREF_KEY)
     else localStorage.setItem(COLS_PREF_KEY, v)
   } catch { }
+  // APK 端：同步列数到服务端 dashboard_apk_cols_<deviceId>，供网页端编辑器按真实列数预览
+  // （auto → 空串，网页端默认 3；手动 → 数字 2~6）
+  if (isApk) {
+    putPrefs({ [colsKeyFor(getDeviceId())]: v === 'auto' ? '' : v }).catch(() => {})
+  }
 })
 
 const iconStyle = ref('linear')

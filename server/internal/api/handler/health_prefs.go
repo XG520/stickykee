@@ -31,8 +31,27 @@ func NewPrefs(repo *store.InstanceRepo, userPrefs *store.UserPrefs, manager *ha.
 // 用户级偏好 key：按登录用户隔离；无值回退全局 prefs。
 // tts_engine（网页端引擎）与 tts_engine_apk（手机端引擎）都必须在列：
 // 缺失时手机端读不到自己的引擎设置，会错误回退到网页端引擎（如 Kokoro）。
-// dashboard（Web 端仪表盘）与 dashboard_apk（手机端仪表盘）分键存储，两端排版互不影响。
+// dashboard（Web 端仪表盘）与 dashboard_apk（手机端全局回退仪表盘）分键存储。
+// 按设备隔离的键 dashboard_apk_<deviceId>（布局）/ dashboard_apk_cols_<deviceId>
+// （列数）键名随设备 ID 动态变化，无法列入此固定清单，由 GET 全量扫描后按前缀
+// 放行、PUT 按前缀写入（见 isUserLayoutKey）。
 var userScoped = []string{"theme", "font", "icons", "floorplan", "floorplan_doc", "animation", "wakeWord", "dashboard", "dashboard_apk", "tts_engine", "tts_engine_apk"}
+
+// isUserLayoutKey 判断 k 是否为用户级仪表盘布局键（需按用户隔离写入）。
+// dashboard=Web 端；dashboard_apk=手机端全局回退；dashboard_apk_<deviceId>=按设备隔离。
+// dashboard_apk_cols_<deviceId> 是列数偏好（同样用户级，但非布局键，不触发布局重载广播）。
+func isUserLayoutKey(k string) bool {
+	if k == "dashboard" || k == "dashboard_apk" {
+		return true
+	}
+	return strings.HasPrefix(k, "dashboard_apk_") && !strings.HasPrefix(k, "dashboard_apk_cols_")
+}
+
+// isUserDashPref 判断 k 是否为用户级仪表盘偏好键（布局或列数），均按用户隔离写入。
+func isUserDashPref(k string) bool {
+	return k == "dashboard" || k == "dashboard_apk" ||
+		strings.HasPrefix(k, "dashboard_apk_") // 含 dashboard_apk_cols_<deviceId>
+}
 
 // 设备级偏好 key：按登录用户隔离（设备/传感器均属个人），无全局回退。
 var deviceScoped = []string{"devices", "sensor_config"}
@@ -95,6 +114,19 @@ func (h *Prefs) Get(w http.ResponseWriter, r *http.Request) {
 		v, _ := h.repo.GetPref(r.Context(), key)
 		if v != "" {
 			all[key] = v
+		}
+	}
+
+	// 按设备隔离的仪表盘键：dashboard_apk_<deviceId>（布局）/ dashboard_apk_cols_<deviceId>
+	// （列数）。键名随设备 ID 变化，不在 userScoped 固定清单内，全量扫描用户偏好后按
+	// 前缀取出。网页端编辑器据此按选中的手机设备读取对应布局与列数。
+	if username != "" {
+		if extra, err := h.userPrefs.AllForUser(r.Context(), username); err == nil {
+			for k, v := range extra {
+				if strings.HasPrefix(k, "dashboard_apk_") && v != "" {
+					all[k] = v
+				}
+			}
 		}
 	}
 
@@ -194,8 +226,9 @@ func (h *Prefs) Put(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	isAdmin := auth.IsAdmin(r.Context())
-	// 本次写入涉及哪些仪表盘键（dashboard=Web 端 / dashboard_apk=手机端）：
-	// 写库后按受影响端通知本人全部设备热刷新，未受影响的端不重载
+	// 本次写入涉及哪些仪表盘布局键（dashboard / dashboard_apk / dashboard_apk_<deviceId>）：
+	// 写库后按受影响端通知本人全部设备热刷新，未受影响的端不重载。
+	// dashboard_apk_cols_<deviceId> 是列数偏好，不在此列（前端切目标时读取，无需广播重载）。
 	dashKeys := []string{}
 
 	userSet := map[string]bool{}
@@ -208,8 +241,8 @@ func (h *Prefs) Put(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for k, v := range body {
-		if k == "dashboard" || k == "dashboard_apk" {
-			dashKeys = append(dashKeys, k) // 仪表盘变更：写库后通知本人全部设备热刷新
+		if isUserLayoutKey(k) {
+			dashKeys = append(dashKeys, k) // 仪表盘布局变更：写库后通知本人全部设备热刷新
 		}
 		switch {
 		case k == "ha_token":
@@ -254,6 +287,15 @@ func (h *Prefs) Put(w http.ResponseWriter, r *http.Request) {
 				WriteErr(w, 500, "internal", err.Error())
 				return
 			}
+		case isUserDashPref(k):
+			// 按设备隔离的仪表盘偏好键（dashboard_apk_<deviceId> 布局 /
+			// dashboard_apk_cols_<deviceId> 列数）：与 dashboard/dashboard_apk 同属用户级，
+			// 写当前用户的 user_prefs。dashboard / dashboard_apk 已被上面的 userSet 命中，
+			// 此分支只到达带 deviceId 后缀的动态键。
+			if err := h.userPrefs.Set(r.Context(), username, k, v); err != nil {
+				WriteErr(w, 500, "internal", err.Error())
+				return
+			}
 		default:
 			// site_name 仅允许经 PUT /site-name 由管理员修改，普通用户禁止走通用通道。
 			if k == siteNameKey {
@@ -269,8 +311,9 @@ func (h *Prefs) Put(w http.ResponseWriter, r *http.Request) {
 	}
 	// 仪表盘已变更：经 WebSocket 通知本人全部设备热刷新（含发起保存的设备，
 	// 前端对「刚在本地保存过」的端做时间窗去重，不会打断当前界面）。
-	// keys 指明受影响的布局键（dashboard=Web 端 / dashboard_apk=手机端），
-	// 前端按本端使用的键过滤，未受影响的端不重载。
+	// keys 指明受影响的布局键（dashboard=Web 端 / dashboard_apk=手机端全局回退 /
+	// dashboard_apk_<deviceId>=按设备隔离），前端按本端使用的键前缀过滤，
+	// 未受影响的端不重载。
 	if len(dashKeys) > 0 && h.hb != nil {
 		if b, err := json.Marshal(map[string]any{"type": "prefs", "keys": dashKeys}); err == nil {
 			h.hb.BroadcastUser(username, b)
@@ -319,7 +362,7 @@ func PublicCORS(next http.HandlerFunc) http.HandlerFunc {
 
 // Version 后端版本号：随发布递增，经 healthz 暴露，供前端设置页与 APK 壳页
 // 确认当前连接的服务端版本（排查「更新没生效」类问题）。
-const Version = "1.4.5"
+const Version = "1.4.6"
 
 // Healthz 存活探针（公开：附带后端版本号）。
 func (Health) Healthz(w http.ResponseWriter, r *http.Request) {

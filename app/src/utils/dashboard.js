@@ -17,6 +17,19 @@ export const LAYOUT_KEY_WEB = 'dashboard'
 export const LAYOUT_KEY_APK = 'dashboard_apk'
 export function layoutKey(isApk) { return isApk ? LAYOUT_KEY_APK : LAYOUT_KEY_WEB }
 
+// 按设备隔离的布局键：每台手机 App 独立布局，键名 dashboard_apk_<deviceId>。
+// 手机端首启自身键为空时，经回退链 dashboard_apk_<deviceId> → dashboard_apk → dashboard 读取。
+// 网页端代管时按选中的手机设备 ID 拼出对应键写入，该手机收到广播即热刷新。
+export function layoutKeyFor(deviceId) {
+  if (!deviceId) return LAYOUT_KEY_APK
+  return LAYOUT_KEY_APK + '_' + deviceId
+}
+// 按设备隔离的列数键：手机端把本机 hc_dash_cols 同步到 dashboard_apk_cols_<deviceId>，
+// 供网页端编辑器读取后按真实列数预览（无值默认 3，即手机窄屏自动列数）。
+export function colsKeyFor(deviceId) {
+  return 'dashboard_apk_cols_' + (deviceId || '')
+}
+
 let uidSeq = 0
 function uid() { return (++uidSeq).toString(36) + Date.now().toString(36) }
 

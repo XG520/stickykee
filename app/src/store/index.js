@@ -468,11 +468,16 @@ function connectWS() {
         if ((!imOpen.value || document.hidden) && !window.StickyKeeNative) playImBeep()
       }
       // 仪表盘变更：本人在其它设备保存/接受分享后热刷新（HomeView 监听此版本号重载布局）。
-      // keys 为受影响的布局键数组（dashboard=Web 端 / dashboard_apk=手机端），
-      // 只有本端使用的键变更才重载；无 keys 的旧形式按 dashboard 处理（兼容旧版服务端）。
+      // keys 为受影响的布局键数组（dashboard=Web 端 / dashboard_apk=手机端全局回退 /
+      // dashboard_apk_<deviceId>=按设备隔离）。任一布局键变更即重载：网页端重读自己的
+      // dashboard（值未变则无可见变化），手机端经回退链拾取最新布局；网页代管手机端
+      // 时也能捕获对端保存的同设备键。dashboard_apk_cols_* 列数键不在此列（非布局重载）。
+      // 无 keys 的旧形式按 dashboard 处理（兼容旧版服务端）。
       else if (m.type === 'prefs') {
         const keys = Array.isArray(m.keys) ? m.keys : (m.key ? [m.key] : [])
-        if (keys.includes(layoutKey(isApk))) dashboardRev.value++
+        const isLayout = (k) => k === 'dashboard' ||
+          (k.startsWith('dashboard_apk') && !k.startsWith('dashboard_apk_cols'))
+        if (keys.length === 0 || keys.some(isLayout)) dashboardRev.value++
       }
       // 通话信令：动态 import 避免 store ↔ call 模块循环依赖
       else if (m.type === 'call') import('@/utils/call').then((c) => c.handleCallEvent(m))

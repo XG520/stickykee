@@ -92,21 +92,22 @@
           class="ml-auto flex flex-wrap items-center gap-1.5 sm:gap-2 transition-opacity duration-300"
           :class="btnVisible ? 'opacity-100' : 'opacity-0 pointer-events-none focus-within:opacity-100 focus-within:pointer-events-auto'">
           <template v-if="editing">
-            <!-- 网页端编辑目标切换：编辑本机网页布局，或代管手机 App 布局（dashboard_apk） -->
+            <!-- 网页端编辑目标切换：编辑本机网页布局，或代管某台手机 App 布局（dashboard_apk_<deviceId>） -->
             <div v-if="!isApk" class="shrink-0 flex items-center rounded-xl border border-border bg-surface-alt p-0.5 mr-0.5"
               role="group" aria-label="选择编辑目标">
-              <button @click="switchEditTarget(LAYOUT_KEY_WEB)"
+              <button @click="switchEditTarget('')"
                 class="h-9 px-2.5 rounded-lg text-xs font-semibold transition-colors"
                 :class="!isApkEdit ? 'bg-primary text-on-primary shadow-sm' : 'text-muted hover:text-on-surface'"
                 title="编辑网页端仪表盘（本页）">
                 <span class="inline-flex items-center gap-1"><span class="material-symbols-outlined text-sm" aria-hidden="true">desktop_windows</span>网页端</span>
               </button>
-              <button @click="switchEditTarget(LAYOUT_KEY_APK)"
-                class="h-9 px-2.5 rounded-lg text-xs font-semibold transition-colors"
-                :class="isApkEdit ? 'bg-primary text-on-primary shadow-sm' : 'text-muted hover:text-on-surface'"
-                title="编辑手机 App 仪表盘：按手机 3 列预览，保存后 App 自动刷新">
-                <span class="inline-flex items-center gap-1"><span class="material-symbols-outlined text-sm" aria-hidden="true">smartphone</span>手机端</span>
-              </button>
+              <select v-if="apkDevices.length" :value="editTargetDevice" @change="onSelectApkDevice"
+                class="h-9 pl-2 pr-1 rounded-lg text-xs font-semibold bg-transparent max-w-[10rem] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 cursor-pointer"
+                :class="isApkEdit ? 'text-primary' : 'text-muted hover:text-on-surface'"
+                title="选择要编辑的手机 App 设备（按该机真实列数预览，保存后该机自动刷新）">
+                <option value="">手机端…</option>
+                <option v-for="d in apkDevices" :key="d.device_id" :value="d.device_id">{{ d.name }}</option>
+              </select>
             </div>
             <!-- 触控规范：统一 44px 高度、圆角与按压反馈；导出/导入/排版为次级动作（浅底描边），完成为主色实心。
                  手机窄屏压缩为单行：导出/导入/重置仅图标（w-11 保持触控面积），sm 起恢复图标+文字；
@@ -129,7 +130,7 @@
           </template>
           <template v-else>
             <!-- 非编辑态：定位自动执行（onMounted 每会话一次），全屏用顶栏按钮，这里只留编辑入口 -->
-            <button v-if="!isApk" @click="startEditApk" class="inline-flex items-center justify-center h-11 px-4 rounded-xl bg-surface-alt border border-border hover:border-primary/40 text-sm text-on-surface transition-all active:scale-95" title="编辑手机 App 上显示的仪表盘（3 列手机预览，保存后 App 自动刷新）" aria-label="编辑手机端仪表盘">
+            <button v-if="!isApk" @click="startEditApk" class="inline-flex items-center justify-center h-11 px-4 rounded-xl bg-surface-alt border border-border hover:border-primary/40 text-sm text-on-surface transition-all active:scale-95" title="编辑手机 App 上显示的仪表盘（按各机真实列数预览，保存后该机自动刷新）" aria-label="编辑手机端仪表盘">
               <span class="material-symbols-outlined text-lg" aria-hidden="true">smartphone</span>
               <span class="hidden sm:inline">编辑手机端</span>
             </button>
@@ -234,11 +235,11 @@
       </div>
     </div>
 
-    <!-- 网页代管手机端布局：预览提示条 -->
+    <!-- 网页代管手机端布局：预览提示条（设备名 + 真实列数） -->
     <div v-if="loaded && isApkEdit" class="flex justify-center mt-1 mb-3 px-4">
       <div class="inline-flex items-center gap-1.5 rounded-full bg-primary/10 border border-primary/30 text-primary text-xs font-medium px-3 py-1.5">
         <span class="material-symbols-outlined text-sm" aria-hidden="true">smartphone</span>
-        手机端预览（3 列网格）· 点「完成」保存后 App 自动刷新
+        {{ apkEditLabel }} 预览（{{ apkCols }} 列）· 点「完成」保存后该机 App 自动刷新
       </div>
     </div>
 
@@ -320,7 +321,8 @@ import { syncCurrentLocation, locErrorMessage, trackingEnabled } from '@/utils/l
 import CodeCard from '@/components/cards/CodeCard.vue'
 import CardEditor from '@/components/cards/CardEditor.vue'
 import { cardDefaults } from '@/components/cards/defaults'
-import { newCard, newPage, migrateDashboard, serializeDashboard, downloadDashboard, parseImportPayload, autoComposeHomepage, LAYOUT_KEY_WEB, LAYOUT_KEY_APK } from '@/utils/dashboard'
+import { newCard, newPage, migrateDashboard, serializeDashboard, downloadDashboard, parseImportPayload, autoComposeHomepage, LAYOUT_KEY_WEB, LAYOUT_KEY_APK, layoutKeyFor, colsKeyFor } from '@/utils/dashboard'
+import { getDeviceId, listDevices } from '@/utils/device'
 
 function meta(type) { return cardDefaults[type] || cardDefaults.greeting }
 
@@ -605,10 +607,11 @@ function onCardContextMenu(e) {
 function updateCols() {
   if (!gridEl.value) return
   const w = gridEl.value.clientWidth
-  // 网页代管手机端布局：强制手机口径 3 列，与真机渲染一致（忽略手动列数设置）
+  // 网页代管手机端布局：按选中手机的真实列数预览（从该机的 dashboard_apk_cols_<deviceId>
+  // 读取，无配置默认 3），与真机渲染列数一致
   if (isApkEdit.value) {
-    cols.value = 3
-    cellSize.value = (w - gridGap * 2) / 3
+    cols.value = apkCols.value
+    cellSize.value = (w - gridGap * (apkCols.value - 1)) / apkCols.value
     return
   }
   // 列数优先级：用户自定义（设置 → 仪表盘列数，localStorage 仅本设备，2~8 生效）
@@ -667,18 +670,33 @@ function moveCard(card, dir) {
 const isFirst = (c) => cards.value.indexOf(c) === 0
 const isLast = (c) => cards.value.indexOf(c) === cards.value.length - 1
 
-// 双端独立布局：Web 端存 dashboard，手机端存 dashboard_apk，各自读写互不影响。
-// 手机端自身键为空时回退读 dashboard（升级过渡：首启两端从同一布局起步）。
-// 网页端可代管手机端布局：编辑态下把 editTarget 切到 dashboard_apk，
-// 页面以手机 3 列宽度预览，保存写入该键，手机端收到服务端广播即热刷新。
-const editTarget = ref(LAYOUT_KEY_WEB)
-const isApkEdit = computed(() => !isApk && editTarget.value === LAYOUT_KEY_APK)
-const activeDashKey = computed(() => (isApk ? LAYOUT_KEY_APK : editTarget.value))
+// 双端独立布局：Web 端存 dashboard，手机端每台设备独立存 dashboard_apk_<deviceId>。
+// 手机端自身键为空时经回退链 dashboard_apk_<deviceId> → dashboard_apk → dashboard 读取
+// （升级过渡：首启从同一布局起步，随后各自独立演进）。
+// 网页端可代管任意手机 App 布局：编辑态下从设备下拉选某台手机（editTargetDevice=其
+// deviceId），页面以该手机真实列数预览，保存写入 dashboard_apk_<deviceId>，该机收到广播即热刷新。
+const editTargetDevice = ref('') // 网页端编辑目标：''=本机网页布局 / <deviceId>=某台手机 App
+const ownDeviceId = ref('') // 本机 deviceId（APK 端用于拼布局键；网页端不用）
+const apkDevices = ref([]) // 本账号已注册的全部设备（网页端编辑器设备下拉用）
+const apkCols = ref(3) // 选中手机设备的真实列数（从 prefs dashboard_apk_cols_<deviceId> 读，无则 3）
+const isApkEdit = computed(() => !isApk && editTargetDevice.value !== '')
+const activeDashKey = computed(() => {
+  if (isApk) return layoutKeyFor(ownDeviceId.value) // 手机端：dashboard_apk_<本机>
+  if (editTargetDevice.value) return layoutKeyFor(editTargetDevice.value) // 网页代管：dashboard_apk_<选中>
+  return LAYOUT_KEY_WEB // 网页本机：dashboard
+})
+// 选中手机设备的显示名（预览提示条与保存 toast 用；无则回退 deviceId 片段）
+const apkEditLabel = computed(() => {
+  const d = apkDevices.value.find((x) => x.device_id === editTargetDevice.value)
+  return d?.name || editTargetDevice.value.slice(0, 8)
+})
 // 进入某编辑目标时已保存的快照：切换目标前用于检测未保存修改
 let loadedSnapshot = ''
 const LEGACY_CACHE_KEY = 'dashboard-layout' // 升级前双端共用的旧缓存键，只读回退一次
 function cacheKeyFor(dashKey) {
-  return dashKey === LAYOUT_KEY_APK ? 'dashboard-layout-apk' : 'dashboard-layout-web'
+  if (dashKey === LAYOUT_KEY_WEB) return 'dashboard-layout-web'
+  if (dashKey === LAYOUT_KEY_APK) return 'dashboard-layout-apk'
+  return 'dashboard-layout-' + dashKey.replace(/[^a-zA-Z0-9_-]/g, '') // dashboard_apk_<deviceId> → 去序化后缀
 }
 
 // 解析并应用一份布局 JSON（后端权威值与本地缓存走同一条路径：迁移 → 应用）。
@@ -722,10 +740,13 @@ async function loadLayout(force = false) {
   // 2) 后端权威值：到达后覆盖（正在编辑时不覆盖，避免打断操作；force=切目标时强制应用）
   const res = await prefsPromise
   const data = res?.data || {}
-  // 本端布局键优先；手机端自身键为空时回退旧共享键 dashboard（升级后首次打开）。
-  // 网页代管手机端布局时同样回退：此时手机端实际显示的就是 dashboard，以其为编辑起点。
+  // 本端布局键优先；手机端/网页代管时自身键为空，经回退链
+  // dashboard_apk_<deviceId> → dashboard_apk（旧全局键）→ dashboard（Web 键）读取。
+  // 网页代管时同样回退：此时该手机实际显示的就是回退键里的布局，以其为编辑起点。
   let dash = data[dashKey] || ''
-  if (!dash && (isApk || isApkEdit.value)) dash = data.dashboard || ''
+  if (!dash && (isApk || isApkEdit.value)) {
+    dash = data.dashboard_apk || data.dashboard || ''
+  }
   const mapJson = data.map_config || ''
   let has = false
   let migrated = false
@@ -740,6 +761,12 @@ async function loadLayout(force = false) {
   if (has) cacheLayout(dash, mapJson)
   // 旧结构迁移后落库一次到本端键（只在确实迁移过时写，避免与「完成」保存竞争）
   if (migrated) putPrefs({ [dashKey]: serializeDashboard(pages.value) }).catch(() => {})
+  // 网页代管手机端：同步该设备的真实列数（dashboard_apk_cols_<deviceId>，无值默认 3）
+  if (isApkEdit.value) {
+    const cv = parseInt(data[colsKeyFor(editTargetDevice.value)] || '', 10)
+    const next = (cv >= 2 && cv <= 8) ? cv : 3
+    if (next !== apkCols.value) { apkCols.value = next; nextTick(measure) }
+  }
 }
 async function saveLayout() {
   const dashKey = activeDashKey.value
@@ -749,12 +776,12 @@ async function saveLayout() {
     await putPrefs({ [dashKey]: json })
     cacheLayout(json)
     editing.value = false
-    toast(dashKey === LAYOUT_KEY_APK ? '手机端仪表盘已保存，App 将自动刷新' : '仪表盘已保存')
+    toast(isApkEdit.value ? `${apkEditLabel.value} 仪表盘已保存，该机 App 将自动刷新` : '仪表盘已保存')
   } catch { /* 静默 */ }
 }
 // 重置为默认仪表盘：必须立即落库，否则刷新后又从后端读到旧布局
 async function resetLayout() {
-  const targetName = isApkEdit.value ? '手机端' : '当前'
+  const targetName = isApkEdit.value ? apkEditLabel.value : '当前'
   if (!window.confirm(`确定把${targetName}仪表盘恢复为默认布局吗？`)) return
   pages.value = [defaultPage()]
   currentPageIndex.value = 0
@@ -768,15 +795,16 @@ async function resetLayout() {
 }
 
 // ---- 网页端代管手机端仪表盘：切换编辑目标 ----
-// 手机端自身（APK）无需切换，只编辑 dashboard_apk；网页端可在两键间切换。
-async function switchEditTarget(key) {
-  if (!isApk && editTarget.value === key) return
+// 手机端自身（APK）无需切换，始终编辑 dashboard_apk_<本机 deviceId>；
+// 网页端可在「网页端（''）」与各台手机 App（deviceId）间切换。
+async function switchEditTarget(deviceId) {
+  if (!isApk && editTargetDevice.value === deviceId) return
   // 未保存修改检测：与进入该目标时的快照对比，有改动则确认放弃
   if (loadedSnapshot && serializeDashboard(pages.value) !== loadedSnapshot
       && !window.confirm('当前目标有未保存的修改，切换后将丢弃，确定继续？')) {
     return
   }
-  editTarget.value = key
+  editTargetDevice.value = deviceId
   selectedUid.value = ''
   addPanel.value = false
   await loadLayout(true)
@@ -784,9 +812,27 @@ async function switchEditTarget(key) {
   await nextTick()
   measure()
 }
+// 设备下拉选择：选择某台手机 App 作为编辑目标（select @change 调用）
+function onSelectApkDevice(e) {
+  const newId = e.target.value
+  // 即时回退显示：确认/取消由 switchEditTarget 驱动 editTargetDevice 后由 ref 重渲染
+  e.target.value = editTargetDevice.value
+  switchEditTarget(newId)
+}
+// 加载本账号全部已注册设备，供网页端编辑器设备下拉选择
+async function loadApkDevices() {
+  if (isApk) return // 手机端自身无需设备列表
+  try { apkDevices.value = await listDevices() } catch { /* 离线 */ }
+}
 async function startEditApk() {
+  if (!apkDevices.value.length) {
+    toast('暂无手机设备：请在手机 App 登录本账号后重试', true)
+    return
+  }
   editing.value = true
-  await switchEditTarget(LAYOUT_KEY_APK)
+  const target = editTargetDevice.value || apkDevices.value[0].device_id
+  if (editTargetDevice.value !== target) await switchEditTarget(target)
+  await nextTick(); measure()
 }
 
 // ---- 跨端热刷新：本人在其它设备保存/接受分享仪表盘后，这里自动重载 ----
@@ -1024,8 +1070,8 @@ watch(() => editing.value, () => {
   if (!editing.value) {
     addPanel.value = false; selectedUid.value = '' // 退出编辑同步清掉面板与选中态
     // 网页端代管手机端布局后退出：展示画面必须回到网页布局（dashboard）
-    if (!isApk && editTarget.value !== LAYOUT_KEY_WEB) {
-      editTarget.value = LAYOUT_KEY_WEB
+    if (!isApk && editTargetDevice.value !== '') {
+      editTargetDevice.value = ''
       loadedSnapshot = ''
       loadLayout()
     }
@@ -1049,6 +1095,16 @@ const { ensureLoaded } = useEntities()
 
 onMounted(async () => {
   ensureLoaded()
+  // APK 端：取本机 deviceId 用于拼按设备隔离的布局键，并把本机列数同步到服务端
+  // （供网页端编辑器按真实列数预览）；网页端加载设备列表供编辑器下拉选择
+  if (isApk) {
+    ownDeviceId.value = getDeviceId()
+    // 同步本机列数偏好到 dashboard_apk_cols_<deviceId>（auto → 空，网页端默认 3）
+    const colsRaw = localStorage.getItem('hc_dash_cols') || ''
+    putPrefs({ [colsKeyFor(ownDeviceId.value)]: colsRaw }).catch(() => {})
+  } else {
+    loadApkDevices()
+  }
   await loadLayout()
   await nextTick()
   measure()
