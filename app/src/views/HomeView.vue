@@ -166,28 +166,29 @@
          悬浮条会遮挡卡片内容且在窄卡片上溢出截断）。所有按钮触控区 ≥44px，
          深浅主题跟随 token，底部避让安全区（iOS / 手势条）。 -->
     <div v-if="editing" class="fixed bottom-0 inset-x-0 z-40 pointer-events-none">
-      <!-- 添加卡片面板：从操作栏上方弹出，不占画布空间 -->
+      <!-- 添加卡片面板：从操作栏上方弹出，不占画布空间。
+           卡片项双列网格排布（替代原单列长列表），整体紧凑；
+           桌面双栏编辑时让出右栏宽度（lg/min-[1366px] 两档），面板在左栏区域内居中 -->
       <Transition name="hc-panel">
-        <div v-if="addPanel" class="pointer-events-auto absolute bottom-full left-3 right-3 mx-auto max-w-[24rem] mb-2 bg-surface-alt border border-border rounded-2xl shadow-2xl p-3">
-          <div class="flex items-center justify-between px-1 mb-2">
-            <p class="text-muted text-xs font-body uppercase tracking-wider">添加卡片</p>
-            <button @click="addPanel = false" class="w-10 h-10 -mr-1 flex items-center justify-center rounded-full text-muted hover:text-on-surface active:scale-90 transition-colors" title="收起" aria-label="收起添加面板">
-              <span class="material-symbols-outlined text-xl">close</span>
+        <div v-if="addPanel" class="pointer-events-auto absolute bottom-full left-3 right-3 lg:right-[25.5rem] min-[1366px]:right-[27.5rem] mx-auto max-w-[20rem] mb-2 bg-surface-alt border border-border rounded-2xl shadow-2xl p-2.5">
+          <div class="flex items-center justify-between px-1 mb-1.5">
+            <p class="text-muted text-[11px] font-body uppercase tracking-wider">添加卡片</p>
+            <button @click="addPanel = false" class="w-8 h-8 -mr-1 flex items-center justify-center rounded-full text-muted hover:text-on-surface active:scale-90 transition-colors" title="收起" aria-label="收起添加面板">
+              <span class="material-symbols-outlined text-lg">close</span>
             </button>
           </div>
-          <div class="max-h-[48vh] overflow-y-auto -mx-1 px-1 pb-1 hc-panel-scroll">
-            <div v-for="g in addGroups" :key="g.name" class="mb-2.5">
-              <p class="text-muted text-[11px] font-body mb-1.5">{{ g.name }}</p>
-              <div class="flex flex-col gap-1.5">
+          <div class="max-h-[40vh] overflow-y-auto -mx-0.5 px-0.5 pb-0.5 hc-panel-scroll">
+            <div v-for="g in addGroups" :key="g.name" class="mb-2 last:mb-0">
+              <p class="text-muted text-[10px] font-body mb-1">{{ g.name }}</p>
+              <div class="grid grid-cols-2 gap-1.5">
                 <button
                   v-for="opt in g.items"
                   :key="opt.type"
                   @click="addCard(opt)"
-                  class="min-h-[44px] flex items-center gap-2.5 px-3 py-2 rounded-xl bg-surface border border-border hover:border-primary/50 hover:bg-primary/5 active:scale-[.98] transition-all text-sm text-on-surface text-left"
+                  class="min-h-[38px] flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-surface border border-border hover:border-primary/50 hover:bg-primary/5 active:scale-[.98] transition-all text-xs text-on-surface text-left"
                 >
-                  <span class="material-symbols-outlined text-lg shrink-0" :class="opt.colorCls">{{ opt.icon }}</span>
+                  <span class="material-symbols-outlined text-[17px] shrink-0" :class="opt.colorCls">{{ opt.icon }}</span>
                   <span class="min-w-0 flex-1 truncate">{{ opt.label }}</span>
-                  <span class="material-symbols-outlined text-base text-primary shrink-0">add</span>
                 </button>
               </div>
             </div>
@@ -279,7 +280,8 @@
         class="hc-card-holder"
         :class="{
           'hc-card-editable': editing,
-          'hc-card-dragging': dragCard === card,
+          'hc-card-dragging': dragCard === card && !crossGhost.visible,
+          'hc-card-cross-source': crossGhost.visible && dragCard === card,
           'hc-card-selected': editing && selectedUid === card.uid,
         }"
         :id="'card-' + card.uid"
@@ -301,6 +303,7 @@
           @pointerdown.stop
           @click.stop="copyCardToApk(card)"
           @dragstart="onCopyDragStart($event, card)"
+          @dragend="onCopyDragEnd"
         >
           <span class="material-symbols-outlined" aria-hidden="true">smartphone</span>
           <span class="hc-copy-apk-plus"><span class="material-symbols-outlined" aria-hidden="true">add</span></span>
@@ -320,6 +323,19 @@
       @device-drawer="openDeviceDrawer"
       @toast="toast"
     />
+    </div>
+
+    <!-- 跨栏拖拽浮动幽灵：跨出左栏网格后由它跟随指针（fixed 定位不受 overflow:hidden 裁剪） -->
+    <div
+      v-if="crossGhost.visible"
+      class="hc-cross-ghost"
+      :style="{ left: crossGhost.x + 'px', top: crossGhost.y + 'px', width: crossGhost.w + 'px', height: crossGhost.h + 'px' }"
+    >
+      <span class="material-symbols-outlined hc-cross-ghost-icon" aria-hidden="true">{{ crossGhost.icon }}</span>
+      <span class="hc-cross-ghost-label">{{ crossGhost.label }}</span>
+      <span class="hc-cross-ghost-badge">
+        <span class="material-symbols-outlined" aria-hidden="true">smartphone</span>
+      </span>
     </div>
 
     <!-- 卡片工作室：全屏编辑器（实时预览 + 实体/尺寸配置 + HTML/CSS/JS 代码编辑） -->
@@ -493,8 +509,11 @@ function holderStyle(card) {
 
 // ---- 编辑态拖拽换位（手机桌面式：按住卡片拖动，实时让位，松手落位）----
 const dragCard = ref(null)
-let drag = null // { card, el, uid, grabX, grabY, startX, startY, active, moved }
+let drag = null // { card, el, uid, grabX, grabY, startX, startY, active, moved, startIndex, zone, boxW, boxH }
 let lastDragEnd = 0 // 最近一次拖动结束时刻：用于抑制随后的 click（自失效，不会泄漏）
+// 跨栏（web → 手机）拖拽时的 body 级浮动幽灵：左栏网格 overflow:hidden 会裁剪 transform 卡片，
+// 故跨栏期间原 holder 留位半透明，另用 fixed 幽灵跟随指针
+const crossGhost = reactive({ visible: false, x: 0, y: 0, w: 0, h: 0, label: '', icon: '' })
 function holderEl(card) { return document.getElementById('card-' + card.uid) }
 let lastPointerType = ''
 function onCardPointerDown(e, card) {
@@ -508,10 +527,29 @@ function onCardPointerDown(e, card) {
     grabX: e.clientX - rect.left, grabY: e.clientY - rect.top,
     startX: e.clientX, startY: e.clientY,
     active: false, moved: false,
+    startIndex: cards.value.indexOf(card), // 拖拽开始时源卡位置：跨栏复制需原样恢复
+    zone: 'web', // 'web'=左栏内换位；'apk'=悬停右栏（复制语义）
+    boxW: rect.width, boxH: rect.height,
   }
   window.addEventListener('pointermove', onCardPointerMove)
   window.addEventListener('pointerup', onCardPointerUp)
   window.addEventListener('pointercancel', onCardPointerUp)
+}
+// 指针是否位于右栏手机网格的可放置区内
+function pointInApkGrid(x, y) {
+  if (!dualPane.value) return false
+  const r = apkPaneEl.value?.getGridRect?.()
+  return !!(r && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom)
+}
+// 复制语义：进入右栏前把源卡恢复到拖拽开始时的索引（撤销本段在左栏的换位）
+function restoreDragSourceIndex() {
+  const arr = cards.value
+  const cur = arr.indexOf(drag.card)
+  const to = Math.max(0, Math.min(drag.startIndex, arr.length))
+  if (cur >= 0 && cur !== to) {
+    arr.splice(cur, 1)
+    arr.splice(to, 0, drag.card)
+  }
 }
 function onCardPointerMove(e) {
   if (!drag) return
@@ -520,11 +558,36 @@ function onCardPointerMove(e) {
     if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < 6) return
     drag.active = true
     dragCard.value = drag.card
+    crossGhost.label = meta(drag.card.type)?.label || drag.card.title || drag.card.type
+    crossGhost.icon = drag.card.icon || meta(drag.card.type)?.icon || 'dashboard'
+    crossGhost.w = drag.boxW
+    crossGhost.h = drag.boxH
   }
   e.preventDefault()
   drag.moved = true
   const grid = gridEl.value
   if (!grid) return
+
+  // ---- 双栏模式：指针进入右栏手机网格 → 跨栏复制 ----
+  if (pointInApkGrid(e.clientX, e.clientY)) {
+    if (drag.zone !== 'apk') {
+      drag.zone = 'apk'
+      restoreDragSourceIndex()
+      drag.el.style.transform = '' // 源 holder 不再跟随，留位显示
+    }
+    crossGhost.x = e.clientX - drag.grabX
+    crossGhost.y = e.clientY - drag.grabY
+    crossGhost.visible = true
+    apkPaneEl.value?.previewDrop(e.clientX, e.clientY, drag.card)
+    return
+  }
+  // 从右栏回到左栏：取消手机侧占位，恢复左栏换位
+  if (drag.zone === 'apk') {
+    drag.zone = 'web'
+    crossGhost.visible = false
+    apkPaneEl.value?.clearDropPreview()
+  }
+
   const gridRect = grid.getBoundingClientRect()
   // offsetLeft/Top 为布局位置（不受 transform 影响），据此算出让拖拽块跟随指针的位移
   const baseLeft = gridRect.left + drag.el.offsetLeft
@@ -600,10 +663,15 @@ function onCardPointerMove(e) {
     }
   }
 }
-function onCardPointerUp() {
-  // 编辑态轻触（未拖动）：选中/切换/取消该卡片，操作交给底部操作栏（旧悬浮工具条会
-  // 遮挡卡片内容且在窄卡片上溢出）。选中与拖拽由 6px 移动阈值区分，互不干扰。
-  if (editing.value && drag && !drag.moved && !drag.active) {
+function onCardPointerUp(e) {
+  // 跨栏松手：在右栏占位位置提交克隆卡（源卡已恢复原位，保持复制语义）；
+  // pointercancel（来电/系统打断）视为取消，仅清占位
+  if (drag?.zone === 'apk' && dualPane.value) {
+    if (e?.type === 'pointercancel') apkPaneEl.value?.clearDropPreview()
+    else apkPaneEl.value?.commitDrop(drag.card)
+  } else if (editing.value && drag && !drag.moved && !drag.active) {
+    // 编辑态轻触（未拖动）：选中/切换/取消该卡片，操作交给底部操作栏（旧悬浮工具条会
+    // 遮挡卡片内容且在窄卡片上溢出）。选中与拖拽由 6px 移动阈值区分，互不干扰。
     const uid = drag.uid
     selectedUid.value = selectedUid.value === uid ? '' : uid
     try { navigator.vibrate?.(12) } catch { /* 不支持则忽略 */ }
@@ -611,6 +679,7 @@ function onCardPointerUp() {
   // 拖动过则记录时刻：随后派发的 click 会被抑制，避免松手时误触发卡片内部交互（开关等）
   if (drag && drag.moved) lastDragEnd = Date.now()
   if (drag?.el) drag.el.style.transform = ''
+  crossGhost.visible = false
   drag = null
   dragCard.value = null
   window.removeEventListener('pointermove', onCardPointerMove)
@@ -740,14 +809,21 @@ const dualPane = computed(() => !isApk && editing.value)
 const apkPaneEl = ref(null)
 // 跨栏复制允许携带的卡片字段（uid 不复制——ApkDashPane 克隆时生成新 uid，避免双端 CSS 作用域冲突）
 const COPY_FIELDS = ['type', 'w', 'h', 'html', 'css', 'js', 'entity_id', 'entity_ids', 'icon', 'avatar', 'title']
-// 左栏卡片手柄 HTML5 拖拽开始：写入卡片快照供右侧手机面板 drop 时克隆
+// 左栏卡片手柄 HTML5 拖拽开始：写入卡片快照供右侧手机面板 drop 时克隆。
+// 同时挂 window：dragover 阶段规范上读不到 dataTransfer，面板据此实时显示插入占位符
 function onCopyDragStart(e, card) {
   try {
     const payload = {}
     for (const k of COPY_FIELDS) if (card[k] !== undefined) payload[k] = card[k]
+    window.__hcDragPayload = payload
     e.dataTransfer.setData('application/x-hc-card', JSON.stringify(payload))
     e.dataTransfer.effectAllowed = 'copy'
   } catch { /* 个别浏览器禁用 dataTransfer 时忽略，仍可点击手柄复制 */ }
+}
+// HTML5 拖拽结束（无论是否落在面板）：清理源载荷与右栏占位
+function onCopyDragEnd() {
+  window.__hcDragPayload = null
+  apkPaneEl.value?.clearDropPreview()
 }
 // 无拖拽环境（触屏）兜底：点手柄直接把卡片复制到右侧手机仪表盘当前页末尾
 function copyCardToApk(card) {
@@ -1404,6 +1480,61 @@ onBeforeUnmount(() => {
 @media (hover: none) {
   .hc-copy-apk-btn { opacity: .92; }
 }
+/* 跨栏拖拽：左栏源卡留位但半透明，提示「复制而非移动」 */
+.hc-card-cross-source {
+  z-index: 3;
+  opacity: .35;
+  outline: 2px dashed rgb(var(--c-primary) / .55);
+  outline-offset: -2px;
+}
+/* 跨栏浮动幽灵：跟随指针的卡片轮廓，右下角手机角标表明复制目标 */
+.hc-cross-ghost {
+  position: fixed;
+  z-index: 200;
+  pointer-events: none;
+  border-radius: 14px;
+  border: 2px solid rgb(var(--c-primary));
+  background: rgb(var(--c-primary) / .14);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+  box-shadow: 0 18px 44px -8px rgb(0 0 0 / .4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 4px;
+  color: rgb(var(--c-primary));
+  transform: scale(1.04);
+  transform-origin: top left;
+  overflow: hidden;
+}
+.hc-cross-ghost-icon { font-size: 34px; opacity: .85; }
+.hc-cross-ghost-label {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: rgb(var(--c-primary) / .16);
+  max-width: 90%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hc-cross-ghost-badge {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: rgb(var(--c-primary));
+  color: rgb(var(--c-on-primary));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgb(0 0 0 / .25);
+}
+.hc-cross-ghost-badge .material-symbols-outlined { font-size: 16px; }
 /* 卡片过多时跳过视口外卡片的布局与绘制（滚入视口才渲染，滚出即回收渲染开销）。
    地图卡除外：其内部按容器尺寸测量定位，初始隐藏会导致尺寸为 0 */
 .hc-card-holder:not([data-type="map"]) {
