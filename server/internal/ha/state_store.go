@@ -42,7 +42,9 @@ func (s *StateStore) Replace(all []model.EntityState) {
 	s.mu.Unlock()
 }
 
-// SetNotifications 全量更新合成通知集合。HA 2022.3 起 persistent_notification
+// SetNotifications 全量替换合成通知集合。仅用于订阅初始的 current 推送；
+// 增量推送（added/updated/removed）分别走 UpsertNotifications / RemoveNotifications。
+// HA 2022.3 起 persistent_notification
 // 不再是实体，由 Realtime 经 HA WS API（persistent_notifications/get）拉取后
 // 合成为实体注入，使其像普通实体一样进入快照与增量推送，前端零改动。
 // 新增/变化触发 onChange（驱动前端增量）；被清除的直接移除（前端 dismiss 后
@@ -73,6 +75,48 @@ func (s *StateStore) SetNotifications(list []model.EntityState) {
 	s.mu.Unlock()
 	if fn != nil {
 		for _, id := range changed {
+			fn(id)
+		}
+	}
+}
+
+// UpsertNotifications 按增量合并合成通知（HA 的 added/updated 推送只含受影响的通知）：
+// 已存在则覆盖、不存在则插入；新增/变化触发 onChange。
+func (s *StateStore) UpsertNotifications(list []model.EntityState) {
+	s.mu.Lock()
+	changed := make([]string, 0, len(list))
+	for _, e := range list {
+		if prev, ok := s.notifs[e.EntityID]; !ok || !sameState(prev, e) {
+			changed = append(changed, e.EntityID)
+		}
+		s.notifs[e.EntityID] = e
+		s.entities[e.EntityID] = e
+	}
+	fn := s.onChange
+	s.mu.Unlock()
+	if fn != nil {
+		for _, id := range changed {
+			fn(id)
+		}
+	}
+}
+
+// RemoveNotifications 按实体 id 摘除合成通知（HA 的 removed 推送只含被删的那条）。
+// 摘除后该合成实体不再进入快照与增量推送。
+func (s *StateStore) RemoveNotifications(ids []string) {
+	s.mu.Lock()
+	removed := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if _, ok := s.notifs[id]; ok {
+			delete(s.notifs, id)
+			delete(s.entities, id)
+			removed = append(removed, id)
+		}
+	}
+	fn := s.onChange
+	s.mu.Unlock()
+	if fn != nil {
+		for _, id := range removed {
 			fn(id)
 		}
 	}

@@ -353,10 +353,25 @@ func (r *Realtime) handleEvent(ev map[string]any) {
 	}
 	// persistent_notification/subscribe 推送：载荷形如
 	// {"type":"current|added|removed|updated","notifications":{<id>: {...}, ...}}，
-	// notifications 恒为当前全量，直接全量替换合成实体。
+	// 注意：HA 的 added/updated/removed 推送均为「增量」——载荷只含受影响的通知，
+	// 仅订阅成功时的 current 才是当前全量（见 HA core persistent_notification/helpers.py）。
+	// 故按事件类型分派：current 全量替换、added/updated 合并、removed 按 id 摘除；
+	// 若一律按全量替换，删一条会把其余通知整片冲掉、被删的条目反而常驻。
 	if notifs, ok := ev["notifications"].(map[string]any); ok {
 		if raw, err := json.Marshal(notifs); err == nil {
-			r.store.SetNotifications(notificationEntities(raw))
+			switch typ, _ := ev["type"].(string); typ {
+			case "current":
+				r.store.SetNotifications(notificationEntities(raw))
+			case "removed":
+				ents := notificationEntities(raw)
+				ids := make([]string, 0, len(ents))
+				for _, e := range ents {
+					ids = append(ids, e.EntityID)
+				}
+				r.store.RemoveNotifications(ids)
+			default: // added / updated（未知类型按增量合并，避免误清）
+				r.store.UpsertNotifications(notificationEntities(raw))
+			}
 		}
 		return
 	}

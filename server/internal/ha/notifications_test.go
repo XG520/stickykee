@@ -115,9 +115,13 @@ func (f *fakeHA) reply(id any, result any) {
 	_ = f.conn.WriteJSON(map[string]any{"id": id, "type": "result", "success": true, "result": result})
 }
 
-// pushNotifEvent 模拟 HA persistent_notification/subscribe 的更新推送：
-// 载荷恒为当前全量通知 dict。
-func (f *fakeHA) pushNotifEvent(updateType string) {
+// pushNotifEvent 模拟 HA persistent_notification/subscribe 的更新推送。
+// HA 的 added/updated/removed 推送均为增量——载荷只含受影响的通知；
+// 仅订阅成功时的 current 为当前全量（见 HA core persistent_notification/helpers.py）。
+func (f *fakeHA) pushNotifEvent(updateType string, notifications map[string]any) {
+	if notifications == nil {
+		notifications = map[string]any{}
+	}
 	f.mu.Lock()
 	subID := f.subID
 	f.mu.Unlock()
@@ -128,7 +132,7 @@ func (f *fakeHA) pushNotifEvent(updateType string) {
 		"id":   subID,
 		"event": map[string]any{
 			"type":          updateType,
-			"notifications": f.snapshot(),
+			"notifications": notifications,
 		},
 	})
 }
@@ -136,7 +140,8 @@ func (f *fakeHA) pushNotifEvent(updateType string) {
 func TestNotificationPipeline(t *testing.T) {
 	f := &fakeHA{
 		notifs: map[string]map[string]any{
-			"cfg_check": {"notification_id": "cfg_check", "title": "配置检查", "message": "hello", "created_at": "2026-10-09T00:00:00Z"},
+			"cfg_check":   {"notification_id": "cfg_check", "title": "配置检查", "message": "hello", "created_at": "2026-10-09T00:00:00Z"},
+			"update_core": {"notification_id": "update_core", "title": "新版本", "message": "2.1 可用", "created_at": "2026-10-09T00:00:01Z"},
 		},
 		connCh: make(chan *websocket.Conn, 4),
 	}
@@ -185,7 +190,7 @@ func TestNotificationPipeline(t *testing.T) {
 				}
 				f.mu.Unlock()
 				f.reply(id, nil)
-				f.pushNotifEvent("current") // HA 行为：订阅成功后立即推送 current 全量
+				f.pushNotifEvent("current", f.snapshot()) // HA 行为：订阅成功后立即推送 current 全量
 			case "ping":
 				f.writeMu.Lock()
 				_ = conn.WriteJSON(map[string]any{"type": "pong"})
@@ -214,8 +219,11 @@ func TestNotificationPipeline(t *testing.T) {
 	defer cancel()
 	go rt.Start(ctx)
 
-	// 1) 初始拉取：通知被合成为实体并进入快照，onChange 触发
-	waitFor(t, 5*time.Second, func() bool { return hasEntity(store, "persistent_notification.cfg_check") })
+	// 1) 初始 current 全量：两条通知都合成为实体并进入快照，onChange 触发
+	waitFor(t, 5*time.Second, func() bool {
+		return hasEntity(store, "persistent_notification.cfg_check") &&
+			hasEntity(store, "persistent_notification.update_core")
+	})
 	if e, _ := store.Get("persistent_notification.cfg_check"); e.State != "hello" {
 		t.Fatalf("initial notification state = %q, want %q", e.State, "hello")
 	}
@@ -226,24 +234,37 @@ func TestNotificationPipeline(t *testing.T) {
 		t.Error("onChange not fired for initial notification")
 	}
 
-	// 2) 通知更新推送：新增一条 + 删除旧条目 → 全量替换后增删同时生效
+	// 2) 删除其中一条：HA 只推送被删的那条（增量）。
+	// 修复前该增量被误当全量替换，集合整体塌成 {cfg_check}：另一条通知消失、
+	// 而被删的条目反而常驻，表现为「第二条通知删不掉」。此处断言另一条必须保留。
 	f.mu.Lock()
-	f.notifs = map[string]map[string]any{
-		"second": {"notification_id": "second", "title": "新版本", "message": "2.1 可用"},
-	}
+	removed := f.notifs["cfg_check"]
+	delete(f.notifs, "cfg_check")
 	f.mu.Unlock()
-	f.pushNotifEvent("removed")
+	f.pushNotifEvent("removed", map[string]any{"cfg_check": removed})
 	waitFor(t, 5*time.Second, func() bool {
-		return hasEntity(store, "persistent_notification.second") && !hasEntity(store, "persistent_notification.cfg_check")
+		return !hasEntity(store, "persistent_notification.cfg_check") &&
+			hasEntity(store, "persistent_notification.update_core")
 	})
 
-	// 3) get_states 全量替换不得清掉合成通知
+	// 3) 新增一条：HA 同样只推送这一条（增量），既有通知不受影响
+	f.mu.Lock()
+	f.notifs["disk_full"] = map[string]any{"notification_id": "disk_full", "title": "磁盘告警", "message": "剩余 3%"}
+	added := f.notifs["disk_full"]
+	f.mu.Unlock()
+	f.pushNotifEvent("added", map[string]any{"disk_full": added})
+	waitFor(t, 5*time.Second, func() bool {
+		return hasEntity(store, "persistent_notification.update_core") &&
+			hasEntity(store, "persistent_notification.disk_full")
+	})
+
+	// 4) get_states 全量替换不得清掉合成通知
 	if err := applyRawStates(store, json.RawMessage(
 		`[{"entity_id":"light.b","state":"off","attributes":{}}]`)); err != nil {
 		t.Fatalf("applyRawStates: %v", err)
 	}
 	waitFor(t, 2*time.Second, func() bool {
-		return hasEntity(store, "light.b") && hasEntity(store, "persistent_notification.second")
+		return hasEntity(store, "light.b") && hasEntity(store, "persistent_notification.update_core")
 	})
 }
 
