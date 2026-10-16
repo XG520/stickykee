@@ -253,14 +253,6 @@
       </div>
     </div>
 
-    <!-- 网页代管手机端布局：预览提示条（设备名 + 真实列数） -->
-    <div v-if="loaded && isApkEdit" class="flex justify-center mt-1 mb-3 px-4">
-      <div class="inline-flex items-center gap-1.5 rounded-full bg-primary/10 border border-primary/30 text-primary text-xs font-medium px-3 py-1.5">
-        <span class="material-symbols-outlined text-sm" aria-hidden="true">smartphone</span>
-        {{ apkEditLabel }} 预览（{{ apkCols }} 列）· 点「完成」保存后该机 App 自动刷新
-      </div>
-    </div>
-
     <!-- 加载骨架屏：首次加载未完成时渲染灰色脉冲占位格子，避免空白闪烁 -->
     <div v-if="!loaded" class="dashboard-grid gap-3">
       <div v-for="i in 6" :key="i" class="rounded-xl border border-border bg-surface-alt/40 animate-pulse"
@@ -272,7 +264,7 @@
          Web 编辑态：外层 hc-dual-grid 同时容纳左栏（电脑）与右侧 ApkDashPane（手机） -->
     <EmptyState v-if="loaded && !cards.length && !editing" icon="dashboard_customize" title="空仪表盘" desc="点击「编辑仪表盘」开始添加卡片，或使用智能排版自动生成布局" :cta-label="canEdit ? '编辑仪表盘' : ''" cta-icon="edit_square" @cta="editing = true" />
     <div v-if="loaded" :class="{ 'hc-dual-grid': dualPane }">
-    <div ref="gridEl" class="dashboard-grid" :class="{ 'hc-grid-editing': editing, 'hc-phone-preview': isApkEdit, 'min-w-0': dualPane }" :style="gridStyle"
+    <div ref="gridEl" class="dashboard-grid" :class="{ 'hc-grid-editing': editing, 'min-w-0': dualPane }" :style="gridStyle"
       @touchstart.passive="onSwipeStart" @touchend="onSwipeEnd">
       <div
         v-for="card in cards"
@@ -320,6 +312,7 @@
       ref="apkPaneEl"
       class="hc-dual-apk"
       :devices="apkDevices"
+      :drag-payload="copyPayload"
       @device-drawer="openDeviceDrawer"
       @toast="toast"
     />
@@ -378,9 +371,10 @@
 
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, onUpdated, onActivated, onDeactivated, nextTick } from 'vue'
-import { ui, entityStates, entityList, registryDevices, loadRegistry, haTokenConfigured, haTokenKnown, auth, openDeviceDrawer, dashboardRev, apkColsRev } from '@/store'
+import { ui, entityStates, entityList, registryDevices, loadRegistry, haTokenConfigured, haTokenKnown, auth, openDeviceDrawer, dashboardRev } from '@/store'
 import { useEntities } from '@/composables/useLive'
 import { useAutoHide } from '@/composables/useAutoHide'
+import { useDashGrid } from '@/composables/useDashGrid'
 import { mark, count, measure as perfMeasure } from '@/utils/perf'
 import { saveKV, loadKV } from '@/utils/snapshotCache'
 import { getPrefs, putPrefs } from '@/utils/prefs'
@@ -454,57 +448,24 @@ function onEditorSave(p) {
   editorOpen.value = false
 }
 
-// ---- 网格：列数随宽度变化，卡片自动换行 ----
+// ---- 网格：列数随宽度变化，卡片自动换行（测量/缩放逻辑共用 useDashGrid）----
 const gridEl = ref(null)
 const cols = ref(8)
 const gridH = ref(600)
-const cellSize = ref(0)
-const gridGap = 12
-// 基准格子尺寸：卡片内容按此固定尺寸布局，再整体 zoom 到实际格子，
-// 因此窗口缩放时内部元素等比例变化、相对位置与换行不变。
-const baseCell = 120
-const zoomFactor = computed(() => (cellSize.value > 0 ? cellSize.value / baseCell : 1))
-function zoomStyle(card) {
-  const cw = Math.min(Math.max(1, card.w || 1), cols.value)
-  const rh = Math.min(3, card.h || 1)
-  const z = zoomFactor.value
-  // 用 transform:scale 而非 zoom：zoom 会触发同步重排，且与卡片的
-  // container-type/content-visibility 组合在窄屏下产生反复失效重排（画面跳动）
-  // holder 跨 cw 列/rh 行，其盒尺寸含轨道间距（cw*cellSize+(cw-1)*gap）；
-  // zoom 盒缩放后必须恰好覆盖 holder，否则右侧/底部会残留空白条
-  // （悬停空白条也触发 hover，阴影盒大于可见卡片，出现「宽高不是卡片边界」）
-  return {
-    transform: `scale(${z})`,
-    width: cw * baseCell + (cw - 1) * gridGap / z + 'px',
-    height: rh * baseCell + (rh - 1) * gridGap / z + 'px',
-    display: 'flex',
-    flexDirection: 'column',
-    flex: 'none',
-  }
-}
+const {
+  cellSize,
+  measure: measureCells,
+  zoomStyle,
+  gridStyle: baseGridStyle,
+  holderStyle: baseHolderStyle,
+} = useDashGrid({ el: gridEl, cols })
 const gridStyle = computed(() => ({
-  // 卡片被 zoom 等比放大，1px 边框会被同步放大；按缩放系数反向补偿，
-  // 使边框最终渲染厚度恒定 ≈1px（卡片外壳 border-width:var(--card-bw,1px)）
-  '--card-bw': (1 / (zoomFactor.value || 1)).toFixed(3) + 'px',
-  gridTemplateColumns: `repeat(${cols.value}, minmax(0, 1fr))`,
-  // 行高 = 列宽：1×1 仍为正方形，格子尺寸约为原来的 1/2（列数翻倍）
-  gridAutoRows: cellSize.value ? cellSize.value + 'px' : 'auto',
+  ...baseGridStyle.value,
   minHeight: gridH.value + 'px',
-  // 网页代管手机端布局：收窄到主流手机视口宽度并居中，所见即真机所得
-  ...(isApkEdit.value ? { maxWidth: '392px', marginLeft: 'auto', marginRight: 'auto' } : {}),
 }))
 function holderStyle(card) {
-  const cw = Math.min(Math.max(1, card.w || 1), cols.value)
-  return {
-    gridColumn: `span ${cw}`,
-    gridRow: `span ${Math.min(3, card.h || 1)}`,
-    // 圆角对齐卡片壳视觉圆角（.hc 基础 14px × zoom 缩放）：holder 裁剪/悬停
-    // 边界与卡片圆角曲线重合，避免角部被平切出弦线或留缝透出页面底色
-    borderRadius: (14 * (zoomFactor.value || 1)).toFixed(2) + 'px',
-    display: 'flex',
-    flexDirection: 'column',
-    minHeight: 0,
-  }
+  // display/flex/minHeight 为电脑端 holder 的 DOM 结构所需（手机端不需要，故未放进 composable）
+  return { ...baseHolderStyle(card), display: 'flex', flexDirection: 'column', minHeight: 0 }
 }
 
 // ---- 编辑态拖拽换位（手机桌面式：按住卡片拖动，实时让位，松手落位）----
@@ -574,17 +535,30 @@ function onCardPointerMove(e) {
       drag.zone = 'apk'
       restoreDragSourceIndex()
       drag.el.style.transform = '' // 源 holder 不再跟随，留位显示
+      // 浮动幽灵改用手机格子尺寸（按该机列数钳制），避免电脑大卡视觉上压住小手机框
+      const gs = apkPaneEl.value?.ghostSize?.(drag.card)
+      if (gs) {
+        crossGhost.w = gs.w
+        crossGhost.h = gs.h
+        // 抓取点钳进缩小后的幽灵内，避免指针落在幽灵外侧
+        drag.grabApkX = Math.min(drag.grabX, gs.w * 0.8)
+        drag.grabApkY = Math.min(drag.grabY, gs.h * 0.8)
+      }
     }
-    crossGhost.x = e.clientX - drag.grabX
-    crossGhost.y = e.clientY - drag.grabY
+    crossGhost.x = e.clientX - (drag.grabApkX ?? drag.grabX)
+    crossGhost.y = e.clientY - (drag.grabApkY ?? drag.grabY)
     crossGhost.visible = true
     apkPaneEl.value?.previewDrop(e.clientX, e.clientY, drag.card)
     return
   }
-  // 从右栏回到左栏：取消手机侧占位，恢复左栏换位
+  // 从右栏回到左栏：取消手机侧占位，恢复左栏换位与幽灵原尺寸
   if (drag.zone === 'apk') {
     drag.zone = 'web'
+    drag.grabApkX = null
+    drag.grabApkY = null
     crossGhost.visible = false
+    crossGhost.w = drag.boxW
+    crossGhost.h = drag.boxH
     apkPaneEl.value?.clearDropPreview()
   }
 
@@ -730,14 +704,6 @@ function onCardContextMenu(e) {
 }
 function updateCols() {
   if (!gridEl.value) return
-  const w = gridEl.value.clientWidth
-  // 网页代管手机端布局：按选中手机的真实列数预览（从该机的 dashboard_apk_cols_<deviceId>
-  // 读取，无配置默认 3），与真机渲染列数一致
-  if (isApkEdit.value) {
-    cols.value = apkCols.value
-    cellSize.value = (w - gridGap * (apkCols.value - 1)) / apkCols.value
-    return
-  }
   // 列数优先级：用户自定义（设置 → 仪表盘列数，localStorage 仅本设备，2~8 生效）
   // > 自适应。自适应口径：手机窄屏（<480）固定 3 列——各厂商 DPR 策略与系统
   // 「显示大小」缩放会让 CSS 视口在 360~443px 间浮动，任何基于宽度的阈值除法
@@ -746,9 +712,8 @@ function updateCols() {
   const manual = parseInt(localStorage.getItem('hc_dash_cols') || '', 10)
   cols.value = manual >= 2 && manual <= 8
     ? manual
-    : (w < 480 ? 3 : Math.max(1, Math.min(8, Math.floor(w / 120))))
-  // 减去列间距后单列的实际宽度 = 单格行高（正方形），约为原来的 1/2
-  cellSize.value = (w - gridGap * (cols.value - 1)) / cols.value
+    : (gridEl.value.clientWidth < 480 ? 3 : Math.max(1, Math.min(8, Math.floor(gridEl.value.clientWidth / 120))))
+  measureCells()
 }
 function measure() {
   if (!gridEl.value) return
@@ -797,32 +762,29 @@ const isLast = (c) => cards.value.indexOf(c) === cards.value.length - 1
 // 双端独立布局：Web 端存 dashboard，手机端每台设备独立存 dashboard_apk_<deviceId>。
 // 手机端自身键为空时经回退链 dashboard_apk_<deviceId> → dashboard_apk → dashboard 读取
 // （升级过渡：首启从同一布局起步，随后各自独立演进）。
-// 网页端可代管任意手机 App 布局：编辑态下从设备下拉选某台手机（editTargetDevice=其
-// deviceId），页面以该手机真实列数预览，保存写入 dashboard_apk_<deviceId>，该机收到广播即热刷新。
-const editTargetDevice = ref('') // 网页端编辑目标：''=本机网页布局 / <deviceId>=某台手机 App
 const ownDeviceId = ref('') // 本机 deviceId（APK 端用于拼布局键；网页端不用）
-const apkDevices = ref([]) // 本账号已注册的全部设备（网页端编辑器设备下拉用）
-const apkCols = ref(3) // 选中手机设备的真实列数（从 prefs dashboard_apk_cols_<deviceId> 读，无则 3）
-const isApkEdit = computed(() => !isApk && editTargetDevice.value !== '')
+const apkDevices = ref([]) // 本账号已注册的全部设备（双栏编辑时供右栏手机面板选择）
 // Web 端编辑模式：左电脑仪表盘 + 右手机 App 仪表盘双栏对照（APK 端仍为单栏编辑本机布局）
 const dualPane = computed(() => !isApk && editing.value)
 const apkPaneEl = ref(null)
 // 跨栏复制允许携带的卡片字段（uid 不复制——ApkDashPane 克隆时生成新 uid，避免双端 CSS 作用域冲突）
 const COPY_FIELDS = ['type', 'w', 'h', 'html', 'css', 'js', 'entity_id', 'entity_ids', 'icon', 'avatar', 'title']
+// 手柄 HTML5 拖拽期间的源卡快照：dragover 阶段规范上读不到 dataTransfer，
+// 右栏面板通过 prop 读它来实时显示插入占位符（dragend 清空，不再挂 window）
+const copyPayload = ref(null)
 // 左栏卡片手柄 HTML5 拖拽开始：写入卡片快照供右侧手机面板 drop 时克隆。
-// 同时挂 window：dragover 阶段规范上读不到 dataTransfer，面板据此实时显示插入占位符
 function onCopyDragStart(e, card) {
   try {
     const payload = {}
     for (const k of COPY_FIELDS) if (card[k] !== undefined) payload[k] = card[k]
-    window.__hcDragPayload = payload
+    copyPayload.value = payload
     e.dataTransfer.setData('application/x-hc-card', JSON.stringify(payload))
     e.dataTransfer.effectAllowed = 'copy'
   } catch { /* 个别浏览器禁用 dataTransfer 时忽略，仍可点击手柄复制 */ }
 }
 // HTML5 拖拽结束（无论是否落在面板）：清理源载荷与右栏占位
 function onCopyDragEnd() {
-  window.__hcDragPayload = null
+  copyPayload.value = null
   apkPaneEl.value?.clearDropPreview()
 }
 // 无拖拽环境（触屏）兜底：点手柄直接把卡片复制到右侧手机仪表盘当前页末尾
@@ -831,15 +793,9 @@ function copyCardToApk(card) {
 }
 const activeDashKey = computed(() => {
   if (isApk) return layoutKeyFor(ownDeviceId.value) // 手机端：dashboard_apk_<本机>
-  if (editTargetDevice.value) return layoutKeyFor(editTargetDevice.value) // 网页代管：dashboard_apk_<选中>
-  return LAYOUT_KEY_WEB // 网页本机：dashboard
+  return LAYOUT_KEY_WEB // 网页端：dashboard（手机端布局由右栏 ApkDashPane 独立读写）
 })
-// 选中手机设备的显示名（预览提示条与保存 toast 用；无则回退 deviceId 片段）
-const apkEditLabel = computed(() => {
-  const d = apkDevices.value.find((x) => x.device_id === editTargetDevice.value)
-  return d?.name || editTargetDevice.value.slice(0, 8)
-})
-// 进入某编辑目标时已保存的快照：切换目标前用于检测未保存修改
+// 进入编辑时已保存的快照：取消编辑时用于检测/回滚未保存修改
 let loadedSnapshot = ''
 const LEGACY_CACHE_KEY = 'dashboard-layout' // 升级前双端共用的旧缓存键，只读回退一次
 function cacheKeyFor(dashKey) {
@@ -871,10 +827,10 @@ function cacheLayout(dashboardJson, mapJson) {
     .catch(() => { /* 配额/隐私模式：忽略 */ })
 }
 
-async function loadLayout(force = false) {
+async function loadLayout() {
   const dashKey = activeDashKey.value
   // 布局请求先发出去，再读本地缓存——两条线并行，缓存读取不会推迟网络请求
-  const prefsPromise = getPrefs(force ? { force: true } : undefined).catch(() => null)
+  const prefsPromise = getPrefs().catch(() => null)
   // 1) 本地缓存布局：先出画面，不等 /prefs 往返（与实体快照同一策略）。
   //    本端缓存为空时读一次升级前的旧共享缓存（随后会写入本端新键）。
   //    这一步决定「网格就绪」的时刻——原先它必须等布局请求回来才开始渲染。
@@ -883,39 +839,33 @@ async function loadLayout(force = false) {
     const legacy = await loadKV(LEGACY_CACHE_KEY).catch(() => null)
     if (legacy?.dashboard) cached = legacy
   }
-  if (cached?.dashboard && (!pages.value.length || force)) {
+  if (cached?.dashboard && !pages.value.length) {
     if (applyDashboardJson(cached.dashboard, cached.map_config)) mark('boot:layoutCached')
   }
-  // 2) 后端权威值：到达后覆盖（正在编辑时不覆盖，避免打断操作；force=切目标时强制应用）
+  // 2) 后端权威值：到达后覆盖（正在编辑时不覆盖，避免打断操作）
   const res = await prefsPromise
   const data = res?.data || {}
-  // 本端布局键优先；手机端/网页代管时自身键为空，经回退链
-  // dashboard_apk_<deviceId> → dashboard_apk（旧全局键）→ dashboard（Web 键）读取。
-  // 网页代管时同样回退：此时该手机实际显示的就是回退键里的布局，以其为编辑起点。
+  // 本端布局键优先；手机端自身键为空时经回退链
+  // dashboard_apk_<deviceId> → dashboard_apk（旧全局键）→ dashboard（Web 键）读取，
+  // 此时该手机实际显示的就是回退键里的布局，以其为编辑起点。
   let dash = data[dashKey] || ''
-  if (!dash && (isApk || isApkEdit.value)) {
+  if (!dash && isApk) {
     dash = data.dashboard_apk || data.dashboard || ''
   }
   const mapJson = data.map_config || ''
   let has = false
   let migrated = false
-  if (dash && (!editing.value || force)) {
+  if (dash && !editing.value) {
     const r = applyDashboardJson(dash, mapJson)
     if (r) { has = true; migrated = r.migrated }
   }
-  // 后端没有布局且本地也没有（首次使用 / 切换到一个尚未初始化的目标）：填充默认仪表盘
-  if (!has && (!pages.value.length || force)) { pages.value = [defaultPage()]; currentPageIndex.value = 0 }
+  // 后端没有布局且本地也没有（首次使用）：填充默认仪表盘
+  if (!has && !pages.value.length) { pages.value = [defaultPage()]; currentPageIndex.value = 0 }
   loaded.value = true
   // 后端确有布局：落一份本地缓存，供下次打开即时绘制
   if (has) cacheLayout(dash, mapJson)
   // 旧结构迁移后落库一次到本端键（只在确实迁移过时写，避免与「完成」保存竞争）
   if (migrated) putPrefs({ [dashKey]: serializeDashboard(pages.value) }).catch(() => {})
-  // 网页代管手机端：同步该设备的真实列数（dashboard_apk_cols_<deviceId>，无值默认 3）
-  if (isApkEdit.value) {
-    const cv = parseInt(data[colsKeyFor(editTargetDevice.value)] || '', 10)
-    const next = (cv >= 2 && cv <= 8) ? cv : 3
-    if (next !== apkCols.value) { apkCols.value = next; nextTick(measure) }
-  }
 }
 async function saveLayout() {
   const dashKey = activeDashKey.value
@@ -931,7 +881,7 @@ async function saveLayout() {
       }
     }
     editing.value = false
-    toast(isApkEdit.value ? `${apkEditLabel.value} 仪表盘已保存，该机 App 将自动刷新` : '仪表盘已保存')
+    toast('仪表盘已保存')
   } catch { /* 静默 */ }
 }
 // 取消编辑：放弃本次修改并退出编辑模式。
@@ -950,8 +900,7 @@ function cancelEdit() {
 }
 // 重置为默认仪表盘：必须立即落库，否则刷新后又从后端读到旧布局
 async function resetLayout() {
-  const targetName = isApkEdit.value ? apkEditLabel.value : '当前'
-  if (!window.confirm(`确定把${targetName}仪表盘恢复为默认布局吗？`)) return
+  if (!window.confirm('确定把当前仪表盘恢复为默认布局吗？')) return
   pages.value = [defaultPage()]
   currentPageIndex.value = 0
   editing.value = false
@@ -963,45 +912,10 @@ async function resetLayout() {
   } catch { /* 离线：仅本次重置生效 */ }
 }
 
-// ---- 网页端代管手机端仪表盘：切换编辑目标 ----
-// 手机端自身（APK）无需切换，始终编辑 dashboard_apk_<本机 deviceId>；
-// 网页端可在「网页端（''）」与各台手机 App（deviceId）间切换。
-async function switchEditTarget(deviceId) {
-  if (!isApk && editTargetDevice.value === deviceId) return
-  // 未保存修改检测：与进入该目标时的快照对比，有改动则确认放弃
-  if (loadedSnapshot && serializeDashboard(pages.value) !== loadedSnapshot
-      && !window.confirm('当前目标有未保存的修改，切换后将丢弃，确定继续？')) {
-    return
-  }
-  editTargetDevice.value = deviceId
-  selectedUid.value = ''
-  addPanel.value = false
-  await loadLayout(true)
-  loadedSnapshot = serializeDashboard(pages.value)
-  await nextTick()
-  measure()
-}
-// 设备下拉选择：选择某台手机 App 作为编辑目标（select @change 调用）
-function onSelectApkDevice(e) {
-  const newId = e.target.value
-  // 即时回退显示：确认/取消由 switchEditTarget 驱动 editTargetDevice 后由 ref 重渲染
-  e.target.value = editTargetDevice.value
-  switchEditTarget(newId)
-}
-// 加载本账号全部已注册设备，供网页端编辑器设备下拉选择
+// 加载本账号全部已注册设备：双栏编辑时右栏手机面板按此列出可编辑的手机
 async function loadApkDevices() {
   if (isApk) return // 手机端自身无需设备列表
   try { apkDevices.value = await listDevices() } catch { /* 离线 */ }
-}
-async function startEditApk() {
-  if (!apkDevices.value.length) {
-    toast('暂无手机设备：请在手机 App 登录本账号后重试', true)
-    return
-  }
-  editing.value = true
-  const target = editTargetDevice.value || apkDevices.value[0].device_id
-  if (editTargetDevice.value !== target) await switchEditTarget(target)
-  await nextTick(); measure()
 }
 
 // ---- 跨端热刷新：本人在其它设备保存/接受分享仪表盘后，这里自动重载 ----
@@ -1021,18 +935,6 @@ function onVisibilityRefresh() {
   if (editing.value || Date.now() - lastLocalSave < 4000) return
   loadLayout()
 }
-
-// 手机端改了列数配置（设置 → 仪表盘列数）：服务端广播 dashboard_apk_cols_<deviceId>，
-// 正在代管该设备的网页端编辑器实时重读，预览列数与真机保持一致
-watch(apkColsRev, async () => {
-  if (!isApkEdit.value) return
-  try {
-    const { data } = await getPrefs({ force: true })
-    const cv = parseInt((data || {})[colsKeyFor(editTargetDevice.value)] || '', 10)
-    const next = (cv >= 2 && cv <= 8) ? cv : 3
-    if (next !== apkCols.value) { apkCols.value = next; nextTick(measure) }
-  } catch { /* 离线忽略 */ }
-})
 
 // 智能排版：用当前真实实体自动设计当前页（不直接落库，用户点「完成」才保存）
 const arranging = ref(false)
@@ -1259,14 +1161,8 @@ watch(() => ui.immersive, () => nextTick(measure))
 watch(() => editing.value, () => {
   if (!editing.value) {
     addPanel.value = false; selectedUid.value = '' // 退出编辑同步清掉面板与选中态
-    // 网页端代管手机端布局后退出：展示画面必须回到网页布局（dashboard）
-    if (!isApk && editTargetDevice.value !== '') {
-      editTargetDevice.value = ''
-      loadedSnapshot = ''
-      loadLayout()
-    }
   } else {
-    // 进入编辑：记录当前已保存快照，作为切换目标时的未保存修改判据
+    // 进入编辑：记录当前已保存快照，作为取消编辑时的未保存修改判据
     loadedSnapshot = serializeDashboard(pages.value)
   }
   ui.dashEditing = editing.value // 同步给 App.vue：编辑态隐藏手机底部 Tab 栏，露出底部操作栏
@@ -1286,7 +1182,7 @@ const { ensureLoaded } = useEntities()
 onMounted(async () => {
   ensureLoaded()
   // APK 端：取本机 deviceId 用于拼按设备隔离的布局键，并把本机列数同步到服务端
-  // （供网页端编辑器按真实列数预览）；网页端加载设备列表供编辑器下拉选择
+  // （供网页端双栏右栏按真机列数渲染）；网页端加载设备列表供双栏右栏选择手机
   if (isApk) {
     ownDeviceId.value = getDeviceId()
     // 同步本机列数偏好到 dashboard_apk_cols_<deviceId>（auto → 空，网页端默认 3）
@@ -1408,12 +1304,6 @@ onBeforeUnmount(() => {
 .dashboard-grid.hc-grid-editing {
   padding-bottom: 96px;
 }
-/* 网页代管手机端布局：手机屏视窗框（不加 padding，避免格子尺寸测量口径变化） */
-.dashboard-grid.hc-phone-preview {
-  border: 1px solid var(--hc-border, rgba(128, 128, 128, 0.28));
-  border-radius: 28px;
-  box-shadow: 0 0 0 6px rgba(128, 128, 128, 0.08), 0 18px 48px rgba(0, 0, 0, 0.18);
-}
 /* ---- Web 双栏对照编辑：左电脑仪表盘 / 右手机 App 仪表盘 ---- */
 .hc-dual-grid {
   display: grid;
@@ -1507,6 +1397,8 @@ onBeforeUnmount(() => {
   transform: scale(1.04);
   transform-origin: top left;
   overflow: hidden;
+  /* 跨进/跨出手机栏时尺寸在电脑格与手机格之间平滑收缩 */
+  transition: width .14s ease, height .14s ease;
 }
 .hc-cross-ghost-icon { font-size: 34px; opacity: .85; }
 .hc-cross-ghost-label {

@@ -4,9 +4,9 @@
   <section
     class="hc-apk-pane flex flex-col rounded-2xl border bg-surface-alt/40 overflow-hidden transition-shadow"
     :class="dragOver ? 'border-primary ring-2 ring-primary/40 shadow-xl shadow-primary/10' : 'border-border'"
-    @dragover.prevent="onDragOver"
-    @dragleave.prevent="onDragLeave"
-    @drop.prevent="onDrop"
+    @dragover="onDragOver"
+    @dragleave="onDragLeave"
+    @drop="onDrop"
   >
     <!-- 面板头部：标题 + 设备选择（紧随标题之后）+ 保存/撤销 -->
     <header class="shrink-0 px-3.5 pt-3 pb-3 border-b border-border/70">
@@ -21,20 +21,23 @@
         >
           <option v-for="d in devices" :key="d.device_id" :value="d.device_id">{{ d.name }}</option>
         </select>
-        <button
-          v-if="dirty"
-          @click="save"
-          class="shrink-0 h-9 px-3 rounded-lg bg-primary text-on-primary text-xs font-semibold shadow-sm hover:opacity-90 active:scale-95 transition"
-          title="保存到选中手机，该机 App 将自动刷新"
-        >保存</button>
-        <button
-          v-if="dirty"
-          @click="revert"
-          class="shrink-0 h-9 w-9 flex items-center justify-center rounded-lg border border-border text-muted hover:text-on-surface active:scale-95 transition"
-          title="撤销未保存的修改" aria-label="撤销修改"
-        >
-          <span class="material-symbols-outlined text-lg">undo</span>
-        </button>
+        <!-- 操作按钮区固定宽度（v-show 占位）：dirty 出现/消失时下拉框宽度不抖动 -->
+        <div class="shrink-0 w-24 flex items-center justify-end gap-2">
+          <button
+            v-show="dirty"
+            @click="save"
+            class="h-9 px-3 rounded-lg bg-primary text-on-primary text-xs font-semibold shadow-sm hover:opacity-90 active:scale-95 transition"
+            title="保存到选中手机，该机 App 将自动刷新"
+          >保存</button>
+          <button
+            v-show="dirty"
+            @click="revert"
+            class="shrink-0 h-9 w-9 flex items-center justify-center rounded-lg border border-border text-muted hover:text-on-surface active:scale-95 transition"
+            title="撤销未保存的修改" aria-label="撤销修改"
+          >
+            <span class="material-symbols-outlined text-lg">undo</span>
+          </button>
+        </div>
       </div>
     </header>
 
@@ -73,8 +76,8 @@
         <span class="ml-auto shrink-0 text-[11px] text-faint tabular-nums">{{ cols }} 列</span>
       </div>
 
-      <!-- 手机屏框：内部按真机列数渲染，所见即所得 -->
-      <div class="min-h-0 flex-1 overflow-y-auto hc-apk-scroll p-3">
+      <!-- 手机屏框：内部按真机列数渲染，所见即所得。滚动容器供拖到边缘时自动滚动 -->
+      <div ref="scrollEl" class="min-h-0 flex-1 overflow-y-auto hc-apk-scroll p-3">
         <div
           ref="frameEl"
           class="mx-auto rounded-[26px] border border-border bg-background p-2 shadow-[0_0_0_4px_rgba(128,128,128,0.07),0_14px_36px_rgba(0,0,0,0.16)]"
@@ -173,6 +176,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import CodeCard from '@/components/cards/CodeCard.vue'
 import { cardDefaults } from '@/components/cards/defaults'
 import { getPrefs, putPrefs } from '@/utils/prefs'
+import { useDashGrid } from '@/composables/useDashGrid'
 import {
   newCard, newPage, migrateDashboard, serializeDashboard,
   layoutKeyFor, colsKeyFor,
@@ -181,14 +185,14 @@ import {
 // 本账号已注册设备列表（由 HomeView 传入）；切换设备即切换编辑的 dashboard_apk_<deviceId>
 const props = defineProps({
   devices: { type: Array, default: () => [] },
+  // 左栏手柄 HTML5 拖拽中的源卡快照（dragover 阶段读不到 dataTransfer，用它显示占位符）
+  dragPayload: { type: Object, default: null },
 })
 const emit = defineEmits(['device-drawer', 'toast'])
 
 // 拖拽数据 MIME：左栏卡片 dragstart 写入，本面板 drop 读取（只传白名单字段，克隆后生成新 uid）
 const MIME = 'application/x-hc-card'
 const CARD_FIELDS = ['w', 'h', 'html', 'css', 'js', 'entity_id', 'entity_ids', 'icon', 'avatar', 'title']
-const baseCell = 120
-const gridGap = 12
 const frameMaxWidth = 392
 
 const deviceId = ref('')
@@ -299,6 +303,11 @@ function cloneFrom(src) {
 // ghost 为临时网格项（{__ghost:true,w,h}），displayCards 把它拼在 ghostIndex 处，
 // 由 CSS grid 自动排版，松手后在同一索引插入真实克隆卡，所见即所得。
 const gridEl = ref(null)
+const frameEl = ref(null) // 手机外框：网格可用宽取自它（自带 p-2 内边距，padX:16）
+// 网格测量/缩放与电脑端共用 useDashGrid；手机端按真机列数、框宽固定上限 392
+const {
+  cellSize, measure, zoomStyle, gridStyle, holderStyle, spanSize,
+} = useDashGrid({ el: frameEl, cols, padX: 16, minInner: 80 })
 const ghostCard = ref(null)
 const ghostIndex = ref(0)
 const displayCards = computed(() => {
@@ -311,6 +320,7 @@ const displayCards = computed(() => {
 function clearDropPreview() {
   ghostCard.value = null
   dragOver.value = false
+  stopEdgeScroll()
 }
 // 给定指针坐标，返回在当前页 cards（不含占位符）中的插入索引；
 // 命中卡片时按指针相对卡片中心的位置决定插前/插后，空白处按行/列就近推断。
@@ -357,53 +367,82 @@ function indexAt(x, y, exclude = null) {
 }
 // 左栏 pointer 跨栏拖拽：实时更新占位符位置（span 按手机列数钳制）
 function previewDrop(x, y, src) {
-  if (!src?.type) return
+  if (!deviceId.value || !src?.type) return
   const w = Math.min(Math.max(1, src.w || 1), cols.value)
   const h = Math.min(3, Math.max(1, src.h || 1))
   if (!ghostCard.value) ghostCard.value = { __ghost: true, w, h }
   ghostIndex.value = indexAt(x, y)
+  edgeAutoScroll(x, y, src)
 }
-// 左栏松手在右栏：在占位符位置插入克隆卡
+// 左栏松手在右栏：在占位符位置插入克隆卡。
+// 返回 true 表示已插入（供调用方判断是否需要提示）
 function commitDrop(src) {
+  // 防御：无设备（网格未渲染）时不得写入，避免“假成功”后数据无处保存
+  if (!deviceId.value) { clearDropPreview(); return false }
   const idx = ghostCard.value ? Math.max(0, Math.min(ghostIndex.value, cards.value.length)) : cards.value.length
   clearDropPreview()
   const c = cloneFrom(src)
-  if (!c) return
+  if (!c) return false
   if (!pages.value[pageIndex.value]) { pages.value = [newPage('首页')]; pageIndex.value = 0 }
+  // 每个保存周期只在首张复制时提示一次，避免连续拖入 toast 刷屏（保存按钮常驻提示未保存状态）
+  const wasDirty = dirty.value
   cards.value.splice(idx, 0, c)
   selectedUid.value = c.uid
-  emit('toast', `已复制到${deviceName.value}：${cardLabel(c)}，点「保存」生效`)
+  revealCard(c.uid)
+  if (!wasDirty) emit('toast', `已复制到${deviceName.value}：${cardLabel(c)}，点「保存」生效`)
+  return true
 }
 function getGridRect() {
   return gridEl.value?.getBoundingClientRect() || null
 }
+// 跨栏浮动幽灵在手机栏内应呈现的像素尺寸：按手机列数与格子钳制，避免电脑大卡压小框
+function ghostSize(src) {
+  if (!deviceId.value || !cellSize.value) return null
+  return spanSize(src)
+}
 
 // 暴露给父组件：dropCard=点手柄追加末尾；preview/commit/rect=跨栏定位拖放；
-// dirty/save 供左栏「完成/取消」联动检查
+// ghostSize=浮动幽灵按手机格子钳制后的尺寸；dirty/save 供左栏「完成/取消」联动检查
 function dropCard(src) {
+  if (!deviceId.value) {
+    // 无设备时不克隆不提示成功：引导用户先在手机端登录本账号
+    emit('toast', '暂无手机设备：请先在手机 App 登录本账号', true)
+    return
+  }
   const c = cloneFrom(src)
   if (!c) return
   if (!pages.value[pageIndex.value]) { pages.value = [newPage('首页')]; pageIndex.value = 0 }
+  const wasDirty = dirty.value
   cards.value.push(c)
   selectedUid.value = c.uid
-  emit('toast', `已复制到${deviceName.value}：${cardLabel(c)}，点「保存」生效`)
+  revealCard(c.uid)
+  if (!wasDirty) emit('toast', `已复制到${deviceName.value}：${cardLabel(c)}，点「保存」生效`)
 }
-defineExpose({ dropCard, save, dirty, previewDrop, commitDrop, clearDropPreview, getGridRect })
+// 插入的卡片可能在滚动区视口外：待渲染后滚到最近位置，让用户看到落位点与选中操作条
+function revealCard(uid) {
+  nextTick(() => {
+    document.getElementById('apk-card-' + uid)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  })
+}
+defineExpose({ dropCard, save, dirty, previewDrop, commitDrop, clearDropPreview, getGridRect, ghostSize })
 
 // HTML5 手柄拖放（桌面端兜底路径）：dragover 同样显示定位占位符。
-// dragover 阶段读不到 dataTransfer 数据，源卡快照由左栏挂在 window 上。
+// dragover 阶段读不到 dataTransfer 数据，源卡快照由左栏经 dragPayload prop 传入。
 function onDragOver(e) {
+  // 无设备：不 preventDefault，浏览器显示“禁止放置”光标，也不会产生 drop
+  if (!deviceId.value) return
+  e.preventDefault()
   dragOver.value = true
-  const src = window.__hcDragPayload
-  if (src) previewDrop(e.clientX, e.clientY, src)
+  if (props.dragPayload) previewDrop(e.clientX, e.clientY, props.dragPayload)
 }
 function onDrop(e) {
+  if (!deviceId.value) return
+  e.preventDefault()
   try {
     const raw = e.dataTransfer?.getData(MIME)
     if (raw) commitDrop(JSON.parse(raw))
   } catch { /* 非法载荷忽略 */ } finally {
     clearDropPreview()
-    window.__hcDragPayload = null
   }
 }
 function onDragLeave(e) {
@@ -412,15 +451,60 @@ function onDragLeave(e) {
   clearDropPreview()
 }
 function quickCopyHint() {
-  emit('toast', '点击左侧卡片右上角的复制图标，也可直接复制到这里')
+  emit('toast', '直接把左侧卡片拖到这里任意位置即可复制（也可点卡片右上角手柄）')
 }
 
-// ---- 右栏内部：按住卡片拖动换位（与左栏同款 pointer 方案，桌面/触屏一致）----
+// ---- 拖到滚动区边缘自动滚动：跨栏拖放与栏内拖动共用 ----
+// 指针进入上下边缘 48px 内时按距离给 1~8px/帧 的滚动速度；占位符/换位随滚动帧实时跟随。
+const scrollEl = ref(null)
+const EDGE_PX = 48
+let edgeRaf = 0
+let edgeSpeed = 0
+let edgeX = 0
+let edgeY = 0
+let edgeSrc = null // 跨栏拖放的源卡快照（栏内拖动为 null，换位用 paneDrag.card）
+function edgeAutoScroll(x, y, src = null) {
+  edgeX = x; edgeY = y
+  if (src) edgeSrc = src
+  const sc = scrollEl.value
+  if (!sc) { stopEdgeScroll(); return }
+  const r = sc.getBoundingClientRect()
+  let speed = 0
+  if (y < r.top + EDGE_PX) speed = -Math.min(8, Math.ceil((r.top + EDGE_PX - y) / 6))
+  else if (y > r.bottom - EDGE_PX) speed = Math.min(8, Math.ceil((y - (r.bottom - EDGE_PX)) / 6))
+  edgeSpeed = speed
+  if (speed && !edgeRaf) edgeRaf = requestAnimationFrame(edgeScrollTick)
+}
+function edgeScrollTick() {
+  const sc = scrollEl.value
+  if (!sc || !edgeSpeed) { edgeRaf = 0; return }
+  const before = sc.scrollTop
+  sc.scrollTop += edgeSpeed
+  if (sc.scrollTop === before) {
+    // 已到顶/底：自停；指针仍在边缘时后续 pointermove 会重新启动
+    edgeSpeed = 0; edgeRaf = 0
+    return
+  }
+  // 滚动后插入点可能已变：栏内拖动重排，跨栏拖放移动占位符
+  if (paneDrag?.active) reorderInPane()
+  else if (ghostCard.value && edgeSrc) ghostIndex.value = indexAt(edgeX, edgeY)
+  edgeRaf = requestAnimationFrame(edgeScrollTick)
+}
+function stopEdgeScroll() {
+  edgeSpeed = 0
+  edgeSrc = null
+  if (edgeRaf) { cancelAnimationFrame(edgeRaf); edgeRaf = 0 }
+}
+
+// ---- 右栏内部：按住卡片拖动换位（鼠标/触控笔 pointer 方案）----
 const dragCard = ref(null)
 let paneDrag = null // { card, el, uid, grabX/Y, startX/Y }
 let paneDragEndAt = 0
 function onPanePointerDown(e, card) {
   if (e.button !== 0 && e.pointerType === 'mouse') return
+  // 触屏：垂直手势让给手机框滚动（CSS 端 touch-action: pan-y，见 @media pointer:coarse），
+  // 卡片排序改用选中操作条的前移/后移按钮；鼠标/触控笔仍支持按住自由拖动
+  if (e.pointerType === 'touch') return
   const el = e.currentTarget
   const rect = el.getBoundingClientRect()
   paneDrag = {
@@ -432,6 +516,18 @@ function onPanePointerDown(e, card) {
   window.addEventListener('pointermove', onPanePointerMove)
   window.addEventListener('pointerup', onPanePointerUp)
   window.addEventListener('pointercancel', onPanePointerUp)
+}
+// 按指针位置实时换位（pointermove 与边缘自动滚动帧共用）
+function reorderInPane(x = null, y = null) {
+  const px = x ?? edgeX, py = y ?? edgeY
+  const arr = cards.value
+  let idx = indexAt(px, py, paneDrag.card)
+  const from = arr.indexOf(paneDrag.card)
+  if (idx > from) idx-- // 移除自身后修正插入点
+  if (from >= 0 && idx !== from) {
+    arr.splice(from, 1)
+    arr.splice(idx, 0, paneDrag.card)
+  }
 }
 function onPanePointerMove(e) {
   if (!paneDrag) return
@@ -445,26 +541,17 @@ function onPanePointerMove(e) {
   const grid = gridEl.value
   if (!grid) return
   const gridRect = grid.getBoundingClientRect()
-  const follow = () => {
-    const left = gridRect.left + paneDrag.el.offsetLeft
-    const top = gridRect.top + paneDrag.el.offsetTop
-    paneDrag.el.style.transform =
-      `translate(${e.clientX - paneDrag.grabX - left}px, ${e.clientY - paneDrag.grabY - top}px) scale(1.04)`
-  }
-  follow()
-  const arr = cards.value
-  let idx = indexAt(e.clientX, e.clientY, paneDrag.card)
-  const from = arr.indexOf(paneDrag.card)
-  if (idx > from) idx-- // 移除自身后修正插入点
-  if (from >= 0 && idx !== from) {
-    arr.splice(from, 1)
-    arr.splice(idx, 0, paneDrag.card)
-    follow()
-  }
+  const left = gridRect.left + paneDrag.el.offsetLeft
+  const top = gridRect.top + paneDrag.el.offsetTop
+  paneDrag.el.style.transform =
+    `translate(${e.clientX - paneDrag.grabX - left}px, ${e.clientY - paneDrag.grabY - top}px) scale(1.04)`
+  reorderInPane(e.clientX, e.clientY)
+  edgeAutoScroll(e.clientX, e.clientY) // 拖到手机框上下边缘时自动滚动，滚动帧内继续换位
 }
 function onPanePointerUp() {
   // 轻触选中统一交给随后的 click（onPaneCardClick）处理，避免两处各切一次导致选不中；
   // 这里仅收尾拖拽并记录时刻，让 350ms 内的 click 被识别为拖拽副产物
+  stopEdgeScroll()
   if (paneDrag?.moved) paneDragEndAt = Date.now()
   if (paneDrag?.el) paneDrag.el.style.transform = ''
   paneDrag = null
@@ -500,9 +587,7 @@ function remove(card) {
   if (selectedUid.value === card.uid) selectedUid.value = ''
 }
 
-// ---- 网格测量：手机框宽度 → 单格像素（行高=列宽，正方形格），卡片基准 120px 等比缩放 ----
-const frameEl = ref(null)
-const cellSize = ref(0)
+// ---- 手机框尺寸监听：measure/gridStyle/zoomStyle/holderStyle 均由 useDashGrid 提供 ----
 let ro = null
 // frameEl 位于 v-else 分支：设备列表异步到位时 onMounted 可能还拿不到元素，
 // 故 RO 绑定做成幂等函数，由 onMounted 与 devices watcher 各尝试一次
@@ -517,6 +602,7 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   ro?.disconnect()
+  stopEdgeScroll()
   window.removeEventListener('resize', measure)
   // 拖拽进行中卸载：摘掉 window 级监听，避免泄漏
   window.removeEventListener('pointermove', onPanePointerMove)
@@ -524,40 +610,6 @@ onBeforeUnmount(() => {
   window.removeEventListener('pointercancel', onPanePointerUp)
 })
 watch(cols, () => nextTick(measure))
-function measure() {
-  const w = frameEl.value?.clientWidth
-  if (!w) return
-  // 手机框自带 p-2（8px）内边距，内容宽需减去两侧
-  const inner = Math.max(80, w - 16)
-  cellSize.value = (inner - gridGap * (cols.value - 1)) / cols.value
-}
-
-const zoomFactor = computed(() => (cellSize.value > 0 ? cellSize.value / baseCell : 1))
-const gridStyle = computed(() => ({
-  gridTemplateColumns: `repeat(${cols.value}, minmax(0, 1fr))`,
-  gridAutoRows: cellSize.value ? cellSize.value + 'px' : 'auto',
-}))
-function zoomStyle(card) {
-  const cw = Math.min(Math.max(1, card.w || 1), cols.value)
-  const rh = Math.min(3, card.h || 1)
-  const z = zoomFactor.value
-  return {
-    transform: `scale(${z})`,
-    width: cw * baseCell + (cw - 1) * gridGap / z + 'px',
-    height: rh * baseCell + (rh - 1) * gridGap / z + 'px',
-    display: 'flex',
-    flexDirection: 'column',
-    flex: 'none',
-  }
-}
-function holderStyle(card) {
-  const cw = Math.min(Math.max(1, card.w || 1), cols.value)
-  return {
-    gridColumn: `span ${cw}`,
-    gridRow: `span ${Math.min(3, card.h || 1)}`,
-    borderRadius: (14 * (zoomFactor.value || 1)).toFixed(2) + 'px',
-  }
-}
 </script>
 
 <style scoped>
@@ -588,6 +640,17 @@ function holderStyle(card) {
 }
 .hc-apk-card:hover { outline: 1.5px dashed rgb(var(--c-primary) / .5); outline-offset: -1.5px; }
 .hc-apk-card-sel { outline: 2px solid rgb(var(--c-primary) / .9); outline-offset: -2px; z-index: 2; }
+/* 触屏设备：垂直滑动让给手机框滚动（卡片拖动排序改用操作条按钮；见 onPanePointerDown） */
+@media (pointer: coarse) {
+  .hc-apk-card { touch-action: pan-y; }
+}
+/* 双栏时右栏为双份卡片渲染：视口外卡片跳过布局/绘制以降低开销
+   （行高为固定格距，跳过渲染不塌行，拖拽命中仍按网格盒计算）。
+   地图卡除外：其内部按容器尺寸测量定位，初始被跳过会拿到 0 尺寸 */
+.hc-apk-card:not([data-type="map"]) {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 120px;
+}
 /* 栏内拖拽中的卡片：抬起阴影 + 关闭过渡（位置由 transform 即时跟随） */
 .hc-apk-card-drag {
   z-index: 12;

@@ -189,9 +189,6 @@ export const entityStates = reactive({})
 export const entityList = shallowRef([])
 // 仪表盘远程变更版本号：本人任一设备保存/接受分享后自增，HomeView watch 它重载布局
 export const dashboardRev = ref(0)
-// 手机端列数偏好远程变更版本号：dashboard_apk_cols_<deviceId> 写入后自增，
-// 正在代管该设备的网页端编辑器据此实时更新预览列数（不触发布局重载）
-export const apkColsRev = ref(0)
 
 // 实体订阅回调（实体变化时通知各视图）。
 const watchers = new Set()
@@ -500,16 +497,14 @@ function connectWS() {
       // 仪表盘变更：本人在其它设备保存/接受分享后热刷新（HomeView 监听此版本号重载布局）。
       // keys 为受影响的布局键数组（dashboard=Web 端 / dashboard_apk=手机端全局回退 /
       // dashboard_apk_<deviceId>=按设备隔离）。任一布局键变更即重载：网页端重读自己的
-      // dashboard（值未变则无可见变化），手机端经回退链拾取最新布局；网页代管手机端
-      // 时也能捕获对端保存的同设备键。dashboard_apk_cols_* 列数键不在此列（非布局重载）。
+      // dashboard（值未变则无可见变化），手机端经回退链拾取最新布局。
+      // dashboard_apk_cols_* 列数键不在此列（非布局重载）。
       // 无 keys 的旧形式按 dashboard 处理（兼容旧版服务端）。
       else if (m.type === 'prefs') {
         const keys = Array.isArray(m.keys) ? m.keys : (m.key ? [m.key] : [])
         const isLayout = (k) => k === 'dashboard' ||
           (k.startsWith('dashboard_apk') && !k.startsWith('dashboard_apk_cols'))
         if (keys.length === 0 || keys.some(isLayout)) dashboardRev.value++
-        // 列数偏好键单独递增 apkColsRev：不触发布局重载，仅供网页端编辑器实时更新预览列数
-        if (keys.some((k) => k.startsWith('dashboard_apk_cols'))) apkColsRev.value++
       }
       // 通话信令：动态 import 避免 store ↔ call 模块循环依赖
       else if (m.type === 'call') import('@/utils/call').then((c) => c.handleCallEvent(m))
