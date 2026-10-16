@@ -56,9 +56,16 @@ function readToneUri(kind) {
   } catch { return '' }
 }
 
+// 本机免打扰：消息/来电都静默（localStorage 由设置页"消息免打扰"开关写入）
+function isLocalDnd() {
+  try { return localStorage.getItem('hc_im_dnd') === '1' } catch { return false }
+}
+
 // kind: 'incoming' 来电振铃 | 'back' 呼叫等待回铃（彩铃）
 function startRing(kind) {
   stopRing()
+  // 免打扰开启时：消息不响、来电也不响不震（仍会弹 UI/状态栏通知）
+  if (isLocalDnd()) return
   const n = nativeBridge()
   if (n?.playRing) {
     n.playRing(readToneUri(kind), true)
