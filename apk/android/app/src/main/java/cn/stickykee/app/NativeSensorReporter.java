@@ -86,6 +86,16 @@ public final class NativeSensorReporter {
     private static final String KEY_ON = "sensor_ctx_on";       // 1=至少启用一个传感器
     private static final String KEY_LAST = "sensor_last_report";  // 成功上报时间戳（链路健康判据）
     private static final String KEY_LAST_LOC = "sensor_last_loc"; // 上次逆地理坐标+地址缓存
+    private static final String KEY_TRACK_LAT = "sensor_track_lat"; // 上次成功推送的 device_tracker 纬度
+    private static final String KEY_TRACK_LNG = "sensor_track_lng"; // 上次成功推送的 device_tracker 经度
+    private static final String KEY_TRACK_HAS = "sensor_track_has"; // 是否已有成功推送基线
+
+    // ---- device_tracker 防抖动（修复「后台恢复瞬间旧缓存位置把在家误判为离家、几秒后又跳回」）----
+    // device_tracker 的状态只应随真实位置变化（与 geocoded_location 同一尺度），
+    // 不能被心跳里几分钟前的缓存 fix / 室内漂移点带着反复横跳。
+    private static final long TRACK_CACHE_MAX_AGE_MS = 2 * 60 * 1000L; // 追踪只信 2 分钟内的缓存 fix
+    private static final long TRACK_FRESH_MS = 30 * 1000L;             // fix 时间超过 30s 即视为非实时
+    private static final float TRACK_MOVE_M = 50f;                     // 位移超过 50m 才重新推送（约 0.0005°）
 
     // ---- 公网 IP：多源探测 + 5 分钟缓存（避免频繁外网请求）----
     private static final int IP_CACHE_MS = 5 * 60 * 1000;
@@ -873,6 +883,36 @@ public final class NativeSensorReporter {
         return null; // 无有效 fix：不上报（避免上报过期/错位地址）
     }
 
+    /**
+     * 设备追踪专用取位：比 {@link #currentGpsLocation} 更保守。
+     * 只接受 2 分钟内的新鲜缓存 fix（持续监听缓存 / getLastKnownLocation），
+     * 否则单次 GPS 冷取（8s）；都失败则返回 null——宁可不报，也不用几分钟前的
+     * 旧位置触发 HA zone「在家→离家」误翻转（旧状态保留，等下个新鲜 fix 再变更）。
+     */
+    private static Location currentTrackGpsLocation(Context app) {
+        long now = System.currentTimeMillis();
+        // 持续低频监听缓存的最新卫星 fix
+        Location live = latestFix;
+        if (live != null && latestFixAt > 0
+                && now - latestFixAt < TRACK_CACHE_MAX_AGE_MS) {
+            return live;
+        }
+        LocationManager lm = (LocationManager) app.getSystemService(Context.LOCATION_SERVICE);
+        if (lm == null) return null;
+        Location best = null;
+        long age = Long.MAX_VALUE;
+        try {
+            best = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+            if (best != null) age = now - best.getTime();
+        } catch (Throwable ignored) {
+        }
+        if (best != null && age >= 0 && age < TRACK_CACHE_MAX_AGE_MS) return best;
+
+        Location fresh = requestSingleGpsFix(lm, 8000);
+        if (fresh != null) return fresh;
+        return null; // 无新鲜 fix：本次跳过，下一心跳 / 前台 GPS watch（约 2s 一个）会补报
+    }
+
     private static Location requestSingleGpsFix(LocationManager lm, long timeoutMs) {
         final CountDownLatch latch = new CountDownLatch(1);
         final Location[] holder = new Location[1];
@@ -940,6 +980,12 @@ public final class NativeSensorReporter {
      * （回家/离家自动化的触发源）。与 {@link #collectGeocodedLocation} 的区别：
      * 后者只把坐标作为传感器值上报，HA 不据其判定 zone。
      * 供后台保活心跳调用，不依赖 WebView 存活；失败静默返回 false，绝不抛出。
+     *
+     * 防抖动：device_tracker 只随「真实位置变化」更新——
+     *  1. 取位只用 2 分钟内的新鲜 fix（{@link #currentTrackGpsLocation}），旧缓存直接跳过；
+     *  2. 与上次成功推送坐标位移不足 50m 不重复推送（静止时心跳不再引发任何 zone 变化）；
+     *  3. 即便位移超过 50m，若 fix 已超过 30s（非实时点）也先压住，等新鲜 fix 确认，
+     *     防止 App 从后台恢复瞬间用过期/漂移点把「在家」打成「离家」后又跳回。
      */
     private static boolean reportDeviceLocation(Context ctx, String base, String token,
                                                 String inst, String dev) {
@@ -950,11 +996,22 @@ public final class NativeSensorReporter {
                 != PackageManager.PERMISSION_GRANTED) {
             return false;
         }
-        Location loc = currentGpsLocation(ctx);
+        Location loc = currentTrackGpsLocation(ctx);
         if (loc == null) return false;
-        double lat = loc.getLatitude();
-        double lng = loc.getLongitude();
+        final double lat = loc.getLatitude();
+        final double lng = loc.getLongitude();
         if (lat == 0 && lng == 0) return false;
+
+        SharedPreferences p = prefs(ctx);
+        if (p.getBoolean(KEY_TRACK_HAS, false)) {
+            float lastLat = p.getFloat(KEY_TRACK_LAT, 0f);
+            float lastLng = p.getFloat(KEY_TRACK_LNG, 0f);
+            double moved = haversineM(lastLat, lastLng, lat, lng);
+            if (moved < TRACK_MOVE_M) return true; // 静止：跳过推送，HA 保持原状态
+            long age = System.currentTimeMillis() - loc.getTime();
+            if (age > TRACK_FRESH_MS) return false; // 移动但点位非实时：等下个新鲜 fix 确认
+        }
+
         HttpURLConnection conn = null;
         try {
             JSONObject body = new JSONObject();
@@ -979,7 +1036,14 @@ public final class NativeSensorReporter {
                 clearContext(ctx); // 会话失效：清上下文，等前端重新同步（防止死 token 无限重试）
                 return false;
             }
-            return code >= 200 && code < 300;
+            if (code >= 200 && code < 300) {
+                // 记录成功推送基线：后续心跳据此做 50m 去抖
+                p.edit().putFloat(KEY_TRACK_LAT, (float) lat)
+                        .putFloat(KEY_TRACK_LNG, (float) lng)
+                        .putBoolean(KEY_TRACK_HAS, true).apply();
+                return true;
+            }
+            return false;
         } catch (Exception ignored) {
             return false;
         } finally {
@@ -990,6 +1054,17 @@ public final class NativeSensorReporter {
                 }
             }
         }
+    }
+
+    /** Haversine 两坐标距离（米），供 device_tracker 移动去抖。 */
+    private static double haversineM(double lat1, double lng1, double lat2, double lng2) {
+        final double R = 6371000d;
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLng = Math.toRadians(lng2 - lng1);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+        return 2 * R * Math.asin(Math.sqrt(a));
     }
 
     // ==================== 小工具 ====================

@@ -10,7 +10,7 @@ import api, { getToken } from '@/api'
 import { auth, store } from '@/store'
 import { getDeviceId, currentDevice } from '@/utils/device'
 import { getPrefs, putPrefs } from '@/utils/prefs'
-import { syncCurrentLocation, reportLocation, nativeGps, trackingEnabled } from '@/utils/location'
+import { getCurrentPosition, reportLocation, nativeGps, trackingEnabled } from '@/utils/location'
 import { buildReportPayload, isNativeSensorMode } from '@/utils/sensors'
 
 const LOC_INTERVAL = 5 * 60 * 1000 // 定位兜底周期：5 分钟
@@ -83,13 +83,20 @@ async function reportMoved(lat, lng, accuracy) {
   }
 }
 
-// 周期兜底：主动定位并上报（覆盖 watchPosition 在后台暂停、静止不回调的场景）。
+// 周期兜底/回前台补报：主动取「新鲜」定位，位移超过阈值才推送。
+// 不用 syncCurrentLocation（那条链路对手动同步，逆地理且无条件推送）：
+// App 从后台恢复时若直接把缓存/漂移点推给 device_tracker，会出现「在家→离家→在家」瞬跳，
+// 故自动链路与原生心跳同一套防抖——静止（<40m）不重复推送。
 async function syncLocation() {
   if (inFlight.location || !canRun() || !trackingEnabled()) return
   inFlight.location = true
   try {
-    const res = await syncCurrentLocation()
-    if (res && Number.isFinite(res.lat) && Number.isFinite(res.lng)) lastLoc = { lat: res.lat, lng: res.lng }
+    const pos = await getCurrentPosition()
+    const { latitude, longitude, accuracy } = pos.coords
+    const cur = { lat: latitude, lng: longitude }
+    if (lastLoc && distM(cur, lastLoc) < MOVE_THRESHOLD_M) return // 静止：跳过推送
+    lastLoc = cur
+    await reportLocation(latitude, longitude, accuracy)
   } catch (e) {
     if (e && e.code !== 1) console.warn('[autoSync] location:', e && e.message ? e.message : e)
   } finally {

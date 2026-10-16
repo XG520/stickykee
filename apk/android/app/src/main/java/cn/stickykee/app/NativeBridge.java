@@ -986,8 +986,9 @@ public class NativeBridge {
     }
 
     /**
-     * 单次卫星定位：优先 GPS_PROVIDER（卫星），超时后回传最后一次定位；
-     * 无 fix 时回传 lastKnownLocation。结果经 stickykee-gps 事件 {req,ok,lat,lng,acc,provider}。
+     * 单次卫星定位：优先 GPS_PROVIDER（卫星），等待新鲜卫星 fix；
+     * 仅当系统缓存 fix 在 2 分钟以内时才作为超时兜底种子。
+     * 结果经 stickykee-gps 事件 {req,ok,lat,lng,acc,provider}。
      * @param timeoutMs 等待卫星 fix 的上限（建议 10000~30000）
      */
     @JavascriptInterface
@@ -998,11 +999,17 @@ public class NativeBridge {
         }
         final LocationManager lm = locMgr();
         try {
-            // 先取卫星缓存定位（只认 GPS_PROVIDER，不混入 WiFi/基站网络定位，保证结果必为卫星坐标），
-            // 卫星超时也能有结果
+            // 卫星缓存定位（只认 GPS_PROVIDER，不混入 WiFi/基站网络定位，保证结果必为卫星坐标）。
+            // 仅接受 2 分钟内的新鲜 fix：App 从后台恢复时 getLastKnownLocation 可能是数小时前
+            // 的旧位置，直接返回会把过期坐标推给 device_tracker，造成在家瞬间被打成离家。
+            // 缓存过期时宁肯等待新 fix，超时也无新 fix 则回 no_fix（前端按「暂无卫星信号」提示）。
             Location last = null;
             try {
-                last = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+                Location cached = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+                if (cached != null
+                        && System.currentTimeMillis() - cached.getTime() <= 2 * 60 * 1000L) {
+                    last = cached;
+                }
             } catch (SecurityException ignored) {
             }
             final Location[] best = { last };
