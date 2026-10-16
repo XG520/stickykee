@@ -854,9 +854,7 @@
           <p class="text-muted text-[11px] mt-1">在应用详情中开启「自启动」，省电策略选「无限制」</p>
         </div>
       </div>
-      <p v-if="versionMismatch" class="mt-2 text-xs font-body text-warning">
-        前后端版本不一致：请先刷新页面（Ctrl+F5）；若仍不一致，说明服务端尚未更新到最新版本。
-      </p>
+
     </section>
     </div>
 
@@ -1753,7 +1751,6 @@ async function resetDefaults() {
 // ===== 版本信息：__APP_VERSION__ 由 vite 构建时从 package.json 注入 =====
 const appVersion = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : ''
 const backendVersion = ref(null) // null=获取中；''=获取失败
-const versionMismatch = computed(() => !!backendVersion.value && backendVersion.value !== appVersion)
 async function loadVersion() {
   try {
     const h = await api.health()
@@ -1770,6 +1767,8 @@ const apkSaving = ref(false)
 // APK 应用内更新：服务端版本高于本机版本时提示，一键下载并拉起系统安装器
 // （isApk 已从 serverConfig 导入；canInAppUpdate 区分旧 APK 无原生下载能力的情形）
 const canInAppUpdate = !!window.StickyKeeNative?.downloadAndInstallApk
+// 服务端可用的 APK 版本（AppInfo.version，独立于后端版本）
+const apkVersion = ref('')
 const apkUpdateAvailable = ref(false)
 const apkUpdating = ref(false)
 const apkProgress = ref(0)
@@ -1846,8 +1845,9 @@ async function loadAppInfo() {
   try {
     const { data } = await api.appInfo()
     apkAvailable.value = !!data?.apkAvailable
-    // APK 环境下比较服务端版本与本机 APK 版本：服务端更高即提示更新。
-    // 注意 WebView 加载的是服务器网页，appVersion（网页版本）恒等于服务端版本，
+    if (data?.version) apkVersion.value = String(data.version)
+    // APK 环境下比较 AppInfo 返回的 APK 版本与本机原生版本：前者更高即提示更新。
+    // WebView 加载的是服务器网页，appVersion（打包的 www 版本）与当前 JS 无关，
     // 必须用原生 getAppVersion()（build.gradle 的 versionName）才是真实 APK 版本。
     if (isApk && data?.apkAvailable && data?.version) {
       const nativeVer = window.StickyKeeNative?.getAppVersion?.() || appVersion
@@ -1865,7 +1865,7 @@ async function downloadApk() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = 'StickyKee-' + (backendVersion.value || '') + '.apk'
+    a.download = 'StickyKee-' + (apkVersion.value || backendVersion.value || '') + '.apk'
     document.body.appendChild(a)
     a.click()
     a.remove()

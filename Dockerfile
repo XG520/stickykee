@@ -43,11 +43,16 @@ COPY --from=web /web/dist ./dist
 #   $ mkdir -p release && cp apk/android/app/build/outputs/apk/debug/app-debug.apk release/stickykee-app.apk
 # 无 APK 时此 COPY 会构建失败——按需注释掉下行与 SN_APK_FILE。
 COPY release/stickykee-app.apk /var/apk/stickykee-app.apk
+# APK 版本 sidecar 文件：打包流程（gradlew assembleDebug 后）由构建脚本从 build.gradle
+# 提取 versionName 写入 release/app_version.txt。服务端 AppInfo 据此返回 APK 真实版本，
+# 与后端自身 Version 独立——纯后端改动不再误触发 APK 更新提示。
+COPY release/app_version.txt /var/apk/app_version.txt
 # 数据库、聊天图片（/data/uploads/im）、图标缓存（/data/icons）都在 /data 下
 ENV SN_HTTP_ADDR=:8080 \
     SN_DB_PATH=/data/stickynuo.db \
     SN_STATIC_DIR=/app/dist \
-    SN_APK_FILE=/var/apk/stickykee-app.apk
+    SN_APK_FILE=/var/apk/stickykee-app.apk \
+    SN_APK_VERSION_FILE=/var/apk/app_version.txt
 VOLUME /data
 EXPOSE 8080
 USER sn
