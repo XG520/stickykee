@@ -226,9 +226,10 @@ func (h *Prefs) Put(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	isAdmin := auth.IsAdmin(r.Context())
-	// 本次写入涉及哪些仪表盘布局键（dashboard / dashboard_apk / dashboard_apk_<deviceId>）：
-	// 写库后按受影响端通知本人全部设备热刷新，未受影响的端不重载。
-	// dashboard_apk_cols_<deviceId> 是列数偏好，不在此列（前端切目标时读取，无需广播重载）。
+	// 本次写入涉及哪些仪表盘键（dashboard / dashboard_apk / dashboard_apk_<deviceId> 布局 /
+	// dashboard_apk_cols_<deviceId> 列数）：写库后按受影响端通知本人全部设备。
+	// 前端按前缀区分：布局键触发重载热刷新；列数键不触发布局重载，仅让正在代管
+	// 该设备的网页端编辑器实时更新预览列数（见 store 的 apkColsRev）。
 	dashKeys := []string{}
 
 	userSet := map[string]bool{}
@@ -241,8 +242,8 @@ func (h *Prefs) Put(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for k, v := range body {
-		if isUserLayoutKey(k) {
-			dashKeys = append(dashKeys, k) // 仪表盘布局变更：写库后通知本人全部设备热刷新
+		if isUserLayoutKey(k) || strings.HasPrefix(k, "dashboard_apk_cols_") {
+			dashKeys = append(dashKeys, k) // 布局/列数变更：写库后通知本人全部设备
 		}
 		switch {
 		case k == "ha_token":
@@ -362,7 +363,7 @@ func PublicCORS(next http.HandlerFunc) http.HandlerFunc {
 
 // Version 后端版本号：随发布递增，经 healthz 暴露，供前端设置页与 APK 壳页
 // 确认当前连接的服务端版本（排查「更新没生效」类问题）。
-const Version = "1.4.6"
+const Version = "1.4.7"
 
 // Healthz 存活探针（公开：附带后端版本号）。
 func (Health) Healthz(w http.ResponseWriter, r *http.Request) {

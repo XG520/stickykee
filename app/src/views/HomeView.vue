@@ -89,10 +89,15 @@
 
         <!-- 操作按钮：编辑态常显；非编辑态仅桌面端渲染（Teleport 进导航栏，感应式显隐）。
              手机/窄屏非编辑态不显示编辑按钮——触屏端靠「长按卡片 500ms」进入编辑模式，
-             编辑操作（含添加卡片入口）由编辑态底部操作栏承载 -->
+             编辑操作（含添加卡片入口）由编辑态底部操作栏承载。
+             窄屏编辑态：按钮排成一条横向滚动条（同设置页锚点导航，overflow-x-auto 隐藏
+             滚动条可左右滑），导出/导入/重置平铺其中；桌面端维持 ⋯更多 收纳 + 换行。 -->
         <div v-if="!immersive && (editing || canEdit)"
-          class="ml-auto flex flex-wrap items-center gap-1.5 sm:gap-2 transition-opacity duration-300"
-          :class="btnVisible ? 'opacity-100' : 'opacity-0 pointer-events-none focus-within:opacity-100 focus-within:pointer-events-auto'">
+          class="ml-auto flex items-center gap-1.5 sm:gap-2 transition-opacity duration-300"
+          :class="[
+            teleportToNav ? 'flex-wrap' : 'hc-tabs min-w-0 max-w-full flex-nowrap overflow-x-auto',
+            btnVisible ? 'opacity-100' : 'opacity-0 pointer-events-none focus-within:opacity-100 focus-within:pointer-events-auto'
+          ]">
           <template v-if="editing">
             <!-- 网页端编辑目标切换：编辑本机网页布局，或代管某台手机 App 布局（dashboard_apk_<deviceId>） -->
             <div v-if="!isApk" class="shrink-0 flex items-center rounded-xl border border-border bg-surface-alt p-0.5 mr-0.5"
@@ -112,12 +117,24 @@
               </select>
             </div>
             <!-- 触控规范：统一 44px 高度、圆角与按压反馈；智能排版为主级动作，完成为主色实心；
-                 导出/导入/重置收纳进「⋯更多」下拉，降低工具栏视觉噪音 -->
-            <button @click="smartArrange" class="inline-flex items-center justify-center h-11 px-2 sm:px-3.5 rounded-xl bg-surface-alt border border-border text-muted hover:text-on-surface hover:border-primary/40 text-sm transition-all active:scale-95" title="按当前 HA 实体自动设计并摆放卡片">
+                 窄屏：导出/导入/重置平铺进横向滚动条；桌面端：收纳进「⋯更多」下拉 -->
+            <button @click="smartArrange" class="shrink-0 whitespace-nowrap inline-flex items-center justify-center h-11 px-2 sm:px-3.5 rounded-xl bg-surface-alt border border-border text-muted hover:text-on-surface hover:border-primary/40 text-sm transition-all active:scale-95" title="按当前 HA 实体自动设计并摆放卡片">
               <span class="material-symbols-outlined text-lg" aria-hidden="true">auto_awesome_mosaic</span>智能排版
             </button>
-            <!-- ⋯更多：导出/导入/重置等次级操作收纳 -->
-            <div class="relative shrink-0">
+            <!-- 窄屏（横向滚动条）：次级操作平铺，可左右滑动触达 -->
+            <template v-if="!teleportToNav">
+              <button @click="onExport" class="shrink-0 whitespace-nowrap inline-flex items-center justify-center h-11 px-3 rounded-xl bg-surface-alt border border-border text-muted hover:text-on-surface hover:border-primary/40 text-sm transition-all active:scale-95" title="把当前仪表盘导出为 JSON 文件">
+                <span class="material-symbols-outlined text-lg" aria-hidden="true">download</span>导出
+              </button>
+              <button @click="pickImportFile" class="shrink-0 whitespace-nowrap inline-flex items-center justify-center h-11 px-3 rounded-xl bg-surface-alt border border-border text-muted hover:text-on-surface hover:border-primary/40 text-sm transition-all active:scale-95" title="从 JSON 文件导入仪表盘">
+                <span class="material-symbols-outlined text-lg" aria-hidden="true">upload</span>导入
+              </button>
+              <button @click="resetLayout" class="shrink-0 whitespace-nowrap inline-flex items-center justify-center h-11 px-3 rounded-xl bg-surface-alt border border-border text-muted hover:text-error hover:border-error/40 text-sm transition-all active:scale-95" title="恢复默认仪表盘布局">
+                <span class="material-symbols-outlined text-lg" aria-hidden="true">restart_alt</span>重置
+              </button>
+            </template>
+            <!-- 桌面端：⋯更多 收纳导出/导入/重置 -->
+            <div v-else class="relative shrink-0">
               <button @click="moreMenuOpen = !moreMenuOpen"
                 class="inline-flex items-center justify-center h-11 w-11 rounded-xl bg-surface-alt border border-border text-muted hover:text-on-surface hover:border-primary/40 text-sm transition-all active:scale-95"
                 :class="moreMenuOpen ? 'border-primary/40 text-on-surface' : ''"
@@ -141,8 +158,11 @@
               <!-- 点击遮罩关闭下拉 -->
               <div v-if="moreMenuOpen" class="fixed inset-0 z-40" @click="moreMenuOpen = false"></div>
             </div>
-            <button @click="saveLayout" class="inline-flex items-center justify-center h-11 px-2.5 sm:px-4 rounded-xl bg-primary hover:bg-primary-hover text-on-primary text-sm font-semibold shadow-sm shadow-primary/25 transition-all active:scale-95">
+            <button @click="saveLayout" class="shrink-0 whitespace-nowrap inline-flex items-center justify-center h-11 px-4 rounded-xl bg-primary hover:bg-primary-hover text-on-primary text-sm font-semibold shadow-sm shadow-primary/25 transition-all active:scale-95">
               <span class="material-symbols-outlined text-lg" aria-hidden="true">check</span>完成
+            </button>
+            <button @click="cancelEdit" class="shrink-0 whitespace-nowrap inline-flex items-center justify-center h-11 px-3.5 rounded-xl bg-surface-alt border border-border text-muted hover:text-on-surface text-sm transition-all active:scale-95" title="放弃本次编辑的修改并退出">
+              <span class="material-symbols-outlined text-lg" aria-hidden="true">close</span>取消
             </button>
           </template>
           <template v-else>
@@ -334,7 +354,7 @@
 
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, onUpdated, onActivated, onDeactivated, nextTick } from 'vue'
-import { ui, entityStates, entityList, registryDevices, loadRegistry, haTokenConfigured, haTokenKnown, auth, openDeviceDrawer, dashboardRev } from '@/store'
+import { ui, entityStates, entityList, registryDevices, loadRegistry, haTokenConfigured, haTokenKnown, auth, openDeviceDrawer, dashboardRev, apkColsRev } from '@/store'
 import { useEntities } from '@/composables/useLive'
 import { useAutoHide } from '@/composables/useAutoHide'
 import { mark, count, measure as perfMeasure } from '@/utils/perf'
@@ -596,7 +616,7 @@ function onHolderClickCapture(e) {
   }
 }
 // ---- 手机端长按卡片进入编辑模式 ----
-// 非编辑态下按住卡片 500ms 触发：震动反馈 + 提示引导；移动/松手即取消，
+// 非编辑态下按住卡片 500ms 触发：震动反馈；移动/松手即取消，
 // 触发后吞掉随后的 click，避免长按误触发卡片内部交互（开关/滑条等）。
 let lp = null // { timer, x, y, fired }
 function onCardLongPressStart(e) {
@@ -609,7 +629,6 @@ function onCardLongPressStart(e) {
     lastDragEnd = Date.now() // 吞掉随后派发的 click
     editing.value = true
     try { navigator.vibrate?.(30) } catch { /* 不支持则忽略 */ }
-    toast('已进入编辑模式：底部「添加卡片」可新增卡片，按住卡片可拖动位置，点「完成」保存')
   }, 500)
   window.addEventListener('pointermove', onCardLongPressMove)
   window.addEventListener('pointerup', onCardLongPressEnd)
@@ -806,6 +825,15 @@ async function saveLayout() {
     toast(isApkEdit.value ? `${apkEditLabel.value} 仪表盘已保存，该机 App 将自动刷新` : '仪表盘已保存')
   } catch { /* 静默 */ }
 }
+// 取消编辑：放弃本次修改并退出编辑模式。
+// 有改动时先确认，确认后回滚到进入编辑时的快照（loadedSnapshot），不写库不通知其他端。
+function cancelEdit() {
+  const dirty = loadedSnapshot && serializeDashboard(pages.value) !== loadedSnapshot
+  if (dirty && !window.confirm('放弃本次编辑的修改并退出吗？')) return
+  if (dirty) applyDashboardJson(loadedSnapshot) // 回滚布局（页/卡片/顺序全部恢复）
+  loadedSnapshot = ''
+  editing.value = false
+}
 // 重置为默认仪表盘：必须立即落库，否则刷新后又从后端读到旧布局
 async function resetLayout() {
   const targetName = isApkEdit.value ? apkEditLabel.value : '当前'
@@ -869,6 +897,27 @@ let lastLocalSave = 0
 watch(dashboardRev, () => {
   if (editing.value || Date.now() - lastLocalSave < 4000) return
   loadLayout() // 服务端权威值覆盖本地（含缓存落盘），与首启同一条路径
+})
+
+// 回前台补偿刷新：App 在后台时 WebView 被冻结/节流，WS 断开且广播不重放，
+// 错过「其它端保存仪表盘」的通知；回前台时按同样守卫补拉一次服务端最新布局，
+// 修复「必须杀掉进程重进才能看到新布局」的问题。
+function onVisibilityRefresh() {
+  if (document.hidden) return
+  if (editing.value || Date.now() - lastLocalSave < 4000) return
+  loadLayout()
+}
+
+// 手机端改了列数配置（设置 → 仪表盘列数）：服务端广播 dashboard_apk_cols_<deviceId>，
+// 正在代管该设备的网页端编辑器实时重读，预览列数与真机保持一致
+watch(apkColsRev, async () => {
+  if (!isApkEdit.value) return
+  try {
+    const { data } = await getPrefs({ force: true })
+    const cv = parseInt((data || {})[colsKeyFor(editTargetDevice.value)] || '', 10)
+    const next = (cv >= 2 && cv <= 8) ? cv : 3
+    if (next !== apkCols.value) { apkCols.value = next; nextTick(measure) }
+  } catch { /* 离线忽略 */ }
 })
 
 // 智能排版：用当前真实实体自动设计当前页（不直接落库，用户点「完成」才保存）
@@ -1139,6 +1188,7 @@ onMounted(async () => {
   // 每次都全网格重测重排，节流到每帧一次避免抖动
   window.addEventListener('resize', onResize)
   document.addEventListener('fullscreenchange', onFsChange)
+  document.addEventListener('visibilitychange', onVisibilityRefresh) // 回前台补偿拉取布局（后台错过 WS 广播）
   mqDesktop = window.matchMedia('(min-width: 768px)')
   isDesktop.value = mqDesktop.matches
   mqDesktop.addEventListener('change', onMqDesktop)
@@ -1177,6 +1227,7 @@ function onResize() {
 onBeforeUnmount(() => {
   window.removeEventListener('resize', onResize)
   document.removeEventListener('fullscreenchange', onFsChange)
+  document.removeEventListener('visibilitychange', onVisibilityRefresh)
   if (mqDesktop) mqDesktop.removeEventListener('change', onMqDesktop)
   if (mqCanEdit) mqCanEdit.removeEventListener('change', onMqCanEdit)
   ui.dashEditing = false

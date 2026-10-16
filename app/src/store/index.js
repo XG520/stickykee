@@ -162,6 +162,9 @@ export const entityStates = reactive({})
 export const entityList = shallowRef([])
 // 仪表盘远程变更版本号：本人任一设备保存/接受分享后自增，HomeView watch 它重载布局
 export const dashboardRev = ref(0)
+// 手机端列数偏好远程变更版本号：dashboard_apk_cols_<deviceId> 写入后自增，
+// 正在代管该设备的网页端编辑器据此实时更新预览列数（不触发布局重载）
+export const apkColsRev = ref(0)
 
 // 实体订阅回调（实体变化时通知各视图）。
 const watchers = new Set()
@@ -478,6 +481,8 @@ function connectWS() {
         const isLayout = (k) => k === 'dashboard' ||
           (k.startsWith('dashboard_apk') && !k.startsWith('dashboard_apk_cols'))
         if (keys.length === 0 || keys.some(isLayout)) dashboardRev.value++
+        // 列数偏好键单独递增 apkColsRev：不触发布局重载，仅供网页端编辑器实时更新预览列数
+        if (keys.some((k) => k.startsWith('dashboard_apk_cols'))) apkColsRev.value++
       }
       // 通话信令：动态 import 避免 store ↔ call 模块循环依赖
       else if (m.type === 'call') import('@/utils/call').then((c) => c.handleCallEvent(m))
