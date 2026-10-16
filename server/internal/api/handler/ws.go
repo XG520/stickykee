@@ -156,7 +156,11 @@ func (h *WS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Type string `json:"type"`
 		}
 		if err := json.Unmarshal(raw, &probe); err == nil && probe.Type == "ping" {
-			_ = writeJSON(conn, map[string]any{"type": "pong"})
+			// pong 回复也必须经写通道扇出——gorilla/websocket 禁止并发 WriteMessage；
+			// 直接 writeJSON 会与写协程的 hub 广播 / ping 并发，触发 panic。
+			if b, merr := json.Marshal(map[string]any{"type": "pong"}); merr == nil {
+				client.Send(b)
+			}
 		}
 	}
 	<-writeDone
