@@ -63,6 +63,10 @@ var globalKeys = []string{"result"}
 const siteNameKey = "site_name"
 const defaultSiteName = "糯米"
 
+// siteIconKey 系统图标（Material Symbol 名，全局 prefs）。
+const siteIconKey = "site_icon"
+const defaultSiteIcon = "bolt"
+
 // 读取当前用户（未登录时 readOnly 场景用空用户名）。
 func (h *Prefs) currentUser(r *http.Request) (string, bool) {
 	id, ok := auth.From(r.Context())
@@ -214,6 +218,52 @@ func (h *Prefs) PutSiteName(w http.ResponseWriter, r *http.Request) {
 	}
 	WriteJSON(w, 200, map[string]string{"name": name})
 }
+
+// SiteIcon GET /site-icon 公开：返回系统显示图标（Material Symbol 名）。
+func (h *Prefs) SiteIcon(w http.ResponseWriter, r *http.Request) {
+	v, _ := h.repo.GetPref(r.Context(), siteIconKey)
+	if v == "" {
+		v = defaultSiteIcon
+	}
+	WriteJSON(w, 200, map[string]string{"icon": v})
+}
+
+// PutSiteIcon PUT /site-icon 管理员：修改系统显示图标。
+func (h *Prefs) PutSiteIcon(w http.ResponseWriter, r *http.Request) {
+	if !auth.IsAdmin(r.Context()) {
+		WriteErr(w, 403, "forbidden", "仅管理员可修改系统图标")
+		return
+	}
+	var body struct {
+		Icon string `json:"icon"`
+	}
+	if err := DecodeBody(r, &body); err != nil {
+		WriteErr(w, 400, "bad_request", "bad payload")
+		return
+	}
+	icon := strings.TrimSpace(body.Icon)
+	if icon == "" {
+		WriteErr(w, 400, "bad_request", "图标不能为空")
+		return
+	}
+	if utf8.RuneCountInString(icon) > 40 {
+		WriteErr(w, 400, "bad_request", "图标名称过长")
+		return
+	}
+	// Material Symbol 名只允许小写字母、数字与下划线/连字符。
+	for _, r := range icon {
+		if !(r == '_' || r == '-' || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')) {
+			WriteErr(w, 400, "bad_request", "图标名称格式不合法（仅小写字母、数字、下划线、连字符）")
+			return
+		}
+	}
+	if err := h.repo.SetPref(r.Context(), siteIconKey, icon); err != nil {
+		WriteErr(w, 500, "internal", err.Error())
+		return
+	}
+	WriteJSON(w, 200, map[string]string{"icon": icon})
+}
+
 func (h *Prefs) Put(w http.ResponseWriter, r *http.Request) {
 	var body map[string]string
 	if err := DecodeBody(r, &body); err != nil {
@@ -298,9 +348,9 @@ func (h *Prefs) Put(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		default:
-			// site_name 仅允许经 PUT /site-name 由管理员修改，普通用户禁止走通用通道。
-			if k == siteNameKey {
-				WriteErr(w, 403, "forbidden", "系统名称仅管理员可修改")
+			// site_name / site_icon 仅允许经专用接口由管理员修改，普通用户禁止走通用通道。
+			if k == siteNameKey || k == siteIconKey {
+				WriteErr(w, 403, "forbidden", "系统名称与图标仅管理员可修改")
 				return
 			}
 			// 全局（系统级）：写全局 prefs
@@ -363,7 +413,7 @@ func PublicCORS(next http.HandlerFunc) http.HandlerFunc {
 
 // Version 后端版本号：随发布递增，经 healthz 暴露，供前端设置页与 APK 壳页
 // 确认当前连接的服务端版本（排查「更新没生效」类问题）。
-const Version = "1.4.8"
+const Version = "1.5.0"
 
 // Healthz 存活探针（公开：附带后端版本号）。
 func (Health) Healthz(w http.ResponseWriter, r *http.Request) {

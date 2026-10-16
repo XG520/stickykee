@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { auth, loadMe, siteName, loadSiteName } from '@/store'
+import { auth, loadMe, siteName, loadSiteName, loadSiteIcon } from '@/store'
 import { isApk, activeAddress } from '@/utils/serverConfig'
 
 const routes = [
@@ -60,7 +60,7 @@ router.beforeEach(async (to) => {
 })
 
 router.afterEach((to) => {
-  loadSiteName() // 每次切页兜底拉取（内部静默失败，保持缓存值）
+  loadSiteName(); loadSiteIcon() // 每次切页兜底拉取（内部静默失败，保持缓存值）
   document.title = to.meta.title ? `${to.meta.title} · ${siteName.value}` : siteName.value
 })
 

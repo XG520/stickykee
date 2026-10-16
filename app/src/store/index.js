@@ -62,6 +62,33 @@ export async function saveSiteName(name) {
   return n
 }
 
+// ---- 系统显示图标（管理员可改，Material Symbol 名，存后端全局 prefs.site_icon） ----
+const SITE_ICON_CACHE_KEY = 'hc_site_icon'
+let cachedSiteIcon = 'bolt'
+try { cachedSiteIcon = localStorage.getItem(SITE_ICON_CACHE_KEY) || 'bolt' } catch { /* 隐私模式 */ }
+export const siteIcon = ref(cachedSiteIcon)
+
+export async function loadSiteIcon() {
+  try {
+    const { data } = await api.getSiteIcon()
+    const v = String(data?.icon || '').trim()
+    if (v) {
+      siteIcon.value = v
+      try { localStorage.setItem(SITE_ICON_CACHE_KEY, v) } catch { /* 忽略 */ }
+    }
+  } catch { /* 离线保持缓存值 */ }
+}
+
+export async function saveSiteIcon(icon) {
+  const { data } = await api.putSiteIcon(icon)
+  const v = String(data?.icon || '').trim()
+  if (v) {
+    siteIcon.value = v
+    try { localStorage.setItem(SITE_ICON_CACHE_KEY, v) } catch { /* 忽略 */ }
+  }
+  return v
+}
+
 // remember=true（「保持登录」）：令牌写入 localStorage，关闭浏览器/APP 后仍保持登录；
 // 否则写入 sessionStorage，仅当前会话有效。写入前清掉另一处的残留，避免两份令牌不一致。
 function setToken(t, remember = false) {

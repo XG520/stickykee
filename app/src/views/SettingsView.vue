@@ -883,6 +883,43 @@
       </div>
       <p v-if="siteNameMsg" class="mt-2 text-xs font-body" :class="siteNameErr ? 'text-error' : 'text-success'">{{ siteNameMsg }}</p>
     </section>
+    <!-- 系统图标（全局）：Material Symbol 名，改后顶栏/登录页同步更新 -->
+    <section id="sec-sysicon" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28 mt-4">
+      <div class="flex items-center gap-2.5 mb-3">
+        <div class="w-8 h-8 rounded-xl bg-accent/20 flex items-center justify-center">
+          <span class="material-symbols-outlined text-accent text-lg">palette</span>
+        </div>
+        <div>
+          <h2 class="font-headline text-on-background text-base font-semibold">系统图标</h2>
+          <p class="text-muted text-xs mt-0.5">顶栏、登录页显示的图标（Material Symbol 名称）</p>
+        </div>
+      </div>
+      <div class="flex gap-3 items-center">
+        <div class="flex-1 min-w-0 flex gap-2">
+          <input v-model="siteIconDraft" maxlength="40" placeholder="例如：bolt" @input="siteIconDraft = siteIconDraft.toLowerCase()"
+            class="flex-1 min-w-0 bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors font-mono">
+          <button @click="saveSiteIcon" :disabled="siteIconSaving"
+            class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-on-primary text-sm font-semibold transition-all disabled:opacity-50 flex items-center gap-1.5">
+            <span class="material-symbols-outlined text-base">save</span> 保存
+          </button>
+        </div>
+        <div class="w-11 h-11 rounded-xl bg-primary flex items-center justify-center shadow shrink-0" title="预览">
+          <span class="material-symbols-outlined text-on-primary text-xl">{{ siteIconDraft || 'bolt' }}</span>
+        </div>
+      </div>
+      <!-- 常用图标快捷按钮 -->
+      <div class="mt-3">
+        <div class="text-muted text-xs mb-1.5">常用图标</div>
+        <div class="flex flex-wrap gap-2">
+          <button v-for="s in SITE_ICON_SUGGESTIONS" :key="s" @click="siteIconDraft = s"
+            class="w-9 h-9 rounded-lg bg-background border border-border flex items-center justify-center hover:border-primary hover:bg-primary/10 transition-colors"
+            :title="s">
+            <span class="material-symbols-outlined text-on-surface text-base">{{ s }}</span>
+          </button>
+        </div>
+      </div>
+      <p v-if="siteIconMsg" class="mt-2 text-xs font-body" :class="siteIconErr ? 'text-error' : 'text-success'">{{ siteIconMsg }}</p>
+    </section>
     <section id="sec-users" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
       <div class="flex items-center gap-2.5 mb-4">
         <div class="w-8 h-8 rounded-xl bg-info/20 flex items-center justify-center">
@@ -990,7 +1027,7 @@ import api, { getToken } from '@/api'
 import { listDevices, ensureDevice, renameDevice, deleteDevice, getDeviceId, currentDevice, readCache } from '@/utils/device'
 import { availableSensors, unavailableReason, startSensorMonitor, buildReportPayload, isNativeSensorMode } from '@/utils/sensors'
 import { showNotify, setBlackout, setScreenBrightness, setScreenWake, blackout, saveBlackoutDismiss, watchAmbientLight } from '@/utils/browserCommands'
-import { loadInstances, switchInstance, changePassword, authLogout, auth, store, backendOnline, haTokenConfigured, haTokenKnown, saveHAToken, siteName, loadSiteName, saveSiteName as persistSiteName } from '@/store'
+import { loadInstances, switchInstance, changePassword, authLogout, auth, store, backendOnline, haTokenConfigured, haTokenKnown, saveHAToken, siteName, siteIcon, loadSiteName, loadSiteIcon, saveSiteName as persistSiteName, saveSiteIcon as persistSiteIcon } from '@/store'
 import { applyTheme, resolveTheme, THEMES, CUSTOM_COLOR_KEYS, DEFAULT_CUSTOM_COLORS } from '@/themes'
 import { getPrefs, putPrefs } from '@/utils/prefs'
 import { colsKeyFor } from '@/utils/dashboard'
@@ -1541,6 +1578,29 @@ async function saveSiteName() {
   }
 }
 
+// ---- 系统图标（管理员）----
+const SITE_ICON_SUGGESTIONS = ['bolt', 'home', 'smart_toy', 'cloud', 'leaf', 'star', 'favorite', 'memory', 'devices', 'widgets', 'auto_awesome', 'rocket_launch']
+const siteIconDraft = ref(siteIcon.value)
+const siteIconSaving = ref(false)
+const siteIconMsg = ref('')
+const siteIconErr = ref(false)
+async function saveSiteIcon() {
+  const v = siteIconDraft.value.trim().toLowerCase()
+  if (!v) { siteIconMsg.value = '图标不能为空'; siteIconErr.value = true; return }
+  siteIconSaving.value = true
+  siteIconMsg.value = ''
+  try {
+    await persistSiteIcon(v)
+    siteIconMsg.value = '已保存'
+    siteIconErr.value = false
+  } catch (e) {
+    siteIconMsg.value = e?.response?.data?.error || e.message || '保存失败'
+    siteIconErr.value = true
+  } finally {
+    siteIconSaving.value = false
+  }
+}
+
 async function loadUsers() {
   if (!auth.isAdmin) return
   try { users.value = (await api.listUsers()).data || [] } catch { /* 静默 */ }
@@ -1854,6 +1914,7 @@ onMounted(() => {
   if (isApk) window.addEventListener('stickykee-apk', onApkEvent) // 应用内更新进度
   if (canInAppUpdate) { refreshNotif(); document.addEventListener('visibilitychange', onVisNotif) } // 通知权限状态（从详情页回来刷新）
   loadSiteName().then(() => { siteNameDraft.value = siteName.value }) // 同步后端权威值
+  loadSiteIcon().then(() => { siteIconDraft.value = siteIcon.value })
   stopLightWatch = watchAmbientLight() // 面板打开期间持续读环境光，用于「实时值」显示
 })
 onUnmounted(() => {

@@ -110,8 +110,9 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 		// 加密：公钥公开下发（公钥本就可公开）；握手需登录，在下方鉴权组内。
 		r.Get("/crypto/pubkey", cryptoHandler.PubKey)
 
-		// 系统显示名称：公开读取（登录页展示用）；修改需管理员，在鉴权组内。
+		// 系统显示名称 / 图标：公开读取（登录页/启动页展示用）；修改需管理员。
 		r.Get("/site-name", prefs.SiteName)
+		r.Get("/site-icon", prefs.SiteIcon)
 
 		// 以下接口均要求登录（Group 创建独立子路由，先注册中间件再注册路由）。
 		r.Group(func(r chi.Router) {
@@ -155,6 +156,7 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 			r.Get("/prefs", prefs.Get)
 			r.Put("/prefs", prefs.Put)
 			r.Put("/site-name", prefs.PutSiteName)
+			r.Put("/site-icon", prefs.PutSiteIcon)
 
 			// App 安装包：需登录（防外链盗刷下载）；前端经 fetch 携带令牌取流保存。
 			r.Get("/app/info", handler.AppInfo)
