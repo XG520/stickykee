@@ -99,23 +99,6 @@
             btnVisible ? 'opacity-100' : 'opacity-0 pointer-events-none focus-within:opacity-100 focus-within:pointer-events-auto'
           ]">
           <template v-if="editing">
-            <!-- 网页端编辑目标切换：编辑本机网页布局，或代管某台手机 App 布局（dashboard_apk_<deviceId>） -->
-            <div v-if="!isApk" class="shrink-0 flex items-center rounded-xl border border-border bg-surface-alt p-0.5 mr-0.5"
-              role="group" aria-label="选择编辑目标">
-              <button @click="switchEditTarget('')"
-                class="h-9 px-2.5 rounded-lg text-xs font-semibold transition-colors"
-                :class="!isApkEdit ? 'bg-primary text-on-primary shadow-sm' : 'text-muted hover:text-on-surface'"
-                title="编辑网页端仪表盘（本页）">
-                <span class="inline-flex items-center gap-1"><span class="material-symbols-outlined text-sm" aria-hidden="true">desktop_windows</span>网页端</span>
-              </button>
-              <select v-if="apkDevices.length" :value="editTargetDevice" @change="onSelectApkDevice"
-                class="h-9 pl-2 pr-1 rounded-lg text-xs font-semibold bg-transparent max-w-[10rem] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 cursor-pointer"
-                :class="isApkEdit ? 'text-primary' : 'text-muted hover:text-on-surface'"
-                title="选择要编辑的手机 App 设备（按该机真实列数预览，保存后该机自动刷新）">
-                <option value="">手机端…</option>
-                <option v-for="d in apkDevices" :key="d.device_id" :value="d.device_id">{{ d.name }}</option>
-              </select>
-            </div>
             <!-- 触控规范：统一 44px 高度、圆角与按压反馈；智能排版为主级动作，完成为主色实心；
                  窄屏：导出/导入/重置平铺进横向滚动条；桌面端：收纳进「⋯更多」下拉 -->
             <button @click="smartArrange" class="shrink-0 whitespace-nowrap inline-flex items-center justify-center h-11 px-2 sm:px-3.5 rounded-xl bg-surface-alt border border-border text-muted hover:text-on-surface hover:border-primary/40 text-sm transition-all active:scale-95" title="按当前 HA 实体自动设计并摆放卡片">
@@ -166,11 +149,8 @@
             </button>
           </template>
           <template v-else>
-            <!-- 非编辑态：定位自动执行（onMounted 每会话一次），全屏用顶栏按钮，这里只留编辑入口 -->
-            <button v-if="!isApk" @click="startEditApk" class="inline-flex items-center justify-center h-11 px-4 rounded-xl bg-surface-alt border border-border hover:border-primary/40 text-sm text-on-surface transition-all active:scale-95" title="编辑手机 App 上显示的仪表盘（按各机真实列数预览，保存后该机自动刷新）" aria-label="编辑手机端仪表盘">
-              <span class="material-symbols-outlined text-lg" aria-hidden="true">smartphone</span>
-              <span class="hidden sm:inline">编辑手机端</span>
-            </button>
+            <!-- 非编辑态：定位自动执行（onMounted 每会话一次），全屏用顶栏按钮。
+                 Web 端点「编辑仪表盘」进入双栏对照（左电脑/右手机）；APK 端长按卡片进入编辑 -->
             <button @click="editing = true" class="inline-flex items-center justify-center h-11 px-4 rounded-xl bg-surface-alt border border-border hover:border-primary/40 text-sm text-on-surface transition-all active:scale-95" title="编辑仪表盘" aria-label="编辑仪表盘">
               <span class="material-symbols-outlined text-lg" aria-hidden="true">edit_square</span>
               <span class="hidden sm:inline">编辑仪表盘</span>
@@ -287,9 +267,11 @@
     </div>
 
     <!-- 网格仪表盘：卡片从左向右排列，放不下的自动换到下一行；贴合视口不滚动
-         加载完成（loaded）后才渲染，避免先闪现默认仪表盘 -->
+         加载完成（loaded）后才渲染，避免先闪现默认仪表盘。
+         Web 编辑态：外层 hc-dual-grid 同时容纳左栏（电脑）与右侧 ApkDashPane（手机） -->
     <EmptyState v-if="loaded && !cards.length && !editing" icon="dashboard_customize" title="空仪表盘" desc="点击「编辑仪表盘」开始添加卡片，或使用智能排版自动生成布局" :cta-label="canEdit ? '编辑仪表盘' : ''" cta-icon="edit_square" @cta="editing = true" />
-    <div v-if="loaded" ref="gridEl" class="dashboard-grid" :class="{ 'hc-grid-editing': editing, 'hc-phone-preview': isApkEdit }" :style="gridStyle"
+    <div v-if="loaded" :class="{ 'hc-dual-grid': dualPane }">
+    <div ref="gridEl" class="dashboard-grid" :class="{ 'hc-grid-editing': editing, 'hc-phone-preview': isApkEdit, 'min-w-0': dualPane }" :style="gridStyle"
       @touchstart.passive="onSwipeStart" @touchend="onSwipeEnd">
       <div
         v-for="card in cards"
@@ -307,11 +289,37 @@
         @contextmenu="onCardContextMenu"
         @click.capture="onHolderClickCapture"
       >
+        <!-- Web 编辑态：拖到右侧手机仪表盘即复制一份（新 uid）；触屏直接点按也可复制。
+             pointerdown.stop 阻止冒泡到 holder，避免启动左栏的卡片换位拖拽 -->
+        <button
+          v-if="dualPane"
+          type="button"
+          draggable="true"
+          class="hc-copy-apk-btn"
+          title="复制到手机 App 仪表盘（拖动到右侧，或直接点击）"
+          aria-label="复制到手机 App 仪表盘"
+          @pointerdown.stop
+          @click.stop="copyCardToApk(card)"
+          @dragstart="onCopyDragStart($event, card)"
+        >
+          <span class="material-symbols-outlined" aria-hidden="true">smartphone</span>
+          <span class="hc-copy-apk-plus"><span class="material-symbols-outlined" aria-hidden="true">add</span></span>
+        </button>
         <!-- 卡片实际内容：基准尺寸渲染 + zoom 等比缩放（窗口缩放不影响内部布局/换行） -->
         <div class="hc-card-zoom" :style="zoomStyle(card)">
           <CodeCard :card="card" :scope-id="'card-' + card.uid" @device-drawer="openDeviceDrawer" />
         </div>
       </div>
+    </div>
+    <!-- 右侧手机 App 仪表盘面板：独立加载/保存 dashboard_apk_<deviceId>，接收拖入卡片 -->
+    <ApkDashPane
+      v-if="dualPane"
+      ref="apkPaneEl"
+      class="hc-dual-apk"
+      :devices="apkDevices"
+      @device-drawer="openDeviceDrawer"
+      @toast="toast"
+    />
     </div>
 
     <!-- 卡片工作室：全屏编辑器（实时预览 + 实体/尺寸配置 + HTML/CSS/JS 代码编辑） -->
@@ -364,6 +372,7 @@ import { isApk } from '@/utils/serverConfig'
 import { syncCurrentLocation, locErrorMessage, trackingEnabled } from '@/utils/location'
 import CodeCard from '@/components/cards/CodeCard.vue'
 import CardEditor from '@/components/cards/CardEditor.vue'
+import ApkDashPane from '@/components/ApkDashPane.vue'
 import { cardDefaults } from '@/components/cards/defaults'
 import EmptyState from '@/components/EmptyState.vue'
 import { newCard, newPage, migrateDashboard, serializeDashboard, downloadDashboard, parseImportPayload, autoComposeHomepage, LAYOUT_KEY_WEB, LAYOUT_KEY_APK, layoutKeyFor, colsKeyFor } from '@/utils/dashboard'
@@ -726,6 +735,24 @@ const ownDeviceId = ref('') // 本机 deviceId（APK 端用于拼布局键；网
 const apkDevices = ref([]) // 本账号已注册的全部设备（网页端编辑器设备下拉用）
 const apkCols = ref(3) // 选中手机设备的真实列数（从 prefs dashboard_apk_cols_<deviceId> 读，无则 3）
 const isApkEdit = computed(() => !isApk && editTargetDevice.value !== '')
+// Web 端编辑模式：左电脑仪表盘 + 右手机 App 仪表盘双栏对照（APK 端仍为单栏编辑本机布局）
+const dualPane = computed(() => !isApk && editing.value)
+const apkPaneEl = ref(null)
+// 跨栏复制允许携带的卡片字段（uid 不复制——ApkDashPane 克隆时生成新 uid，避免双端 CSS 作用域冲突）
+const COPY_FIELDS = ['type', 'w', 'h', 'html', 'css', 'js', 'entity_id', 'entity_ids', 'icon', 'avatar', 'title']
+// 左栏卡片手柄 HTML5 拖拽开始：写入卡片快照供右侧手机面板 drop 时克隆
+function onCopyDragStart(e, card) {
+  try {
+    const payload = {}
+    for (const k of COPY_FIELDS) if (card[k] !== undefined) payload[k] = card[k]
+    e.dataTransfer.setData('application/x-hc-card', JSON.stringify(payload))
+    e.dataTransfer.effectAllowed = 'copy'
+  } catch { /* 个别浏览器禁用 dataTransfer 时忽略，仍可点击手柄复制 */ }
+}
+// 无拖拽环境（触屏）兜底：点手柄直接把卡片复制到右侧手机仪表盘当前页末尾
+function copyCardToApk(card) {
+  apkPaneEl.value?.dropCard(card)
+}
 const activeDashKey = computed(() => {
   if (isApk) return layoutKeyFor(ownDeviceId.value) // 手机端：dashboard_apk_<本机>
   if (editTargetDevice.value) return layoutKeyFor(editTargetDevice.value) // 网页代管：dashboard_apk_<选中>
@@ -821,6 +848,12 @@ async function saveLayout() {
   try {
     await putPrefs({ [dashKey]: json })
     cacheLayout(json)
+    // 双栏模式：右栏手机仪表盘若有未保存修改，提示一并保存（否则退出后面板销毁、修改丢失）
+    if (dualPane.value && apkPaneEl.value?.dirty) {
+      if (window.confirm('右侧手机 App 仪表盘还有未保存的修改，是否一并保存？')) {
+        await apkPaneEl.value.save()
+      }
+    }
     editing.value = false
     toast(isApkEdit.value ? `${apkEditLabel.value} 仪表盘已保存，该机 App 将自动刷新` : '仪表盘已保存')
   } catch { /* 静默 */ }
@@ -829,7 +862,12 @@ async function saveLayout() {
 // 有改动时先确认，确认后回滚到进入编辑时的快照（loadedSnapshot），不写库不通知其他端。
 function cancelEdit() {
   const dirty = loadedSnapshot && serializeDashboard(pages.value) !== loadedSnapshot
-  if (dirty && !window.confirm('放弃本次编辑的修改并退出吗？')) return
+  const apkDirty = dualPane.value && !!apkPaneEl.value?.dirty
+  if ((dirty || apkDirty) && !window.confirm(
+    apkDirty
+      ? '右侧手机 App 仪表盘有未保存的修改，退出将一并丢弃，确定放弃并退出吗？'
+      : '放弃本次编辑的修改并退出吗？'
+  )) return
   if (dirty) applyDashboardJson(loadedSnapshot) // 回滚布局（页/卡片/顺序全部恢复）
   loadedSnapshot = ''
   editing.value = false
@@ -1299,6 +1337,72 @@ onBeforeUnmount(() => {
   border: 1px solid var(--hc-border, rgba(128, 128, 128, 0.28));
   border-radius: 28px;
   box-shadow: 0 0 0 6px rgba(128, 128, 128, 0.08), 0 18px 48px rgba(0, 0, 0, 0.18);
+}
+/* ---- Web 双栏对照编辑：左电脑仪表盘 / 右手机 App 仪表盘 ---- */
+.hc-dual-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+/* 窄屏（含触屏）：上下堆叠，右栏给固定高度，内部自滚 */
+.hc-dual-apk { height: 40rem; }
+@media (min-width: 1024px) {
+  .hc-dual-grid { grid-template-columns: minmax(0, 1fr) 24rem; gap: 1.5rem; }
+  .hc-dual-apk {
+    position: sticky;
+    top: 5.25rem;
+    height: calc(100vh - 6.5rem); /* 右栏视口级高度：头部/页签固定，手机框区域内部滚动 */
+  }
+}
+@media (min-width: 1366px) {
+  .hc-dual-grid { grid-template-columns: minmax(0, 1fr) 26rem; }
+}
+/* 左栏卡片右上角「复制到手机」手柄：可 HTML5 拖放到右栏，点击为触屏兜底 */
+.hc-copy-apk-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 30;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  border: 1px solid rgb(var(--c-border));
+  background: rgb(var(--c-surface) / .88);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  color: rgb(var(--c-primary));
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .14);
+  cursor: grab;
+  opacity: 0;
+  transition: opacity .15s ease, transform .15s ease, background .15s ease;
+}
+.hc-copy-apk-btn:active { cursor: grabbing; }
+.hc-copy-apk-btn .material-symbols-outlined { font-size: 20px; line-height: 1; }
+.hc-copy-apk-plus {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background: rgb(var(--c-primary));
+  color: rgb(var(--c-on-primary));
+  border: 1.5px solid rgb(var(--c-surface));
+}
+.hc-copy-apk-plus .material-symbols-outlined { font-size: 12px !important; line-height: 1; }
+.hc-card-holder:hover .hc-copy-apk-btn,
+.hc-card-selected .hc-copy-apk-btn { opacity: 1; }
+.hc-copy-apk-btn:hover { transform: scale(1.08); background: rgb(var(--c-primary) / .12); }
+/* 触屏无 hover：手柄常显 */
+@media (hover: none) {
+  .hc-copy-apk-btn { opacity: .92; }
 }
 /* 卡片过多时跳过视口外卡片的布局与绘制（滚入视口才渲染，滚出即回收渲染开销）。
    地图卡除外：其内部按容器尺寸测量定位，初始隐藏会导致尺寸为 0 */
