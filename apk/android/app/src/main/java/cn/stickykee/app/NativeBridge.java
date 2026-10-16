@@ -1112,7 +1112,7 @@ public class NativeBridge {
     // v2：旧渠道由历史版本创建，部分 ROM（MIUI）删除同 ID 渠道再重建会沿用旧的
     // 无声/无震动配置（渠道墓碑机制），导致「修复无声」不生效；升 ID 强制全新渠道，
     // 保证升级用户的消息通知恢复声音与震动
-    private static final String NOTIF_CHANNEL_ID = "im_messages_v2";
+    private static final String NOTIF_CHANNEL_ID = "im_messages_v3";
     private static final int NOTIF_ID = 9001;
     private static final int NOTIF_PERM_CODE = 4301;
 
@@ -1243,15 +1243,23 @@ public class NativeBridge {
                                 ch.setVibrationPattern(new long[]{0, 350, 250, 350});
                                 ch.enableVibration(true);
                                 fNm.createNotificationChannel(ch);
-                            } else if (ch.getSound() == null) {
-                                fNm.deleteNotificationChannel(chId);
-                                NotificationChannel fresh = new NotificationChannel(chId, "消息通知",
-                                    NotificationManager.IMPORTANCE_HIGH);
-                                fresh.setDescription("收到新消息时通知");
-                                fresh.setSound(Settings.System.DEFAULT_NOTIFICATION_URI, attrs);
-                                fresh.setVibrationPattern(new long[]{0, 350, 250, 350});
-                                fresh.enableVibration(true);
-                                fNm.createNotificationChannel(fresh);
+                            } else {
+                                // 渠道已存在但配置被系统/ROM/用户改坏：声音被关 或 重要性被降
+                                // （IMPORTANCE_LOW 本身就是无声无横幅）。任一条件满足都删了重建。
+                                boolean needRebuild = false;
+                                if (ch.getSound() == null) needRebuild = true;
+                                if (ch.getImportance() < NotificationManager.IMPORTANCE_HIGH) needRebuild = true;
+                                if (!ch.shouldVibrate()) needRebuild = true;
+                                if (needRebuild) {
+                                    fNm.deleteNotificationChannel(chId);
+                                    NotificationChannel fresh = new NotificationChannel(chId, "消息通知",
+                                        NotificationManager.IMPORTANCE_HIGH);
+                                    fresh.setDescription("收到新消息时通知");
+                                    fresh.setSound(Settings.System.DEFAULT_NOTIFICATION_URI, attrs);
+                                    fresh.setVibrationPattern(new long[]{0, 350, 250, 350});
+                                    fresh.enableVibration(true);
+                                    fNm.createNotificationChannel(fresh);
+                                }
                             }
                         }
                     } else {
@@ -1263,7 +1271,7 @@ public class NativeBridge {
                     PendingIntent pi = PendingIntent.getActivity(ctx, 0, intent,
                         PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
                     NotificationCompat.Builder b = new NotificationCompat.Builder(ctx, chId)
-                        .setSmallIcon(android.R.drawable.ic_dialog_info)
+                        .setSmallIcon(android.R.drawable.ic_dialog_alert)
                         .setContentTitle(title == null ? "新消息" : title)
                         .setContentText(body == null ? "" : body)
                         .setAutoCancel(true)
