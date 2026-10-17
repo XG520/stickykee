@@ -43,12 +43,10 @@ COPY --from=web /web/dist ./dist
 #   $ mkdir -p release && cp apk/android/app/build/outputs/apk/debug/app-debug.apk release/stickykee-app.apk
 # 无 APK 时此 COPY 会构建失败——按需注释掉下行与 SN_APK_FILE。
 COPY release/stickykee-app.apk /var/apk/stickykee-app.apk
-# APK 版本 sidecar（可选）：打包流程会从 build.gradle 提取 versionName 写入
-# release/app_version.txt；若不存在（仅后端构建或未打 APK），后端会 fallback 到
-# 自身 Version，不影响功能。用 RUN 条件复制避免缺失时构建失败。
-RUN if [ -f release/app_version.txt ]; then \
-      cp release/app_version.txt /var/apk/app_version.txt; \
-    fi
+# APK 版本 sidecar：打包流程从 build.gradle 提取 versionName 写入
+# release/app_version.txt，后端 /api/v1/app/info 读它向 APK 客户端发布新版本号。
+# 必须用 COPY 把构建上下文里的文件带进本层（RUN 里直接判断宿主路径永远不存在）。
+COPY release/app_version.txt /var/apk/app_version.txt
 # 数据库、聊天图片（/data/uploads/im）、图标缓存（/data/icons）都在 /data 下
 ENV SN_HTTP_ADDR=:8080 \
     SN_DB_PATH=/data/stickynuo.db \
