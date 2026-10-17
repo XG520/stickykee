@@ -26,6 +26,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.telephony.TelephonyManager;
 
 import androidx.core.content.ContextCompat;
@@ -251,6 +252,11 @@ public final class NativeSensorReporter {
                 // 只采信卫星 fix：PASSIVE 也可能送来 network/fused 结果，
                 // 本项目位置严禁网络定位顶替（地址/坐标一致性）。
                 if (!LocationManager.GPS_PROVIDER.equals(loc.getProvider())) return;
+                // requestLocationUpdates 注册瞬间系统可能投递几十分钟前的缓存 fix。
+                // 一旦让它进 latestFix，latestFixAt 取的是「接收时刻」，后续 2 分钟
+                // 新鲜度检查全部失效——出门后冷启动时旧的家坐标会被当实时点推给
+                // device_tracker。只接受 fix 自身时间戳 10s 内的新鲜点。
+                if (!isFreshGpsFix(loc)) return;
                 Location prev = latestFix;
                 if (prev == null || loc.getTime() >= prev.getTime()) {
                     latestFix = loc;
@@ -913,12 +919,30 @@ public final class NativeSensorReporter {
         return null; // 无新鲜 fix：本次跳过，下一心跳 / 前台 GPS watch（约 2s 一个）会补报
     }
 
+    /** fix 是否为 10s 内的新鲜卫星定位（elapsedRealtimeNanos 基准，不受墙钟跳变影响）。 */
+    private static boolean isFreshGpsFix(Location loc) {
+        if (loc == null) return false;
+        try {
+            long fixNanos = loc.getElapsedRealtimeNanos();
+            if (fixNanos <= 0L) return false;
+            long ageMs = (SystemClock.elapsedRealtimeNanos() - fixNanos) / 1_000_000L;
+            return ageMs >= 0L && ageMs <= 10_000L;
+        } catch (Throwable t) {
+            long ageMs = System.currentTimeMillis() - loc.getTime();
+            return ageMs >= 0L && ageMs <= 10_000L;
+        }
+    }
+
     private static Location requestSingleGpsFix(LocationManager lm, long timeoutMs) {
         final CountDownLatch latch = new CountDownLatch(1);
         final Location[] holder = new Location[1];
         LocationListener l = new LocationListener() {
             @Override
             public void onLocationChanged(Location loc) {
+                // requestSingleUpdate 也可能在注册瞬间投递最后已知缓存 fix（时间戳很旧）。
+                // 追踪链路绝不能把这种点当「新鲜冷取结果」——只接受 10s 内的真新 fix，
+                // 超时仍无新鲜 fix 则返回 null（调用方宁可不报，等下个周期）。
+                if (!isFreshGpsFix(loc)) return;
                 holder[0] = loc;
                 latch.countDown();
             }

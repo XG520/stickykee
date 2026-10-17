@@ -31,6 +31,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.PowerManager;
+import android.os.SystemClock;
 import android.provider.Settings;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
@@ -947,6 +948,21 @@ public class NativeBridge {
                 == PackageManager.PERMISSION_GRANTED;
     }
 
+    /** fix 是否为 10s 内的新鲜卫星定位（用 elapsedRealtimeNanos，不受墙钟跳变影响）。 */
+    private static boolean isFreshGpsFix(Location loc) {
+        if (loc == null) return false;
+        try {
+            long fixNanos = loc.getElapsedRealtimeNanos();
+            if (fixNanos <= 0L) return false;
+            long ageMs = (SystemClock.elapsedRealtimeNanos() - fixNanos) / 1_000_000L;
+            return ageMs >= 0L && ageMs <= 10_000L;
+        } catch (Throwable t) {
+            // 异常回退：fix 墙钟时间判定
+            long ageMs = System.currentTimeMillis() - loc.getTime();
+            return ageMs >= 0L && ageMs <= 10_000L;
+        }
+    }
+
     /** 原生卫星定位是否可用（有权限且有 GPS 硬件）。 */
     @JavascriptInterface
     public boolean hasGps() {
@@ -986,8 +1002,10 @@ public class NativeBridge {
     }
 
     /**
-     * 单次卫星定位：优先 GPS_PROVIDER（卫星），等待新鲜卫星 fix；
-     * 仅当系统缓存 fix 在 2 分钟以内时才作为超时兜底种子。
+     * 单次卫星定位：只认 GPS_PROVIDER（卫星），只返回 10s 内的新鲜 fix；
+     * 超时仍无新鲜 fix 则回 no_fix（前端按「暂无卫星信号」提示）。
+     * 绝不用 getLastKnownLocation 缓存兜底——刚离家 2 分钟内缓存还是家坐标，
+     * 返回它会把 device_tracker 先打成「在家」，等真 fix 到了再跳回「离家」。
      * 结果经 stickykee-gps 事件 {req,ok,lat,lng,acc,provider}。
      * @param timeoutMs 等待卫星 fix 的上限（建议 10000~30000）
      */
@@ -999,30 +1017,24 @@ public class NativeBridge {
         }
         final LocationManager lm = locMgr();
         try {
-            // 卫星缓存定位（只认 GPS_PROVIDER，不混入 WiFi/基站网络定位，保证结果必为卫星坐标）。
-            // 仅接受 2 分钟内的新鲜 fix：App 从后台恢复时 getLastKnownLocation 可能是数小时前
-            // 的旧位置，直接返回会把过期坐标推给 device_tracker，造成在家瞬间被打成离家。
-            // 缓存过期时宁肯等待新 fix，超时也无新 fix 则回 no_fix（前端按「暂无卫星信号」提示）。
-            Location last = null;
-            try {
-                Location cached = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER);
-                if (cached != null
-                        && System.currentTimeMillis() - cached.getTime() <= 2 * 60 * 1000L) {
-                    last = cached;
-                }
-            } catch (SecurityException ignored) {
-            }
-            final Location[] best = { last };
+            final Location[] best = { null };
             final Runnable[] finishRef = new Runnable[1];
             final boolean[] done = { false };
+            final boolean[] gotFresh = { false };
             activity.runOnUiThread(() -> {
                 final android.os.Handler handler = new android.os.Handler(activity.getMainLooper());
                 final LocationListener listener = new LocationListener() {
                     @Override
                     public void onLocationChanged(Location loc) {
-                        if (loc != null && (best[0] == null || loc.getAccuracy() <= best[0].getAccuracy())) {
+                        // requestLocationUpdates 注册成功后，系统可能立即投递一次「最后已知缓存位置」
+                        // （getTime 是几十分钟前），冷启动时它会冒充新 fix：旧家坐标精度又高，
+                        // 一旦采信就把 device_tracker 瞬间打成「在家」，等 GPS 冷搜星完成再跳「离家」。
+                        // 故 listener 只采信 10s 内的新鲜卫星 fix，旧投递直接忽略继续等真 fix。
+                        if (!isFreshGpsFix(loc)) return;
+                        if (!gotFresh[0] || loc.getAccuracy() <= best[0].getAccuracy()) {
                             best[0] = loc;
                         }
+                        gotFresh[0] = true;
                         // 精度已达卫星级（≤15m）可提前结束
                         if (best[0] != null && best[0].getAccuracy() <= 15 && finishRef[0] != null) {
                             finishRef[0].run();
@@ -1066,6 +1078,9 @@ public class NativeBridge {
                 @Override
                 public void onLocationChanged(Location loc) {
                     if (loc == null) return;
+                    // 同 gpsOnce：注册瞬间系统可能投递几十分钟前的缓存 fix，
+                    // 旧坐标（如出门前的家坐标）进 watch 会立即把在家状态误翻一次。
+                    if (!isFreshGpsFix(loc)) return;
                     dispatchGps("watch", true, loc.getLatitude(), loc.getLongitude(),
                             loc.getAccuracy(), loc.getProvider());
                 }
