@@ -238,8 +238,8 @@
             </button>
           </template>
 
-          <!-- 未选中：操作引导 -->
-          <p v-else-if="!anySelCard" class="min-w-0 flex-1 text-muted text-xs leading-snug pl-1">
+          <!-- 未选中：操作引导（手机面板多选时 apkSel 无 card，须先排除，否则会拦截下方的手机多选按钮组） -->
+          <p v-else-if="!anySelCard && !apkSel?.multiActive" class="min-w-0 flex-1 text-muted text-xs leading-snug pl-1">
             点按卡片选中进行编辑，按住卡片拖动可调整位置
           </p>
 
