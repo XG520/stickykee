@@ -171,6 +171,28 @@ export function serializeDashboard(pages) {
   })
 }
 
+// ---- 编辑模式多选批量操作（web 左栏与手机面板共用）----
+// 按 uid 集合从数组中删除卡片。
+export function removeCards(arr, uids) {
+  const s = new Set(uids)
+  for (let i = arr.length - 1; i >= 0; i--) if (s.has(arr[i]?.uid)) arr.splice(i, 1)
+}
+
+// 所选卡片按相对顺序整体平移一位（dir=-1 前移 / 1 后移）：
+// 依次与方向上的下一个未选中邻卡交换，保持所选卡片之间的相对顺序不变。
+export function moveCards(arr, uids, dir) {
+  const s = new Set(uids)
+  if (dir < 0) {
+    for (let i = 1; i < arr.length; i++) {
+      if (s.has(arr[i]?.uid) && !s.has(arr[i - 1]?.uid)) { const t = arr[i - 1]; arr[i - 1] = arr[i]; arr[i] = t }
+    }
+  } else {
+    for (let i = arr.length - 2; i >= 0; i--) {
+      if (s.has(arr[i]?.uid) && !s.has(arr[i + 1]?.uid)) { const t = arr[i + 1]; arr[i + 1] = arr[i]; arr[i] = t }
+    }
+  }
+}
+
 // 仪表盘 JSON 字符串里的卡片总数（兼容 v1 数组与 v2 多页对象）。
 export function dashboardCardCount(rawStr) {
   if (!rawStr || typeof rawStr !== 'string') return 0

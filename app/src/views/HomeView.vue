@@ -212,13 +212,43 @@
             <span v-if="!anySelCard" class="text-sm">添加卡片</span>
           </button>
 
+          <!-- 多选模式：批量操作（HA 同款：全选/左移/右移/删除） -->
+          <template v-if="multiSelectMode">
+            <span class="inline-flex items-center h-11 text-xs text-muted shrink-0 pl-1">已选 {{ multiCount }} 张</span>
+            <button @click="multiAllChecked ? clearSelCards() : selectAllCards()"
+              class="inline-flex items-center gap-1.5 h-11 px-4 rounded-xl bg-surface-alt border border-border text-sm text-on-surface transition-all active:scale-95 shrink-0">
+              <span class="material-symbols-outlined text-lg">{{ multiAllChecked ? 'deselect' : 'select_all' }}</span>
+              {{ multiAllChecked ? '全不选' : '全选' }}
+            </button>
+            <button @click="multiMove(-1)" :disabled="!multiCanPrev"
+              class="inline-flex items-center gap-1.5 h-11 px-4 rounded-xl bg-surface-alt border border-border text-sm text-on-surface transition-all active:scale-95 disabled:opacity-40 shrink-0">
+              <span class="material-symbols-outlined text-lg">arrow_back</span>左移
+            </button>
+            <button @click="multiMove(1)" :disabled="!multiCanNext"
+              class="inline-flex items-center gap-1.5 h-11 px-4 rounded-xl bg-surface-alt border border-border text-sm text-on-surface transition-all active:scale-95 disabled:opacity-40 shrink-0">
+              <span class="material-symbols-outlined text-lg">arrow_forward</span>右移
+            </button>
+            <button @click="multiRemove()" :disabled="!multiCount"
+              class="inline-flex items-center gap-1.5 h-11 px-4 rounded-xl bg-error/10 border border-error/40 text-sm text-error transition-all active:scale-95 disabled:opacity-40 shrink-0">
+              <span class="material-symbols-outlined text-lg">delete</span>删除
+            </button>
+            <button @click="exitMulti()"
+              class="inline-flex items-center gap-1.5 h-11 px-4 rounded-xl bg-surface-alt border border-border text-sm text-on-surface transition-all active:scale-95 shrink-0">
+              <span class="material-symbols-outlined text-lg">close</span>退出多选
+            </button>
+          </template>
+
           <!-- 未选中：操作引导 -->
-          <p v-if="!anySelCard" class="min-w-0 flex-1 text-muted text-xs leading-snug pl-1">
+          <p v-else-if="!anySelCard" class="min-w-0 flex-1 text-muted text-xs leading-snug pl-1">
             点按卡片选中进行编辑，按住卡片拖动可调整位置
           </p>
 
           <!-- 已选中电脑卡片：卡片名 + 分组操作 -->
           <template v-else-if="selectedCard">
+            <button @click="toggleMulti()" title="多选：批量排序/删除卡片"
+              class="inline-flex items-center gap-1.5 h-11 px-3.5 rounded-xl bg-surface-alt border border-border text-sm text-on-surface transition-all active:scale-95 shrink-0">
+              <span class="material-symbols-outlined text-lg">checklist</span>多选
+            </button>
             <div class="min-w-0 flex-1 flex items-center gap-2 pl-1.5">
               <span class="material-symbols-outlined text-lg text-primary shrink-0">{{ selectedMeta.icon }}</span>
               <span class="min-w-0 truncate text-sm text-on-surface font-medium">{{ selectedMeta.label }}</span>
@@ -252,9 +282,39 @@
             </button>
           </template>
 
+          <!-- 手机多选（右栏 ApkDashPane 上抛）：与电脑多选同一套按钮语义 -->
+          <template v-else-if="apkSel?.multiActive">
+            <span class="inline-flex items-center h-11 text-xs text-muted shrink-0 pl-1.5">手机 · 已选 {{ apkSel.multiCount }} 张</span>
+            <button @click="apkSel.multiAllChecked ? apkPaneEl?.clearSel() : apkPaneEl?.selectAll()"
+              class="inline-flex items-center gap-1.5 h-11 px-4 rounded-xl bg-surface-alt border border-border text-sm text-on-surface transition-all active:scale-95 shrink-0">
+              <span class="material-symbols-outlined text-lg">{{ apkSel.multiAllChecked ? 'deselect' : 'select_all' }}</span>
+              {{ apkSel.multiAllChecked ? '全不选' : '全选' }}
+            </button>
+            <button @click="apkPaneEl?.multiMove(-1)" :disabled="!apkSel.multiCanPrev"
+              class="inline-flex items-center gap-1.5 h-11 px-4 rounded-xl bg-surface-alt border border-border text-sm text-on-surface transition-all active:scale-95 disabled:opacity-40 shrink-0">
+              <span class="material-symbols-outlined text-lg">arrow_back</span>左移
+            </button>
+            <button @click="apkPaneEl?.multiMove(1)" :disabled="!apkSel.multiCanNext"
+              class="inline-flex items-center gap-1.5 h-11 px-4 rounded-xl bg-surface-alt border border-border text-sm text-on-surface transition-all active:scale-95 disabled:opacity-40 shrink-0">
+              <span class="material-symbols-outlined text-lg">arrow_forward</span>右移
+            </button>
+            <button @click="apkPaneEl?.multiRemove()" :disabled="!apkSel.multiCount"
+              class="inline-flex items-center gap-1.5 h-11 px-4 rounded-xl bg-error/10 border border-error/40 text-sm text-error transition-all active:scale-95 disabled:opacity-40 shrink-0">
+              <span class="material-symbols-outlined text-lg">delete</span>删除
+            </button>
+            <button @click="apkPaneEl?.exitMulti()"
+              class="inline-flex items-center gap-1.5 h-11 px-4 rounded-xl bg-surface-alt border border-border text-sm text-on-surface transition-all active:scale-95 shrink-0">
+              <span class="material-symbols-outlined text-lg">close</span>退出多选
+            </button>
+          </template>
+
           <!-- 已选中手机卡片（右栏 ApkDashPane 上抛）：与电脑卡片共用同一操作栏。
                手机卡片无代码编辑入口——代码请在左侧电脑端编辑完成后再拖入复制 -->
           <template v-else-if="apkSel">
+            <button @click="apkPaneEl?.toggleMulti()" title="多选：批量排序/删除手机卡片"
+              class="inline-flex items-center gap-1.5 h-11 px-3.5 rounded-xl bg-surface-alt border border-border text-sm text-on-surface transition-all active:scale-95 shrink-0">
+              <span class="material-symbols-outlined text-lg">checklist</span>多选
+            </button>
             <div class="min-w-0 flex-1 flex items-center gap-2 pl-1.5">
               <span class="material-symbols-outlined text-base text-muted shrink-0" title="手机仪表盘卡片">smartphone</span>
               <span class="material-symbols-outlined text-lg text-primary shrink-0">{{ apkSelMeta.icon }}</span>
@@ -328,6 +388,7 @@
           'hc-card-dragging': dragCard === card && !crossGhost.visible,
           'hc-card-cross-source': crossGhost.visible && dragCard === card,
           'hc-card-selected': editing && selectedUid === card.uid,
+          'hc-card-multi': editing && multiSelectMode && multiUids.includes(card.uid),
         }"
         :id="'card-' + card.uid"
         :data-type="card.type"
@@ -339,7 +400,7 @@
         <!-- Web 编辑态：拖到右侧手机仪表盘即复制一份（新 uid）；触屏直接点按也可复制。
              pointerdown.stop 阻止冒泡到 holder，避免启动左栏的卡片换位拖拽 -->
         <button
-          v-if="dualPane"
+          v-if="dualPane && !multiSelectMode"
           type="button"
           draggable="true"
           class="hc-copy-apk-btn"
@@ -357,6 +418,8 @@
         <div class="hc-card-zoom" :style="zoomStyle(card)">
           <CodeCard :card="card" :scope-id="'card-' + card.uid" @device-drawer="openDeviceDrawer" @open-person="openPersonInfo(card)" @open-sensor="openSensorInfo(card)" @open-multi="openMultiInfo(card)" />
         </div>
+        <!-- 多选勾选角标 -->
+        <span v-if="editing && multiSelectMode && multiUids.includes(card.uid)" class="hc-multi-check" aria-hidden="true">✓</span>
       </div>
       </template>
     </div>
@@ -453,7 +516,7 @@ import CardEditor from '@/components/cards/CardEditor.vue'
 import ApkDashPane from '@/components/ApkDashPane.vue'
 import { cardDefaults } from '@/components/cards/defaults'
 import EmptyState from '@/components/EmptyState.vue'
-import { newCard, newPage, migrateDashboard, serializeDashboard, downloadDashboard, parseImportPayload, autoComposeHomepage, LAYOUT_KEY_WEB, LAYOUT_KEY_APK, layoutKeyFor, colsKeyFor } from '@/utils/dashboard'
+import { newCard, newPage, migrateDashboard, serializeDashboard, downloadDashboard, parseImportPayload, autoComposeHomepage, LAYOUT_KEY_WEB, LAYOUT_KEY_APK, layoutKeyFor, colsKeyFor, moveCards, removeCards } from '@/utils/dashboard'
 import { getDeviceId, listDevices } from '@/utils/device'
 
 function meta(type) { return cardDefaults[type] || cardDefaults.greeting }
@@ -499,6 +562,45 @@ const moreMenuOpen = ref(false)
 const selectedUid = ref('')
 const selectedCard = computed(() => cards.value.find((c) => c.uid === selectedUid.value) || null)
 const selectedMeta = computed(() => meta(selectedCard.value ? selectedCard.value.type : 'greeting'))
+
+// ---- 多选模式（HA 同款：勾选角标 + 操作栏批量左移/右移/删除）----
+const multiSelectMode = ref(false)
+const multiUids = ref([])
+const multiCount = computed(() => multiUids.value.length)
+const multiAllChecked = computed(() => multiUids.value.length > 0 && multiUids.value.length === cards.value.length)
+const multiCanPrev = computed(() => canMoveSel(-1))
+const multiCanNext = computed(() => canMoveSel(1))
+function canMoveSel(dir) {
+  const arr = cards.value, s = new Set(multiUids.value)
+  if (!s.size) return false
+  let first = -1, last = -1
+  arr.forEach((c, i) => { if (s.has(c.uid)) { if (first < 0) first = i; last = i } })
+  if (first < 0) return false
+  return dir < 0 ? first > 0 : last < arr.length - 1
+}
+function toggleMulti() {
+  multiSelectMode.value = !multiSelectMode.value
+  multiUids.value = multiSelectMode.value && selectedUid.value ? [selectedUid.value] : []
+  if (multiSelectMode.value) { selectedUid.value = ''; apkPaneEl.value?.exitMulti?.() }
+}
+function exitMulti() { multiSelectMode.value = false; multiUids.value = [] }
+function toggleMultiSelect(uid) {
+  const i = multiUids.value.indexOf(uid)
+  if (i >= 0) multiUids.value.splice(i, 1)
+  else multiUids.value.push(uid)
+}
+function selectAllCards() { multiUids.value = cards.value.map((c) => c.uid) }
+function clearSelCards() { multiUids.value = [] }
+function multiMove(dir) {
+  const p = pages.value[currentPageIndex.value]
+  if (p) moveCards(p.cards, multiUids.value, dir)
+}
+function multiRemove() {
+  const p = pages.value[currentPageIndex.value]
+  if (!p || !multiUids.value.length) return
+  removeCards(p.cards, multiUids.value)
+  exitMulti()
+}
 // ---- 双栏编辑：右栏手机面板选中态上抛（卡片编辑按钮与电脑端统一为同一底部操作栏）----
 // 两侧选中互斥：选中手机卡清电脑侧，选中电脑卡经 watch 调 deselect 清手机侧。
 const apkSel = ref(null) // { card, cols, canNarrow, canWiden, canPrev, canNext } | null
@@ -749,7 +851,8 @@ function onCardPointerUp(e) {
     // 编辑态轻触（未拖动）：选中/切换/取消该卡片，操作交给底部操作栏（旧悬浮工具条会
     // 遮挡卡片内容且在窄卡片上溢出）。选中与拖拽由 6px 移动阈值区分，互不干扰。
     const uid = drag.uid
-    selectedUid.value = selectedUid.value === uid ? '' : uid
+    if (multiSelectMode.value) toggleMultiSelect(uid) // 多选模式：轻触 = 切换勾选
+    else selectedUid.value = selectedUid.value === uid ? '' : uid
     try { navigator.vibrate?.(12) } catch { /* 不支持则忽略 */ }
   }
   // 拖动过则记录时刻：随后派发的 click 会被抑制，避免松手时误触发卡片内部交互（开关等）
@@ -1181,6 +1284,7 @@ function revealActivePage() {
 }
 function switchPage(i) {
   if (i < 0 || i >= pages.value.length || i === currentPageIndex.value) return
+  exitMulti()
   currentPageIndex.value = i
   nextTick(() => { measure(); revealActivePage() })
 }
@@ -1359,7 +1463,7 @@ function onMqCanEdit(e) {
 watch(() => ui.immersive, () => nextTick(measure))
 watch(() => editing.value, () => {
   if (!editing.value) {
-    addPanel.value = false; selectedUid.value = '' // 退出编辑同步清掉面板与选中态
+    addPanel.value = false; selectedUid.value = ''; exitMulti() // 退出编辑同步清掉面板与选中态
   } else {
     // 进入编辑：记录当前已保存快照，作为取消编辑时的未保存修改判据
     loadedSnapshot = serializeDashboard(pages.value)
@@ -1498,6 +1602,19 @@ onBeforeUnmount(() => {
   outline: 2px solid rgb(var(--c-primary) / .9);
   outline-offset: -2px;
   z-index: 5;
+}
+/* 多选：高亮 + 勾选角标（与手机面板同款视觉） */
+.hc-card-multi {
+  outline: 2px solid rgb(var(--c-primary) / .9);
+  outline-offset: -2px;
+  z-index: 5;
+}
+.hc-multi-check {
+  position: absolute; top: 6px; right: 6px; z-index: 6;
+  width: 20px; height: 20px; border-radius: 999px;
+  background: rgb(var(--c-primary)); color: #fff;
+  font-size: 13px; line-height: 20px; text-align: center; font-weight: 700;
+  pointer-events: none;
 }
 /* 编辑态网格底部预留操作栏空间：滚动到最底部时最后一排卡片不被操作栏遮挡 */
 .dashboard-grid.hc-grid-editing {

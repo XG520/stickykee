@@ -100,6 +100,7 @@
                   class="hc-apk-card"
                   :class="{
                     'hc-apk-card-sel': selectedUid === card.uid,
+                    'hc-apk-card-multi': multiSelectMode && multiUids.includes(card.uid),
                     'hc-apk-card-drag': dragCard === card && !crossGhost.visible,
                     'hc-apk-card-cross': crossGhost.visible && dragCard === card,
                   }"
@@ -108,6 +109,8 @@
                   @pointerdown="onPanePointerDown($event, card)"
                   @click.stop="onPaneCardClick(card)"
                 >
+                  <!-- 多选勾选角标：画在 holder 层（不随 hc-apk-zoom 缩放，保证可读） -->
+                  <span v-if="multiSelectMode && multiUids.includes(card.uid)" class="hc-apk-multi-check" aria-hidden="true">✓</span>
                   <!-- 编辑面板内禁用卡片内部交互（pointer-events-none），避免调开关误触 -->
                   <div class="hc-apk-zoom" :style="zoomStyle(card)">
                     <CodeCard :card="card" :scope-id="'apk-card-' + card.uid" @device-drawer="(f) => $emit('device-drawer', f)" @open-person="$emit('open-person', card)" @open-sensor="$emit('open-sensor', card)" @open-multi="$emit('open-multi', card)" />
@@ -158,7 +161,7 @@ import { getPrefs, putPrefs } from '@/utils/prefs'
 import { useDashGrid } from '@/composables/useDashGrid'
 import {
   newCard, newPage, migrateDashboard, serializeDashboard,
-  layoutKeyFor, colsKeyFor,
+  layoutKeyFor, colsKeyFor, moveCards, removeCards,
 } from '@/utils/dashboard'
 
 // 本账号已注册设备列表（由 HomeView 传入）；切换设备即切换编辑的 dashboard_apk_<deviceId>
@@ -183,11 +186,14 @@ const pageIndex = ref(0)
 const cols = ref(3)
 const loaded = ref(false)
 const selectedUid = ref('')
+// ---- 多选模式（与左栏 web 端同款交互：勾选角标 + 操作栏批量左移/右移/删除）----
+const multiSelectMode = ref(false)
+const multiUids = ref([])
 const dragOver = ref(false)
 let snapshot = '' // 最近一次加载/保存后的序列化值：dirty 检测与撤销回滚
 
 const cards = computed(() => pages.value[pageIndex.value]?.cards ?? [])
-const selectedCard = computed(() => cards.value.find((c) => c.uid === selectedUid.value) || null)
+const selectedCard = computed(() => multiSelectMode.value ? null : (cards.value.find((c) => c.uid === selectedUid.value) || null))
 const dirty = computed(() => loaded.value && serializeDashboard(pages.value) !== snapshot)
 const deviceName = computed(() => props.devices.find((d) => d.device_id === deviceId.value)?.name || deviceId.value.slice(0, 8))
 
@@ -195,6 +201,7 @@ const deviceName = computed(() => props.devices.find((d) => d.device_id === devi
 async function load(force = false) {
   if (!deviceId.value) { pages.value = []; loaded.value = false; return }
   clearDropPreview()
+  exitMulti()
   selectedUid.value = ''
   loaded.value = false
   try {
@@ -237,6 +244,7 @@ function revert() {
   if (!snapshot) return
   const r = migrateDashboard(JSON.parse(snapshot))
   if (r?.pages?.length) { pages.value = r.pages; pageIndex.value = Math.min(pageIndex.value, r.pages.length - 1) }
+  exitMulti()
   selectedUid.value = ''
 }
 
@@ -257,7 +265,7 @@ watch(() => props.devices, (list) => {
 }, { immediate: true })
 
 // ---- 页操作 ----
-function switchPage(i) { if (i !== pageIndex.value) { pageIndex.value = i; selectedUid.value = '' } }
+function switchPage(i) { if (i !== pageIndex.value) { pageIndex.value = i; exitMulti(); selectedUid.value = '' } }
 function addPage() {
   pages.value.push(newPage(`第 ${pages.value.length + 1} 页`))
   pageIndex.value = pages.value.length - 1
@@ -267,6 +275,7 @@ function removePage(i) {
   if (!window.confirm(`确定删除「${pages.value[i].name}」页及其全部卡片吗？`)) return
   pages.value.splice(i, 1)
   if (pageIndex.value >= pages.value.length) pageIndex.value = pages.value.length - 1
+  exitMulti()
   selectedUid.value = ''
 }
 
@@ -406,12 +415,23 @@ function revealCard(uid) {
     document.getElementById('apk-card-' + uid)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
   })
 }
-defineExpose({ dropCard, save, dirty, previewDrop, commitDrop, clearDropPreview, getGridRect, ghostSize, deselect, move, resizeCard, remove })
+defineExpose({ dropCard, save, dirty, previewDrop, commitDrop, clearDropPreview, getGridRect, ghostSize, deselect, move, resizeCard, remove, toggleMulti, exitMulti, selectAll, clearSel, multiMove, multiRemove })
 
 // ---- 选中状态上抛：编辑操作栏已统一到左栏电脑端底部操作栏（与 web 卡片同一套按钮），
 // 本面板不再渲染自己的操作条。选中卡及其可执行操作（含 disabled 态）随变化同步给父组件，
 // 保证移动/缩放后按钮态即时刷新。
 const selState = computed(() => {
+  if (multiSelectMode.value) {
+    const uids = new Set(multiUids.value)
+    const ordered = cards.value.filter((c) => uids.has(c.uid))
+    return {
+      multiActive: true,
+      multiCount: ordered.length,
+      multiAllChecked: ordered.length > 0 && ordered.length === cards.value.length,
+      multiCanPrev: canMoveSel(ordered, -1),
+      multiCanNext: canMoveSel(ordered, 1),
+    }
+  }
   const c = selectedCard.value
   if (!c) return null
   const i = cards.value.indexOf(c)
@@ -428,6 +448,37 @@ watch(selState, (s) => emit('select', s), { immediate: true })
 
 // deselect 供左栏选中自己的卡片时调用（两侧选中互斥，操作栏同一时刻只针对一侧）
 function deselect() { selectedUid.value = '' }
+
+// ---- 多选模式（与左栏 web 端同一套交互与语义）----
+function canMoveSel(ordered, dir) {
+  const arr = cards.value
+  if (!ordered.length) return false
+  const idxs = ordered.map((c) => arr.indexOf(c)).sort((a, b) => a - b)
+  return dir < 0 ? idxs[0] > 0 : idxs[idxs.length - 1] < arr.length - 1
+}
+function toggleMulti() {
+  multiSelectMode.value = !multiSelectMode.value
+  multiUids.value = multiSelectMode.value && selectedUid.value ? [selectedUid.value] : []
+  selectedUid.value = ''
+}
+function exitMulti() { multiSelectMode.value = false; multiUids.value = [] }
+function toggleMultiSelect(uid) {
+  const i = multiUids.value.indexOf(uid)
+  if (i >= 0) multiUids.value.splice(i, 1)
+  else multiUids.value.push(uid)
+}
+function selectAll() { multiUids.value = cards.value.map((c) => c.uid) }
+function clearSel() { multiUids.value = [] }
+function multiMove(dir) {
+  const page = pages.value[pageIndex.value]
+  if (page) moveCards(page.cards, multiUids.value, dir)
+}
+function multiRemove() {
+  const page = pages.value[pageIndex.value]
+  if (!page || !multiUids.value.length) return
+  removeCards(page.cards, multiUids.value)
+  exitMulti()
+}
 
 // HTML5 手柄拖放（桌面端兜底路径）：dragover 同样显示定位占位符。
 // dragover 阶段读不到 dataTransfer 数据，源卡快照由左栏经 dragPayload prop 传入。
@@ -633,6 +684,7 @@ function onPanePointerUp(e) {
 function onPaneCardClick(card) {
   // 拖拽收尾 350ms 内的 click 视为拖拽副产物，吞掉；否则为轻触选中/取消
   if (Date.now() - paneDragEndAt < 350) return
+  if (multiSelectMode.value) { toggleMultiSelect(card.uid); try { navigator.vibrate?.(12) } catch { /* 忽略 */ } return }
   selectedUid.value = selectedUid.value === card.uid ? '' : card.uid
   try { navigator.vibrate?.(12) } catch { /* 不支持则忽略 */ }
 }
@@ -709,6 +761,15 @@ watch(cols, () => nextTick(measure))
 }
 .hc-apk-card:hover { outline: 1.5px dashed rgb(var(--c-primary) / .5); outline-offset: -1.5px; }
 .hc-apk-card-sel { outline: 2px solid rgb(var(--c-primary) / .9); outline-offset: -2px; z-index: 2; }
+/* 多选：高亮 + 勾选角标（与左栏 web 端同款视觉） */
+.hc-apk-card-multi { outline: 2px solid rgb(var(--c-primary) / .9); outline-offset: -2px; z-index: 2; }
+.hc-apk-multi-check {
+  position: absolute; top: 4px; right: 4px; z-index: 3;
+  width: 16px; height: 16px; border-radius: 999px;
+  background: rgb(var(--c-primary)); color: #fff;
+  font-size: 11px; line-height: 16px; text-align: center; font-weight: 700;
+  pointer-events: none;
+}
 /* 触屏设备：垂直滑动让给手机框滚动（卡片拖动排序改用操作条按钮；见 onPanePointerDown） */
 @media (pointer: coarse) {
   .hc-apk-card { touch-action: pan-y; }
