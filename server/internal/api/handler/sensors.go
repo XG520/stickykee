@@ -29,13 +29,16 @@ type SensorDef struct {
 // SENSOR_DEFS 官方 App 同款传感器注册表。
 var SENSOR_DEFS = []SensorDef{
 	{Key: "battery_level", Name: "Battery Level", Icon: "mdi:battery", Unit: "%", DeviceClass: "battery", StateClass: "measurement", Category: "diagnostic", Label: "电池电量", Desc: "当前电池剩余电量百分比"},
-	{Key: "battery_state", Name: "Battery State", Icon: "mdi:battery-charging", DeviceClass: "battery", Category: "diagnostic", Label: "充电状态", Desc: "充电中 / 未充电 / 已充满 / 放电中"},
-	{Key: "connection_type", Name: "Connection Type", Icon: "mdi:wifi", DeviceClass: "connectivity", Category: "diagnostic", Label: "网络类型", Desc: "Wi-Fi / 蜂窝网络 / 有线 / 不可用"},
-	{Key: "network_quality", Name: "Network Quality", Icon: "mdi:signal", StateClass: "measurement", Category: "diagnostic", Label: "网络质量", Desc: "网络连接有效类型（4g / 3g / 2g / slow-2g）"},
-	{Key: "wifi_ssid", Name: "WiFi SSID", Icon: "mdi:wifi", StateClass: "measurement", Category: "diagnostic", Label: "Wi-Fi 名称", Desc: "当前连接的 Wi-Fi 名称（SSID）"},
+	// 注意：battery_state / connection_type / network_quality / wifi_ssid 的值是字符串
+	// （discharging / wifi / SSID 名），绝不能标 device_class(battery) 或 state_class(measurement)——
+	// 新版 HA 会因此按数值传感器校验并对每条上报抛 ValueError 刷屏，且状态写入失败。
+	{Key: "battery_state", Name: "Battery State", Icon: "mdi:battery-charging", Category: "diagnostic", Label: "充电状态", Desc: "充电中 / 未充电 / 已充满 / 放电中"},
+	{Key: "connection_type", Name: "Connection Type", Icon: "mdi:wifi", Category: "diagnostic", Label: "网络类型", Desc: "Wi-Fi / 蜂窝网络 / 有线 / 不可用"},
+	{Key: "network_quality", Name: "Network Quality", Icon: "mdi:signal", Category: "diagnostic", Label: "网络质量", Desc: "网络连接有效类型（4g / 3g / 2g / slow-2g）"},
+	{Key: "wifi_ssid", Name: "WiFi SSID", Icon: "mdi:wifi", Category: "diagnostic", Label: "Wi-Fi 名称", Desc: "当前连接的 Wi-Fi 名称（SSID）"},
 	{Key: "screen_state", Name: "Screen State", Icon: "mdi:monitor", Category: "diagnostic", Label: "屏幕状态", Desc: "页面可见性（在前台 / 后台）"},
 	{Key: "light_sensor", Name: "Light Sensor", Icon: "mdi:white-balance-sunny", Unit: "lx", DeviceClass: "illuminance", StateClass: "measurement", Category: "diagnostic", Label: "环境光强度", Desc: "当前环境光照强度（勒克斯）"},
-	{Key: "proximity", Name: "Proximity", Icon: "mdi:face-recognition", DeviceClass: "presence", Category: "diagnostic", Label: "接近感应", Desc: "检测是否有人靠近（靠近时屏幕自动点亮）"},
+	{Key: "proximity", Name: "Proximity", Icon: "mdi:face-recognition", Category: "diagnostic", Label: "接近感应", Desc: "检测是否有人靠近（靠近时屏幕自动点亮）"},
 	{Key: "public_ip", Name: "Public IP", Icon: "mdi:ip-network", Category: "diagnostic", Label: "公网 IP", Desc: "设备的公网 IP 地址"},
 	{Key: "current_time_zone", Name: "Current Time Zone", Icon: "mdi:clock-outline", Category: "diagnostic", Label: "时区", Desc: "设备当前时区"},
 	{Key: "last_update_trigger", Name: "Last Update Trigger", Icon: "mdi:update", Category: "diagnostic", Label: "更新触发原因", Desc: "本次传感器上报的触发原因（手动 / 事件 / 周期）"},
