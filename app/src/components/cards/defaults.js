@@ -5,7 +5,7 @@
 //  - js  ：渲染后执行的逻辑，参数 (el, card, data)
 import {
   tplToggle, tplSensor, tplBinary, tplClimate, tplCover, tplMedia, tplSecurity, tplCamera,
-  tplVacuum, tplAction, tplGeneric, tplPerson, tplWeatherEntity, tplSelect, tplText,
+  tplVacuum, tplAction, tplGeneric, tplPerson, tplWeatherEntity, tplSelect, tplText, tplGroup,
   tplDatetime, tplTimer, tplCalendar, tplUpdate, tplEvent, tplPlant, tplLawnMower, tplSun,
   tplImage, tplGreeting, tplWeather, tplMap, tplClock, tplFlipClock, tplDate, tplOverview, JS_COMMON, JS_FLIP_CLOCK, tplAmapWeather, JS_AMAP_WEATHER,
 } from './templates'
@@ -66,6 +66,8 @@ export const cardDefaults = {
   image: mk({ label: '图片', icon: 'image', colorCls: 'text-accent', w: 2, h: 2, needEntity: true, entityDomains: ['image'], group: '其他' }, tplImage),
   lawn_mower: mk({ label: '割草机', icon: 'yard', colorCls: 'text-success', w: 1, h: 1, needEntity: true, entityDomains: ['lawn_mower'], group: '清洁' }, tplLawnMower),
   generic: mk({ label: '通用卡片', icon: 'widgets', colorCls: 'text-accent', w: 2, h: 2, needEntity: true, entityDomains: null, group: '通用' }, tplGeneric),
+  // 实体组：一个组（如「卧室」）装该组全部设备，卡面即设备列表，点开弹窗集中控制
+  group: mk({ label: '实体组', icon: 'group_work', colorCls: 'text-primary', w: 2, h: 2, needEntity: true, entityDomains: null, group: '通用' }, tplGroup),
 }
 
 // ================= 占位符渲染 =================

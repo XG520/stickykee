@@ -29,7 +29,7 @@ const props = defineProps({
   // interactive=false 时屏蔽所有 HA 交互（设计模式下点击/拖动只用于编辑，不触发服务调用）
   interactive: { type: Boolean, default: true },
 })
-const emit = defineEmits(['device-drawer'])
+const emit = defineEmits(['device-drawer', 'open-person', 'open-sensor', 'open-multi'])
 
 const { all, hasData } = useEntities()
 const root = ref(null)
@@ -247,7 +247,17 @@ function doSvc(el) {
 function onClick(e) {
   if (!props.interactive) return
   const el = e.target.closest('[data-hc]')
-  if (!el) return
+  if (!el) {
+    // 点击卡面（未命中任何交互控件）按内容弹详情：
+    // 人员位置卡 → 人员弹窗；实体组卡 → 组控制弹窗；多实体卡 → 实体列表控制弹窗；单实体 sensor → 传感器历史弹窗
+    if (props.card.type === 'person') { emit('open-person'); return }
+    if (props.card.type === 'group') { emit('open-multi'); return }
+    const ids = (props.card.entity_ids || []).filter(Boolean)
+    if (ids.length > 1) { emit('open-multi'); return }
+    const mainId = ids[0] || props.card.entity_id
+    if (mainId && String(entityStates[mainId]?.domain) === 'sensor') emit('open-sensor')
+    return
+  }
   const hc = el.dataset.hc
   if (hc === 'toggle') {
     const targetId = el.dataset.entity || props.card.entity_id

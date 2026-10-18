@@ -486,14 +486,14 @@ function pickDraft() {
   return {
     w: draft.w, h: draft.h, html: draft.html, css: draft.css, js: draft.js,
     entity_id: metaOf(draft.type).needEntity || metaOf(draft.type).entityOptional ? draft.entity_id : '',
-    entity_ids: ['generic', 'person'].includes(draft.type) ? [...draft.entity_ids] : [],
+    entity_ids: ['generic', 'person', 'group'].includes(draft.type) ? [...draft.entity_ids] : [],
     icon: draft.icon,
     avatar: draft.avatar,
     title: draft.title || '',
   }
 }
 // 通用卡与人员位置卡为多实体卡（不限数量）；其余卡仍为单实体
-const multiEntity = computed(() => ['generic', 'person'].includes(draft.type))
+const multiEntity = computed(() => ['generic', 'person', 'group'].includes(draft.type))
 function syncPrimaryEntity() { draft.entity_id = draft.entity_ids[0] || '' }
 function metaOf(type) { return cardDefaults[type] || cardDefaults.greeting }
 const meta = computed(() => metaOf(draft.type))

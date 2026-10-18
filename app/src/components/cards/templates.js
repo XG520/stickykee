@@ -340,6 +340,38 @@ export function tplGeneric() {
   return { html, css }
 }
 
+/* 实体组卡：卡面只显示组名（图标 + 设备数徽标），不列实体；
+   点击卡面由上层弹出多实体控制弹窗（列表 + 行内开关 + 子控制面板）。 */
+export function tplGroup() {
+  const html = `<div class="gp" style="--dk-rgb:{{kindColorRgb}}">
+  <div class="gp-glow"></div>
+  <div class="gp-top"><span class="gp-count">{{count}} 个设备</span></div>
+  <div class="gp-body">
+    <span class="gp-icw"><span class="gp-ic material-symbols-outlined">{{groupIcon}}</span></span>
+    <span class="gp-nm">{{name}}</span>
+  </div>
+</div>`
+  const css = `
+.gp{flex:1;min-height:0;display:flex;flex-direction:column;padding:7px;position:relative;overflow:hidden;border-radius:14px;
+  background:linear-gradient(165deg,rgb(255 255 255 / .05),rgb(255 255 255 / 0) 46%),color-mix(in srgb,var(--hc-bg2) 72%,var(--hc-bg));
+  border:1px solid var(--hc-border);border-width:var(--card-bw,1px);
+  box-shadow:0 1px 3px rgb(0 0 0 / .07),0 8px 20px -8px rgb(0 0 0 / .16)}
+.gp-glow{position:absolute;inset:0;pointer-events:none;opacity:.9;
+  background:radial-gradient(135% 58% at 50% -28%, rgb(var(--dk-rgb) / .14), transparent 68%)}
+.gp-top{position:relative;z-index:1;display:flex;justify-content:flex-end}
+.gp-count{flex:none;font-size:7px;line-height:14px;color:rgb(var(--dk-rgb));
+  background:rgb(var(--dk-rgb) / .1);border:1px solid rgb(var(--dk-rgb) / .22);border-radius:5px;padding:0 5px}
+.gp-body{position:relative;z-index:1;flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px}
+.gp-icw{width:34px;height:34px;border-radius:12px;display:flex;align-items:center;justify-content:center;
+  background:rgb(var(--dk-rgb) / .13);color:rgb(var(--dk-rgb));border:1px solid rgb(var(--dk-rgb) / .28);
+  box-shadow:0 2px 8px rgb(var(--dk-rgb) / .18)}
+.gp-ic{font-size:19px;line-height:1}
+.gp-nm{max-width:100%;font-size:11.5px;font-weight:600;color:var(--hc-text);text-align:center;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+`
+  return { html, css }
+}
+
 // ================= 12. 人员位置（person/device_tracker/zone） =================
 export function tplPerson() {
   const html = `<div class="hc">

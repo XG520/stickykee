@@ -8,7 +8,7 @@
       <!-- 品牌 -->
       <div class="flex flex-col items-center mb-8">
         <div class="w-14 h-14 rounded-2xl bg-primary flex items-center justify-center shadow-lg shadow-primary/30 mb-4">
-          <span class="material-symbols-outlined text-on-primary text-3xl">{{ siteIcon }}</span>
+          <SiteIcon span-class="text-on-primary text-3xl" img-class="w-8 h-8 object-contain" />
         </div>
         <h1 class="font-headline text-2xl font-bold">{{ siteName }}</h1>
         <p class="text-muted text-sm mt-1 font-body">{{ registerMode ? '创建管理员账号' : '智能家庭控制中心' }}</p>
@@ -68,8 +68,9 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import api from '@/api'
-import { authLogin, authRegister, siteName, siteIcon, loadSiteName, loadSiteIcon } from '@/store'
+import { authLogin, authRegister, siteName, loadSiteName, loadSiteIcon } from '@/store'
 import { isApk, openServerSheet } from '@/utils/serverConfig'
+import SiteIcon from '@/components/SiteIcon.vue'
 
 const router = useRouter()
 const route = useRoute()

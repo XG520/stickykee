@@ -165,7 +165,9 @@
     <!-- 编辑态底部操作栏：点按卡片选中后在此统一操作（替代旧「每卡悬浮工具条」——
          悬浮条会遮挡卡片内容且在窄卡片上溢出截断）。所有按钮触控区 ≥44px，
          深浅主题跟随 token，底部避让安全区（iOS / 手势条）。 -->
-    <div v-if="editing" class="fixed bottom-0 inset-x-0 z-40 pointer-events-none">
+    <div v-if="editing" class="fixed bottom-16 md:bottom-0 inset-x-0 z-40 pointer-events-none">
+      <!-- 底部避让：窄屏 MobileTabBar（z-50 不透明）高 4rem 覆盖视口底部，操作栏抬升到其上方；
+           md 及以上 TabBar 隐藏，回贴视口底 -->
       <!-- 添加卡片面板：从操作栏上方弹出，不占画布空间。
            卡片项双列网格排布（替代原单列长列表），整体紧凑；
            桌面双栏编辑时让出右栏宽度（lg/min-[1366px] 两档），面板在左栏区域内居中 -->
@@ -203,20 +205,20 @@
           <!-- 添加卡片入口：常驻（选中态压缩为纯图标，给操作按钮让位） -->
           <button @click="addPanel = !addPanel"
             class="shrink-0 flex items-center gap-1 h-11 rounded-xl bg-primary/12 text-primary font-semibold active:scale-95 transition-all"
-            :class="selectedCard ? 'w-11 justify-center' : 'px-3.5'"
+            :class="anySelCard ? 'w-11 justify-center' : 'px-3.5'"
             :aria-expanded="addPanel ? 'true' : 'false'"
             title="添加卡片" aria-label="添加卡片">
             <span class="material-symbols-outlined text-xl">{{ addPanel ? 'arrow_downward' : 'add' }}</span>
-            <span v-if="!selectedCard" class="text-sm">添加卡片</span>
+            <span v-if="!anySelCard" class="text-sm">添加卡片</span>
           </button>
 
           <!-- 未选中：操作引导 -->
-          <p v-if="!selectedCard" class="min-w-0 flex-1 text-muted text-xs leading-snug pl-1">
+          <p v-if="!anySelCard" class="min-w-0 flex-1 text-muted text-xs leading-snug pl-1">
             点按卡片选中进行编辑，按住卡片拖动可调整位置
           </p>
 
-          <!-- 已选中：卡片名 + 分组操作 -->
-          <template v-else>
+          <!-- 已选中电脑卡片：卡片名 + 分组操作 -->
+          <template v-else-if="selectedCard">
             <div class="min-w-0 flex-1 flex items-center gap-2 pl-1.5">
               <span class="material-symbols-outlined text-lg text-primary shrink-0">{{ selectedMeta.icon }}</span>
               <span class="min-w-0 truncate text-sm text-on-surface font-medium">{{ selectedMeta.label }}</span>
@@ -249,6 +251,49 @@
               <span class="material-symbols-outlined text-xl">close</span>
             </button>
           </template>
+
+          <!-- 已选中手机卡片（右栏 ApkDashPane 上抛）：与电脑卡片共用同一操作栏。
+               手机卡片无代码编辑入口——代码请在左侧电脑端编辑完成后再拖入复制 -->
+          <template v-else-if="apkSel">
+            <div class="min-w-0 flex-1 flex items-center gap-2 pl-1.5">
+              <span class="material-symbols-outlined text-base text-muted shrink-0" title="手机仪表盘卡片">smartphone</span>
+              <span class="material-symbols-outlined text-lg text-primary shrink-0">{{ apkSelMeta.icon }}</span>
+              <span class="min-w-0 truncate text-sm text-on-surface font-medium">{{ apkSelMeta.label }}</span>
+              <span class="shrink-0 text-[11px] text-muted font-body tabular-nums">{{ apkSel.card.w }}×{{ Math.min(3, apkSel.card.h || 1) }}</span>
+            </div>
+            <span class="w-px h-6 bg-border shrink-0 mx-0.5"></span>
+            <button @click="apkPaneEl?.resizeCard(apkSel.card, -1)" :disabled="!apkSel.canNarrow"
+              class="w-11 h-11 flex items-center justify-center rounded-xl text-on-surface hover:bg-primary/10 active:scale-90 transition disabled:opacity-25 disabled:active:scale-100"
+              title="缩窄" aria-label="缩窄卡片">
+              <span class="material-symbols-outlined text-xl">chevron_left</span>
+            </button>
+            <button @click="apkPaneEl?.resizeCard(apkSel.card, 1)" :disabled="!apkSel.canWiden"
+              class="w-11 h-11 flex items-center justify-center rounded-xl text-on-surface hover:bg-primary/10 active:scale-90 transition disabled:opacity-25 disabled:active:scale-100"
+              title="加宽" aria-label="加宽卡片">
+              <span class="material-symbols-outlined text-xl">chevron_right</span>
+            </button>
+            <span class="w-px h-6 bg-border shrink-0 mx-0.5"></span>
+            <button @click="apkPaneEl?.move(apkSel.card, -1)" :disabled="!apkSel.canPrev"
+              class="w-11 h-11 flex items-center justify-center rounded-xl text-on-surface hover:bg-primary/10 active:scale-90 transition disabled:opacity-25 disabled:active:scale-100"
+              title="前移" aria-label="卡片前移">
+              <span class="material-symbols-outlined text-xl">arrow_back</span>
+            </button>
+            <button @click="apkPaneEl?.move(apkSel.card, 1)" :disabled="!apkSel.canNext"
+              class="w-11 h-11 flex items-center justify-center rounded-xl text-on-surface hover:bg-primary/10 active:scale-90 transition disabled:opacity-25 disabled:active:scale-100"
+              title="后移" aria-label="卡片后移">
+              <span class="material-symbols-outlined text-xl">arrow_forward</span>
+            </button>
+            <button @click="apkPaneEl?.remove(apkSel.card)"
+              class="w-11 h-11 flex items-center justify-center rounded-xl text-error hover:bg-error/12 active:scale-90 transition"
+              title="删除卡片" aria-label="删除卡片">
+              <span class="material-symbols-outlined text-xl">delete</span>
+            </button>
+            <button @click="apkPaneEl?.deselect()"
+              class="w-9 h-11 flex items-center justify-center rounded-xl text-muted hover:text-on-surface active:scale-90 transition"
+              title="取消选中" aria-label="取消选中">
+              <span class="material-symbols-outlined text-xl">close</span>
+            </button>
+          </template>
         </div>
       </div>
     </div>
@@ -266,9 +311,17 @@
     <div v-if="loaded" :class="{ 'hc-dual-grid': dualPane }">
     <div ref="gridEl" class="dashboard-grid" :class="{ 'hc-grid-editing': editing, 'min-w-0': dualPane }" :style="gridStyle"
       @touchstart.passive="onSwipeStart" @touchend="onSwipeEnd">
+      <template v-for="card in displayCards" :key="card.__ghost ? '__web_drop_ghost__' : card.uid">
+      <!-- 反向跨栏（手机 → 电脑）拖放插入占位符：由网格自动排版，位置即松手后的插入位 -->
       <div
-        v-for="card in cards"
-        :key="card.uid"
+        v-if="card.__ghost"
+        class="hc-web-drop-slot"
+        :style="holderStyle(card)"
+      >
+        <span class="material-symbols-outlined" aria-hidden="true">add</span>
+      </div>
+      <div
+        v-else
         class="hc-card-holder"
         :class="{
           'hc-card-editable': editing,
@@ -302,9 +355,10 @@
         </button>
         <!-- 卡片实际内容：基准尺寸渲染 + zoom 等比缩放（窗口缩放不影响内部布局/换行） -->
         <div class="hc-card-zoom" :style="zoomStyle(card)">
-          <CodeCard :card="card" :scope-id="'card-' + card.uid" @device-drawer="openDeviceDrawer" />
+          <CodeCard :card="card" :scope-id="'card-' + card.uid" @device-drawer="openDeviceDrawer" @open-person="openPersonInfo(card)" @open-sensor="openSensorInfo(card)" @open-multi="openMultiInfo(card)" />
         </div>
       </div>
+      </template>
     </div>
     <!-- 右侧手机 App 仪表盘面板：独立加载/保存 dashboard_apk_<deviceId>，接收拖入卡片 -->
     <ApkDashPane
@@ -313,8 +367,13 @@
       class="hc-dual-apk"
       :devices="apkDevices"
       :drag-payload="copyPayload"
+      :web-drop="webDrop"
       @device-drawer="openDeviceDrawer"
       @toast="toast"
+      @select="onApkSelect"
+      @open-person="openPersonInfo"
+      @open-sensor="openSensorInfo"
+      @open-multi="openMultiInfo"
     />
     </div>
 
@@ -366,6 +425,12 @@
         </div>
       </div>
     </div>
+    <!-- 人员卡详情弹窗（HA more-info 形态：头像/状态/更新时间/位置地图） -->
+    <PersonMoreInfo v-if="personInfoId" :entity-id="personInfoId" @close="personInfoId = ''" />
+    <!-- 传感器详情弹窗（当前读数 + 近 24 小时历史曲线） -->
+    <SensorMoreInfo v-if="sensorInfoId" :entity-id="sensorInfoId" @close="sensorInfoId = ''" />
+    <!-- 多实体卡弹窗（实体列表，可行内开关、点行进完整控制） -->
+    <MultiMoreInfo v-if="multiInfoCard" :card="multiInfoCard" @close="multiInfoCard = null" />
   </div>
 </template>
 
@@ -376,6 +441,9 @@ import { useEntities } from '@/composables/useLive'
 import { useAutoHide } from '@/composables/useAutoHide'
 import { useDashGrid } from '@/composables/useDashGrid'
 import { mark, count, measure as perfMeasure } from '@/utils/perf'
+import PersonMoreInfo from '@/components/PersonMoreInfo.vue'
+import SensorMoreInfo from '@/components/SensorMoreInfo.vue'
+import MultiMoreInfo from '@/components/MultiMoreInfo.vue'
 import { saveKV, loadKV } from '@/utils/snapshotCache'
 import { getPrefs, putPrefs } from '@/utils/prefs'
 import { isApk } from '@/utils/serverConfig'
@@ -389,6 +457,29 @@ import { newCard, newPage, migrateDashboard, serializeDashboard, downloadDashboa
 import { getDeviceId, listDevices } from '@/utils/device'
 
 function meta(type) { return cardDefaults[type] || cardDefaults.greeting }
+
+// ---- 人员卡详情弹窗：点击 person 卡（查看态）弹出；编辑态点击走选中逻辑，不弹 ----
+const personInfoId = ref('')
+function openPersonInfo(card) {
+  if (editing.value) return
+  const id = card?.entity_ids?.[0] || card?.entity_id || ''
+  if (id) personInfoId.value = id
+}
+
+// ---- 传感器详情弹窗（历史曲线）：主实体为 sensor 的卡片点击查看态弹出 ----
+const sensorInfoId = ref('')
+function openSensorInfo(card) {
+  if (editing.value) return
+  const id = card?.entity_ids?.[0] || card?.entity_id || ''
+  if (id) sensorInfoId.value = id
+}
+
+// ---- 多实体卡弹窗（实体列表 + 行内开关 + 子控制面板） ----
+const multiInfoCard = ref(null)
+function openMultiInfo(card) {
+  if (editing.value) return
+  multiInfoCard.value = card
+}
 
 const defaultTypes = ['greeting', 'weather', 'map']
 function defaultPage() { return newPage('首页', defaultTypes.map((t) => newCard(t))) }
@@ -408,6 +499,15 @@ const moreMenuOpen = ref(false)
 const selectedUid = ref('')
 const selectedCard = computed(() => cards.value.find((c) => c.uid === selectedUid.value) || null)
 const selectedMeta = computed(() => meta(selectedCard.value ? selectedCard.value.type : 'greeting'))
+// ---- 双栏编辑：右栏手机面板选中态上抛（卡片编辑按钮与电脑端统一为同一底部操作栏）----
+// 两侧选中互斥：选中手机卡清电脑侧，选中电脑卡经 watch 调 deselect 清手机侧。
+const apkSel = ref(null) // { card, cols, canNarrow, canWiden, canPrev, canNext } | null
+const anySelCard = computed(() => selectedCard.value || apkSel.value?.card || null)
+const apkSelMeta = computed(() => meta(apkSel.value?.card ? apkSel.value.card.type : 'greeting'))
+function onApkSelect(s) {
+  apkSel.value = s
+  if (s?.card) selectedUid.value = ''
+}
 // 设备概览抽屉：Overview 卡片点击触发，携带点击格子的过滤条件（全局抽屉，见 App.vue）
 // 折叠工具栏：初始隐藏（折叠在导航栏下方），鼠标移到该行自动弹出，移开 3 秒后收起
 const { visible: toolbarShow, enter: toolbarEnter, leave: toolbarLeave } = useAutoHide(3000, false)
@@ -436,13 +536,14 @@ function onEditorSave(p) {
   c.html = p.html
   c.css = p.css
   c.js = p.js
-  if (c.type === 'generic' || c.type === 'person') {
-    // 多实体卡（通用卡/人员位置卡）：保存完整列表，entity_id 同步为首项
+  if (['generic', 'person', 'group'].includes(c.type)) {
+    // 多实体卡（通用卡/人员位置卡/实体组卡）：保存完整列表，entity_id 同步为首项
     c.entity_ids = Array.isArray(p.entity_ids) ? [...p.entity_ids] : []
     c.entity_id = c.entity_ids[0] || ''
   } else if (meta(c.type).needEntity) {
     c.entity_id = p.entity_id
   }
+  c.title = p.title || ''
   c.icon = p.icon
   c.avatar = p.avatar
   editorOpen.value = false
@@ -458,6 +559,7 @@ const {
   zoomStyle,
   gridStyle: baseGridStyle,
   holderStyle: baseHolderStyle,
+  spanSize,
 } = useDashGrid({ el: gridEl, cols })
 const gridStyle = computed(() => ({
   ...baseGridStyle.value,
@@ -737,7 +839,7 @@ function addCard(opt) {
   const opts = entityOptionsFor(opt.type)
   if (opts.length) {
     card.entity_id = opts[0].id
-    if (['generic', 'person'].includes(opt.type)) card.entity_ids = [opts[0].id]
+    if (['generic', 'person', 'group'].includes(opt.type)) card.entity_ids = [opts[0].id]
   }
   cards.value.push(card)
   openEditor(card)
@@ -767,6 +869,8 @@ const apkDevices = ref([]) // 本账号已注册的全部设备（双栏编辑�
 // Web 端编辑模式：左电脑仪表盘 + 右手机 App 仪表盘双栏对照（APK 端仍为单栏编辑本机布局）
 const dualPane = computed(() => !isApk && editing.value)
 const apkPaneEl = ref(null)
+// 选中电脑卡片时清掉手机面板选中（两侧互斥，底部操作栏同一时刻只针对一侧卡片）
+watch(selectedUid, (v) => { if (v) apkPaneEl.value?.deselect?.() })
 // 跨栏复制允许携带的卡片字段（uid 不复制——ApkDashPane 克隆时生成新 uid，避免双端 CSS 作用域冲突）
 const COPY_FIELDS = ['type', 'w', 'h', 'html', 'css', 'js', 'entity_id', 'entity_ids', 'icon', 'avatar', 'title']
 // 手柄 HTML5 拖拽期间的源卡快照：dragover 阶段规范上读不到 dataTransfer，
@@ -791,6 +895,101 @@ function onCopyDragEnd() {
 function copyCardToApk(card) {
   apkPaneEl.value?.dropCard(card)
 }
+
+// ---- 反向跨栏（手机 → 电脑）拖放：右栏卡片拖入左栏，在占位索引插入克隆卡（复制语义）----
+// webGhost 为临时网格项（{__ghost:true,w,h}），displayCards 把它拼在 webGhostIndex 处，
+// 由 CSS grid 自动排版，松手后在同一索引插入真实克隆卡，所见即所得（与右栏 ghost 机制同构）。
+const webGhost = ref(null)
+const webGhostIndex = ref(0)
+const displayCards = computed(() => {
+  const arr = cards.value
+  const g = webGhost.value
+  if (!g) return arr
+  const i = Math.max(0, Math.min(webGhostIndex.value, arr.length))
+  return [...arr.slice(0, i), g, ...arr.slice(i)]
+})
+// 给定指针坐标，返回在当前页 cards 中的插入索引（反向跨栏拖放用）；
+// 命中卡片时按指针相对卡片中心的位置决定插前/插后，空白处按行/列就近推断。
+function webIndexAt(x, y) {
+  const arr = cards.value
+  if (!arr.length || !gridEl.value) return arr.length
+  const gridRect = gridEl.value.getBoundingClientRect()
+  const rects = []
+  for (const c of arr) {
+    const el = holderEl(c)
+    if (!el) continue
+    const r = el.getBoundingClientRect()
+    if (r.width > 0) rects.push({ c, r })
+  }
+  if (!rects.length) return 0
+  // 1) 命中某张卡片：越过中心即插到其后
+  for (let i = 0; i < rects.length; i++) {
+    const { c, r } = rects[i]
+    if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
+      const before = (y < r.top + r.height / 2)
+        || (Math.abs(y - (r.top + r.height / 2)) < 8 && x < r.left + r.width / 2)
+      return before ? arr.indexOf(c) : arr.indexOf(c) + 1
+    }
+  }
+  // 2) 网格内空白：同行指针右侧最近的卡之前 → 下一行首卡之前 → 末尾
+  if (x >= gridRect.left && x <= gridRect.right && y >= gridRect.top && y <= gridRect.bottom) {
+    const sameRow = rects.filter(o => o.r.top <= y && y <= o.r.bottom)
+    if (sameRow.length) {
+      const rowTop = Math.min(...sameRow.map(o => o.r.top))
+      const right = sameRow.filter(o => Math.abs(o.r.top - rowTop) < 4 && o.r.left >= x)
+        .sort((a, b) => a.r.left - b.r.left)
+      if (right.length) return arr.indexOf(right[0].c)
+    }
+    const below = rects.filter(o => o.r.top > y)
+    if (below.length) {
+      const nextTop = Math.min(...below.map(o => o.r.top))
+      const first = below.filter(o => Math.abs(o.r.top - nextTop) < 4)
+        .sort((a, b) => a.r.left - b.r.left)[0]
+      if (first) return arr.indexOf(first.c)
+    }
+  }
+  return arr.length
+}
+// 接收右栏卡片：按白名单克隆（newCard 生成新 uid，与手机端卡片互不影响），宽度钳制到左栏列数
+function cloneToWeb(src) {
+  if (!src || !src.type || !cardDefaults[src.type]) return null
+  const extra = {}
+  for (const k of COPY_FIELDS) if (k !== 'type' && src[k] !== undefined) extra[k] = src[k]
+  const c = newCard(src.type, extra)
+  c.w = Math.min(Math.max(1, c.w || 1), cols.value)
+  c.h = Math.min(3, Math.max(1, c.h || 1))
+  return c
+}
+// 反向跨栏拖放处理器：作为 prop 传给 ApkDashPane，
+// 其栏内卡片拖入左栏时调用 preview 显示占位、松手 commit 插入克隆卡
+const webDrop = {
+  rect: () => gridEl.value?.getBoundingClientRect() || null,
+  // 浮动幽灵在左栏应呈现的像素尺寸：按左栏格子钳制
+  ghostSize: (src) => (cellSize.value ? spanSize(src) : null),
+  preview(x, y, src) {
+    if (!src?.type) return
+    const w = Math.min(Math.max(1, src.w || 1), cols.value)
+    const h = Math.min(3, Math.max(1, src.h || 1))
+    if (!webGhost.value) webGhost.value = { __ghost: true, w, h }
+    webGhostIndex.value = webIndexAt(x, y)
+  },
+  commit(src) {
+    const idx = webGhost.value ? Math.max(0, Math.min(webGhostIndex.value, cards.value.length)) : cards.value.length
+    webDrop.clear()
+    const c = cloneToWeb(src)
+    if (!c) return false
+    if (!pages.value[currentPageIndex.value]) { pages.value = [newPage('首页')]; currentPageIndex.value = 0 }
+    cards.value.splice(idx, 0, c)
+    selectedUid.value = c.uid
+    // 插入的卡片可能在视口外：滚到最近位置，让用户看到落位点与底部操作栏
+    nextTick(() => holderEl(c)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }))
+    toast(`已复制到电脑仪表盘：${meta(c.type)?.label || c.title || c.type}，点「完成」生效`)
+    return true
+  },
+  clear() { webGhost.value = null },
+}
+// 退出编辑（完成/取消）时清掉可能残留的占位符（如拖拽中面板被关闭）
+watch(editing, (v) => { if (!v) webGhost.value = null })
 const activeDashKey = computed(() => {
   if (isApk) return layoutKeyFor(ownDeviceId.value) // 手机端：dashboard_apk_<本机>
   return LAYOUT_KEY_WEB // 网页端：dashboard（手机端布局由右栏 ApkDashPane 独立读写）
@@ -1376,6 +1575,24 @@ onBeforeUnmount(() => {
   opacity: .35;
   outline: 2px dashed rgb(var(--c-primary) / .55);
   outline-offset: -2px;
+}
+/* 反向跨栏（手机 → 电脑）插入占位符：虚线框 + 呼吸底色，明确松手落位处
+   （与右栏 .hc-apk-drop-slot 同款视觉） */
+.hc-web-drop-slot {
+  border-radius: 14px;
+  border: 2px dashed rgb(var(--c-primary) / .75);
+  background: rgb(var(--c-primary) / .08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgb(var(--c-primary));
+  pointer-events: none;
+  animation: hc-web-slot-pulse .9s ease-in-out infinite alternate;
+}
+.hc-web-drop-slot .material-symbols-outlined { font-size: 28px; }
+@keyframes hc-web-slot-pulse {
+  from { background: rgb(var(--c-primary) / .05); }
+  to { background: rgb(var(--c-primary) / .16); }
 }
 /* 跨栏浮动幽灵：跟随指针的卡片轮廓，右下角手机角标表明复制目标 */
 .hc-cross-ghost {

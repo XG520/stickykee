@@ -157,6 +157,7 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 			r.Put("/prefs", prefs.Put)
 			r.Put("/site-name", prefs.PutSiteName)
 			r.Put("/site-icon", prefs.PutSiteIcon)
+			r.Put("/site-icon/image", prefs.PutSiteIconImage)
 
 			// App 安装包：需登录（防外链盗刷下载）；前端经 fetch 携带令牌取流保存。
 			r.Get("/app/info", handler.AppInfo)

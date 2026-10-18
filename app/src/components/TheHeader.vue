@@ -7,11 +7,11 @@
     <div class="max-w-screen-2xl mx-auto px-6 py-3 flex items-center justify-between gap-4">
       <router-link to="/" class="flex items-center gap-3">
         <div class="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-          <span class="material-symbols-outlined text-on-primary text-lg">{{ siteIcon }}</span>
+          <SiteIcon span-class="text-on-primary text-lg" img-class="w-5 h-5 object-contain" />
         </div>
         <div>
           <h1 class="font-headline text-on-background font-semibold text-base leading-tight">{{ siteName }}</h1>
-          <p class="text-muted text-xs leading-tight">Sticky Kee</p>
+          <p class="text-muted text-xs leading-tight">{{ siteNameEn }}</p>
         </div>
       </router-link>
 
@@ -52,10 +52,11 @@
 
 <script setup>
 import { ref, computed } from 'vue'
-import { auth, authLogout, imUnread, toggleIm, entityList, siteName, siteIcon, backendOnline } from '@/store'
+import { auth, authLogout, imUnread, toggleIm, entityList, siteName, siteNameEn, backendOnline } from '@/store'
 import { useFullscreen } from '@/composables/useFullscreen'
 import MessageCenter from './MessageCenter.vue'
 import HANotifyCenter from './HANotifyCenter.vue'
+import SiteIcon from './SiteIcon.vue'
 
 const { isFullscreen, toggle: toggleFullscreen } = useFullscreen()
 

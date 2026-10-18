@@ -209,6 +209,11 @@ func (c *Rest) GetHistory(ctx context.Context, entityIDs []string, start time.Ti
 		q.Set("end_time", end.Format(time.RFC3339))
 	}
 	q.Set("include_start_time_state", "false")
+	// 减量提速：minimal_response 仅首条带 attributes，后续记录只回 last_changed+state；
+	// significant_changes_only 去掉仅 attributes 变化的记录。高频传感器 24h 历史体积可小一个量级，
+	// 当前调用方（传感器历史曲线）只用 state/last_changed，不受影响。
+	q.Set("minimal_response", "true")
+	q.Set("significant_changes_only", "true")
 	var out []json.RawMessage
 	if err := c.do(ctx, http.MethodGet, "/api/history/period?"+q.Encode(), nil, &out); err != nil {
 		return nil, err

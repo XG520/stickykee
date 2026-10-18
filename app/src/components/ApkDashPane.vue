@@ -100,7 +100,8 @@
                   class="hc-apk-card"
                   :class="{
                     'hc-apk-card-sel': selectedUid === card.uid,
-                    'hc-apk-card-drag': dragCard === card,
+                    'hc-apk-card-drag': dragCard === card && !crossGhost.visible,
+                    'hc-apk-card-cross': crossGhost.visible && dragCard === card,
                   }"
                   :data-type="card.type"
                   :style="holderStyle(card)"
@@ -109,7 +110,7 @@
                 >
                   <!-- 编辑面板内禁用卡片内部交互（pointer-events-none），避免调开关误触 -->
                   <div class="hc-apk-zoom" :style="zoomStyle(card)">
-                    <CodeCard :card="card" :scope-id="'apk-card-' + card.uid" @device-drawer="(f) => $emit('device-drawer', f)" />
+                    <CodeCard :card="card" :scope-id="'apk-card-' + card.uid" @device-drawer="(f) => $emit('device-drawer', f)" @open-person="$emit('open-person', card)" @open-sensor="$emit('open-sensor', card)" @open-multi="$emit('open-multi', card)" />
                   </div>
                 </div>
               </template>
@@ -129,50 +130,28 @@
         </div>
       </div>
 
-      <!-- 选中卡片操作条：宽度调整 + 排序 + 删除（代码编辑请在左侧电脑端完成后再拖入） -->
-      <transition name="hc-apk-bar">
-        <div v-if="selectedCard" class="shrink-0 border-t border-border/70 px-2 py-1.5 flex items-center gap-1 bg-surface/60">
-          <span class="min-w-0 flex-1 truncate pl-1.5 text-xs text-on-surface font-medium">{{ cardLabel(selectedCard) }}</span>
-          <button @click="resizeCard(selectedCard, -1)" :disabled="selectedCard.w <= 1"
-            class="w-10 h-10 flex items-center justify-center rounded-xl text-on-surface hover:bg-primary/10 active:scale-90 transition disabled:opacity-25"
-            title="缩窄" aria-label="缩窄卡片">
-            <span class="material-symbols-outlined text-lg">chevron_left</span>
-          </button>
-          <span class="text-[11px] text-muted tabular-nums shrink-0">{{ selectedCard.w }}×{{ Math.min(3, selectedCard.h || 1) }}</span>
-          <button @click="resizeCard(selectedCard, 1)" :disabled="selectedCard.w >= cols"
-            class="w-10 h-10 flex items-center justify-center rounded-xl text-on-surface hover:bg-primary/10 active:scale-90 transition disabled:opacity-25"
-            title="加宽" aria-label="加宽卡片">
-            <span class="material-symbols-outlined text-lg">chevron_right</span>
-          </button>
-          <span class="w-px h-6 bg-border mx-0.5"></span>
-          <button @click="move(selectedCard, -1)" :disabled="indexOf(selectedCard) === 0"
-            class="w-10 h-10 flex items-center justify-center rounded-xl text-on-surface hover:bg-primary/10 active:scale-90 transition disabled:opacity-25"
-            title="前移" aria-label="前移">
-            <span class="material-symbols-outlined text-lg">arrow_back</span>
-          </button>
-          <button @click="move(selectedCard, 1)" :disabled="indexOf(selectedCard) === cards.length - 1"
-            class="w-10 h-10 flex items-center justify-center rounded-xl text-on-surface hover:bg-primary/10 active:scale-90 transition disabled:opacity-25"
-            title="后移" aria-label="后移">
-            <span class="material-symbols-outlined text-lg">arrow_forward</span>
-          </button>
-          <button @click="remove(selectedCard)"
-            class="w-10 h-10 flex items-center justify-center rounded-xl text-error hover:bg-error/10 active:scale-90 transition"
-            title="删除" aria-label="删除卡片">
-            <span class="material-symbols-outlined text-lg">delete</span>
-          </button>
-          <button @click="selectedUid = ''"
-            class="w-9 h-10 flex items-center justify-center rounded-xl text-muted hover:text-on-surface active:scale-90 transition"
-            title="取消选中" aria-label="取消选中">
-            <span class="material-symbols-outlined text-lg">close</span>
-          </button>
-        </div>
-      </transition>
+      <!-- 选中卡片的操作已统一到左栏电脑端底部操作栏（select 事件上抛，两侧互斥），
+           本面板不再渲染独立操作条 -->
     </template>
+
+    <!-- 反向跨栏（手机 → 电脑）拖拽浮动幽灵：fixed 定位不受面板 overflow 裁剪，
+         右下角电脑角标表明复制目标（与左栏 → 右栏方向同款交互） -->
+    <div
+      v-if="crossGhost.visible"
+      class="hc-cross-ghost"
+      :style="{ left: crossGhost.x + 'px', top: crossGhost.y + 'px', width: crossGhost.w + 'px', height: crossGhost.h + 'px' }"
+    >
+      <span class="material-symbols-outlined hc-cross-ghost-icon" aria-hidden="true">{{ crossGhost.icon }}</span>
+      <span class="hc-cross-ghost-label">{{ crossGhost.label }}</span>
+      <span class="hc-cross-ghost-badge">
+        <span class="material-symbols-outlined" aria-hidden="true">computer</span>
+      </span>
+    </div>
   </section>
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import CodeCard from '@/components/cards/CodeCard.vue'
 import { cardDefaults } from '@/components/cards/defaults'
 import { getPrefs, putPrefs } from '@/utils/prefs'
@@ -187,8 +166,11 @@ const props = defineProps({
   devices: { type: Array, default: () => [] },
   // 左栏手柄 HTML5 拖拽中的源卡快照（dragover 阶段读不到 dataTransfer，用它显示占位符）
   dragPayload: { type: Object, default: null },
+  // 反向跨栏（手机 → 电脑）拖放处理器：由 HomeView 提供，
+  // 栏内卡片拖入左栏时 preview 显示占位、松手 commit 插入克隆卡（复制语义，与正向对称）
+  webDrop: { type: Object, default: null },
 })
-const emit = defineEmits(['device-drawer', 'toast'])
+const emit = defineEmits(['device-drawer', 'toast', 'select', 'open-person', 'open-sensor', 'open-multi'])
 
 // 拖拽数据 MIME：左栏卡片 dragstart 写入，本面板 drop 读取（只传白名单字段，克隆后生成新 uid）
 const MIME = 'application/x-hc-card'
@@ -424,7 +406,28 @@ function revealCard(uid) {
     document.getElementById('apk-card-' + uid)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
   })
 }
-defineExpose({ dropCard, save, dirty, previewDrop, commitDrop, clearDropPreview, getGridRect, ghostSize })
+defineExpose({ dropCard, save, dirty, previewDrop, commitDrop, clearDropPreview, getGridRect, ghostSize, deselect, move, resizeCard, remove })
+
+// ---- 选中状态上抛：编辑操作栏已统一到左栏电脑端底部操作栏（与 web 卡片同一套按钮），
+// 本面板不再渲染自己的操作条。选中卡及其可执行操作（含 disabled 态）随变化同步给父组件，
+// 保证移动/缩放后按钮态即时刷新。
+const selState = computed(() => {
+  const c = selectedCard.value
+  if (!c) return null
+  const i = cards.value.indexOf(c)
+  return {
+    card: c,
+    cols: cols.value,
+    canNarrow: (c.w || 1) > 1,
+    canWiden: (c.w || 1) < cols.value,
+    canPrev: i > 0,
+    canNext: i >= 0 && i < cards.value.length - 1,
+  }
+})
+watch(selState, (s) => emit('select', s), { immediate: true })
+
+// deselect 供左栏选中自己的卡片时调用（两侧选中互斥，操作栏同一时刻只针对一侧）
+function deselect() { selectedUid.value = '' }
 
 // HTML5 手柄拖放（桌面端兜底路径）：dragover 同样显示定位占位符。
 // dragover 阶段读不到 dataTransfer 数据，源卡快照由左栏经 dragPayload prop 传入。
@@ -498,8 +501,11 @@ function stopEdgeScroll() {
 
 // ---- 右栏内部：按住卡片拖动换位（鼠标/触控笔 pointer 方案）----
 const dragCard = ref(null)
-let paneDrag = null // { card, el, uid, grabX/Y, startX/Y }
+let paneDrag = null // { card, el, uid, grabX/Y, startX/Y, startIndex, zone, boxW, boxH, grabWebX/Y }
 let paneDragEndAt = 0
+// 反向跨栏（手机 → 电脑）拖拽时的 body 级浮动幽灵：栏内滚动区 overflow 会裁剪
+// transform 卡片，故跨栏期间源卡留位半透明，另用 fixed 幽灵跟随指针（与正向同款）
+const crossGhost = reactive({ visible: false, x: 0, y: 0, w: 0, h: 0, label: '', icon: '' })
 function onPanePointerDown(e, card) {
   if (e.button !== 0 && e.pointerType === 'mouse') return
   // 触屏：垂直手势让给手机框滚动（CSS 端 touch-action: pan-y，见 @media pointer:coarse），
@@ -512,10 +518,28 @@ function onPanePointerDown(e, card) {
     grabX: e.clientX - rect.left, grabY: e.clientY - rect.top,
     startX: e.clientX, startY: e.clientY,
     active: false, moved: false,
+    startIndex: cards.value.indexOf(card), // 拖拽开始时源卡位置：跨栏复制需原样恢复
+    zone: 'pane', // 'pane'=栏内换位；'web'=悬停左栏电脑网格（复制语义）
+    boxW: rect.width, boxH: rect.height,
   }
   window.addEventListener('pointermove', onPanePointerMove)
   window.addEventListener('pointerup', onPanePointerUp)
   window.addEventListener('pointercancel', onPanePointerUp)
+}
+// 指针是否位于左栏电脑网格的可放置区内
+function pointInWebGrid(x, y) {
+  const r = props.webDrop?.rect?.()
+  return !!(r && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom)
+}
+// 复制语义：进入左栏前把源卡恢复到拖拽开始时的索引（撤销本段在栏内的换位）
+function restorePaneSourceIndex() {
+  const arr = cards.value
+  const cur = arr.indexOf(paneDrag.card)
+  const to = Math.max(0, Math.min(paneDrag.startIndex, arr.length))
+  if (cur >= 0 && cur !== to) {
+    arr.splice(cur, 1)
+    arr.splice(to, 0, paneDrag.card)
+  }
 }
 // 按指针位置实时换位（pointermove 与边缘自动滚动帧共用）
 function reorderInPane(x = null, y = null) {
@@ -536,8 +560,47 @@ function onPanePointerMove(e) {
     paneDrag.active = true
     paneDrag.moved = true
     dragCard.value = paneDrag.card
+    crossGhost.label = cardDefaults[paneDrag.card.type]?.label || paneDrag.card.title || paneDrag.card.type
+    crossGhost.icon = paneDrag.card.icon || cardDefaults[paneDrag.card.type]?.icon || 'dashboard'
+    crossGhost.w = paneDrag.boxW
+    crossGhost.h = paneDrag.boxH
   }
   e.preventDefault()
+
+  // ---- 双栏模式：指针进入左栏电脑网格 → 反向跨栏复制（与左栏 → 右栏对称）----
+  if (pointInWebGrid(e.clientX, e.clientY)) {
+    if (paneDrag.zone !== 'web') {
+      paneDrag.zone = 'web'
+      restorePaneSourceIndex()
+      paneDrag.el.style.transform = '' // 源卡不再跟随，留位显示
+      stopEdgeScroll()
+      // 浮动幽灵改用电脑格子尺寸（按左栏列数钳制），避免手机小卡视觉上过大/过小
+      const gs = props.webDrop?.ghostSize?.(paneDrag.card)
+      if (gs) {
+        crossGhost.w = gs.w
+        crossGhost.h = gs.h
+        // 抓取点钳进缩放后的幽灵内，避免指针落在幽灵外侧
+        paneDrag.grabWebX = Math.min(paneDrag.grabX, gs.w * 0.8)
+        paneDrag.grabWebY = Math.min(paneDrag.grabY, gs.h * 0.8)
+      }
+    }
+    crossGhost.x = e.clientX - (paneDrag.grabWebX ?? paneDrag.grabX)
+    crossGhost.y = e.clientY - (paneDrag.grabWebY ?? paneDrag.grabY)
+    crossGhost.visible = true
+    props.webDrop?.preview(e.clientX, e.clientY, paneDrag.card)
+    return
+  }
+  // 从左栏回到右栏：取消电脑侧占位，恢复栏内换位与幽灵原尺寸
+  if (paneDrag.zone === 'web') {
+    paneDrag.zone = 'pane'
+    paneDrag.grabWebX = null
+    paneDrag.grabWebY = null
+    crossGhost.visible = false
+    crossGhost.w = paneDrag.boxW
+    crossGhost.h = paneDrag.boxH
+    props.webDrop?.clear()
+  }
+
   const grid = gridEl.value
   if (!grid) return
   const gridRect = grid.getBoundingClientRect()
@@ -548,12 +611,19 @@ function onPanePointerMove(e) {
   reorderInPane(e.clientX, e.clientY)
   edgeAutoScroll(e.clientX, e.clientY) // 拖到手机框上下边缘时自动滚动，滚动帧内继续换位
 }
-function onPanePointerUp() {
+function onPanePointerUp(e) {
+  // 反向跨栏松手：在左栏占位位置提交克隆卡（源卡已恢复原位，保持复制语义）；
+  // pointercancel（来电/系统打断）视为取消，仅清占位
+  if (paneDrag?.zone === 'web' && props.webDrop) {
+    if (e?.type === 'pointercancel') props.webDrop.clear()
+    else props.webDrop.commit(paneDrag.card)
+  }
   // 轻触选中统一交给随后的 click（onPaneCardClick）处理，避免两处各切一次导致选不中；
   // 这里仅收尾拖拽并记录时刻，让 350ms 内的 click 被识别为拖拽副产物
   stopEdgeScroll()
   if (paneDrag?.moved) paneDragEndAt = Date.now()
   if (paneDrag?.el) paneDrag.el.style.transform = ''
+  crossGhost.visible = false
   paneDrag = null
   dragCard.value = null
   window.removeEventListener('pointermove', onPanePointerMove)
@@ -567,8 +637,7 @@ function onPaneCardClick(card) {
   try { navigator.vibrate?.(12) } catch { /* 不支持则忽略 */ }
 }
 
-// ---- 选中卡片操作 ----
-function indexOf(card) { return cards.value.indexOf(card) }
+// ---- 选中卡片操作（经 defineExpose 供左栏统一操作栏调用）----
 function cardLabel(card) { return cardDefaults[card.type]?.label || card.title || card.type }
 function move(card, dir) {
   const arr = cards.value
@@ -658,6 +727,62 @@ watch(cols, () => nextTick(measure))
   box-shadow: 0 14px 30px rgba(0, 0, 0, .24);
   transition: none;
 }
+/* 反向跨栏复制源卡留位：半透明 + 虚线框（与左栏 .hc-card-cross-source 同款视觉） */
+.hc-apk-card-cross {
+  z-index: 3;
+  opacity: .35;
+  outline: 2px dashed rgb(var(--c-primary) / .55);
+  outline-offset: -2px;
+}
+/* 反向跨栏浮动幽灵：跟随指针的卡片轮廓，右下角电脑角标表明复制目标
+   （样式与 HomeView 的 .hc-cross-ghost 保持一致；scoped 不共享故各自定义） */
+.hc-cross-ghost {
+  position: fixed;
+  z-index: 200;
+  pointer-events: none;
+  border-radius: 14px;
+  border: 2px solid rgb(var(--c-primary));
+  background: rgb(var(--c-primary) / .14);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+  box-shadow: 0 18px 44px -8px rgb(0 0 0 / .4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 4px;
+  color: rgb(var(--c-primary));
+  transform: scale(1.04);
+  transform-origin: top left;
+  overflow: hidden;
+}
+.hc-cross-ghost-icon { font-size: 34px; opacity: .85; }
+.hc-cross-ghost-label {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: rgb(var(--c-primary) / .16);
+  max-width: 90%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hc-cross-ghost-badge {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: rgb(var(--c-primary));
+  color: rgb(var(--c-on-primary));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgb(0 0 0 / .25);
+}
+.hc-cross-ghost-badge .material-symbols-outlined { font-size: 16px; }
 /* 跨栏插入占位符：虚线框 + 呼吸底色，明确松手落位处 */
 .hc-apk-drop-slot {
   border-radius: 14px;
@@ -680,8 +805,4 @@ watch(cols, () => nextTick(measure))
   transform-origin: top left;
   flex: none;
 }
-/* 选中操作条滑入/滑出 */
-.hc-apk-bar-enter-active { transition: opacity .18s ease, transform .18s cubic-bezier(.2,.8,.2,1); }
-.hc-apk-bar-leave-active { transition: opacity .14s ease, transform .14s ease; }
-.hc-apk-bar-enter-from, .hc-apk-bar-leave-to { opacity: 0; transform: translateY(6px); }
 </style>

@@ -872,7 +872,9 @@
         </div>
       </div>
       <div class="flex gap-2">
-        <input v-model="siteNameDraft" maxlength="20" placeholder="例如：糯米"
+        <input v-model="siteNameDraft" maxlength="20" placeholder="中文名称，例如：糯米"
+          class="flex-1 min-w-0 bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
+        <input v-model="siteNameEnDraft" maxlength="40" placeholder="英文名称，例如：Sticky Kee"
           class="flex-1 min-w-0 bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
         <button @click="saveSiteName" :disabled="siteNameSaving"
           class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-on-primary text-sm font-semibold transition-all disabled:opacity-50 flex items-center gap-1.5">
@@ -902,8 +904,18 @@
           </button>
         </div>
         <div class="w-11 h-11 rounded-xl bg-primary flex items-center justify-center shadow shrink-0" title="预览">
-          <span class="material-symbols-outlined text-on-primary text-xl">{{ siteIconDraft || 'bolt' }}</span>
+          <SiteIcon :span-class="'text-on-primary text-xl'" :img-class="'w-6 h-6 object-contain'" v-if="siteIconImg" />
+          <span v-else class="material-symbols-outlined text-on-primary text-xl">{{ siteIconDraft || 'bolt' }}</span>
         </div>
+      </div>
+      <!-- 自定义图标：上传图片（与 Material 图标互斥，上传后立即生效；选 Material 保存自动恢复） -->
+      <div class="mt-3 flex items-center gap-2.5">
+        <button @click="iconFileEl?.click()" :disabled="siteIconSaving"
+          class="px-3.5 py-2 rounded-xl bg-background border border-border text-on-surface text-sm hover:border-primary transition-colors disabled:opacity-50 flex items-center gap-1.5">
+          <span class="material-symbols-outlined text-base">upload</span> 上传自定义图标
+        </button>
+        <span class="text-muted text-xs">PNG/SVG/WebP ≤256KB{{ siteIconImg ? '；当前为自定义图片，选择 Material 图标保存后恢复' : '' }}</span>
+        <input ref="iconFileEl" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" class="hidden" @change="onIconFile">
       </div>
       <!-- 常用图标快捷按钮 -->
       <div class="mt-3">
@@ -1021,11 +1033,12 @@
 <script setup>
 import { ref, reactive, watch, onMounted, onUnmounted, computed } from 'vue'
 import ToggleRow from '@/components/ToggleRow.vue'
+import SiteIcon from '@/components/SiteIcon.vue'
 import api, { getToken } from '@/api'
 import { listDevices, ensureDevice, renameDevice, deleteDevice, getDeviceId, currentDevice, readCache } from '@/utils/device'
 import { availableSensors, unavailableReason, startSensorMonitor, buildReportPayload, isNativeSensorMode } from '@/utils/sensors'
 import { showNotify, setBlackout, setScreenBrightness, setScreenWake, blackout, saveBlackoutDismiss, watchAmbientLight } from '@/utils/browserCommands'
-import { loadInstances, switchInstance, changePassword, authLogout, auth, store, backendOnline, haTokenConfigured, haTokenKnown, saveHAToken, siteName, siteIcon, loadSiteName, loadSiteIcon, saveSiteName as persistSiteName, saveSiteIcon as persistSiteIcon } from '@/store'
+import { loadInstances, switchInstance, changePassword, authLogout, auth, store, backendOnline, haTokenConfigured, haTokenKnown, saveHAToken, siteName, siteNameEn, siteIcon, siteIconImg, loadSiteName, loadSiteIcon, saveSiteName as persistSiteName, saveSiteIcon as persistSiteIcon, saveSiteIconImage as persistSiteIconImage } from '@/store'
 import { applyTheme, resolveTheme, THEMES, CUSTOM_COLOR_KEYS, DEFAULT_CUSTOM_COLORS } from '@/themes'
 import { getPrefs, putPrefs } from '@/utils/prefs'
 import { colsKeyFor } from '@/utils/dashboard'
@@ -1556,16 +1569,18 @@ function uflash(text, err = false) { umsg.value = text; umsgErr.value = err }
 
 // ---- 系统名称（管理员） ----
 const siteNameDraft = ref(siteName.value)
+const siteNameEnDraft = ref(siteNameEn.value)
 const siteNameSaving = ref(false)
 const siteNameMsg = ref('')
 const siteNameErr = ref(false)
 async function saveSiteName() {
   const name = siteNameDraft.value.trim()
   if (!name) { siteNameMsg.value = '名称不能为空'; siteNameErr.value = true; return }
+  const nameEn = siteNameEnDraft.value.trim()
   siteNameSaving.value = true
   siteNameMsg.value = ''
   try {
-    await persistSiteName(name)
+    await persistSiteName(name, nameEn)
     siteNameMsg.value = `已保存为「${name}」`
     siteNameErr.value = false
   } catch (e) {
@@ -1593,6 +1608,40 @@ async function saveSiteIcon() {
     siteIconErr.value = false
   } catch (e) {
     siteIconMsg.value = e?.response?.data?.error || e.message || '保存失败'
+    siteIconErr.value = true
+  } finally {
+    siteIconSaving.value = false
+  }
+}
+
+// 上传自定义图标图片：读为 data URL 直接保存（≤256KB），各端经 brand 广播热刷新
+const iconFileEl = ref(null)
+async function onIconFile(e) {
+  const f = e.target.files?.[0]
+  e.target.value = '' // 允许重复选同一文件
+  if (!f) return
+  if (f.size > 256 * 1024) { siteIconMsg.value = '图片过大（请压缩到 256KB 以内）'; siteIconErr.value = true; return }
+  let dataUrl
+  try {
+    dataUrl = await new Promise((resolve, reject) => {
+      const r = new FileReader()
+      r.onload = () => resolve(String(r.result || ''))
+      r.onerror = () => reject(new Error('读取文件失败'))
+      r.readAsDataURL(f)
+    })
+  } catch (err) {
+    siteIconMsg.value = err.message || '读取文件失败'
+    siteIconErr.value = true
+    return
+  }
+  siteIconSaving.value = true
+  siteIconMsg.value = ''
+  try {
+    await persistSiteIconImage(dataUrl)
+    siteIconMsg.value = '已保存'
+    siteIconErr.value = false
+  } catch (e2) {
+    siteIconMsg.value = e2.message || '保存失败'
     siteIconErr.value = true
   } finally {
     siteIconSaving.value = false
@@ -1913,7 +1962,7 @@ onMounted(() => {
   if (canPickRing) { loadRingNames(); window.addEventListener('stickykee-ring', onRingPicked) }
   if (isApk) window.addEventListener('stickykee-apk', onApkEvent) // 应用内更新进度
   if (canInAppUpdate) { refreshNotif(); document.addEventListener('visibilitychange', onVisNotif) } // 通知权限状态（从详情页回来刷新）
-  loadSiteName().then(() => { siteNameDraft.value = siteName.value }) // 同步后端权威值
+  loadSiteName().then(() => { siteNameDraft.value = siteName.value; siteNameEnDraft.value = siteNameEn.value }) // 同步后端权威值
   loadSiteIcon().then(() => { siteIconDraft.value = siteIcon.value })
   stopLightWatch = watchAmbientLight() // 面板打开期间持续读环境光，用于「实时值」显示
 })

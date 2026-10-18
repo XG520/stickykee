@@ -807,6 +807,41 @@ function rowAction(e) {
   return null
 }
 
+// 实体行（通用卡「其余实体行」与实体组卡共用）：图标 + 名称 + 状态文本 + 行内开关按钮
+// （data-hc="toggle"/"svc" 由 CodeCard 统一派发，行按钮点击不触发卡片整卡点击）。
+function entityRowHtml(e) {
+  const stateMap = { on: '开启', off: '关闭', open: '已打开', closed: '已关闭', home: '在家', not_home: '离家', playing: '播放中', paused: '已暂停', idle: '待机' }
+  const color = colorOf(e)
+  const glyph = iconFor(e, domainGlyph[e.domain] || 'widgets')
+  const nm = escHtml(e.friendly_name || e.entity_id)
+  const n = numVal(e.state)
+  const unit = e.unit || attr(e, 'unit_of_measurement', '') || ''
+  const st = n != null ? `${Math.round(n * 10) / 10}${unit}` : (stateMap[String(e.state)] || String(e.state))
+  let actHtml = ''
+  const a = rowAction(e)
+  if (a) {
+    const actionAttrs = a.kind === 'toggle'
+      ? 'data-hc="toggle"'
+      : `data-hc="svc" data-svc="${escHtml(a.svc)}"`
+    actHtml = `<button type="button" class="g-tg${a.on ? ' on' : ''}" style="--gc:${color}" ${actionAttrs} data-entity="${escHtml(e.entity_id)}" title="${a.tip}"><span class="material-symbols-outlined">${a.icon}</span></button>`
+  }
+  return `<div class="grow"><span class="g-ic material-symbols-outlined" style="color:${color}">${glyph}</span><span class="g-nm">${nm}</span><span class="g-st">${escHtml(st)}</span>${actHtml}</div>`
+}
+
+// 实体组卡数据：卡面只显示组名/图标/设备数（实体列表在点击弹窗中展示）。
+function groupData(entities, hasData, card) {
+  const list = Array.isArray(entities) ? entities : entities ? [entities] : []
+  const b = base(list[0] || null, hasData, 'group_work')
+  const tint = list.length ? colorOf(list[0]) : '#8A8986'
+  return {
+    ...b,
+    name: card?.title || '实体组',
+    groupIcon: card?.icon || 'group_work',
+    count: String(list.length),
+    kindColorRgb: hexRgb(tint),
+  }
+}
+
 function genericData(entities, hasData, card) {
   const list = Array.isArray(entities) ? entities : entities ? [entities] : []
   const first = list[0] || null
@@ -837,24 +872,7 @@ function genericData(entities, hasData, card) {
 
   // 3) 其余实体行（主实体已在主状态区展示，不再重复）
   const restList = list.filter((e) => e !== heroEntity)
-  const stateMap = { on: '开启', off: '关闭', open: '已打开', closed: '已关闭', home: '在家', not_home: '离家', playing: '播放中', paused: '已暂停', idle: '待机' }
-  const rowsHtml = restList.map((e) => {
-    const color = colorOf(e)
-    const glyph = iconFor(e, domainGlyph[e.domain] || 'widgets')
-    const nm = escHtml(e.friendly_name || e.entity_id)
-    const n = numVal(e.state)
-    const unit = e.unit || attr(e, 'unit_of_measurement', '') || ''
-    const st = n != null ? `${Math.round(n * 10) / 10}${unit}` : (stateMap[String(e.state)] || String(e.state))
-    let actHtml = ''
-    const a = rowAction(e)
-    if (a) {
-      const actionAttrs = a.kind === 'toggle'
-        ? 'data-hc="toggle"'
-        : `data-hc="svc" data-svc="${escHtml(a.svc)}"`
-      actHtml = `<button type="button" class="g-tg${a.on ? ' on' : ''}" style="--gc:${color}" ${actionAttrs} data-entity="${escHtml(e.entity_id)}" title="${a.tip}"><span class="material-symbols-outlined">${a.icon}</span></button>`
-    }
-    return `<div class="grow"><span class="g-ic material-symbols-outlined" style="color:${color}">${glyph}</span><span class="g-nm">${nm}</span><span class="g-st">${escHtml(st)}</span>${actHtml}</div>`
-  }).join('')
+  const rowsHtml = restList.map(entityRowHtml).join('')
 
   return {
     ...b,
@@ -1040,6 +1058,7 @@ export function computeData(type, ctx) {
     case 'vacuum': d = vacuumData(entity, hasData); break
     case 'scene': case 'script': d = actionData(entity, hasData); break
     case 'person': d = personData(entities, hasData, ctx); break
+    case 'group': d = groupData(entities && entities.length ? entities : (entity ? [entity] : []), hasData, ctx.card); break
     case 'weather_entity': d = weatherEntityData(entity, hasData); break
     case 'sun': d = sunData(entity, hasData); break
     case 'select': d = selectData(entity, hasData); break

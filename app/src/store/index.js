@@ -8,7 +8,7 @@ import { saveSnapshot, loadSnapshot, clearSnapshot, clearAll } from '@/utils/sna
 import { getPrefs, putPrefs } from '@/utils/prefs'
 import { handshake, openEnvelope, withCrypto } from '@/utils/crypto'
 import { isApk } from '@/utils/serverConfig'
-import { layoutKey } from '@/utils/dashboard'
+import { layoutKey, layoutKeyFor } from '@/utils/dashboard'
 
 mark('boot:store')
 
@@ -41,6 +41,25 @@ let cachedSiteName = '糯米'
 try { cachedSiteName = localStorage.getItem(SITE_NAME_CACHE_KEY) || '糯米' } catch { /* 隐私模式 */ }
 export const siteName = ref(cachedSiteName)
 
+// 系统英文名称（顶栏副标题，存后端全局 prefs.site_name_en，随 /site-name 一并返回）。
+const SITE_NAME_EN_CACHE_KEY = 'hc_site_name_en'
+let cachedSiteNameEn = 'Sticky Kee'
+try { cachedSiteNameEn = localStorage.getItem(SITE_NAME_EN_CACHE_KEY) || 'Sticky Kee' } catch { /* 隐私模式 */ }
+export const siteNameEn = ref(cachedSiteNameEn)
+
+// 浏览器标签标题：随系统名称热更新（管理员保存/WS 广播 brand 事件后立即生效）。
+// 标题逻辑放 store 而非 router：router ↔ store 存在循环依赖（store→browserCommands→router），
+// router 顶层引用 siteName 会撞 TDZ 死区（黑屏）。路由切换时由 router 调 setRouteTitle 记录页名。
+let routeTitle = ''
+function applyDocTitle() {
+  if (typeof document === 'undefined') return
+  document.title = routeTitle ? `${routeTitle} · ${siteName.value}` : siteName.value
+}
+export function setRouteTitle(t) {
+  routeTitle = t || ''
+  applyDocTitle()
+}
+
 export async function loadSiteName() {
   try {
     const { data } = await api.getSiteName()
@@ -49,16 +68,28 @@ export async function loadSiteName() {
       siteName.value = n
       try { localStorage.setItem(SITE_NAME_CACHE_KEY, n) } catch { /* 忽略 */ }
     }
+    const ne = String(data?.name_en || '').trim()
+    if (ne) {
+      siteNameEn.value = ne
+      try { localStorage.setItem(SITE_NAME_EN_CACHE_KEY, ne) } catch { /* 忽略 */ }
+    }
+    if (n) applyDocTitle()
   } catch { /* 离线保持缓存值 */ }
 }
 
-export async function saveSiteName(name) {
-  const { data } = await api.putSiteName(name)
+export async function saveSiteName(name, nameEn) {
+  const { data } = await api.putSiteName(name, nameEn)
   const n = String(data?.name || '').trim()
   if (n) {
     siteName.value = n
     try { localStorage.setItem(SITE_NAME_CACHE_KEY, n) } catch { /* 忽略 */ }
   }
+  const ne = String(data?.name_en || '').trim()
+  if (ne) {
+    siteNameEn.value = ne
+    try { localStorage.setItem(SITE_NAME_EN_CACHE_KEY, ne) } catch { /* 忽略 */ }
+  }
+  if (n) applyDocTitle() // 本端保存后立即更新标签标题，无需切页
   return n
 }
 
@@ -68,6 +99,20 @@ let cachedSiteIcon = 'bolt'
 try { cachedSiteIcon = localStorage.getItem(SITE_ICON_CACHE_KEY) || 'bolt' } catch { /* 隐私模式 */ }
 export const siteIcon = ref(cachedSiteIcon)
 
+// ---- 自定义图标图片（data URL，存后端全局 prefs.site_icon_img）----
+// 与 Material 名互斥：非空时各端优先渲染图片；重新选择 Material 图标时后端自动清除。
+const SITE_ICON_IMG_CACHE_KEY = 'hc_site_icon_img'
+let cachedSiteIconImg = ''
+try { cachedSiteIconImg = localStorage.getItem(SITE_ICON_IMG_CACHE_KEY) || '' } catch { /* 隐私模式 */ }
+export const siteIconImg = ref(cachedSiteIconImg)
+function setSiteIconImg(v) {
+  siteIconImg.value = v || ''
+  try {
+    if (v) localStorage.setItem(SITE_ICON_IMG_CACHE_KEY, v)
+    else localStorage.removeItem(SITE_ICON_IMG_CACHE_KEY)
+  } catch { /* 忽略 */ }
+}
+
 export async function loadSiteIcon() {
   try {
     const { data } = await api.getSiteIcon()
@@ -76,6 +121,7 @@ export async function loadSiteIcon() {
       siteIcon.value = v
       try { localStorage.setItem(SITE_ICON_CACHE_KEY, v) } catch { /* 忽略 */ }
     }
+    setSiteIconImg(String(data?.img || '')) // 空串即清除（Material 模式）
   } catch { /* 离线保持缓存值 */ }
 }
 
@@ -86,6 +132,15 @@ export async function saveSiteIcon(icon) {
     siteIcon.value = v
     try { localStorage.setItem(SITE_ICON_CACHE_KEY, v) } catch { /* 忽略 */ }
   }
+  setSiteIconImg('') // 选用 Material 图标：后端已清自定义图，本地同步
+  return v
+}
+
+// 上传自定义图标图片（data URL）：保存后各端经 brand 广播热刷新
+export async function saveSiteIconImage(img) {
+  const { data } = await api.putSiteIconImage(img)
+  const v = String(data?.img || '')
+  if (v) setSiteIconImg(v)
   return v
 }
 
@@ -496,16 +551,24 @@ function connectWS() {
       }
       // 仪表盘变更：本人在其它设备保存/接受分享后热刷新（HomeView 监听此版本号重载布局）。
       // keys 为受影响的布局键数组（dashboard=Web 端 / dashboard_apk=手机端全局回退 /
-      // dashboard_apk_<deviceId>=按设备隔离）。任一布局键变更即重载：网页端重读自己的
-      // dashboard（值未变则无可见变化），手机端经回退链拾取最新布局。
+      // dashboard_apk_<deviceId>=按设备隔离）。按本端身份过滤：网页端只响应自身的
+      // dashboard；手机端只响应回退键 dashboard_apk 与本机键 dashboard_apk_<本机 id>，
+      // 其它手机的按键变更与本机无关（避免网页端代管保存 A 机布局时 B 机被无谓刷新打断）。
       // dashboard_apk_cols_* 列数键不在此列（非布局重载）。
       // 无 keys 的旧形式按 dashboard 处理（兼容旧版服务端）。
       else if (m.type === 'prefs') {
         const keys = Array.isArray(m.keys) ? m.keys : (m.key ? [m.key] : [])
         const isLayout = (k) => k === 'dashboard' ||
           (k.startsWith('dashboard_apk') && !k.startsWith('dashboard_apk_cols'))
-        if (keys.length === 0 || keys.some(isLayout)) dashboardRev.value++
+        const ownKey = isApk ? layoutKeyFor(getDeviceId()) : null
+        const hit = keys.some((k) => isLayout(k) &&
+          (isApk ? (k === 'dashboard_apk' || k === ownKey) : k === 'dashboard'))
+        if (keys.length === 0 || hit) dashboardRev.value++
       }
+      // 品牌设置变更（系统名称/英文名/图标）：任一端的管理员保存后，
+      // 后端广播全部在线端即时热刷新，无需杀 APP 重进。siteName ref 变化
+      // 会联动顶栏/浏览器标签标题（router 里 watch siteName 更新 document.title）。
+      else if (m.type === 'brand') { loadSiteName(); loadSiteIcon() }
       // 通话信令：动态 import 避免 store ↔ call 模块循环依赖
       else if (m.type === 'call') import('@/utils/call').then((c) => c.handleCallEvent(m))
     } catch { /* 忽略坏帧 */ }

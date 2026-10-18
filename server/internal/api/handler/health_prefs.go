@@ -63,9 +63,28 @@ var globalKeys = []string{"result"}
 const siteNameKey = "site_name"
 const defaultSiteName = "糯米"
 
+// siteNameEnKey 系统英文名称（全局 prefs，顶栏副标题），默认「Sticky Kee」。
+const siteNameEnKey = "site_name_en"
+const defaultSiteNameEn = "Sticky Kee"
+
 // siteIconKey 系统图标（Material Symbol 名，全局 prefs）。
 const siteIconKey = "site_icon"
 const defaultSiteIcon = "bolt"
+
+// siteIconImgKey 自定义图标图片（data URL，全局 prefs）。与 Material 名互斥：
+// 非空时各端优先渲染图片；重新选择 Material 图标时自动清除。
+const siteIconImgKey = "site_icon_img"
+
+// broadcastBrand 品牌设置（名称/英文名/图标）变更后通知全部在线端即时热刷新，
+// 无需杀掉 APP 或刷新页面重进。
+func (h *Prefs) broadcastBrand() {
+	if h.hb == nil {
+		return
+	}
+	if b, err := json.Marshal(map[string]any{"type": "brand"}); err == nil {
+		h.hb.BroadcastAll(b)
+	}
+}
 
 // 读取当前用户（未登录时 readOnly 场景用空用户名）。
 func (h *Prefs) currentUser(r *http.Request) (string, bool) {
@@ -181,23 +200,29 @@ func (h *Prefs) assembleMapConfig(r *http.Request) string {
 	return string(b)
 }
 
-// SiteName GET /site-name 公开：返回系统显示名称，登录页/启动页可用。
+// SiteName GET /site-name 公开：返回系统显示名称（含英文名），登录页/启动页可用。
 func (h *Prefs) SiteName(w http.ResponseWriter, r *http.Request) {
 	name, _ := h.repo.GetPref(r.Context(), siteNameKey)
 	if name == "" {
 		name = defaultSiteName
 	}
-	WriteJSON(w, 200, map[string]string{"name": name})
+	nameEn, _ := h.repo.GetPref(r.Context(), siteNameEnKey)
+	if nameEn == "" {
+		nameEn = defaultSiteNameEn
+	}
+	WriteJSON(w, 200, map[string]string{"name": name, "name_en": nameEn})
 }
 
-// PutSiteName PUT /site-name 管理员：修改系统显示名称。
+// PutSiteName PUT /site-name 管理员：修改系统显示名称（name_en 可选，一并修改英文名）。
+// 保存成功后经 WebSocket 广播全部在线端即时热刷新。
 func (h *Prefs) PutSiteName(w http.ResponseWriter, r *http.Request) {
 	if !auth.IsAdmin(r.Context()) {
 		WriteErr(w, 403, "forbidden", "仅管理员可修改系统名称")
 		return
 	}
 	var body struct {
-		Name string `json:"name"`
+		Name   string `json:"name"`
+		NameEn string `json:"name_en"`
 	}
 	if err := DecodeBody(r, &body); err != nil {
 		WriteErr(w, 400, "bad_request", "bad payload")
@@ -216,16 +241,39 @@ func (h *Prefs) PutSiteName(w http.ResponseWriter, r *http.Request) {
 		WriteErr(w, 500, "internal", err.Error())
 		return
 	}
-	WriteJSON(w, 200, map[string]string{"name": name})
+	// 英文名：请求携带 name_en 字段时一并更新（空串回退默认值，不单独报错）
+	nameEn := strings.TrimSpace(body.NameEn)
+	if body.NameEn != "" {
+		if utf8.RuneCountInString(nameEn) > 40 {
+			WriteErr(w, 400, "bad_request", "英文名称最多 40 个字符")
+			return
+		}
+		if nameEn != "" {
+			if err := h.repo.SetPref(r.Context(), siteNameEnKey, nameEn); err != nil {
+				WriteErr(w, 500, "internal", err.Error())
+				return
+			}
+		}
+	}
+	if nameEn == "" {
+		nameEn, _ = h.repo.GetPref(r.Context(), siteNameEnKey)
+		if nameEn == "" {
+			nameEn = defaultSiteNameEn
+		}
+	}
+	h.broadcastBrand()
+	WriteJSON(w, 200, map[string]string{"name": name, "name_en": nameEn})
 }
 
-// SiteIcon GET /site-icon 公开：返回系统显示图标（Material Symbol 名）。
+// SiteIcon GET /site-icon 公开：返回系统显示图标（Material Symbol 名 + 自定义图片 data URL）。
+// img 非空时前端优先渲染图片；为空则渲染 Material 图标。
 func (h *Prefs) SiteIcon(w http.ResponseWriter, r *http.Request) {
 	v, _ := h.repo.GetPref(r.Context(), siteIconKey)
 	if v == "" {
 		v = defaultSiteIcon
 	}
-	WriteJSON(w, 200, map[string]string{"icon": v})
+	img, _ := h.repo.GetPref(r.Context(), siteIconImgKey)
+	WriteJSON(w, 200, map[string]string{"icon": v, "img": img})
 }
 
 // PutSiteIcon PUT /site-icon 管理员：修改系统显示图标。
@@ -261,7 +309,54 @@ func (h *Prefs) PutSiteIcon(w http.ResponseWriter, r *http.Request) {
 		WriteErr(w, 500, "internal", err.Error())
 		return
 	}
+	// 选用 Material 图标：清掉自定义图片（两者互斥，img 非空时优先渲染图片）
+	_ = h.repo.SetPref(r.Context(), siteIconImgKey, "")
+	h.broadcastBrand()
 	WriteJSON(w, 200, map[string]string{"icon": icon})
+}
+
+// PutSiteIconImage PUT /site-icon/image 管理员：上传自定义图标图片（data URL）。
+// 保存成功后经 WebSocket 广播全部在线端即时热刷新；重新选择 Material 图标自动清除。
+func (h *Prefs) PutSiteIconImage(w http.ResponseWriter, r *http.Request) {
+	if !auth.IsAdmin(r.Context()) {
+		WriteErr(w, 403, "forbidden", "仅管理员可修改系统图标")
+		return
+	}
+	var body struct {
+		Img string `json:"img"`
+	}
+	if err := DecodeBody(r, &body); err != nil {
+		WriteErr(w, 400, "bad_request", "bad payload")
+		return
+	}
+	img := strings.TrimSpace(body.Img)
+	if img == "" {
+		WriteErr(w, 400, "bad_request", "图片不能为空")
+		return
+	}
+	// 仅允许常见图标图片格式的 data URL；限制体积（base64 ≤350KB，约原始 256KB）。
+	ok := false
+	for _, p := range []string{"data:image/png;base64,", "data:image/jpeg;base64,", "data:image/webp;base64,", "data:image/gif;base64,", "data:image/svg+xml;base64,"} {
+		if strings.HasPrefix(img, p) {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		WriteErr(w, 400, "bad_request", "仅支持 PNG/JPEG/WebP/GIF/SVG 图片")
+		return
+	}
+	if len(img) > 350*1024 {
+		WriteErr(w, 400, "bad_request", "图片过大（请压缩到 256KB 以内）")
+		return
+	}
+	if err := h.repo.SetPref(r.Context(), siteIconImgKey, img); err != nil {
+		WriteErr(w, 500, "internal", err.Error())
+		return
+	}
+	h.broadcastBrand()
+	icon, _ := h.repo.GetPref(r.Context(), siteIconKey)
+	WriteJSON(w, 200, map[string]string{"icon": icon, "img": img})
 }
 
 func (h *Prefs) Put(w http.ResponseWriter, r *http.Request) {
@@ -348,8 +443,8 @@ func (h *Prefs) Put(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		default:
-			// site_name / site_icon 仅允许经专用接口由管理员修改，普通用户禁止走通用通道。
-			if k == siteNameKey || k == siteIconKey {
+			// site_name / site_name_en / site_icon / site_icon_img 仅允许经专用接口由管理员修改，普通用户禁止走通用通道。
+			if k == siteNameKey || k == siteNameEnKey || k == siteIconKey || k == siteIconImgKey {
 				WriteErr(w, 403, "forbidden", "系统名称与图标仅管理员可修改")
 				return
 			}

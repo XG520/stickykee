@@ -190,11 +190,13 @@ export const api = {
   // 偏好
   getPrefs: () => api.get('/prefs'),
   putPrefs: (body) => api.put('/prefs', body),
-  // 系统显示名称/图标：公开读取；修改需管理员
+  // 系统显示名称/图标：公开读取；修改需管理员（nameEn 可选，一并修改英文名）
   getSiteName: () => api.get('/site-name'),
-  putSiteName: (name) => api.put('/site-name', { name }),
+  putSiteName: (name, nameEn) => api.put('/site-name', { name, name_en: nameEn }),
   getSiteIcon: () => api.get('/site-icon'),
   putSiteIcon: (icon) => api.put('/site-icon', { icon }),
+  // 上传自定义图标图片（data URL，管理员）：与 Material 图标互斥，重新选择 Material 自动清除
+  putSiteIconImage: (img) => api.put('/site-icon/image', { img }),
 
   // 用户管理（仅管理员）
   listUsers: () => api.get('/users'),

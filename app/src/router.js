@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { auth, loadMe, siteName, loadSiteName, loadSiteIcon } from '@/store'
+import { auth, loadMe, loadSiteName, loadSiteIcon, setRouteTitle } from '@/store'
 import { isApk, activeAddress } from '@/utils/serverConfig'
 
 const routes = [
@@ -61,7 +61,7 @@ router.beforeEach(async (to) => {
 
 router.afterEach((to) => {
   loadSiteName(); loadSiteIcon() // 每次切页兜底拉取（内部静默失败，保持缓存值）
-  document.title = to.meta.title ? `${to.meta.title} · ${siteName.value}` : siteName.value
+  setRouteTitle(to.meta.title) // 记录页名并刷新标签标题；系统名称热更新由 store 内部统一处理
 })
 
 // 首次导航完成后，在浏览器空闲时预取其余路由的懒加载 chunk（Vite 会缓存模块解析结果，

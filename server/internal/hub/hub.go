@@ -145,6 +145,18 @@ func (h *Hub) SendToDevice(scope Scope, deviceID string, msg []byte) {
 	}
 }
 
+// BroadcastAll 向全部在线前端连接广播消息（跨用户、跨实例，用于系统级全局变更通知，
+// 如系统名称/图标等品牌设置变更后让所有在线端即时热刷新）。
+func (h *Hub) BroadcastAll(msg []byte) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for _, m := range h.byIns {
+		for _, c := range m {
+			c.Send(msg)
+		}
+	}
+}
+
 // BroadcastUser 向指定用户的全部前端连接广播消息（与实例作用域无关，用于用户间 IM）。
 func (h *Hub) BroadcastUser(user string, msg []byte) {
 	h.broadcastUser(user, 1, msg)
