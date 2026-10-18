@@ -100,19 +100,46 @@ function weatherBadData(entity) {
     feels: '—', humidity: '—', wind: '—', forecastHtml: '',
   }
 }
+// 7 日预报：按自然日聚合（兼容逐小时数据源——同日多条取最高/最低温，图标取正午时段），横向单行日列。
 function forecastHtml(entity) {
   const arr = attr(entity, 'forecast', [])
-  if (!Array.isArray(arr)) return ''
+  if (!Array.isArray(arr) || !arr.length) return ''
   const week = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
-  return arr.slice(0, 3).map((f) => {
+  // 按自然日分组，保持数据原顺序
+  const byDay = new Map()
+  for (const f of arr) {
     const d = new Date(f.datetime)
-    const day = Number.isNaN(d.getTime()) ? (f.datetime || '').slice(5, 10) : week[d.getDay()]
-    const c = String(f.condition || '').toLowerCase()
-    const ic = emojiFor(c, (f.icon || '').split(':').pop())
-    const low = fmtNum(f.templow)
-    const high = fmtNum(f.temperature ?? f.temphigh)
-    return `<div class="fc"><span class="d">${day}</span><span>${ic}</span><b>${low}°/${high}°</b></div>`
-  }).join('')
+    if (Number.isNaN(d.getTime())) continue
+    const key = `${d.getFullYear()}/${d.getMonth()}/${d.getDate()}`
+    if (!byDay.has(key)) byDay.set(key, [])
+    byDay.get(key).push({ f, d })
+  }
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const tomorrow = today.getTime() + 86400000
+  const days = []
+  for (const list of byDay.values()) {
+    const start = new Date(list[0].d); start.setHours(0, 0, 0, 0)
+    if (start.getTime() < today.getTime()) continue // 逐小时源：跳过已过去的时段
+    days.push({ start, list })
+    if (days.length >= 7) break
+  }
+  if (!days.length) return ''
+  return `<div class="fc7w"><div class="fc7">` + days.map(({ start, list }) => {
+    const label = start.getTime() === today.getTime() ? '今天'
+      : start.getTime() === tomorrow ? '明天' : week[start.getDay()]
+    // 图标取正午前后（11–14 点）时段，比首条更接近白天体感
+    const mid = list.find((x) => x.d.getHours() >= 11 && x.d.getHours() <= 14) || list[0]
+    const ic = emojiFor(String(mid.f.condition || '').toLowerCase(), (mid.f.icon || '').split(':').pop())
+    const temps = list.map((x) => numVal(x.f.temperature)).filter((v) => v != null)
+    const lows = list.map((x) => numVal(x.f.templow)).filter((v) => v != null)
+    const high = temps.length ? Math.round(Math.max(...temps)) : null
+    const low = lows.length ? Math.round(Math.min(...lows)) : (temps.length > 1 ? Math.round(Math.min(...temps)) : null)
+    const pp = Math.max(0, ...list.map((x) => numVal(x.f.precipitation_probability) ?? 0))
+    return `<div class="fc7-d"><span class="fc7-l">${label}</span><span class="fc7-i">${ic}</span>`
+      + `<span class="fc7-t"><b>${high != null ? high + '°' : '—'}</b><i>${low != null ? low + '°' : '—'}</i></span>`
+      + (pp > 0 ? `<span class="fc7-p">${pp}%</span>` : '')
+      + `</div>`
+  }).join('') + `</div></div>`
 }
 
 // ================= 各卡组数据 =================

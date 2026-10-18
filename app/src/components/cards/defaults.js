@@ -24,7 +24,7 @@ export const cardDefaults = {
   // ---- 基础仪表盘卡（默认布局，无需绑定实体） ----
   greeting: mk({ label: '问候', icon: 'home', colorCls: 'text-primary', w: 1, h: 1, needEntity: false, entityDomains: null, group: '基础仪表盘' }, tplGreeting),
   // entityOptional：可不绑定实体（未指定时自动取第一个 weather 实体），也可在属性面板手动指定来源实体
-  weather: mk({ label: '天气', icon: 'partly_cloudy_day', colorCls: 'text-info', w: 1, h: 2, needEntity: false, entityOptional: true, entityDomains: ['weather'], group: '基础仪表盘' }, tplWeather),
+  weather: mk({ label: '天气', icon: 'partly_cloudy_day', colorCls: 'text-info', w: 2, h: 2, needEntity: false, entityOptional: true, entityDomains: ['weather'], group: '基础仪表盘' }, tplWeather),
   map: mk({ label: '地图', icon: 'map', colorCls: 'text-accent', w: 4, h: 2, needEntity: false, entityDomains: null, group: '基础仪表盘' }, tplMap),
   // 基础开关：未指定实体时自动取第一个开关类实体，也可在属性面板手动指定
   toggle: mk({ label: '开关', icon: 'toggle_on', colorCls: 'text-primary', w: 1, h: 1, needEntity: false, entityOptional: true, entityDomains: ['switch', 'light', 'plug', 'valve', 'input_boolean', 'fan', 'humidifier', 'group', 'remote', 'siren'], group: '基础仪表盘' }, tplToggle),
@@ -53,7 +53,7 @@ export const cardDefaults = {
   scene: mk({ label: '场景', icon: 'magic_button', colorCls: 'text-info', w: 1, h: 1, needEntity: true, entityDomains: ['scene'], group: '场景' }, tplAction),
   script: mk({ label: '脚本/自动化', icon: 'terminal', colorCls: 'text-info', w: 1, h: 1, needEntity: true, entityDomains: ['script', 'automation', 'button', 'input_button'], group: '场景' }, tplAction),
   person: mk({ label: '人员位置', icon: 'person_pin', colorCls: 'text-success', w: 1, h: 1, needEntity: true, entityDomains: ['person', 'device_tracker', 'zone', 'geocoded_location', 'sensor'], group: '人员' }, tplPerson),
-  weather_entity: mk({ label: '天气实体', icon: 'partly_cloudy_day', colorCls: 'text-info', w: 1, h: 2, needEntity: true, entityDomains: ['weather'], group: '环境气候' }, tplWeatherEntity),
+  weather_entity: mk({ label: '天气实体', icon: 'partly_cloudy_day', colorCls: 'text-info', w: 2, h: 2, needEntity: true, entityDomains: ['weather'], group: '环境气候' }, tplWeatherEntity),
   sun: mk({ label: '太阳', icon: 'wb_sunny', colorCls: 'text-warning', w: 1, h: 1, needEntity: true, entityDomains: ['sun'], group: '环境气候' }, tplSun),
   select: mk({ label: '选项选择', icon: 'arrow_drop_down_circle', colorCls: 'text-info', w: 1, h: 1, needEntity: true, entityDomains: ['select', 'input_select'], group: '输入控制' }, tplSelect),
   text: mk({ label: '文本', icon: 'text_fields', colorCls: 'text-muted', w: 1, h: 1, needEntity: true, entityDomains: ['text', 'input_text'], group: '输入控制' }, tplText),

@@ -408,13 +408,20 @@ export function tplWeatherEntity() {
     <div class="h-cell h-fill"><span class="h-cap">湿度</span><b style="display:block;font-size:10px;color:var(--hc-text)">{{humidity}}</b></div>
     <div class="h-cell h-fill"><span class="h-cap">风速</span><b style="display:block;font-size:10px;color:var(--hc-text)">{{wind}}</b></div>
   </div>
-  <div class="h-fill" style="display:flex;flex-direction:column;justify-content:flex-end;gap:2px">{{forecastHtml}}</div>
+  <div class="fc7w">{{forecastHtml}}</div>
 </div>`
   const css = shell + `
 .hc{padding:6px}
-.fc{display:flex;align-items:center;gap:4px;font-size:8px;background:var(--hc-bg2);border:1px solid var(--hc-border);border-radius:6px;padding:1px 5px}
-.fc span.d{width:36px;flex-shrink:0;color:var(--hc-sub)}
-.fc b{margin-left:auto;color:var(--hc-text);font-weight:600}`
+.fc7w{flex:1;min-height:0;display:flex;min-width:0}
+.fc7{flex:1;display:flex;gap:3px;min-width:0;overflow-x:auto;scrollbar-width:none}
+.fc7::-webkit-scrollbar{display:none}
+.fc7-d{flex:1 1 0;min-width:27px;display:flex;flex-direction:column;align-items:center;justify-content:space-evenly;gap:1px;background:var(--hc-bg2);border:1px solid var(--hc-border);border-radius:8px;padding:3px 2px;text-align:center}
+.fc7-l{font-size:8px;color:var(--hc-sub);white-space:nowrap}
+.fc7-i{font-size:13px;line-height:1}
+.fc7-t{display:flex;flex-direction:column;line-height:1.15;font-variant-numeric:tabular-nums}
+.fc7-t b{font-size:10px;font-weight:600;color:var(--hc-text)}
+.fc7-t i{font-style:normal;font-size:9px;color:var(--hc-sub)}
+.fc7-p{font-size:7px;color:var(--hc-info);line-height:1}`
   return { html, css }
 }
 
@@ -649,7 +656,7 @@ export function tplWeather() {
   const html = `<div class="hc">
   <div class="h-head">
     <span class="h-ic material-symbols-outlined" style="color:var(--hc-info)">{{glyph}}</span>
-    <span class="h-t">今日天气</span>
+    <span class="h-t">天气预报</span>
   </div>
   <div class="h-fill h-mid" style="gap:8px">
     <span style="font-size:26px;line-height:1">{{icon}}</span>
@@ -663,7 +670,7 @@ export function tplWeather() {
     <div class="h-cell h-fill"><span class="h-cap">湿度</span><b style="display:block;font-size:10px;color:var(--hc-text)">{{humidity}}</b></div>
     <div class="h-cell h-fill"><span class="h-cap">风力</span><b style="display:block;font-size:10px;color:var(--hc-text)">{{wind}}</b></div>
   </div>
-  <div class="h-fill" style="display:flex;flex-direction:column;justify-content:flex-end;gap:2px">{{forecastHtml}}</div>
+  <div class="fc7w">{{forecastHtml}}</div>
 </div>`
   const css = shell + `.hc{flex:1;min-height:0;display:flex;flex-direction:column;gap:5px;overflow:hidden;padding:8px}
 .h-head{display:flex;align-items:center;gap:5px}
@@ -671,9 +678,16 @@ export function tplWeather() {
 .h-t{font-size:11px;font-weight:600;color:var(--hc-text)}
 .h-cell{padding:3px 0}
 .h-row{display:flex;align-items:center;gap:4px}
-.fc{display:flex;align-items:center;gap:4px;font-size:8px;background:var(--hc-bg2);border:1px solid var(--hc-border);border-radius:6px;padding:1px 5px}
-.fc span.d{width:36px;flex-shrink:0;color:var(--hc-sub)}
-.fc b{margin-left:auto;color:var(--hc-text);font-weight:600}`
+.fc7w{flex:1;min-height:0;display:flex;min-width:0}
+.fc7{flex:1;display:flex;gap:3px;min-width:0;overflow-x:auto;scrollbar-width:none}
+.fc7::-webkit-scrollbar{display:none}
+.fc7-d{flex:1 1 0;min-width:27px;display:flex;flex-direction:column;align-items:center;justify-content:space-evenly;gap:1px;background:var(--hc-bg2);border:1px solid var(--hc-border);border-radius:8px;padding:3px 2px;text-align:center}
+.fc7-l{font-size:8px;color:var(--hc-sub);white-space:nowrap}
+.fc7-i{font-size:13px;line-height:1}
+.fc7-t{display:flex;flex-direction:column;line-height:1.15;font-variant-numeric:tabular-nums}
+.fc7-t b{font-size:10px;font-weight:600;color:var(--hc-text)}
+.fc7-t i{font-style:normal;font-size:9px;color:var(--hc-sub)}
+.fc7-p{font-size:7px;color:var(--hc-info);line-height:1}`
   return { html, css }
 }
 
