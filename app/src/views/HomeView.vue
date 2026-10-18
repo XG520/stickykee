@@ -201,7 +201,8 @@
       <!-- 操作栏主体：未选中显示「添加 + 引导提示」；选中后显示卡片名与操作按钮 -->
       <div class="pointer-events-auto mx-3 mb-3 rounded-2xl bg-surface-alt/95 backdrop-blur-md border border-border shadow-lg shadow-black/20"
         style="padding-bottom: env(safe-area-inset-bottom)">
-        <div class="flex items-center gap-1.5 px-2 py-2">
+        <!-- 内容居中紧凑：超宽屏下按钮不分散到两端，缩短操作动线 -->
+        <div class="flex items-center justify-center gap-1.5 px-2 py-2">
           <!-- 添加卡片入口：常驻（选中态压缩为纯图标，给操作按钮让位） -->
           <button @click="addPanel = !addPanel"
             class="shrink-0 flex items-center gap-1 h-11 rounded-xl bg-primary/12 text-primary font-semibold active:scale-95 transition-all"
@@ -239,7 +240,7 @@
           </template>
 
           <!-- 未选中：操作引导（手机面板多选时 apkSel 无 card，须先排除，否则会拦截下方的手机多选按钮组） -->
-          <p v-else-if="!anySelCard && !apkSel?.multiActive" class="min-w-0 flex-1 text-muted text-xs leading-snug pl-1">
+          <p v-else-if="!anySelCard && !apkSel?.multiActive" class="min-w-0 text-muted text-xs leading-snug pl-1">
             点按卡片选中进行编辑，按住卡片拖动可调整位置
           </p>
 
@@ -249,7 +250,7 @@
               class="inline-flex items-center gap-1.5 h-11 px-3.5 rounded-xl bg-surface-alt border border-border text-sm text-on-surface transition-all active:scale-95 shrink-0">
               <span class="material-symbols-outlined text-lg">checklist</span>多选
             </button>
-            <div class="min-w-0 flex-1 flex items-center gap-2 pl-1.5">
+            <div class="min-w-0 max-w-56 flex items-center gap-2 pl-1.5">
               <span class="material-symbols-outlined text-lg text-primary shrink-0">{{ selectedMeta.icon }}</span>
               <span class="min-w-0 truncate text-sm text-on-surface font-medium">{{ selectedMeta.label }}</span>
               <span class="shrink-0 text-[11px] text-muted font-body tabular-nums">{{ selectedCard.w }}×{{ selectedCard.h }}</span>
@@ -315,7 +316,7 @@
               class="inline-flex items-center gap-1.5 h-11 px-3.5 rounded-xl bg-surface-alt border border-border text-sm text-on-surface transition-all active:scale-95 shrink-0">
               <span class="material-symbols-outlined text-lg">checklist</span>多选
             </button>
-            <div class="min-w-0 flex-1 flex items-center gap-2 pl-1.5">
+            <div class="min-w-0 max-w-56 flex items-center gap-2 pl-1.5">
               <span class="material-symbols-outlined text-base text-muted shrink-0" title="手机仪表盘卡片">smartphone</span>
               <span class="material-symbols-outlined text-lg text-primary shrink-0">{{ apkSelMeta.icon }}</span>
               <span class="min-w-0 truncate text-sm text-on-surface font-medium">{{ apkSelMeta.label }}</span>
