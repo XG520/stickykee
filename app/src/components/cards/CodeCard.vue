@@ -202,7 +202,7 @@ function applyJs() {
 // 重新激活后需重跑 JS 才能恢复；主题切换（themes.applyTheme）同样可能打断动画。
 // 卡内 JS 起始均自带 clearInterval 幂等保护，重跑安全；防抖合并短时间内的多次触发
 // （如设置页拖动自定义主题色时高频 applyTheme）。
-const SELF_DRIVING_TYPES = new Set(['flipclock', 'amapweather'])
+const SELF_DRIVING_TYPES = new Set(['flipclock', 'amapweather', 'weather'])
 let jsRestartT = null
 function restartCardJs() {
   if (props.freeze || !SELF_DRIVING_TYPES.has(props.card.type)) return

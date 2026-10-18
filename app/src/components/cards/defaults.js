@@ -12,10 +12,10 @@ import {
 
 export { computeData } from './data'
 
-// 组装：元信息 + 默认三栏代码
+// 组装：元信息 + 默认三栏代码（模板自带 js 的卡片如天气/翻页时钟用它，否则回落通用示例）
 function mk(meta, tplFn) {
-  const { html, css } = tplFn()
-  return { ...meta, html, css, js: JS_COMMON }
+  const { html, css, js } = tplFn()
+  return { ...meta, html, css, js: js || JS_COMMON }
 }
 
 // ================= 卡片注册表（36 个类型） =================
@@ -84,16 +84,17 @@ export function scopeCss(css, holderSel) {
   try {
     let s = String(css || '')
     const frames = []
-    // 先摘出 @keyframes 整块（含嵌套的步进规则），用占位符顶替，作用域化后再还原
+    // 摘出 @keyframes 整块（占位符法会被中段选择器正则误加作用域前缀导致整条非法），
+    // 直接从正文中移除、作用域化后统一追加到末尾（keyframes 本就是全局的，位置无关）
     s = s.replace(/@keyframes\s+[\w-]+\s*\{(?:[^{}]*\{[^{}]*\})+\s*\}/g, (m) => {
       frames.push(m)
-      return `\u0000${frames.length - 1}\u0000`
+      return ''
     })
     s = s.replace(/(^|})([^@][^{}]*?)\{/g, (_, pre, sel) => {
       const scoped = sel.split(',').map((x) => `${holderSel} ${x.trim()}`).join(',')
       return `${pre}${scoped} {`
     })
-    return s.replace(/\u0000(\d+)\u0000/g, (_, n) => frames[+n])
+    return frames.length ? s + '\n' + frames.join('\n') : s
   } catch {
     return css
   }

@@ -116,6 +116,20 @@ export function upgradeAmapWeatherCard(card) {
   if (!String(card.js || '').includes('v2')) { card.html = d.html; card.css = d.css; card.js = d.js }
 }
 
+// 天气卡重构（动态天空场景动画，小米天气式）：场景元素以 .wx-sky 容器承载，
+// 旧快照没有该结构且 CSS 无法字符串补丁，检测到即整体重同步为最新模板（uid 保留，幂等）。
+export function upgradeWeatherCard(card) {
+  if (!card || card.type !== 'weather') return
+  const d = cardDefaults.weather
+  if (!d) return
+  // 迁移标记：模板 js 自带 WX_VER 版本号，升级模板时同步 +1 即可（勿再累加特征字符串）
+  if (!/WX_VER\s*=\s*9/.test(String(card.js || ''))) {
+    card.html = d.html; card.css = d.css; card.js = d.js
+    // 本版同时把尺寸统一回 2×2（4×4 为误配，用户已更正）
+    card.w = 2; card.h = 2
+  }
+}
+
 // 卡片数组归一化：字符串（旧的卡片类型简写）→ 卡片对象；丢弃未知类型；跑卡片级迁移。
 // 幂等：已有 uid 的卡片保留原 uid，因此可安全地重复调用（load / import 共用）。
 export function normalizeCards(list) {
@@ -137,6 +151,7 @@ export function normalizeCards(list) {
   out.forEach(upgradeToggleCard)
   out.forEach(upgradeFlipClockCard)
   out.forEach(upgradeAmapWeatherCard)
+  out.forEach(upgradeWeatherCard)
   out.forEach(upgradeCardBorderCss)
   return out
 }

@@ -651,44 +651,498 @@ export function tplGreeting() {
   return { html, css }
 }
 
-// ================= 26. 基础天气卡片 =================
+// ================= 26. 基础天气卡片（动态天空：按实时天气切换场景动画，小米天气式） =================
+// 数据层 weatherData 提供 scene class（wx-sunny/wx-night/wx-partly wx-dark/…），
+// CSS 按场景切换渐变天幕与元素可见性；所有粒子（雨滴/雪花/云/星）常驻 DOM，由场景类控制显隐。
 export function tplWeather() {
-  const html = `<div class="hc">
-  <div class="h-head">
-    <span class="h-ic material-symbols-outlined" style="color:var(--hc-info)">{{glyph}}</span>
-    <span class="h-t">天气预报</span>
+  const html = `<div class="hc wx {{scene}}">
+  <div class="wx-sky" aria-hidden="true">
+    <i class="wx-tint"></i>
+    <i class="wx-cl a"></i>
+    <i class="wx-cl a2"></i>
+    <i class="wx-cl b"></i>
+    <i class="wx-smk s1"></i>
+    <i class="wx-smk s2"></i>
+    <canvas class="wx-cv"></canvas>
   </div>
-  <div class="h-fill h-mid" style="gap:8px">
-    <span style="font-size:26px;line-height:1">{{icon}}</span>
-    <div>
-      <p style="font-size:22px;font-weight:600;color:var(--hc-text);line-height:1;margin:0">{{temp}}<small style="font-size:9px;color:var(--hc-sub)">{{unit}}</small></p>
-      <p style="font-size:9px;color:var(--hc-sub);margin:1px 0 0">{{condition}}</p>
+  <div class="wx-top"><span class="material-symbols-outlined" style="font-size:12px">{{glyph}}</span><span>天气预报</span></div>
+  <div class="wx-main">
+    <span class="wx-temp">{{temp}}<small>{{unit}}</small></span>
+    <span class="wx-cond">{{condition}}</span>
+  </div>
+  <div class="wx-panel">
+    <div class="wx-chips">
+      <span class="wx-chip"><i class="material-symbols-outlined">device_thermostat</i>{{feels}}</span>
+      <span class="wx-chip"><i class="material-symbols-outlined">opacity</i>{{humidity}}</span>
+      <span class="wx-chip"><i class="material-symbols-outlined">air</i>{{wind}}</span>
     </div>
+    {{forecastHtml}}
   </div>
-  <div class="h-row" style="gap:4px">
-    <div class="h-cell h-fill"><span class="h-cap">体感</span><b style="display:block;font-size:10px;color:var(--hc-text)">{{feels}}</b></div>
-    <div class="h-cell h-fill"><span class="h-cap">湿度</span><b style="display:block;font-size:10px;color:var(--hc-text)">{{humidity}}</b></div>
-    <div class="h-cell h-fill"><span class="h-cap">风力</span><b style="display:block;font-size:10px;color:var(--hc-text)">{{wind}}</b></div>
-  </div>
-  <div class="fc7w">{{forecastHtml}}</div>
 </div>`
-  const css = shell + `.hc{flex:1;min-height:0;display:flex;flex-direction:column;gap:5px;overflow:hidden;padding:8px}
-.h-head{display:flex;align-items:center;gap:5px}
-.h-ic{font-size:12px}
-.h-t{font-size:11px;font-weight:600;color:var(--hc-text)}
-.h-cell{padding:3px 0}
-.h-row{display:flex;align-items:center;gap:4px}
-.fc7w{flex:1;min-height:0;display:flex;min-width:0}
+  const css = shell + `
+.wx{position:relative;padding:8px;gap:5px;color:#fff;border-color:rgb(255 255 255 / .12);background:linear-gradient(168deg,#3f9df6,#1f6cd0 55%,#0c4398);font-size:10px}
+.wx>*:not(.wx-sky){position:relative;z-index:4}
+/* ---- 天空场景层（粒子常驻 DOM，按场景显隐） ---- */
+.wx-sky{position:absolute;inset:0;z-index:0;pointer-events:none}
+/* ---- 真实云层：AI 纹理（黑底白云）+ screen 混合；元素 200% 宽、背景 50% 一份，
+translateX(-50%) 恰好移动一份贴图 → 任意卡宽下无缝循环 ---- */
+.wx-cl{display:none;position:absolute;left:0;width:200%;mix-blend-mode:screen;background-repeat:repeat-x;background-size:50% 100%;animation:wxSlide linear infinite;will-change:transform;pointer-events:none}
+.wx-cl.a{bottom:-4%;height:56%;background-image:url(/img/wx/clouds-a.jpg);opacity:.55;animation-duration:56s}
+.wx-cl.a2{bottom:12%;height:36%;background-image:url(/img/wx/clouds-a.jpg);opacity:.3;animation-duration:83s;animation-direction:reverse}
+.wx-cl.b{top:3%;height:34%;background-image:url(/img/wx/clouds-b.jpg);opacity:.3;animation-duration:64s}
+/* ---- 烟雾层（雾天）：大幅烟雾纹理缓慢漂移 ---- */
+.wx-smk{display:none;position:absolute;left:-30%;width:160%;height:72%;mix-blend-mode:screen;background:url(/img/wx/smoke.jpg) center/cover no-repeat;animation:wxSmoke ease-in-out infinite alternate;pointer-events:none}
+.wx-smk.s1{top:6%;opacity:.4;animation-duration:26s}
+.wx-smk.s2{bottom:-4%;opacity:.26;animation-duration:37s;animation-direction:alternate-reverse}
+@keyframes wxSlide{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+@keyframes wxSmoke{from{transform:translateX(-3%)}to{transform:translateX(4%)}}
+.wx-tint{position:absolute;inset:0;background:radial-gradient(120% 82% at 50% 110%,rgb(255 255 255 / .16),transparent 62%);pointer-events:none}
+/* ---- Canvas 粒子层（雨/雪/星/闪电/日月，卡片 JS 自驱动） ---- */
+.wx-cv{position:absolute;inset:0;width:100%;height:100%;z-index:2}
+/* 云/雾在 canvas 之上：遮挡星月更有纵深；内容最上 */
+.wx-cl,.wx-smk{z-index:3}
+/* ---- 场景元素可见性 ---- */
+.wx-partly .wx-cl.b{display:block;opacity:.18}
+.wx-cloudy .wx-cl{display:block}
+.wx-rain .wx-cl{display:block;filter:brightness(.6) saturate(.8)}
+.wx-rain .wx-cl.b{opacity:.2}
+.wx-thunder .wx-cl{display:block;filter:brightness(.4) saturate(.7)}
+.wx-thunder .wx-cl.b{opacity:.16}
+.wx-snow .wx-cl{display:block;filter:brightness(.92)}
+.wx-snow .wx-cl.b{opacity:.22}
+.wx-fog .wx-smk{display:block}
+.wx-fog .wx-cl.a{display:block;opacity:.22;filter:blur(1px)}
+.wx-night .wx-cl,.wx-dark .wx-cl{filter:brightness(.52)}
+.wx-thunder.wx-dark .wx-cl{filter:brightness(.34) saturate(.65)}
+.wx-rain.wx-dark .wx-cl{filter:brightness(.44) saturate(.75)}
+/* ---- 场景配色（天幕渐变；夜色置后，覆盖同权重的日景） ---- */
+.wx-partly{background:linear-gradient(168deg,#57a8f8,#2a66d4 55%,#153a8f)}
+.wx-cloudy{background:linear-gradient(168deg,#5f6d80,#455264 55%,#2c3543)}
+.wx-rain{background:linear-gradient(168deg,#33455a,#243548 55%,#152030)}
+.wx-snow{background:linear-gradient(168deg,#5f9fd8,#3f74b4 55%,#27508c)}
+.wx-thunder{background:linear-gradient(168deg,#3b2d68,#282048 55%,#151130)}
+.wx-fog{background:linear-gradient(168deg,#8c99ab,#667385 55%,#485260)}
+.wx-night{background:linear-gradient(168deg,#131a3c,#1c2352 50%,#0a0f26)}
+.wx-dark{background:linear-gradient(168deg,#171d40,#202656 50%,#0b1028)}
+.wx-hail{background:linear-gradient(168deg,#46586c,#334457 55%,#1f2b3a)}
+.wx-hail .wx-cl{display:block;filter:brightness(.55) saturate(.75)}
+.wx-hail .wx-cl.b{opacity:.18}
+.wx-hail.wx-dark .wx-cl{filter:brightness(.4) saturate(.7)}
+.wx-windy{background:linear-gradient(168deg,#5f6d80,#455264 55%,#2c3543)}
+.wx-windy .wx-cl{display:block}
+.wx-windy .wx-cl.a{animation-duration:17s}
+.wx-windy .wx-cl.a2{animation-duration:26s}
+.wx-windy .wx-cl.b{animation-duration:21s}
+.wx-windy.wx-dark .wx-cl{filter:brightness(.5)}
+.wx-fog .wx-tint{background:linear-gradient(180deg,rgb(224 232 242 / .3),rgb(224 232 242 / .05) 42%,rgb(224 232 242 / .22))}
+.wx-heavy{background:linear-gradient(168deg,#2c3d50,#1f2f42 55%,#121c2b)}
+/* ---- 内容排版 ---- */
+.wx-top{display:flex;align-items:center;gap:5px;font-size:10px;font-weight:600;color:rgb(255 255 255 / .95)}
+.wx-main{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:flex-end;padding-bottom:2px}
+.wx-temp{font-size:34px;font-weight:700;line-height:1;letter-spacing:-.03em;text-shadow:0 2px 14px rgb(8 18 40 / .38);font-variant-numeric:tabular-nums}
+.wx-temp small{font-size:12px;font-weight:500;color:rgb(255 255 255 / .85);margin-left:2px;letter-spacing:0}
+.wx-cond{font-size:10px;color:rgb(255 255 255 / .92);margin-top:3px;text-shadow:0 1px 8px rgb(8 18 40 / .32)}
+/* ---- 底部玻璃面板：体感/湿度/风 + 7 日预报 ---- */
+.wx-panel{display:flex;flex-direction:column;gap:4px;background:rgb(8 20 42 / .3);border:1px solid rgb(255 255 255 / .14);border-radius:12px;padding:5px;backdrop-filter:blur(6px)}
+.wx-chips{display:flex;gap:3px}
+.wx-chip{flex:1;min-width:0;display:flex;align-items:center;justify-content:center;gap:2px;font-size:8px;font-weight:600;color:#fff;background:rgb(255 255 255 / .1);border:1px solid rgb(255 255 255 / .12);border-radius:7px;padding:2.5px 2px;white-space:nowrap}
+.wx-chip .material-symbols-outlined{font-size:9.5px;color:rgb(255 255 255 / .82)}
+.fc7w{min-height:0;display:flex;min-width:0}
 .fc7{flex:1;display:flex;gap:3px;min-width:0;overflow-x:auto;scrollbar-width:none}
 .fc7::-webkit-scrollbar{display:none}
-.fc7-d{flex:1 1 0;min-width:27px;display:flex;flex-direction:column;align-items:center;justify-content:space-evenly;gap:1px;background:var(--hc-bg2);border:1px solid var(--hc-border);border-radius:8px;padding:3px 2px;text-align:center}
-.fc7-l{font-size:8px;color:var(--hc-sub);white-space:nowrap}
-.fc7-i{font-size:13px;line-height:1}
-.fc7-t{display:flex;flex-direction:column;line-height:1.15;font-variant-numeric:tabular-nums}
-.fc7-t b{font-size:10px;font-weight:600;color:var(--hc-text)}
-.fc7-t i{font-style:normal;font-size:9px;color:var(--hc-sub)}
-.fc7-p{font-size:7px;color:var(--hc-info);line-height:1}`
-  return { html, css }
+.fc7-d{flex:1 1 0;min-width:26px;display:flex;flex-direction:column;align-items:center;justify-content:space-evenly;gap:1px;background:rgb(255 255 255 / .09);border:1px solid rgb(255 255 255 / .1);border-radius:8px;padding:3px 2px;text-align:center}
+.fc7-l{font-size:7.5px;color:rgb(255 255 255 / .72);white-space:nowrap}
+.fc7-i{font-size:12.5px;line-height:1;filter:drop-shadow(0 1px 2px rgb(0 0 0 / .25))}
+.fc7-t{display:flex;align-items:baseline;gap:1px;line-height:1.15;font-variant-numeric:tabular-nums}
+.fc7-t b{font-size:9.5px;font-weight:700;color:#fff}
+.fc7-t i{font-style:normal;font-size:8px;color:rgb(255 255 255 / .6)}
+.fc7-p{font-size:6.5px;font-weight:600;color:#9cc9ff;line-height:1}
+/* 预报日期可点击：点击预览该日天气动画，再点恢复实时；选中项高亮 */
+.fc7-d{cursor:pointer;transition:background .18s,border-color .18s}
+.fc7-d:hover{background:rgb(255 255 255 / .17)}
+.fc7-d.on{background:rgb(255 255 255 / .26);border-color:rgb(255 255 255 / .55)}`
+  const js = `/* 动态天空 Canvas 引擎：雨(溅射)/雪(摇曳)/星野(流星)/分形闪电/日月光晕。
+幂等重启、DOM 重建后认领新 canvas、页面隐藏/卡片离场自动暂停。 */
+var WX_VER = 9 /* 迁移版本标记：dashboard.js upgradeWeatherCard 据此重写旧卡代码 */
+if (el._wxStop) { el._wxStop() }
+var cv = el.querySelector('.wx-cv')
+if (!cv) return
+var ctx = cv.getContext('2d')
+var W = 0, H = 0, drops = [], spl = [], flakes = [], stars = []
+var bolt = null, boltLife = 0, flash = 0, nextBolt = 2600
+var moonCv = null
+var hails = [], motes = []
+var accum = null, ACC_N = 24
+var meteor = 0, mxy = null, nextMeteor = 4200
+function resize() {
+  var r = cv.getBoundingClientRect()
+  if (!r.width || !r.height) return
+  var dpr = Math.min(2, window.devicePixelRatio || 1)
+  cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr)
+  var pw = W, ph = H
+  W = r.width; H = r.height
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  stars = []
+  for (var i = 0; i < 26; i++) stars.push({ x: Math.random() * W, y: Math.random() * H * .6, r: .4 + Math.random() * 1.1, p: Math.random() * 6.28, sp: .8 + Math.random() * 1.6 })
+  // 自适应：卡面尺寸明显变化时，清空按旧尺寸分布的粒子与一次性效果
+  // （密度/位置由各绘制函数按新卡面重算，避免旧粒子错位「破功」）
+  if (Math.abs(pw - W) > 2 || Math.abs(ph - H) > 2) {
+    drops.length = 0; spl.length = 0; flakes.length = 0; hails.length = 0; motes.length = 0
+    accum = null; bolt = null; boltLife = 0; flash = 0; meteor = 0; mxy = null
+  }
+}
+function scene() {
+  // 预览态优先读 el._wxPv.s（稳定状态），否则回退到 .wx 的实时 class——
+  // 这样 Vue 数据刷新重建 .wx 类名时，canvas 仍能持续渲染预览场景，不闪烁
+  var p = el._wxPv || {}
+  var w = el.querySelector('.wx')
+  var cls = (p.active && p.s) ? p.s : (w ? w.className : '')
+  var c = (cls || '').split(/\s+/), s = 'sunny'
+  function has(x) { return c.indexOf(x) >= 0 }
+  if (has('wx-night')) s = 'night'
+  else if (has('wx-partly')) s = 'partly'
+  else if (has('wx-cloudy')) s = 'cloudy'
+  else if (has('wx-rain')) s = 'rain'
+  else if (has('wx-snow')) s = 'snow'
+  else if (has('wx-thunder')) s = 'thunder'
+  else if (has('wx-hail')) s = 'hail'
+  else if (has('wx-fog')) s = 'fog'
+  else if (has('wx-windy')) s = 'windy'
+  return { s: s, night: s === 'night' || has('wx-dark') }
+}
+// 全局缩放：所有天空元素尺寸按卡片短边等比缩放（小卡小动画，大卡大动画）
+function skyScale() { return Math.min(1.6, Math.max(.55, Math.min(W, H) / 150)) }
+// 日月随真实时间沿弧线移动：太阳 6→18 点从东方升到正午最高再落向西方；月亮走 18→6 点的夜弧
+function sunPos() {
+  var d = new Date(), h = d.getHours() + d.getMinutes() / 60
+  var p = Math.min(1, Math.max(0, (h - 6) / 12))
+  return { x: (0.1 + 0.8 * p) * W, y: (0.5 - Math.sin(p * Math.PI) * 0.36) * H }
+}
+function moonPos() {
+  var d = new Date(), h = d.getHours() + d.getMinutes() / 60
+  var p = Math.min(1, Math.max(0, h >= 18 ? (h - 18) / 12 : (h + 6) / 12))
+  return { x: (0.1 + 0.8 * p) * W, y: (0.5 - Math.sin(p * Math.PI) * 0.36) * H }
+}
+function drawSun(t) {
+  var k = skyScale(), sp = sunPos()
+  var sx = sp.x, sy = sp.y, pl = 1 + Math.sin(t * .0012) * .05
+  var g = ctx.createRadialGradient(sx, sy, 2, sx, sy, 36 * k * pl)
+  g.addColorStop(0, 'rgba(255,246,205,.95)'); g.addColorStop(.3, 'rgba(255,215,105,.5)'); g.addColorStop(1, 'rgba(255,200,80,0)')
+  ctx.fillStyle = g; ctx.fillRect(sx - 44 * k, sy - 44 * k, 88 * k, 88 * k)
+  ctx.save(); ctx.translate(sx, sy); ctx.rotate(t * .00007)
+  ctx.strokeStyle = 'rgba(255,226,140,.15)'; ctx.lineWidth = 1.6 * k
+  for (var i = 0; i < 12; i++) { ctx.rotate(.524); ctx.beginPath(); ctx.moveTo(15 * k, 0); ctx.lineTo(27 * k, 0); ctx.stroke() }
+  ctx.restore()
+  var c = ctx.createRadialGradient(sx - 2 * k, sy - 2 * k, 1, sx, sy, 9 * k)
+  c.addColorStop(0, '#fffbe8'); c.addColorStop(1, '#ffcf48')
+  ctx.fillStyle = c; ctx.beginPath(); ctx.arc(sx, sy, 9 * k, 0, 6.29); ctx.fill()
+  var dx = W * .42 - sx, dy = H * .45 - sy
+  ctx.fillStyle = 'rgba(255,230,160,.14)'
+  ctx.beginPath(); ctx.arc(sx + dx * 1.3, sy + dy * 1.3, 3.2 * k, 0, 6.29); ctx.fill()
+  ctx.fillStyle = 'rgba(255,230,160,.1)'
+  ctx.beginPath(); ctx.arc(sx + dx * .55, sy + dy * .55, 5 * k, 0, 6.29); ctx.fill()
+}
+function drawMoon(t) {
+  var k = skyScale(), mp = moonPos()
+  var sx = mp.x, sy = mp.y
+  // 光晕直接画在主画布
+  var g = ctx.createRadialGradient(sx, sy, 2, sx, sy, 34 * k)
+  g.addColorStop(0, 'rgba(226,233,250,.55)'); g.addColorStop(1, 'rgba(226,233,250,0)')
+  ctx.fillStyle = g; ctx.fillRect(sx - 36 * k, sy - 36 * k, 72 * k, 72 * k)
+  // 月牙在离屏画布合成：destination-out 只作用于离屏，
+  // 不再在主画布上挖出一个透出天幕的暗色圆盘（旧版「两个圆形叠加」的根因）
+  var R = Math.ceil(10 * k) + Math.ceil(8.6 * k) + 2
+  var dpr = Math.min(2, window.devicePixelRatio || 1)
+  var sz = Math.ceil(R * 2 * dpr)
+  if (!moonCv) moonCv = document.createElement('canvas')
+  if (moonCv.width !== sz) { moonCv.width = sz; moonCv.height = sz }
+  var mc = moonCv.getContext('2d')
+  mc.setTransform(1, 0, 0, 1, 0, 0)
+  mc.clearRect(0, 0, sz, sz)
+  mc.setTransform(dpr, 0, 0, dpr, 0, 0)
+  // 每帧重置合成模式：上一帧的 destination-out 若不复位，满月会被「挖除模式」画成透明（月亮消失的根因）
+  mc.globalCompositeOperation = 'source-over'
+  mc.fillStyle = '#eef2fb'
+  mc.beginPath(); mc.arc(R, R, 10 * k, 0, 6.29); mc.fill()
+  mc.globalCompositeOperation = 'destination-out'
+  mc.beginPath(); mc.arc(R - 4.6 * k, R - 2.7 * k, 8.6 * k, 0, 6.29); mc.fill()
+  ctx.drawImage(moonCv, sx - R, sy - R, R * 2, R * 2)
+}
+function drawStars(t) {
+  var k = skyScale()
+  ctx.fillStyle = '#fff'
+  for (var i = 0; i < stars.length; i++) {
+    var s = stars[i]
+    ctx.globalAlpha = .18 + .82 * (0.5 + 0.5 * Math.sin(t * .001 * s.sp + s.p))
+    ctx.beginPath(); ctx.arc(s.x, s.y, s.r * k, 0, 6.29); ctx.fill()
+  }
+  ctx.globalAlpha = 1
+}
+function rain(dt) {
+  // 雨量分级：drizzle 轻雨（少/慢/短），pouring 大雨（密/快/长）
+  var w = el.querySelector('.wx'), mul = 1, sp = 1, ln = 1
+  if (w && w.classList.contains('wx-light')) { mul = .45; sp = .7; ln = .8 }
+  else if (w && w.classList.contains('wx-heavy')) { mul = 1.9; sp = 1.35; ln = 1.2 }
+  var n = Math.max(10, Math.min(96, Math.round(W * H / 620 * mul)))
+  while (drops.length < n) drops.push({ x: Math.random() * (W + 40) - 20, y: Math.random() * H, l: (7 + Math.random() * 8) * ln, v: (320 + Math.random() * 260) * sp, o: .3 + Math.random() * .4 })
+  if (drops.length > n) drops.length = n
+  var k = skyScale()
+  ctx.lineWidth = 1.3; ctx.lineCap = 'round'
+  for (var i = 0; i < drops.length; i++) {
+    var d = drops[i]
+    d.y += d.v * dt; d.x += d.v * .12 * dt
+    if (d.y > H - 2) {
+      if (Math.random() < .5) spl.push({ x: d.x, y: H - 2, vy: -(30 + Math.random() * 45), vx: (Math.random() - .5) * 30, o: .5 })
+      d.y = -12; d.x = Math.random() * (W + 40) - 20
+    }
+    if (d.x > W + 20) d.x -= W + 40
+    ctx.strokeStyle = 'rgba(188,214,250,' + d.o + ')'
+    ctx.beginPath(); ctx.moveTo(d.x, d.y); ctx.lineTo(d.x - 2.2 * k, d.y - d.l * k); ctx.stroke()
+  }
+  for (var j = spl.length - 1; j >= 0; j--) {
+    var p = spl[j]
+    p.vy += 320 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.o -= 1.8 * dt
+    if (p.o <= 0) { spl.splice(j, 1); continue }
+    ctx.fillStyle = 'rgba(200,222,252,' + p.o + ')'
+    ctx.beginPath(); ctx.arc(p.x, p.y, .9 * k, 0, 6.29); ctx.fill()
+  }
+}
+function snow(dt) {
+  var n = Math.max(12, Math.min(64, Math.round(W * H / 480)))
+  while (flakes.length < n) flakes.push({ x: Math.random() * W, y: Math.random() * H, r: .7 + Math.random() * 1.9, v: 15 + Math.random() * 32, p: Math.random() * 6.28, sw: 7 + Math.random() * 13, o: .4 + Math.random() * .5 })
+  if (flakes.length > n) flakes.length = n
+  var k = skyScale()
+  ctx.fillStyle = '#fff'
+  var t = performance.now()
+  for (var i = 0; i < flakes.length; i++) {
+    var f = flakes[i]
+    f.y += f.v * dt; f.x += Math.sin(t * .001 + f.p) * f.sw * dt
+    if (f.y > H + 4) {
+      // 落底的雪花堆进雪坡（缓慢消融）
+      if (!accum) { accum = []; for (var ci = 0; ci < ACC_N; ci++) accum.push(0) }
+      var col = Math.min(ACC_N - 1, Math.max(0, Math.round(f.x / (W / ACC_N))))
+      accum[col] += .9 * f.r
+      f.y = -4; f.x = Math.random() * W
+    }
+    if (f.x > W + 4) f.x = -4; else if (f.x < -4) f.x = W + 4
+    ctx.globalAlpha = f.o
+    ctx.beginPath(); ctx.arc(f.x, f.y, f.r * k, 0, 6.29); ctx.fill()
+  }
+  ctx.globalAlpha = 1
+  // 底部积雪：沿列高画起伏雪坡
+  if (accum) {
+    ctx.fillStyle = 'rgba(255,255,255,.92)'
+    ctx.beginPath()
+    var cw = W / (ACC_N - 1)
+    ctx.moveTo(-2, H + 2)
+    for (var bi = 0; bi < ACC_N; bi++) {
+      var hgt = Math.min(13 * k, accum[bi]), nx = bi * cw, ny = H - hgt
+      if (bi === 0) ctx.lineTo(-2, ny)
+      else ctx.quadraticCurveTo(nx - cw / 2, H - Math.min(13 * k, (accum[bi - 1] + accum[bi]) / 2), nx, ny)
+    }
+    ctx.lineTo(W + 2, H + 2)
+    ctx.closePath(); ctx.fill()
+    for (var di = 0; di < ACC_N; di++) accum[di] *= .9997
+  }
+}
+function thunder(dtm, dt) {
+  nextBolt -= dtm
+  if (boltLife <= 0 && nextBolt <= 0) {
+    var pts = [], x = W * (.18 + Math.random() * .6), y = -4, segs = 9, step = (H + 8) / segs, k0 = skyScale()
+    for (var i = 0; i <= segs; i++) { pts.push([x, y]); x += (Math.random() - .5) * W * .17; y += step }
+    // 分形分支：从主干中段随机长出 2 条短叉
+    var brs = []
+    for (var b = 0; b < 2; b++) {
+      var pi = 2 + Math.floor(Math.random() * (segs - 3))
+      var dir = Math.random() < .5 ? -1 : 1, bx = pts[pi][0], by = pts[pi][1], br = [[bx, by]]
+      for (var bj = 0; bj < 3; bj++) { bx += dir * (6 + Math.random() * 12) * k0; by += step * .5; br.push([bx, by]) }
+      brs.push(br)
+    }
+    bolt = { main: pts, br: brs }; boltLife = .24; flash = .42
+    nextBolt = 3600 + Math.random() * 5600
+  }
+  if (boltLife > 0 && bolt) {
+    boltLife -= dt
+    // 闪烁：寿命期内亮度抖动，更接近真实放电
+    var a = Math.max(0, boltLife / .24) * (.78 + .22 * Math.sin(performance.now() * .09))
+    var k = skyScale()
+    ctx.save()
+    ctx.strokeStyle = 'rgba(214,226,255,' + (a * .6).toFixed(3) + ')'; ctx.lineWidth = 1 * k
+    ctx.shadowColor = 'rgba(150,175,255,.9)'; ctx.shadowBlur = 8 * k
+    for (var br2 = 0; br2 < bolt.br.length; br2++) {
+      var bb = bolt.br[br2]
+      ctx.beginPath(); ctx.moveTo(bb[0][0], bb[0][1])
+      for (var bj2 = 1; bj2 < bb.length; bj2++) ctx.lineTo(bb[bj2][0], bb[bj2][1])
+      ctx.stroke()
+    }
+    ctx.strokeStyle = 'rgba(214,226,255,' + a.toFixed(3) + ')'; ctx.lineWidth = 1.8 * k; ctx.shadowBlur = 14 * k
+    ctx.beginPath(); ctx.moveTo(bolt.main[0][0], bolt.main[0][1])
+    for (var k2 = 1; k2 < bolt.main.length; k2++) ctx.lineTo(bolt.main[k2][0], bolt.main[k2][1])
+    ctx.stroke()
+    ctx.shadowBlur = 0; ctx.lineWidth = .7 * k; ctx.strokeStyle = 'rgba(255,255,255,' + a.toFixed(3) + ')'
+    ctx.stroke()
+    ctx.restore()
+  }
+  if (flash > 0) { flash -= dt; ctx.fillStyle = 'rgba(214,226,255,' + Math.max(0, flash) * .55 + ')'; ctx.fillRect(0, 0, W, H) }
+}
+// 冰雹：白色小珠快速坠落，落地溅射
+function hail(dt) {
+  var k = skyScale()
+  var n = Math.max(8, Math.min(34, Math.round(W * H / 900)))
+  while (hails.length < n) hails.push({ x: Math.random() * W, y: Math.random() * H, r: 1.1 + Math.random() * 1.7, v: 360 + Math.random() * 240, vx: (Math.random() - .5) * 30 })
+  if (hails.length > n) hails.length = n
+  for (var i = 0; i < hails.length; i++) {
+    var h = hails[i]
+    h.y += h.v * dt; h.x += h.vx * dt
+    if (h.y > H - 2) {
+      if (Math.random() < .6) spl.push({ x: h.x, y: H - 2, vy: -(40 + Math.random() * 60), vx: (Math.random() - .5) * 60, o: .6 })
+      h.y = -6; h.x = Math.random() * W
+    }
+    if (h.x > W + 6) h.x = -6; else if (h.x < -6) h.x = W + 6
+    var g = ctx.createRadialGradient(h.x - h.r * .3, h.y - h.r * .3, .2, h.x, h.y, h.r * k)
+    g.addColorStop(0, 'rgba(255,255,255,.95)'); g.addColorStop(1, 'rgba(190,210,235,.55)')
+    ctx.fillStyle = g
+    ctx.beginPath(); ctx.arc(h.x, h.y, h.r * k, 0, 6.29); ctx.fill()
+  }
+}
+// 晴天浮尘：光柱里缓升的微尘，呼吸明灭
+function motesDraw(dt) {
+  var k = skyScale()
+  if (!motes.length) for (var i = 0; i < 14; i++) motes.push({ x: Math.random() * W, y: Math.random() * H, r: .6 + Math.random() * 1.4, vx: (Math.random() - .5) * 9, vy: -(3 + Math.random() * 7), p: Math.random() * 6.28 })
+  var t = performance.now()
+  ctx.fillStyle = '#fff'
+  for (var j = 0; j < motes.length; j++) {
+    var m = motes[j]
+    m.x += m.vx * dt; m.y += m.vy * dt
+    if (m.y < -4 || m.x < -4 || m.x > W + 4) { m.x = Math.random() * W; m.y = H + 4 }
+    ctx.globalAlpha = .1 + .28 * (0.5 + 0.5 * Math.sin(t * .0012 + m.p))
+    ctx.beginPath(); ctx.arc(m.x, m.y, m.r * k, 0, 6.29); ctx.fill()
+  }
+  ctx.globalAlpha = 1
+}
+var raf = 0, running = true, ro = null, last = performance.now(), chkT = 0
+function frame(now) {
+  if (!running) return
+  if (!el.isConnected) { running = false; return }
+  if (!cv.isConnected) {
+    var nc = el.querySelector('.wx-cv')
+    if (!nc) { running = false; return }
+    cv = nc; ctx = cv.getContext('2d'); W = 0
+    if (ro) ro.disconnect()
+    ro = new ResizeObserver(resize); ro.observe(cv)
+  }
+  if (!W) resize()
+  if (!W) { raf = requestAnimationFrame(frame); return }
+  // 兜底自适应：ResizeObserver 之外每 500ms 校验一次卡面尺寸（编辑改卡片大小/布局变化都能跟上）
+  if (now - chkT > 500) {
+    chkT = now
+    var rc = cv.getBoundingClientRect()
+    if (rc.width && (Math.abs(rc.width - W) > 1 || Math.abs(rc.height - H) > 1)) resize()
+  }
+  var dt = Math.min(.05, (now - last) / 1000 || .016); last = now
+  var dtm = dt * 1000
+  var sc = scene()
+  ctx.clearRect(0, 0, W, H)
+  if (sc) {
+    if (sc.night) {
+      // 只有晴夜/少云夜能看到星月；阴雨雪雾雷的夜里被云层遮住
+      if (sc.s === 'night' || sc.s === 'partly') {
+        drawStars(now)
+        nextMeteor -= dtm
+        if (meteor <= 0 && nextMeteor <= 0) { meteor = .7; mxy = [W * (.3 + Math.random() * .5), H * (.04 + Math.random() * .14)]; nextMeteor = 6500 + Math.random() * 9000 }
+        if (meteor > 0 && mxy) {
+          meteor -= dt
+          var k = skyScale(), pr = 1 - meteor / .7, mx2 = mxy[0] - pr * W * .45, my2 = mxy[1] + pr * H * .26, al = Math.sin(pr * Math.PI)
+          var lg = ctx.createLinearGradient(mx2, my2, mx2 + 24 * k, my2 - 14 * k)
+          lg.addColorStop(0, 'rgba(255,255,255,' + .9 * al + ')'); lg.addColorStop(1, 'rgba(255,255,255,0)')
+          ctx.strokeStyle = lg; ctx.lineWidth = 1.4 * k
+          ctx.beginPath(); ctx.moveTo(mx2, my2); ctx.lineTo(mx2 + 24 * k, my2 - 14 * k); ctx.stroke()
+        }
+        drawMoon(now)
+      }
+    } else if (sc.s === 'sunny' || sc.s === 'partly') drawSun(now)
+    if (sc.s === 'sunny' || sc.s === 'partly') motesDraw(dt)
+    if (sc.s === 'rain' || sc.s === 'thunder') rain(dt)
+    if (sc.s === 'hail') hail(dt)
+    if (sc.s === 'snow') snow(dt)
+    if (sc.s === 'thunder') thunder(dtm, dt)
+  }
+  raf = requestAnimationFrame(frame)
+}
+function onVis() {
+  if (document.hidden) { running = false; cancelAnimationFrame(raf) }
+  else if (!running && el.isConnected) { running = true; last = performance.now(); raf = requestAnimationFrame(frame) }
+}
+document.addEventListener('visibilitychange', onVis)
+resize()
+ro = new ResizeObserver(resize); ro.observe(cv)
+raf = requestAnimationFrame(frame)
+// ---- 预报点击预览：点某日切换到该日天气动画，点同一天或卡片空白处恢复实时 ----
+// 状态挂在 el 上（v-html 每次数据刷新会重建 .wx/.fc7-d DOM），用 MutationObserver 在
+// 重建瞬间重施加预览，从根上解决「Vue 用 {{scene}} 覆盖预览类名」导致的只变一半/变不回来。
+var PV = el._wxPv || (el._wxPv = { active: false, r: '', s: '', i: -1 })
+function wxSceneOfClass(cls) {
+  return (cls || '').split(/\s+/).filter(function (c) { return c.indexOf('wx-') === 0 }).join(' ')
+}
+function wxApply(cls) {
+  var w = el.querySelector('.wx')
+  if (!w) return
+  var keep = w.className.split(/\s+/).filter(function (c) { return c && c.indexOf('wx-') !== 0 })
+  w.className = keep.concat((cls || '').split(/\s+/)).join(' ')
+}
+function wxClearOn() {
+  var ons = el.querySelectorAll('.fc7-d.on')
+  for (var i = 0; i < ons.length; i++) ons[i].classList.remove('on')
+}
+function wxReapply() {
+  if (!PV.active) return
+  var w = el.querySelector('.wx')
+  if (!w) return
+  wxApply(PV.s)
+  var days = el.querySelectorAll('.fc7-d')
+  for (var z = 0; z < days.length; z++) days[z].classList.toggle('on', z === PV.i)
+  var lbl = days[PV.i] ? days[PV.i].querySelector('.fc7-l') : null
+  var tt = el.querySelector('.wx-top span:last-child')
+  if (tt) tt.textContent = '预览 · ' + (lbl ? lbl.textContent : '')
+}
+function wxRestore() {
+  if (!PV.active) return
+  var w = el.querySelector('.wx')
+  if (w) wxApply(PV.r)
+  wxClearOn()
+  PV.active = false; PV.r = ''; PV.s = ''; PV.i = -1
+  var tt = el.querySelector('.wx-top span:last-child')
+  if (tt) tt.textContent = '天气预报'
+}
+function onFcTap(ev) {
+  var d = ev.target && ev.target.closest ? ev.target.closest('.fc7-d') : null
+  if (!d) { wxRestore(); return }
+  var w = el.querySelector('.wx')
+  if (!w) return
+  var cls = d.getAttribute('data-scene')
+  if (!cls) return
+  var days = el.querySelectorAll('.fc7-d'), idx = -1
+  for (var q = 0; q < days.length; q++) if (days[q] === d) { idx = q; break }
+  if (PV.active && idx === PV.i) { wxRestore(); return }
+  if (!PV.active) PV.r = wxSceneOfClass(w.className)
+  PV.active = true; PV.s = cls; PV.i = idx
+  wxApply(cls); wxClearOn(); d.classList.add('on')
+  var lbl = d.querySelector('.fc7-l'), tt = el.querySelector('.wx-top span:last-child')
+  if (tt) tt.textContent = '预览 · ' + (lbl ? lbl.textContent : '')
+  spl.length = 0; bolt = null; boltLife = 0; flash = 0; meteor = 0; mxy = null
+}
+el.addEventListener('click', onFcTap)
+var wxMo = new MutationObserver(function () { if (PV.active) wxReapply() })
+wxMo.observe(el, { childList: true })
+el._wxStop = function () {
+  running = false; cancelAnimationFrame(raf)
+  if (ro) ro.disconnect()
+  if (wxMo) wxMo.disconnect()
+  document.removeEventListener('visibilitychange', onVis)
+  el.removeEventListener('click', onFcTap)
+  el._wxPv = null
+}`
+  return { html, css, js }
 }
 
 // ================= 28. 基础时钟卡片（每秒刷新） =================

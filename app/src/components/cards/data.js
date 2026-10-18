@@ -88,6 +88,36 @@ const condMap = {
 function weatherIcon(state) { return (condMap[String(state)] || ['partly_cloudy_day', String(state)])[0] }
 function weatherCond(state) { return (condMap[String(state)] || [null, String(state)])[1] }
 
+// HA 天气状态 → 动态天空场景（小米天气式卡片动画）。hail 单独场景，windy 归入大风。
+const WX_SCENES = {
+  sunny: 'sunny', clear: 'sunny',
+  'clear-night': 'night', night: 'night',
+  partlycloudy: 'partly',
+  cloudy: 'cloudy', overcast: 'cloudy', exceptional: 'cloudy',
+  fog: 'fog', hazy: 'fog',
+  rainy: 'rain', pouring: 'rain', drizzle: 'rain',
+  hail: 'hail',
+  snowy: 'snow', 'snowy-rainy': 'snow',
+  lightning: 'thunder', 'lightning-rainy': 'thunder',
+  windy: 'windy', 'windy-variants': 'windy',
+}
+// 场景 class（含昼夜）：非昼夜明确条件（多云/雨/雪…）时用 sun 实体判断白天黑夜，
+// 夜间叠加 wx-dark 换深色天幕；晴天夜间直接用 wx-night（月亮 + 星星）。
+// 雨按状态分级：drizzle 轻雨 wx-light，pouring 大雨 wx-heavy。
+function weatherSceneCls(state, all) {
+  const s = String(state || '').toLowerCase()
+  const sun = Array.isArray(all) ? all.find((e) => e.domain === 'sun') : null
+  const isNight = s.includes('night') || (!!sun && String(sun.state) === 'below_horizon')
+  const scene = WX_SCENES[s] || (isNight ? 'night' : 'cloudy')
+  if (scene === 'night') return 'wx-night'
+  let cls = 'wx-' + scene
+  if (scene === 'rain') {
+    if (s === 'drizzle') cls += ' wx-light'
+    else if (s === 'pouring') cls += ' wx-heavy'
+  }
+  return cls + (isNight ? ' wx-dark' : '')
+}
+
 // 非有效天气状态：实体存在但无数据（天气集成离线/初始化中），
 // 不能按真实天气渲染，否则会出现「晴转多云图标 + unavailable 文案 + 数据全空」的矛盾画面
 const WEATHER_BAD = { unavailable: '不可用', unknown: '未知' }
@@ -97,7 +127,7 @@ function weatherBadData(entity) {
     temp: '—',
     unit: (entity.unit || '°C').replace('°C', '°'),
     condition: WEATHER_BAD[String(entity.state)] || String(entity.state),
-    feels: '—', humidity: '—', wind: '—', forecastHtml: '',
+    feels: '—', humidity: '—', wind: '—', forecastHtml: '', scene: 'wx-cloudy',
   }
 }
 // 7 日预报：按自然日聚合（兼容逐小时数据源——同日多条取最高/最低温，图标取正午时段），横向单行日列。
@@ -135,7 +165,15 @@ function forecastHtml(entity) {
     const high = temps.length ? Math.round(Math.max(...temps)) : null
     const low = lows.length ? Math.round(Math.min(...lows)) : (temps.length > 1 ? Math.round(Math.min(...temps)) : null)
     const pp = Math.max(0, ...list.map((x) => numVal(x.f.precipitation_probability) ?? 0))
-    return `<div class="fc7-d"><span class="fc7-l">${label}</span><span class="fc7-i">${ic}</span>`
+    // 每日场景 class：点击该日预览对应天气动画（按正午时段状态映射，预报无昼夜信息按白天渲染）
+    const fst = String(mid.f.condition || '').toLowerCase()
+    const fscene = WX_SCENES[fst] || 'cloudy'
+    let fcls = 'wx-' + fscene
+    if (fscene === 'rain') {
+      if (fst === 'drizzle') fcls += ' wx-light'
+      else if (fst === 'pouring') fcls += ' wx-heavy'
+    }
+    return `<div class="fc7-d" data-scene="${fcls}"><span class="fc7-l">${label}</span><span class="fc7-i">${ic}</span>`
       + `<span class="fc7-t"><b>${high != null ? high + '°' : '—'}</b><i>${low != null ? low + '°' : '—'}</i></span>`
       + (pp > 0 ? `<span class="fc7-p">${pp}%</span>` : '')
       + `</div>`
@@ -965,7 +1003,7 @@ function weatherData({ all, hasData, entityId }) {
         ? all.find((e) => e.entity_id === entityId) || null
         : all.find((e) => e.domain === 'weather') || null)
     : null
-  const empty = { icon: '🌤️', temp: '—', unit: '°', condition: hasData ? '暂无天气数据' : '等待 Home Assistant 连接…', feels: '—', humidity: '—', wind: '—', forecastHtml: '' }
+  const empty = { icon: '🌤️', temp: '—', unit: '°', condition: hasData ? '暂无天气数据' : '等待 Home Assistant 连接…', feels: '—', humidity: '—', wind: '—', forecastHtml: '', scene: 'wx-cloudy' }
   if (!w) return empty
   if (WEATHER_BAD[String(w.state)]) return weatherBadData(w)
   const unit = (w.unit || '°C').replace('°C', '°')
@@ -981,6 +1019,7 @@ function weatherData({ all, hasData, entityId }) {
     humidity: hum != null ? `${Math.round(hum)}%` : '—',
     wind,
     forecastHtml: forecastHtml(w),
+    scene: weatherSceneCls(w.state, all),
   }
 }
 
