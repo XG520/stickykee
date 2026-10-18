@@ -248,7 +248,9 @@ func (r *Realtime) keepAlive(ctx context.Context, conn *websocket.Conn) {
 			return
 		case <-t.C:
 			r.writeMu.Lock()
-			_ = conn.WriteJSON(map[string]any{"type": "ping"})
+			// 心跳必须带 id：新版 HA 对无 id 命令报 "Received invalid command" 并逐条刷屏。
+			// HA 应答 {"id":N,"type":"pong"} 属普通消息，读循环收到即刷新停滞检测的读超时。
+			_ = conn.WriteJSON(map[string]any{"id": r.nextID.Add(1), "type": "ping"})
 			r.writeMu.Unlock()
 		}
 	}
