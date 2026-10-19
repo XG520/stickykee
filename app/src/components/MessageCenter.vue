@@ -404,9 +404,9 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import api from '@/api'
-import { auth, imOpen, imRefresher, imConversations, closeIm, bumpIm, store, entityStates, requestEntityRefresh, refreshIm } from '@/store'
+import { auth, imOpen, imRefresher, imConversations, closeIm, bumpIm, store, entityStates, requestEntityRefresh, refreshIm, dashboardRev } from '@/store'
 import { dashboardCardCount, layoutKey } from '@/utils/dashboard'
-import { getPrefs, putPrefs } from '@/utils/prefs'
+import { getPrefs, putPrefs, invalidate } from '@/utils/prefs'
 import { isApk } from '@/utils/serverConfig'
 import { VoiceRecorder, WavRecorder, NativeWavRecorder } from '@/utils/recorder'
 import { startCall } from '@/utils/call'
@@ -1342,6 +1342,10 @@ async function doAccept(m) {
   busy.value = true
   try {
     await api.acceptShare(m.id)
+    // 接受共享走的是消息 API，不会失效 /prefs 的 TTL 缓存；这里主动作废并递增仪表盘版本，
+    // 保证回到主页时读到的就是刚接受的服务端布局（不依赖 WS 广播及时到达）。
+    invalidate()
+    dashboardRev.value++
     await loadMessages(activeUser.value)
     bumpIm()
     toast(`已接受（覆盖${targetsLabel(m.targets)}仪表盘），回到首页即可看到新排版`)

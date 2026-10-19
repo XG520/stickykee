@@ -1130,10 +1130,13 @@ function cacheLayout(dashboardJson, mapJson) {
     .catch(() => { /* 配额/隐私模式：忽略 */ })
 }
 
-async function loadLayout() {
+async function loadLayout({ fresh = false } = {}) {
   const dashKey = activeDashKey.value
   // 布局请求先发出去，再读本地缓存——两条线并行，缓存读取不会推迟网络请求
-  const prefsPromise = getPrefs().catch(() => null)
+  // fresh：跨端热刷新（其它设备保存 / 本设备接受共享）时绕过 prefs 的 2 秒 TTL 缓存。
+  // prefs 缓存由启动时的布局/主题/令牌请求写入，接受共享走的是消息 API、不会失效该缓存，
+  // 若这里不强制取新鲜值，就会读到变更前的旧布局 → 出现「提示已接受但回到主页没变」。
+  const prefsPromise = getPrefs({ force: fresh }).catch(() => null)
   // 1) 本地缓存布局：先出画面，不等 /prefs 往返（与实体快照同一策略）。
   //    本端缓存为空时读一次升级前的旧共享缓存（随后会写入本端新键）。
   //    这一步决定「网格就绪」的时刻——原先它必须等布局请求回来才开始渲染。
@@ -1227,7 +1230,7 @@ async function loadApkDevices() {
 let lastLocalSave = 0
 watch(dashboardRev, () => {
   if (editing.value || Date.now() - lastLocalSave < 4000) return
-  loadLayout() // 服务端权威值覆盖本地（含缓存落盘），与首启同一条路径
+  loadLayout({ fresh: true }) // 服务端权威值覆盖本地（含缓存落盘），与首启同一条路径
 })
 
 // 回前台补偿刷新：App 在后台时 WebView 被冻结/节流，WS 断开且广播不重放，
@@ -1236,7 +1239,7 @@ watch(dashboardRev, () => {
 function onVisibilityRefresh() {
   if (document.hidden) return
   if (editing.value || Date.now() - lastLocalSave < 4000) return
-  loadLayout()
+  loadLayout({ fresh: true })
 }
 
 // 智能排版：用当前真实实体自动设计当前页（不直接落库，用户点「完成」才保存）
