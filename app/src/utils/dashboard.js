@@ -123,7 +123,7 @@ export function upgradeWeatherCard(card) {
   const d = cardDefaults.weather
   if (!d) return
   // 迁移标记：模板 js 自带 WX_VER 版本号，升级模板时同步 +1 即可（勿再累加特征字符串）
-  if (!/WX_VER\s*=\s*9/.test(String(card.js || ''))) {
+  if (!/WX_VER\s*=\s*10/.test(String(card.js || ''))) {
     card.html = d.html; card.css = d.css; card.js = d.js
     // 本版同时把尺寸统一回 2×2（4×4 为误配，用户已更正）
     card.w = 2; card.h = 2

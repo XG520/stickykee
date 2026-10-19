@@ -410,7 +410,7 @@ onMounted(() => {
   // 时钟卡每秒刷新；问候/日期卡每分钟刷新（其余卡片无需定时器）
   if (!props.freeze) {
     if (props.card.type === 'clock') clock = setInterval(() => (now.value = new Date()), 1000)
-    else if (props.card.type === 'greeting' || props.card.type === 'date') clock = setInterval(() => (now.value = new Date()), 60000)
+    else if (props.card.type === 'greeting' || props.card.type === 'date' || props.card.type === 'weather') clock = setInterval(() => (now.value = new Date()), 60000)
   }
   if (props.freeze) frozenData.value = liveData.value
   // 主题深浅色侦测：html 主题类变化时刷新 --hc-scheme（浅色主题下原生控件跟随）

@@ -130,12 +130,13 @@ function weatherBadData(entity) {
     feels: '—', humidity: '—', wind: '—', forecastHtml: '', scene: 'wx-cloudy',
   }
 }
-// 7 日预报：按自然日聚合（兼容逐小时数据源——同日多条取最高/最低温，图标取正午时段），横向单行日列。
-function forecastHtml(entity) {
+// 小米天气式逐日预报列表：今天/明天/周X 三行，每行「周X 状况 图标 低温[温度条]高温」，
+// 温度条按该日温度范围在近 3 天全局范围内定位（小米样式），今天行带当前温度白点。
+// 每行 data-scene 保留点击预览该日动画的能力。
+function forecastHtml(entity, curTemp) {
   const arr = attr(entity, 'forecast', [])
   if (!Array.isArray(arr) || !arr.length) return ''
   const week = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
-  // 按自然日分组，保持数据原顺序
   const byDay = new Map()
   for (const f of arr) {
     const d = new Date(f.datetime)
@@ -151,33 +152,45 @@ function forecastHtml(entity) {
     const start = new Date(list[0].d); start.setHours(0, 0, 0, 0)
     if (start.getTime() < today.getTime()) continue // 逐小时源：跳过已过去的时段
     days.push({ start, list })
-    if (days.length >= 7) break
+    if (days.length >= 3) break
   }
   if (!days.length) return ''
-  return `<div class="fc7w"><div class="fc7">` + days.map(({ start, list }) => {
+  // 全局温度范围：3 天内最低的低温 ~ 最高的高温，温度条按此定位
+  let gLo = Infinity, gHi = -Infinity
+  const rows = days.map(({ start, list }) => {
     const label = start.getTime() === today.getTime() ? '今天'
       : start.getTime() === tomorrow ? '明天' : week[start.getDay()]
-    // 图标取正午前后（11–14 点）时段，比首条更接近白天体感
     const mid = list.find((x) => x.d.getHours() >= 11 && x.d.getHours() <= 14) || list[0]
-    const ic = emojiFor(String(mid.f.condition || '').toLowerCase(), (mid.f.icon || '').split(':').pop())
+    const fst = String(mid.f.condition || '').toLowerCase()
+    const ic = emojiFor(fst, (mid.f.icon || '').split(':').pop())
     const temps = list.map((x) => numVal(x.f.temperature)).filter((v) => v != null)
     const lows = list.map((x) => numVal(x.f.templow)).filter((v) => v != null)
     const high = temps.length ? Math.round(Math.max(...temps)) : null
     const low = lows.length ? Math.round(Math.min(...lows)) : (temps.length > 1 ? Math.round(Math.min(...temps)) : null)
-    const pp = Math.max(0, ...list.map((x) => numVal(x.f.precipitation_probability) ?? 0))
-    // 每日场景 class：点击该日预览对应天气动画（按正午时段状态映射，预报无昼夜信息按白天渲染）
-    const fst = String(mid.f.condition || '').toLowerCase()
+    if (low != null) gLo = Math.min(gLo, low)
+    if (high != null) gHi = Math.max(gHi, high)
+    // 每日场景 class：点击该行预览对应天气动画（预报无昼夜信息按白天渲染）
     const fscene = WX_SCENES[fst] || 'cloudy'
     let fcls = 'wx-' + fscene
     if (fscene === 'rain') {
       if (fst === 'drizzle') fcls += ' wx-light'
       else if (fst === 'pouring') fcls += ' wx-heavy'
     }
-    return `<div class="fc7-d" data-scene="${fcls}"><span class="fc7-l">${label}</span><span class="fc7-i">${ic}</span>`
-      + `<span class="fc7-t"><b>${high != null ? high + '°' : '—'}</b><i>${low != null ? low + '°' : '—'}</i></span>`
-      + (pp > 0 ? `<span class="fc7-p">${pp}%</span>` : '')
+    return { label, cond: weatherCond(mid.f.condition), ic, high, low, fcls, start }
+  })
+  const span = Math.max(1, gHi - gLo)
+  const pos = (v) => Math.max(0, Math.min(100, Math.round(((v - gLo) / span) * 100)))
+  const cur = numVal(curTemp)
+  return `<div class="fc7w">` + rows.map(({ label, cond, ic, high, low, fcls, start }) => {
+    const isToday = start.getTime() === today.getTime()
+    const dot = isToday && cur != null && gHi >= gLo ? `<u style="left:${pos(cur)}%"></u>` : ''
+    return `<div class="fc7-d" data-scene="${fcls}">`
+      + `<span class="fc7-l">${label}</span><span class="fc7-c">${cond}</span><span class="fc7-i">${ic}</span>`
+      + `<span class="fc7-lo">${low != null ? low + '°' : '—'}</span>`
+      + `<span class="fc7-bar">${dot}<i style="left:${low != null ? pos(low) : 0}%;width:${low != null && high != null ? Math.max(8, pos(high) - pos(low)) : 8}%"></i></span>`
+      + `<span class="fc7-hi">${high != null ? high + '°' : '—'}</span>`
       + `</div>`
-  }).join('') + `</div></div>`
+  }).join('') + `</div>`
 }
 
 // ================= 各卡组数据 =================
@@ -1003,13 +1016,20 @@ function weatherData({ all, hasData, entityId }) {
         ? all.find((e) => e.entity_id === entityId) || null
         : all.find((e) => e.domain === 'weather') || null)
     : null
-  const empty = { icon: '🌤️', temp: '—', unit: '°', condition: hasData ? '暂无天气数据' : '等待 Home Assistant 连接…', feels: '—', humidity: '—', wind: '—', forecastHtml: '', scene: 'wx-cloudy' }
+  const empty = { icon: '🌤️', temp: '—', unit: '°', condition: hasData ? '暂无天气数据' : '等待 Home Assistant 连接…', feels: '—', humidity: '—', wind: '—', hi: '—', lo: '—', forecastHtml: '', scene: 'wx-cloudy' }
   if (!w) return empty
   if (WEATHER_BAD[String(w.state)]) return weatherBadData(w)
   const unit = (w.unit || '°C').replace('°C', '°')
   const hum = numVal(attr(w, 'humidity'))
   const kmh = numVal(attr(w, 'wind_speed'))
   const wind = kmh != null ? `${Math.round(kmh)} km/h` : (attr(w, 'wind_bearing') ? `${attr(w, 'wind_bearing')}°` : '—')
+  // 今天最高/最低温：从预报首日聚合（逐小时源同日取最大/最小）
+  const fc = attr(w, 'forecast', [])
+  const day0 = Array.isArray(fc) ? fc.filter((f) => { const d = new Date(f.datetime); return !Number.isNaN(d.getTime()) && d.toDateString() === new Date().toDateString() }) : []
+  const t0s = day0.map((f) => numVal(f.temperature)).filter((v) => v != null)
+  const l0s = day0.map((f) => numVal(f.templow)).filter((v) => v != null)
+  const hi = t0s.length ? Math.round(Math.max(...t0s)) : null
+  const lo = l0s.length ? Math.round(Math.min(...l0s)) : (t0s.length > 1 ? Math.round(Math.min(...t0s)) : null)
   return {
     icon: emojiFor(String(w.state), (w.icon || '').split(':').pop()),
     temp: fmtNum(attr(w, 'temperature')),
@@ -1018,7 +1038,9 @@ function weatherData({ all, hasData, entityId }) {
     feels: fmtNum(numVal(attr(w, 'apparent_temperature')) ?? numVal(attr(w, 'feels_like')) ?? numVal(attr(w, 'temperature'))),
     humidity: hum != null ? `${Math.round(hum)}%` : '—',
     wind,
-    forecastHtml: forecastHtml(w),
+    hi: hi != null ? `${hi}°` : '—',
+    lo: lo != null ? `${lo}°` : '—',
+    forecastHtml: forecastHtml(w, numVal(attr(w, 'temperature'))),
     scene: weatherSceneCls(w.state, all),
   }
 }

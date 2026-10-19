@@ -668,7 +668,7 @@ export function tplWeather() {
   <div class="wx-top"><span class="material-symbols-outlined" style="font-size:12px">{{glyph}}</span><span>天气预报</span></div>
   <div class="wx-main">
     <span class="wx-temp">{{temp}}<small>{{unit}}</small></span>
-    <span class="wx-cond">{{condition}}</span>
+    <span class="wx-cond">{{condition}}<em>最高{{hi}}</em><em>最低{{lo}}</em></span>
   </div>
   <div class="wx-panel">
     <div class="wx-chips">
@@ -736,34 +736,43 @@ translateX(-50%) 恰好移动一份贴图 → 任意卡宽下无缝循环 ---- *
 .wx-windy.wx-dark .wx-cl{filter:brightness(.5)}
 .wx-fog .wx-tint{background:linear-gradient(180deg,rgb(224 232 242 / .3),rgb(224 232 242 / .05) 42%,rgb(224 232 242 / .22))}
 .wx-heavy{background:linear-gradient(168deg,#2c3d50,#1f2f42 55%,#121c2b)}
-/* ---- 内容排版 ---- */
+/* ---- 小米风格阴天：白天灰蓝弥漫烟雾；夜阴天深蓝黑 + 烟雾弥漫（截图基调） ---- */
+.wx-cloudy .wx-smk{display:block;opacity:.2}
+.wx-cloudy .wx-smk.s1{animation-duration:34s}
+.wx-cloudy.wx-dark{background:linear-gradient(180deg,#2a3346,#1a2231 52%,#0d1320)}
+.wx-cloudy.wx-dark .wx-cl{filter:brightness(.5) saturate(.7)}
+.wx-cloudy.wx-dark .wx-smk{opacity:.16}
+.wx-partly.wx-dark{background:linear-gradient(180deg,#1f2940,#161e33 52%,#0b101e)}
+/* ---- 内容排版（小米天气式：大号渐变温度 + 状况/最高最低） ---- */
 .wx-top{display:flex;align-items:center;gap:5px;font-size:10px;font-weight:600;color:rgb(255 255 255 / .95)}
 .wx-main{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:flex-end;padding-bottom:2px}
-.wx-temp{font-size:34px;font-weight:700;line-height:1;letter-spacing:-.03em;text-shadow:0 2px 14px rgb(8 18 40 / .38);font-variant-numeric:tabular-nums}
-.wx-temp small{font-size:12px;font-weight:500;color:rgb(255 255 255 / .85);margin-left:2px;letter-spacing:0}
-.wx-cond{font-size:10px;color:rgb(255 255 255 / .92);margin-top:3px;text-shadow:0 1px 8px rgb(8 18 40 / .32)}
+.wx-temp{font-size:36px;font-weight:600;line-height:1;letter-spacing:-.02em;font-variant-numeric:tabular-nums;background:linear-gradient(180deg,#fff 28%,rgb(255 255 255 / .42));-webkit-background-clip:text;background-clip:text;color:transparent}
+.wx-temp small{font-size:13px;font-weight:500;margin-left:2px;letter-spacing:0;background:none;-webkit-background-clip:initial;background-clip:initial;color:rgb(255 255 255 / .85)}
+.wx-cond{font-size:10px;color:rgb(255 255 255 / .95);margin-top:3px;text-shadow:0 1px 8px rgb(8 18 40 / .32);display:flex;align-items:center;gap:6px;white-space:nowrap}
+.wx-cond em{font-style:normal;font-weight:400;color:rgb(255 255 255 / .66)}
+.wx-cond em::before{content:' ';}
 /* ---- 底部玻璃面板：体感/湿度/风 + 7 日预报 ---- */
 .wx-panel{display:flex;flex-direction:column;gap:4px;background:rgb(8 20 42 / .3);border:1px solid rgb(255 255 255 / .14);border-radius:12px;padding:5px;backdrop-filter:blur(6px)}
 .wx-chips{display:flex;gap:3px}
 .wx-chip{flex:1;min-width:0;display:flex;align-items:center;justify-content:center;gap:2px;font-size:8px;font-weight:600;color:#fff;background:rgb(255 255 255 / .1);border:1px solid rgb(255 255 255 / .12);border-radius:7px;padding:2.5px 2px;white-space:nowrap}
 .wx-chip .material-symbols-outlined{font-size:9.5px;color:rgb(255 255 255 / .82)}
-.fc7w{min-height:0;display:flex;min-width:0}
-.fc7{flex:1;display:flex;gap:3px;min-width:0;overflow-x:auto;scrollbar-width:none}
-.fc7::-webkit-scrollbar{display:none}
-.fc7-d{flex:1 1 0;min-width:26px;display:flex;flex-direction:column;align-items:center;justify-content:space-evenly;gap:1px;background:rgb(255 255 255 / .09);border:1px solid rgb(255 255 255 / .1);border-radius:8px;padding:3px 2px;text-align:center}
-.fc7-l{font-size:7.5px;color:rgb(255 255 255 / .72);white-space:nowrap}
-.fc7-i{font-size:12.5px;line-height:1;filter:drop-shadow(0 1px 2px rgb(0 0 0 / .25))}
-.fc7-t{display:flex;align-items:baseline;gap:1px;line-height:1.15;font-variant-numeric:tabular-nums}
-.fc7-t b{font-size:9.5px;font-weight:700;color:#fff}
-.fc7-t i{font-style:normal;font-size:8px;color:rgb(255 255 255 / .6)}
-.fc7-p{font-size:6.5px;font-weight:600;color:#9cc9ff;line-height:1}
-/* 预报日期可点击：点击预览该日天气动画，再点恢复实时；选中项高亮 */
-.fc7-d{cursor:pointer;transition:background .18s,border-color .18s}
-.fc7-d:hover{background:rgb(255 255 255 / .17)}
-.fc7-d.on{background:rgb(255 255 255 / .26);border-color:rgb(255 255 255 / .55)}`
+/* ---- 小米天气式逐日预报列表：周X 状况 图标 低温[温度条]高温 ---- */
+.fc7w{min-height:0;display:flex;flex-direction:column}
+.fc7-d{flex:1;display:flex;align-items:center;gap:4px;min-height:0;padding:0 3px;cursor:pointer;border-radius:7px;transition:background .18s}
+.fc7-d:hover{background:rgb(255 255 255 / .08)}
+.fc7-d.on{background:rgb(255 255 255 / .16)}
+.fc7-l{width:22px;flex:none;font-size:8.5px;color:rgb(255 255 255 / .78);white-space:nowrap}
+.fc7-c{flex:1;min-width:0;font-size:8.5px;font-weight:500;color:rgb(255 255 255 / .92);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fc7-i{flex:none;font-size:11px;line-height:1;filter:drop-shadow(0 1px 2px rgb(0 0 0 / .25))}
+.fc7-lo{flex:none;width:18px;text-align:right;font-size:8.5px;color:rgb(255 255 255 / .6);font-variant-numeric:tabular-nums}
+.fc7-hi{flex:none;width:18px;font-size:8.5px;font-weight:600;color:#fff;font-variant-numeric:tabular-nums}
+/* 温度条：轨道 + 黄色渐变胶囊 + 当前温度白点（今天行） */
+.fc7-bar{flex:1.2;min-width:20px;height:4px;position:relative;border-radius:2px;background:rgb(255 255 255 / .14)}
+.fc7-bar i{position:absolute;top:0;height:100%;border-radius:2px;background:linear-gradient(90deg,#e8d34c,#f0a63e)}
+.fc7-bar u{position:absolute;top:50%;width:5px;height:5px;border-radius:50%;background:#fff;transform:translate(-50%,-50%);box-shadow:0 0 3px rgb(0 0 0 / .4)}`
   const js = `/* 动态天空 Canvas 引擎：雨(溅射)/雪(摇曳)/星野(流星)/分形闪电/日月光晕。
 幂等重启、DOM 重建后认领新 canvas、页面隐藏/卡片离场自动暂停。 */
-var WX_VER = 9 /* 迁移版本标记：dashboard.js upgradeWeatherCard 据此重写旧卡代码 */
+var WX_VER = 10 /* 迁移版本标记：dashboard.js upgradeWeatherCard 据此重写旧卡代码 */
 if (el._wxStop) { el._wxStop() }
 var cv = el.querySelector('.wx-cv')
 if (!cv) return
@@ -772,6 +781,7 @@ var W = 0, H = 0, drops = [], spl = [], flakes = [], stars = []
 var bolt = null, boltLife = 0, flash = 0, nextBolt = 2600
 var moonCv = null
 var hails = [], motes = []
+var lights = [] // 小米式漂浮光点（阴天/雾/夜间弥漫光斑）
 var accum = null, ACC_N = 24
 var meteor = 0, mxy = null, nextMeteor = 4200
 function resize() {
@@ -787,7 +797,7 @@ function resize() {
   // 自适应：卡面尺寸明显变化时，清空按旧尺寸分布的粒子与一次性效果
   // （密度/位置由各绘制函数按新卡面重算，避免旧粒子错位「破功」）
   if (Math.abs(pw - W) > 2 || Math.abs(ph - H) > 2) {
-    drops.length = 0; spl.length = 0; flakes.length = 0; hails.length = 0; motes.length = 0
+    drops.length = 0; spl.length = 0; flakes.length = 0; hails.length = 0; motes.length = 0; lights.length = 0
     accum = null; bolt = null; boltLife = 0; flash = 0; meteor = 0; mxy = null
   }
 }
@@ -1020,6 +1030,27 @@ function motesDraw(dt) {
   }
   ctx.globalAlpha = 1
 }
+// 小米式漂浮光点：4 个大号柔光斑缓慢漂移 + 呼吸明灭（截图阴天夜的标志性效果）。
+// 夜间亮度更高，白天阴天也给淡淡的一层；光斑属于天空氛围，不与雨雪雷雹同场。
+function floatLights(dt, night) {
+  var k = skyScale()
+  if (!lights.length) for (var i = 0; i < 4; i++) lights.push({ x: Math.random() * W, y: H * (.25 + Math.random() * .6), r: 6 + Math.random() * 7, vx: (Math.random() - .5) * 7, vy: (Math.random() - .5) * 4, p: Math.random() * 6.28, b: .6 + Math.random() * .4 })
+  var t = performance.now()
+  for (var j = 0; j < lights.length; j++) {
+    var L = lights[j]
+    L.x += L.vx * dt; L.y += L.vy * dt
+    if (L.x < -20) L.x = W + 18; else if (L.x > W + 20) L.x = -18
+    if (L.y < -20) L.y = H + 18; else if (L.y > H + 20) L.y = -18
+    var a = (night ? .3 : .12) * L.b * (.55 + .45 * Math.sin(t * .0007 + L.p))
+    var R = L.r * k
+    var g = ctx.createRadialGradient(L.x, L.y, 0, L.x, L.y, R)
+    g.addColorStop(0, 'rgba(216,228,246,' + a.toFixed(3) + ')')
+    g.addColorStop(.55, 'rgba(216,228,246,' + (a * .45).toFixed(3) + ')')
+    g.addColorStop(1, 'rgba(216,228,246,0)')
+    ctx.fillStyle = g
+    ctx.beginPath(); ctx.arc(L.x, L.y, R, 0, 6.29); ctx.fill()
+  }
+}
 var raf = 0, running = true, ro = null, last = performance.now(), chkT = 0
 function frame(now) {
   if (!running) return
@@ -1062,6 +1093,8 @@ function frame(now) {
       }
     } else if (sc.s === 'sunny' || sc.s === 'partly') drawSun(now)
     if (sc.s === 'sunny' || sc.s === 'partly') motesDraw(dt)
+    // 小米式漂浮光点：阴天/雾/大风的天空氛围（夜里更明显）
+    if (sc.s === 'cloudy' || sc.s === 'fog' || sc.s === 'windy') floatLights(dt, sc.night)
     if (sc.s === 'rain' || sc.s === 'thunder') rain(dt)
     if (sc.s === 'hail') hail(dt)
     if (sc.s === 'snow') snow(dt)
