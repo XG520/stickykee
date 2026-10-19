@@ -101,13 +101,16 @@ const WX_SCENES = {
   lightning: 'thunder', 'lightning-rainy': 'thunder',
   windy: 'windy', 'windy-variants': 'windy',
 }
-// 场景 class（含昼夜）：非昼夜明确条件（多云/雨/雪…）时用 sun 实体判断白天黑夜，
-// 夜间叠加 wx-dark 换深色天幕；晴天夜间直接用 wx-night（月亮 + 星星）。
-// 雨按状态分级：drizzle 轻雨 wx-light，pouring 大雨 wx-heavy。
-function weatherSceneCls(state, all) {
+// 场景 class（含昼夜）：昼夜只按「本地时间」判定（6:00–18:00 白天），夜间叠加 wx-dark 换深色天幕；
+// 晴天夜间直接用 wx-night（月亮 + 星星），白天晴才画太阳。
+// 不再依赖 HA 的 sun 实体：其状态可能因 HA 时区配置错误或前端实体列表缓存而滞后，
+// 曾导致 22 点仍被判为白天而在卡面画出太阳。雨按状态分级：drizzle 轻雨 wx-light，pouring 大雨 wx-heavy。
+function weatherSceneCls(state, now) {
   const s = String(state || '').toLowerCase()
-  const sun = Array.isArray(all) ? all.find((e) => e.domain === 'sun') : null
-  const isNight = s.includes('night') || (!!sun && String(sun.state) === 'below_horizon')
+  const d = now instanceof Date ? now : new Date()
+  const h = d.getHours()
+  let isNight = h < 6 || h >= 18
+  if (s.includes('night')) isNight = true
   const scene = WX_SCENES[s] || (isNight ? 'night' : 'cloudy')
   if (scene === 'night') return 'wx-night'
   let cls = 'wx-' + scene
@@ -130,10 +133,13 @@ function weatherBadData(entity) {
     feels: '—', humidity: '—', wind: '—', forecastHtml: '', scene: 'wx-cloudy',
   }
 }
-// 小米天气式逐日预报列表：今天/明天/周X 三行，每行「周X 状况 图标 低温[温度条]高温」，
-// 温度条按该日温度范围在近 3 天全局范围内定位（小米样式），今天行带当前温度白点。
-// 每行 data-scene 保留点击预览该日动画的能力。
-function forecastHtml(entity, curTemp) {
+// 小米天气式 7 日预报（横向滚动条）：今天/明天/周X，每列「日期 · 图标 · 高/低温」。
+// 每列用 data-* 携带该日信息（data-scene 该日天气场景 / data-cond 状况 / data-ic 图标 /
+// data-hi、data-lo 高低温 / data-label 日期名 / data-today 是否今天）：
+// 卡片内嵌引擎据此实现「点某天 → 卡面显示该日信息 + 切换到该日天气动画」，
+// 数据属性由 Vue 每次渲染刷新，是唯一真相源（引擎只改 class/文本，不改这些属性）。
+// 逐小时源按自然日聚合取最高/最低温，正午时段取图标。
+function forecastHtml(entity) {
   const arr = attr(entity, 'forecast', [])
   if (!Array.isArray(arr) || !arr.length) return ''
   const week = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
@@ -141,55 +147,42 @@ function forecastHtml(entity, curTemp) {
   for (const f of arr) {
     const d = new Date(f.datetime)
     if (Number.isNaN(d.getTime())) continue
-    const key = `${d.getFullYear()}/${d.getMonth()}/${d.getDate()}`
+    const key = d.toDateString()
     if (!byDay.has(key)) byDay.set(key, [])
     byDay.get(key).push({ f, d })
   }
-  const today = new Date(); today.setHours(0, 0, 0, 0)
-  const tomorrow = today.getTime() + 86400000
+  const today = new Date(new Date().toDateString()).getTime()
+  const tomorrow = today + 86400000
   const days = []
   for (const list of byDay.values()) {
     const start = new Date(list[0].d); start.setHours(0, 0, 0, 0)
-    if (start.getTime() < today.getTime()) continue // 逐小时源：跳过已过去的时段
-    days.push({ start, list })
-    if (days.length >= 3) break
+    if (start.getTime() < today) continue // 逐小时源：跳过已过去的时段
+    days.push({ start: start.getTime(), list })
   }
-  if (!days.length) return ''
-  // 全局温度范围：3 天内最低的低温 ~ 最高的高温，温度条按此定位
-  let gLo = Infinity, gHi = -Infinity
-  const rows = days.map(({ start, list }) => {
-    const label = start.getTime() === today.getTime() ? '今天'
-      : start.getTime() === tomorrow ? '明天' : week[start.getDay()]
+  days.sort((a, b) => a.start - b.start)
+  const first7 = days.slice(0, 7)
+  if (!first7.length) return ''
+  return `<div class="fc7w">` + first7.map(({ start, list }, i) => {
+    const label = start === today ? '今天' : start === tomorrow ? '明天' : week[new Date(start).getDay()]
     const mid = list.find((x) => x.d.getHours() >= 11 && x.d.getHours() <= 14) || list[0]
-    const fst = String(mid.f.condition || '').toLowerCase()
-    const ic = emojiFor(fst, (mid.f.icon || '').split(':').pop())
+    const st = String(mid.f.condition || '').toLowerCase()
+    const ic = emojiFor(st, (mid.f.icon || '').split(':').pop())
+    const cond = weatherCond(mid.f.condition)
     const temps = list.map((x) => numVal(x.f.temperature)).filter((v) => v != null)
     const lows = list.map((x) => numVal(x.f.templow)).filter((v) => v != null)
     const high = temps.length ? Math.round(Math.max(...temps)) : null
-    const low = lows.length ? Math.round(Math.min(...lows)) : (temps.length > 1 ? Math.round(Math.min(...temps)) : null)
-    if (low != null) gLo = Math.min(gLo, low)
-    if (high != null) gHi = Math.max(gHi, high)
-    // 每日场景 class：点击该行预览对应天气动画（预报无昼夜信息按白天渲染）
-    const fscene = WX_SCENES[fst] || 'cloudy'
-    let fcls = 'wx-' + fscene
-    if (fscene === 'rain') {
-      if (fst === 'drizzle') fcls += ' wx-light'
-      else if (fst === 'pouring') fcls += ' wx-heavy'
+    const low = lows.length ? Math.round(Math.min(...lows)) : null
+    // 该日天气场景（仅天气部分，不含昼夜：卡片引擎按「当前时间」叠加夜色，符合「随时间+天气变化」）
+    let fcls = 'wx-' + (WX_SCENES[st] || 'cloudy')
+    if (WX_SCENES[st] === 'rain') {
+      if (st === 'drizzle') fcls += ' wx-light'
+      else if (st === 'pouring') fcls += ' wx-heavy'
     }
-    return { label, cond: weatherCond(mid.f.condition), ic, high, low, fcls, start }
-  })
-  const span = Math.max(1, gHi - gLo)
-  const pos = (v) => Math.max(0, Math.min(100, Math.round(((v - gLo) / span) * 100)))
-  const cur = numVal(curTemp)
-  return `<div class="fc7w">` + rows.map(({ label, cond, ic, high, low, fcls, start }) => {
-    const isToday = start.getTime() === today.getTime()
-    const dot = isToday && cur != null && gHi >= gLo ? `<u style="left:${pos(cur)}%"></u>` : ''
-    return `<div class="fc7-d" data-scene="${fcls}">`
-      + `<span class="fc7-l">${label}</span><span class="fc7-c">${cond}</span><span class="fc7-i">${ic}</span>`
-      + `<span class="fc7-lo">${low != null ? low + '°' : '—'}</span>`
-      + `<span class="fc7-bar">${dot}<i style="left:${low != null ? pos(low) : 0}%;width:${low != null && high != null ? Math.max(8, pos(high) - pos(low)) : 8}%"></i></span>`
-      + `<span class="fc7-hi">${high != null ? high + '°' : '—'}</span>`
-      + `</div>`
+    return `<div class="fc7d" data-i="${i}" data-label="${label}" data-scene="${fcls}" data-cond="${cond}" data-ic="${ic}"`
+      + ` data-hi="${high != null ? high + '°' : '—'}" data-lo="${low != null ? low + '°' : '—'}"`
+      + (start === today ? ' data-today="1"' : '')
+      + `><span class="fc7-l">${label}</span><span class="fc7-i">${ic}</span>`
+      + `<span class="fc7-t"><b>${high != null ? high + '°' : '—'}</b><i>${low != null ? low + '°' : '—'}</i></span></div>`
   }).join('') + `</div>`
 }
 
@@ -1009,7 +1002,7 @@ function greetingData({ all, hasData, now }) {
   }
 }
 
-function weatherData({ all, hasData, entityId }) {
+function weatherData({ all, hasData, entityId, now }) {
   // 手动指定来源实体优先；未指定时自动取第一个 weather 域实体（兼容旧卡片）
   const w = hasData
     ? (entityId
@@ -1040,8 +1033,8 @@ function weatherData({ all, hasData, entityId }) {
     wind,
     hi: hi != null ? `${hi}°` : '—',
     lo: lo != null ? `${lo}°` : '—',
-    forecastHtml: forecastHtml(w, numVal(attr(w, 'temperature'))),
-    scene: weatherSceneCls(w.state, all),
+    forecastHtml: forecastHtml(w),
+    scene: weatherSceneCls(w.state, now),
   }
 }
 

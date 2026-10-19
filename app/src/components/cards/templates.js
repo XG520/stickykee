@@ -655,52 +655,53 @@ export function tplGreeting() {
 // 数据层 weatherData 提供 scene class（wx-sunny/wx-night/wx-partly wx-dark/…），
 // CSS 按场景切换渐变天幕与元素可见性；所有粒子（雨滴/雪花/云/星）常驻 DOM，由场景类控制显隐。
 export function tplWeather() {
-  const html = `<div class="hc wx {{scene}}">
+  const html = `<div class="hc wx" data-live="{{scene}}" data-temp="{{temp}}" data-cond="{{condition}}" data-ic="{{icon}}" data-hi="{{hi}}" data-lo="{{lo}}">
   <div class="wx-sky" aria-hidden="true">
-    <i class="wx-tint"></i>
-    <i class="wx-cl a"></i>
-    <i class="wx-cl a2"></i>
     <i class="wx-cl b"></i>
+    <i class="wx-cl a"></i>
     <i class="wx-smk s1"></i>
     <i class="wx-smk s2"></i>
     <canvas class="wx-cv"></canvas>
   </div>
-  <div class="wx-top"><span class="material-symbols-outlined" style="font-size:12px">{{glyph}}</span><span>天气预报</span></div>
-  <div class="wx-main">
+  <div class="wx-head"><span class="wx-title"><i class="material-symbols-outlined">location_on</i>天气预报</span></div>
+  <div class="wx-body">
     <span class="wx-temp">{{temp}}<small>{{unit}}</small></span>
-    <span class="wx-cond">{{condition}}<em>最高{{hi}}</em><em>最低{{lo}}</em></span>
+    <span class="wx-cond"><i class="wx-emoji">{{icon}}</i>{{condition}}</span>
+    <span class="wx-hilo">最高 {{hi}}　/　最低 {{lo}}</span>
   </div>
-  <div class="wx-panel">
-    <div class="wx-chips">
-      <span class="wx-chip"><i class="material-symbols-outlined">device_thermostat</i>{{feels}}</span>
-      <span class="wx-chip"><i class="material-symbols-outlined">opacity</i>{{humidity}}</span>
-      <span class="wx-chip"><i class="material-symbols-outlined">air</i>{{wind}}</span>
-    </div>
-    {{forecastHtml}}
-  </div>
+  <div class="wx-panel">{{forecastHtml}}</div>
 </div>`
   const css = shell + `
 .wx{position:relative;padding:8px;gap:5px;color:#fff;border-color:rgb(255 255 255 / .12);background:linear-gradient(168deg,#3f9df6,#1f6cd0 55%,#0c4398);font-size:10px}
 .wx>*:not(.wx-sky){position:relative;z-index:4}
 /* ---- 天空场景层（粒子常驻 DOM，按场景显隐） ---- */
 .wx-sky{position:absolute;inset:0;z-index:0;pointer-events:none}
-/* ---- 真实云层：AI 纹理（黑底白云）+ screen 混合；元素 200% 宽、背景 50% 一份，
-translateX(-50%) 恰好移动一份贴图 → 任意卡宽下无缝循环 ---- */
-.wx-cl{display:none;position:absolute;left:0;width:200%;mix-blend-mode:screen;background-repeat:repeat-x;background-size:50% 100%;animation:wxSlide linear infinite;will-change:transform;pointer-events:none}
-.wx-cl.a{bottom:-4%;height:56%;background-image:url(/img/wx/clouds-a.jpg);opacity:.55;animation-duration:56s}
-.wx-cl.a2{bottom:12%;height:36%;background-image:url(/img/wx/clouds-a.jpg);opacity:.3;animation-duration:83s;animation-direction:reverse}
-.wx-cl.b{top:3%;height:34%;background-image:url(/img/wx/clouds-b.jpg);opacity:.3;animation-duration:64s}
+/* ---- 真实云纹理层（AI 黑底白云 + screen 混合）----
+刻意不平铺、不纵向拉伸：background-size:cover 保住云团的原始比例（只截取纹理中部），
+元素左右各超出卡片 32% 而漂移幅度远小于该余量 → 纹理边缘永不入画：
+既没有平铺接缝，也不会出现「同一片云原地重现」的循环感。
+漂移用 ease-in-out 往返（alternate）并带轻微上下浮动，像真的云在风里缓缓移动。
+两层取自纹理的不同分区、不同高度：b = 高空卷云丝（纹理中段的丝带，覆盖卡片上端），
+a = 近景积云（纹理下半的云团，落在中下部），云的稀疏处彼此衔接 → 一整片连贯天空。
+两层遮罩均为「上下双向渐隐」（上缘渐隐区落在卡片外，因此不会削弱画面内的云，
+但能避免云层顶端直接撞上卡片顶边形成硬边）。---- */
+.wx-cl{display:none;position:absolute;left:-32%;width:164%;mix-blend-mode:screen;background-repeat:no-repeat;background-size:cover;animation:wxDrift ease-in-out infinite alternate;will-change:transform;pointer-events:none}
+.wx-cl.a{top:8%;height:66%;background-image:url(/img/wx/clouds-a.jpg);background-position:38% bottom;opacity:.5;animation-duration:118s;
+  -webkit-mask-image:linear-gradient(180deg,transparent 0,#000 12%,#000 74%,transparent 100%);mask-image:linear-gradient(180deg,transparent 0,#000 12%,#000 74%,transparent 100%)}
+.wx-cl.b{top:-16%;height:60%;background-image:url(/img/wx/clouds-b.jpg);background-position:60% center;opacity:.26;animation-duration:196s;animation-delay:-52s;
+  -webkit-mask-image:linear-gradient(180deg,transparent 0,#000 16%,#000 62%,transparent 100%);mask-image:linear-gradient(180deg,transparent 0,#000 16%,#000 62%,transparent 100%)}
 /* ---- 烟雾层（雾天）：大幅烟雾纹理缓慢漂移 ---- */
-.wx-smk{display:none;position:absolute;left:-30%;width:160%;height:72%;mix-blend-mode:screen;background:url(/img/wx/smoke.jpg) center/cover no-repeat;animation:wxSmoke ease-in-out infinite alternate;pointer-events:none}
+.wx-smk{display:none;position:absolute;left:-30%;width:160%;height:72%;mix-blend-mode:screen;background:url(/img/wx/smoke.jpg) center/cover no-repeat;animation:wxSmoke ease-in-out infinite alternate;pointer-events:none;
+  -webkit-mask-image:linear-gradient(180deg,transparent 0,#000 24%,#000 76%,transparent 100%);mask-image:linear-gradient(180deg,transparent 0,#000 24%,#000 76%,transparent 100%)}
 .wx-smk.s1{top:6%;opacity:.4;animation-duration:26s}
 .wx-smk.s2{bottom:-4%;opacity:.26;animation-duration:37s;animation-direction:alternate-reverse}
-@keyframes wxSlide{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+/* 云层漂移：小幅往返 + 轻微上下起伏；alternate 使位移首尾相接，永不跳变 */
+@keyframes wxDrift{from{transform:translate3d(2.4%,1.1%,0)}to{transform:translate3d(-2.4%,-1.1%,0)}}
 @keyframes wxSmoke{from{transform:translateX(-3%)}to{transform:translateX(4%)}}
-.wx-tint{position:absolute;inset:0;background:radial-gradient(120% 82% at 50% 110%,rgb(255 255 255 / .16),transparent 62%);pointer-events:none}
+.wx-cl,.wx-smk{z-index:3}
 /* ---- Canvas 粒子层（雨/雪/星/闪电/日月，卡片 JS 自驱动） ---- */
 .wx-cv{position:absolute;inset:0;width:100%;height:100%;z-index:2}
 /* 云/雾在 canvas 之上：遮挡星月更有纵深；内容最上 */
-.wx-cl,.wx-smk{z-index:3}
 /* ---- 场景元素可见性 ---- */
 .wx-partly .wx-cl.b{display:block;opacity:.18}
 .wx-cloudy .wx-cl{display:block}
@@ -730,49 +731,42 @@ translateX(-50%) 恰好移动一份贴图 → 任意卡宽下无缝循环 ---- *
 .wx-hail.wx-dark .wx-cl{filter:brightness(.4) saturate(.7)}
 .wx-windy{background:linear-gradient(168deg,#5f6d80,#455264 55%,#2c3543)}
 .wx-windy .wx-cl{display:block}
-.wx-windy .wx-cl.a{animation-duration:17s}
-.wx-windy .wx-cl.a2{animation-duration:26s}
-.wx-windy .wx-cl.b{animation-duration:21s}
+.wx-windy .wx-cl.a{animation-duration:26s}
+.wx-windy .wx-cl.b{animation-duration:34s}
 .wx-windy.wx-dark .wx-cl{filter:brightness(.5)}
-.wx-fog .wx-tint{background:linear-gradient(180deg,rgb(224 232 242 / .3),rgb(224 232 242 / .05) 42%,rgb(224 232 242 / .22))}
 .wx-heavy{background:linear-gradient(168deg,#2c3d50,#1f2f42 55%,#121c2b)}
-/* ---- 小米风格阴天：白天灰蓝弥漫烟雾；夜阴天深蓝黑 + 烟雾弥漫（截图基调） ---- */
-.wx-cloudy .wx-smk{display:block;opacity:.2}
-.wx-cloudy .wx-smk.s1{animation-duration:34s}
+/* ---- 阴天/夜阴天：仅换天幕与云层亮度，不叠加烟雾/光点等额外部件（保持「一种天气 = 一套连贯天空」） ---- */
 .wx-cloudy.wx-dark{background:linear-gradient(180deg,#2a3346,#1a2231 52%,#0d1320)}
 .wx-cloudy.wx-dark .wx-cl{filter:brightness(.5) saturate(.7)}
-.wx-cloudy.wx-dark .wx-smk{opacity:.16}
 .wx-partly.wx-dark{background:linear-gradient(180deg,#1f2940,#161e33 52%,#0b101e)}
-/* ---- 内容排版（小米天气式：大号渐变温度 + 状况/最高最低） ---- */
-.wx-top{display:flex;align-items:center;gap:5px;font-size:10px;font-weight:600;color:rgb(255 255 255 / .95)}
-.wx-main{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:flex-end;padding-bottom:2px}
-.wx-temp{font-size:36px;font-weight:600;line-height:1;letter-spacing:-.02em;font-variant-numeric:tabular-nums;background:linear-gradient(180deg,#fff 28%,rgb(255 255 255 / .42));-webkit-background-clip:text;background-clip:text;color:transparent}
-.wx-temp small{font-size:13px;font-weight:500;margin-left:2px;letter-spacing:0;background:none;-webkit-background-clip:initial;background-clip:initial;color:rgb(255 255 255 / .85)}
-.wx-cond{font-size:10px;color:rgb(255 255 255 / .95);margin-top:3px;text-shadow:0 1px 8px rgb(8 18 40 / .32);display:flex;align-items:center;gap:6px;white-space:nowrap}
-.wx-cond em{font-style:normal;font-weight:400;color:rgb(255 255 255 / .66)}
-.wx-cond em::before{content:' ';}
-/* ---- 底部玻璃面板：体感/湿度/风 + 7 日预报 ---- */
-.wx-panel{display:flex;flex-direction:column;gap:4px;background:rgb(8 20 42 / .3);border:1px solid rgb(255 255 255 / .14);border-radius:12px;padding:5px;backdrop-filter:blur(6px)}
-.wx-chips{display:flex;gap:3px}
-.wx-chip{flex:1;min-width:0;display:flex;align-items:center;justify-content:center;gap:2px;font-size:8px;font-weight:600;color:#fff;background:rgb(255 255 255 / .1);border:1px solid rgb(255 255 255 / .12);border-radius:7px;padding:2.5px 2px;white-space:nowrap}
-.wx-chip .material-symbols-outlined{font-size:9.5px;color:rgb(255 255 255 / .82)}
-/* ---- 小米天气式逐日预报列表：周X 状况 图标 低温[温度条]高温 ---- */
-.fc7w{min-height:0;display:flex;flex-direction:column}
-.fc7-d{flex:1;display:flex;align-items:center;gap:4px;min-height:0;padding:0 3px;cursor:pointer;border-radius:7px;transition:background .18s}
-.fc7-d:hover{background:rgb(255 255 255 / .08)}
-.fc7-d.on{background:rgb(255 255 255 / .16)}
-.fc7-l{width:22px;flex:none;font-size:8.5px;color:rgb(255 255 255 / .78);white-space:nowrap}
-.fc7-c{flex:1;min-width:0;font-size:8.5px;font-weight:500;color:rgb(255 255 255 / .92);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.fc7-i{flex:none;font-size:11px;line-height:1;filter:drop-shadow(0 1px 2px rgb(0 0 0 / .25))}
-.fc7-lo{flex:none;width:18px;text-align:right;font-size:8.5px;color:rgb(255 255 255 / .6);font-variant-numeric:tabular-nums}
-.fc7-hi{flex:none;width:18px;font-size:8.5px;font-weight:600;color:#fff;font-variant-numeric:tabular-nums}
-/* 温度条：轨道 + 黄色渐变胶囊 + 当前温度白点（今天行） */
-.fc7-bar{flex:1.2;min-width:20px;height:4px;position:relative;border-radius:2px;background:rgb(255 255 255 / .14)}
-.fc7-bar i{position:absolute;top:0;height:100%;border-radius:2px;background:linear-gradient(90deg,#e8d34c,#f0a63e)}
-.fc7-bar u{position:absolute;top:50%;width:5px;height:5px;border-radius:50%;background:#fff;transform:translate(-50%,-50%);box-shadow:0 0 3px rgb(0 0 0 / .4)}`
-  const js = `/* 动态天空 Canvas 引擎：雨(溅射)/雪(摇曳)/星野(流星)/分形闪电/日月光晕。
+/* ---- 内容排版（小米天气式：大号渐变温度 + 状况/高低温） ---- */
+.wx-head{display:flex;align-items:center}
+.wx-title{display:flex;align-items:center;gap:4px;font-size:10px;font-weight:600;color:rgb(255 255 255 / .92);letter-spacing:.02em}
+.wx-title .material-symbols-outlined{font-size:13px;color:rgb(255 255 255 / .82)}
+.wx-body{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:flex-end;padding:5px 0 3px}
+.wx-temp{font-size:44px;font-weight:600;line-height:1;letter-spacing:-.03em;font-variant-numeric:tabular-nums;background:linear-gradient(180deg,#fff 26%,rgb(255 255 255 / .4));-webkit-background-clip:text;background-clip:text;color:transparent}
+.wx-temp small{font-size:14px;font-weight:500;margin-left:3px;letter-spacing:0;background:none;-webkit-background-clip:initial;background-clip:initial;-webkit-text-fill-color:rgb(255 255 255 / .88);color:rgb(255 255 255 / .88)}
+.wx-cond{display:flex;align-items:center;gap:4px;margin-top:5px;font-size:12px;font-weight:600;color:#fff;text-shadow:0 1px 10px rgb(8 18 40 / .35)}
+.wx-emoji{font-style:normal;font-size:15px;line-height:1;filter:drop-shadow(0 1px 3px rgb(0 0 0 / .3))}
+.wx-hilo{margin-top:3px;font-size:10px;color:rgb(255 255 255 / .72);text-shadow:0 1px 8px rgb(8 18 40 / .3)}
+/* ---- 7 日预报横向滚动条：面板自上而下渐显（无边框硬边），
+与天空自然过渡，避免「上下两块」的观感 ---- */
+.wx-panel{flex:none;margin-top:3px;background:linear-gradient(180deg,rgb(9 20 40 / .16),rgb(9 20 40 / .62) 62%,rgb(9 20 40 / .74));border-radius:12px;padding:5px 2px}
+.fc7w{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.fc7w::-webkit-scrollbar{display:none}
+.fc7d{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:31px;padding:2px 3px;cursor:pointer;border-radius:8px;transition:background .18s}
+.fc7d:hover{background:rgb(255 255 255 / .1)}
+.fc7d.on{background:rgb(255 255 255 / .2)}
+.fc7-l{font-size:8px;color:rgb(255 255 255 / .68);white-space:nowrap}
+.fc7-i{font-size:13px;line-height:1;filter:drop-shadow(0 1px 2px rgb(0 0 0 / .25))}
+.fc7-t{display:flex;flex-direction:column;align-items:center;line-height:1.15;font-variant-numeric:tabular-nums}
+.fc7-t b{font-size:9.5px;font-weight:700;color:#fff}
+.fc7-t i{font-style:normal;font-size:8px;color:rgb(255 255 255 / .55)}`
+  const js = `/* ---- 动态天空 Canvas 引擎：雨(溅射)/雪(摇曳)/星野(流星)/分形闪电/日月光晕。
+架构约定（关键）：场景 class 由本引擎独占写入，Vue 只负责 data-* 属性，
+两者互不覆盖 —— 彻底消除「Vue 刷新把 class 覆盖回实时值」导致的动画分裂/不生效问题。
 幂等重启、DOM 重建后认领新 canvas、页面隐藏/卡片离场自动暂停。 */
-var WX_VER = 10 /* 迁移版本标记：dashboard.js upgradeWeatherCard 据此重写旧卡代码 */
+var WX_VER = 18 /* 迁移版本标记：dashboard.js upgradeWeatherCard 据此重写旧卡代码 */
 if (el._wxStop) { el._wxStop() }
 var cv = el.querySelector('.wx-cv')
 if (!cv) return
@@ -781,9 +775,12 @@ var W = 0, H = 0, drops = [], spl = [], flakes = [], stars = []
 var bolt = null, boltLife = 0, flash = 0, nextBolt = 2600
 var moonCv = null
 var hails = [], motes = []
-var lights = [] // 小米式漂浮光点（阴天/雾/夜间弥漫光斑）
 var accum = null, ACC_N = 24
 var meteor = 0, mxy = null, nextMeteor = 4200
+el._wxApplied = '' // 引擎当前施加的场景（每帧由 wxSync 维护，是 scene() 的稳定真值）
+var _wxu = el.querySelector('.wx-temp small')
+el._wxUnit = _wxu ? _wxu.textContent : '°'
+el.addEventListener('click', onPick)
 function resize() {
   var r = cv.getBoundingClientRect()
   if (!r.width || !r.height) return
@@ -797,19 +794,20 @@ function resize() {
   // 自适应：卡面尺寸明显变化时，清空按旧尺寸分布的粒子与一次性效果
   // （密度/位置由各绘制函数按新卡面重算，避免旧粒子错位「破功」）
   if (Math.abs(pw - W) > 2 || Math.abs(ph - H) > 2) {
-    drops.length = 0; spl.length = 0; flakes.length = 0; hails.length = 0; motes.length = 0; lights.length = 0
+    drops.length = 0; spl.length = 0; flakes.length = 0; hails.length = 0; motes.length = 0
     accum = null; bolt = null; boltLife = 0; flash = 0; meteor = 0; mxy = null
   }
 }
 function scene() {
-  // 预览态优先读 el._wxPv.s（稳定状态），否则回退到 .wx 的实时 class——
-  // 这样 Vue 数据刷新重建 .wx 类名时，canvas 仍能持续渲染预览场景，不闪烁
-  var p = el._wxPv || {}
+  // 场景来源：引擎当前施加的 class（el._wxApplied，微信 wxSync 每帧维护）。
+  // 因为 class 由引擎独占（html 里的 class 是静态 "hc wx"，不含 {{scene}}），
+  // Vue 刷新永远不会覆盖它，故这里读到的就是稳定真值；
+  // 若尚未同步（首帧/重建后），回落到 .wx 的实际 class。
   var w = el.querySelector('.wx')
-  var cls = (p.active && p.s) ? p.s : (w ? w.className : '')
-  var c = (cls || '').split(/\s+/), s = 'sunny'
+  var c = String(el._wxApplied || (w ? w.className : '')).split(/\s+/), s = ''
   function has(x) { return c.indexOf(x) >= 0 }
   if (has('wx-night')) s = 'night'
+  else if (has('wx-sunny')) s = 'sunny'
   else if (has('wx-partly')) s = 'partly'
   else if (has('wx-cloudy')) s = 'cloudy'
   else if (has('wx-rain')) s = 'rain'
@@ -818,7 +816,102 @@ function scene() {
   else if (has('wx-hail')) s = 'hail'
   else if (has('wx-fog')) s = 'fog'
   else if (has('wx-windy')) s = 'windy'
-  return { s: s, night: s === 'night' || has('wx-dark') }
+  var hh = new Date().getHours(), localNight = hh < 6 || hh >= 18
+  if (!s) s = localNight ? 'night' : 'cloudy'
+  // 昼夜规则统一：夜间晴天/少云折叠为「晴夜」（月亮+星野），夜间其余场景叠加 wx-dark。
+  // 实时与择日都走这条规则 —— 点其他日 = 模拟「那天的天气 + 当前时间」，夜里点到晴天也是晴夜。
+  if (localNight && (s === 'sunny' || s === 'partly')) s = 'night'
+  return { s: s, night: s === 'night' || localNight || has('wx-dark') }
+}
+// ---- 预报择日：点某天 → 卡面显示该日具体天气信息 + 动画切换到该日天气（按当前时间叠加昼夜）；
+// 再点同一天或点卡片空白处 → 恢复实时天气。状态存在 el 上（Vue 重建 DOM 不丢），
+// 数据来源是 Vue 每次渲染刷新的 data-* 属性（唯一真相源），引擎只覆写 class/文本，故不会互相打架。
+var selDay = -1
+function wxInfo() {
+  var w = el.querySelector('.wx')
+  if (!w) return null
+  return {
+    scene: w.getAttribute('data-live') || '',
+    temp: w.getAttribute('data-temp') || '',
+    cond: w.getAttribute('data-cond') || '',
+    ic: w.getAttribute('data-ic') || '',
+    hi: w.getAttribute('data-hi') || '',
+    lo: w.getAttribute('data-lo') || '',
+    title: '天气预报',
+  }
+}
+function dayInfo(i) {
+  var d = el.querySelectorAll('.fc7d')[i]
+  if (!d) return null
+  var lbl = d.getAttribute('data-label') || ''
+  // 今天：直接用实时信息（含当前温度与已含夜色的场景），只是标题换成日期名
+  if (d.getAttribute('data-today')) { var L = wxInfo(); if (L) L.title = lbl ? lbl + '预报' : L.title; return L }
+  return {
+    scene: d.getAttribute('data-scene') || '',
+    temp: d.getAttribute('data-hi') || '—',
+    cond: d.getAttribute('data-cond') || '',
+    ic: d.getAttribute('data-ic') || '',
+    hi: d.getAttribute('data-hi') || '—',
+    lo: d.getAttribute('data-lo') || '—',
+    title: lbl ? lbl + '预报' : '天气预报',
+  }
+}
+// 元素引用缓存：以 .wx 元素身份为键（Vue 重建 DOM 后引用失效，此处自动重取）
+var refW = null, refs = null
+function getRefs() {
+  var w = el.querySelector('.wx')
+  if (w !== refW) {
+    refW = w
+    refs = w ? { w: w, t: w.querySelector('.wx-temp'), cd: w.querySelector('.wx-cond'), hl: w.querySelector('.wx-hilo'), tt: w.querySelector('.wx-title') } : null
+  }
+  return refs
+}
+// 每帧同步（幂等，逐项比对后才写）：把「应当显示的场景/文本/高亮」与当前 DOM 对齐。
+// 之所以每帧而非定时器：Vue 数据刷新会重建 .wx（class/文本回到实时值），
+// 每帧核对可在下一帧（≤16ms）内恢复，人眼不可见；且场景 class 由引擎独占写入
+// （html 里 class 静态、不含 {{scene}}），Vue 永远不会覆盖它 → 动画不会分裂。
+//  - 实时（selDay < 0）：场景取 data-live（data.js 已按天气 + 本地时间算好昼夜）
+//  - 择日（selDay >= 0）：模拟「该日天气 + 当前时间」——与实时同规则：夜里晴天/少云折叠为晴夜，
+//    其余夜间场景叠加 wx-dark；白天原样。文本/高亮由引擎施加
+function wxSync() {
+  var r = getRefs()
+  if (!r) return
+  var live = selDay < 0
+  var d = live ? wxInfo() : dayInfo(selDay)
+  if (!d) return
+  var cls = d.scene
+  if (!live) {
+    if (new Date().getHours() < 6 || new Date().getHours() >= 18) {
+      cls = (cls === 'wx-sunny' || cls === 'wx-partly') ? 'wx-night'
+        : (cls.indexOf('wx-dark') < 0 ? cls + ' wx-dark' : cls)
+    }
+  }
+  var want = 'hc wx' + (cls ? ' ' + cls : '')
+  if (r.w.className !== want) r.w.className = want
+  el._wxApplied = cls
+  var u = el._wxUnit || '°'
+  if (r.t && r.t.textContent !== String(d.temp) + u) r.t.innerHTML = d.temp + '<small>' + u + '</small>'
+  if (r.cd && r.cd.textContent !== d.ic + d.cond) r.cd.innerHTML = '<i class="wx-emoji">' + d.ic + '</i>' + d.cond
+  var htxt = '最高 ' + d.hi + '　/　最低 ' + d.lo
+  if (r.hl && r.hl.textContent !== htxt) r.hl.textContent = htxt
+  if (r.tt && r.tt.lastChild && r.tt.lastChild.nodeValue !== d.title) r.tt.lastChild.nodeValue = d.title
+  var cells = el.querySelectorAll('.fc7d')
+  for (var i = 0; i < cells.length; i++) {
+    var on = !live && i === selDay
+    if (cells[i].classList.contains('on') !== on) cells[i].classList.toggle('on', on)
+  }
+}
+function wxRestore() { selDay = -1; wxSync() }
+function onPick(ev) {
+  var t = ev.target
+  var d = t && t.closest ? t.closest('.fc7d') : null
+  if (!d) { if (selDay >= 0) wxRestore(); return } // 点卡片空白处恢复实时
+  var cells = el.querySelectorAll('.fc7d'), idx = -1
+  for (var i = 0; i < cells.length; i++) if (cells[i] === d) { idx = i; break }
+  if (idx < 0) return
+  if (idx === selDay) { wxRestore(); return } // 再点同一天恢复实时
+  selDay = idx
+  wxSync()
 }
 // 全局缩放：所有天空元素尺寸按卡片短边等比缩放（小卡小动画，大卡大动画）
 function skyScale() { return Math.min(1.6, Math.max(.55, Math.min(W, H) / 150)) }
@@ -1030,27 +1123,6 @@ function motesDraw(dt) {
   }
   ctx.globalAlpha = 1
 }
-// 小米式漂浮光点：4 个大号柔光斑缓慢漂移 + 呼吸明灭（截图阴天夜的标志性效果）。
-// 夜间亮度更高，白天阴天也给淡淡的一层；光斑属于天空氛围，不与雨雪雷雹同场。
-function floatLights(dt, night) {
-  var k = skyScale()
-  if (!lights.length) for (var i = 0; i < 4; i++) lights.push({ x: Math.random() * W, y: H * (.25 + Math.random() * .6), r: 6 + Math.random() * 7, vx: (Math.random() - .5) * 7, vy: (Math.random() - .5) * 4, p: Math.random() * 6.28, b: .6 + Math.random() * .4 })
-  var t = performance.now()
-  for (var j = 0; j < lights.length; j++) {
-    var L = lights[j]
-    L.x += L.vx * dt; L.y += L.vy * dt
-    if (L.x < -20) L.x = W + 18; else if (L.x > W + 20) L.x = -18
-    if (L.y < -20) L.y = H + 18; else if (L.y > H + 20) L.y = -18
-    var a = (night ? .3 : .12) * L.b * (.55 + .45 * Math.sin(t * .0007 + L.p))
-    var R = L.r * k
-    var g = ctx.createRadialGradient(L.x, L.y, 0, L.x, L.y, R)
-    g.addColorStop(0, 'rgba(216,228,246,' + a.toFixed(3) + ')')
-    g.addColorStop(.55, 'rgba(216,228,246,' + (a * .45).toFixed(3) + ')')
-    g.addColorStop(1, 'rgba(216,228,246,0)')
-    ctx.fillStyle = g
-    ctx.beginPath(); ctx.arc(L.x, L.y, R, 0, 6.29); ctx.fill()
-  }
-}
 var raf = 0, running = true, ro = null, last = performance.now(), chkT = 0
 function frame(now) {
   if (!running) return
@@ -1064,6 +1136,8 @@ function frame(now) {
   }
   if (!W) resize()
   if (!W) { raf = requestAnimationFrame(frame); return }
+  // 每帧同步场景/文本/高亮（幂等）：Vue 重建 DOM 后下一帧即恢复，人眼不可见
+  wxSync()
   // 兜底自适应：ResizeObserver 之外每 500ms 校验一次卡面尺寸（编辑改卡片大小/布局变化都能跟上）
   if (now - chkT > 500) {
     chkT = now
@@ -1093,8 +1167,6 @@ function frame(now) {
       }
     } else if (sc.s === 'sunny' || sc.s === 'partly') drawSun(now)
     if (sc.s === 'sunny' || sc.s === 'partly') motesDraw(dt)
-    // 小米式漂浮光点：阴天/雾/大风的天空氛围（夜里更明显）
-    if (sc.s === 'cloudy' || sc.s === 'fog' || sc.s === 'windy') floatLights(dt, sc.night)
     if (sc.s === 'rain' || sc.s === 'thunder') rain(dt)
     if (sc.s === 'hail') hail(dt)
     if (sc.s === 'snow') snow(dt)
@@ -1110,70 +1182,12 @@ document.addEventListener('visibilitychange', onVis)
 resize()
 ro = new ResizeObserver(resize); ro.observe(cv)
 raf = requestAnimationFrame(frame)
-// ---- 预报点击预览：点某日切换到该日天气动画，点同一天或卡片空白处恢复实时 ----
-// 状态挂在 el 上（v-html 每次数据刷新会重建 .wx/.fc7-d DOM），用 MutationObserver 在
-// 重建瞬间重施加预览，从根上解决「Vue 用 {{scene}} 覆盖预览类名」导致的只变一半/变不回来。
-var PV = el._wxPv || (el._wxPv = { active: false, r: '', s: '', i: -1 })
-function wxSceneOfClass(cls) {
-  return (cls || '').split(/\s+/).filter(function (c) { return c.indexOf('wx-') === 0 }).join(' ')
-}
-function wxApply(cls) {
-  var w = el.querySelector('.wx')
-  if (!w) return
-  var keep = w.className.split(/\s+/).filter(function (c) { return c && c.indexOf('wx-') !== 0 })
-  w.className = keep.concat((cls || '').split(/\s+/)).join(' ')
-}
-function wxClearOn() {
-  var ons = el.querySelectorAll('.fc7-d.on')
-  for (var i = 0; i < ons.length; i++) ons[i].classList.remove('on')
-}
-function wxReapply() {
-  if (!PV.active) return
-  var w = el.querySelector('.wx')
-  if (!w) return
-  wxApply(PV.s)
-  var days = el.querySelectorAll('.fc7-d')
-  for (var z = 0; z < days.length; z++) days[z].classList.toggle('on', z === PV.i)
-  var lbl = days[PV.i] ? days[PV.i].querySelector('.fc7-l') : null
-  var tt = el.querySelector('.wx-top span:last-child')
-  if (tt) tt.textContent = '预览 · ' + (lbl ? lbl.textContent : '')
-}
-function wxRestore() {
-  if (!PV.active) return
-  var w = el.querySelector('.wx')
-  if (w) wxApply(PV.r)
-  wxClearOn()
-  PV.active = false; PV.r = ''; PV.s = ''; PV.i = -1
-  var tt = el.querySelector('.wx-top span:last-child')
-  if (tt) tt.textContent = '天气预报'
-}
-function onFcTap(ev) {
-  var d = ev.target && ev.target.closest ? ev.target.closest('.fc7-d') : null
-  if (!d) { wxRestore(); return }
-  var w = el.querySelector('.wx')
-  if (!w) return
-  var cls = d.getAttribute('data-scene')
-  if (!cls) return
-  var days = el.querySelectorAll('.fc7-d'), idx = -1
-  for (var q = 0; q < days.length; q++) if (days[q] === d) { idx = q; break }
-  if (PV.active && idx === PV.i) { wxRestore(); return }
-  if (!PV.active) PV.r = wxSceneOfClass(w.className)
-  PV.active = true; PV.s = cls; PV.i = idx
-  wxApply(cls); wxClearOn(); d.classList.add('on')
-  var lbl = d.querySelector('.fc7-l'), tt = el.querySelector('.wx-top span:last-child')
-  if (tt) tt.textContent = '预览 · ' + (lbl ? lbl.textContent : '')
-  spl.length = 0; bolt = null; boltLife = 0; flash = 0; meteor = 0; mxy = null
-}
-el.addEventListener('click', onFcTap)
-var wxMo = new MutationObserver(function () { if (PV.active) wxReapply() })
-wxMo.observe(el, { childList: true })
 el._wxStop = function () {
   running = false; cancelAnimationFrame(raf)
   if (ro) ro.disconnect()
-  if (wxMo) wxMo.disconnect()
   document.removeEventListener('visibilitychange', onVis)
-  el.removeEventListener('click', onFcTap)
-  el._wxPv = null
+  el.removeEventListener('click', onPick)
+  el._wxApplied = ''
 }`
   return { html, css, js }
 }
