@@ -116,9 +116,7 @@
         </label>
         <label class="flex items-center gap-1 text-[11px] font-body text-muted">
           <span>地板纹理</span>
-          <select v-model="selectedRoom.floorTexture" class="px-2 py-1 rounded-lg border border-border bg-surface-alt text-xs font-body text-on-surface" aria-label="地板纹理">
-            <option v-for="t in FLOOR_TEXTURE_PRESETS" :key="t.key" :value="t.key">{{ t.name }}</option>
-          </select>
+          <UiSelect v-model="selectedRoom.floorTexture" :options="floorTextureOptions" aria-label="地板纹理" />
         </label>
         <button
           class="flex items-center gap-0.5 px-2 py-1 rounded-lg border border-border bg-surface-alt text-xs font-body text-muted hover:text-on-surface transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
@@ -161,9 +159,7 @@
         </label>
         <label class="flex items-center gap-1 text-[11px] font-body text-muted">
           <span>纹理</span>
-          <select v-model="floor.floorTexture" class="px-2 py-1 rounded-lg border border-border bg-surface-alt text-xs font-body text-on-surface" aria-label="地板纹理">
-            <option v-for="t in FLOOR_TEXTURE_PRESETS" :key="t.key" :value="t.key">{{ t.name }}</option>
-          </select>
+          <UiSelect v-model="floor.floorTexture" :options="floorTextureOptions" aria-label="地板纹理" />
         </label>
         <button
           class="flex items-center gap-0.5 px-2 py-1 rounded-lg border border-border bg-surface-alt text-xs font-body text-muted hover:text-on-surface transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
@@ -190,9 +186,7 @@
         </label>
         <label class="flex items-center gap-1 text-[11px] font-body text-muted">
           <span>材质</span>
-          <select v-model="floor.wallTexture" class="px-2 py-1 rounded-lg border border-border bg-surface-alt text-xs font-body text-on-surface" aria-label="墙面材质">
-            <option v-for="t in WALL_TEXTURE_PRESETS" :key="t.key" :value="t.key">{{ t.name }}</option>
-          </select>
+          <UiSelect v-model="floor.wallTexture" :options="wallTextureOptions" aria-label="墙面材质" />
         </label>
       </div>
 
@@ -349,9 +343,7 @@
             </label>
             <label class="flex items-center gap-1.5 text-[11px] font-body text-muted mt-1.5">
               <span class="w-11">纹理</span>
-              <select v-model="selectedFurniture.texture" class="flex-1 px-2 py-1 rounded-lg border border-border bg-surface-alt text-xs font-body text-on-surface" aria-label="纹理预设">
-                <option v-for="t in TEXTURE_PRESETS" :key="t.key" :value="t.key">{{ t.name }}</option>
-              </select>
+              <UiSelect v-model="selectedFurniture.texture" :options="furnitureTextureOptions" class="flex-1" aria-label="纹理预设" />
             </label>
             <div v-if="selectedFurniture.model" class="mt-2 space-y-1.5">
               <label class="flex items-center gap-1.5 text-[11px] font-body text-muted">
@@ -379,9 +371,7 @@
             </label>
             <label class="flex items-center gap-1.5 text-[11px] font-body text-muted mt-1.5">
               <span class="w-11">地板</span>
-              <select v-model="selectedRoom.floorTexture" class="flex-1 px-2 py-1 rounded-lg border border-border bg-surface-alt text-xs font-body text-on-surface" aria-label="房间地板材质">
-                <option v-for="t in FLOOR_TEXTURE_PRESETS" :key="t.key" :value="t.key">{{ t.name }}</option>
-              </select>
+              <UiSelect v-model="selectedRoom.floorTexture" :options="floorTextureOptions" class="flex-1" aria-label="房间地板材质" />
             </label>
           </fieldset>
         </div>
@@ -532,6 +522,7 @@ import FurniturePalette from '@/components/floorplan/FurniturePalette.vue'
 import DeviceSettingsDialog from '@/components/floorplan/DeviceSettingsDialog.vue'
 import ControlRow from '@/components/ControlRow.vue'
 import EntityMoreInfo from '@/components/EntityMoreInfo.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 import api from '@/api'
 import { store, entityStates, registryDevices, loadRegistry, openDeviceDrawer, requestEntityRefresh } from '@/store'
 import { getPrefs, putPrefs } from '@/utils/prefs'
@@ -540,6 +531,10 @@ import { parseDoc, defaultFloor, placementFromDevice, snap, clamp, uid, snapWall
 import { toast } from '@/utils/browserCommands'
 
 // ================= 文档 =================
+// 纹理/材质下拉选项（key 为字符串，直接作为 UiSelect 的 value）
+const floorTextureOptions = FLOOR_TEXTURE_PRESETS.map((t) => ({ label: t.name, value: t.key }))
+const wallTextureOptions = WALL_TEXTURE_PRESETS.map((t) => ({ label: t.name, value: t.key }))
+const furnitureTextureOptions = TEXTURE_PRESETS.map((t) => ({ label: t.name, value: t.key }))
 const doc = reactive(parseDoc(null))
 const floorIdx = ref(0)
 const floor = computed(() => doc.floors[clamp(floorIdx.value, 0, doc.floors.length - 1)])

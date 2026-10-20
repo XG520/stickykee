@@ -177,6 +177,20 @@
                             </span>
                             <span v-if="isEntityPicked(o.id)" class="material-symbols-outlined ce-en-check">check</span>
                           </li>
+                          <!-- 可选实体卡（entityOptional）：提供「不绑定」出口，清除误绑/自动预选的实体 -->
+                          <li
+                            v-if="!multiEntity && meta.entityOptional && !meta.needEntity"
+                            class="ce-entity-item"
+                            :class="{ on: !draft.entity_id }"
+                            @click="pickEntity('')"
+                          >
+                            <span class="ce-domain-badge"><span class="material-symbols-outlined" style="font-size:10px">block</span></span>
+                            <span class="ce-en-text">
+                              <span class="ce-en-name">不绑定实体</span>
+                              <span class="ce-en-id">使用卡片默认数据源</span>
+                            </span>
+                            <span v-if="!draft.entity_id" class="material-symbols-outlined ce-en-check">check</span>
+                          </li>
                           <li v-if="!filteredEntities.length" class="ce-entity-empty">
                             {{ entityOptions.length ? '没有匹配的实体' : '该类型暂无可用实体（需先连接 Home Assistant）' }}
                           </li>

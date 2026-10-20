@@ -508,3 +508,59 @@ html::-webkit-scrollbar {
 .animate-slide-in {
   animation: slide-in 0.35s ease both;
 }
+
+/* ================= 全局统一下拉（select） =================
+   全系统 20+ 处 <select>（设置页/场景编辑/楼层平面/消息中心/卡片模板等）不再各写各的：
+   1) color-scheme 跟随主题 → 原生「弹出选项列表」自动深浅色（深色界面下不再是白底黑字，治「看不清」）；
+   2) 触发框统一外观：主题变量配色 + 自定义箭头 + hover/focus 反馈；
+      各处已有的类选择器（.h-sel/.sel/Scoped 样式）特异性更高，可继续覆盖微调，不破坏现状。 */
+html,
+html.theme-china,
+html.theme-aurora,
+html.theme-forest,
+html.theme-geo,
+html.theme-tech,
+html.theme-autumn,
+html.theme-festive {
+  color-scheme: dark;
+}
+html.theme-retro {
+  color-scheme: light;
+}
+
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  box-sizing: border-box;
+  max-width: 100%;
+  padding: 5px 24px 5px 10px;
+  border: 1px solid rgb(var(--c-border));
+  border-radius: 8px;
+  background-color: rgb(var(--c-surface-alt));
+  color: rgb(var(--c-on-surface));
+  font-family: inherit;
+  font-size: inherit;
+  line-height: 1.4;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238a8986' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 12px;
+  transition: border-color 0.15s, background-color 0.15s;
+  cursor: pointer;
+}
+select:hover:not(:disabled) {
+  border-color: rgb(var(--c-primary) / 0.55);
+}
+select:focus {
+  outline: none;
+  border-color: rgb(var(--c-border-focus));
+}
+select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+/* 选项列表兜底配色（Firefox 桌面端不用 color-scheme 渲染 option） */
+select option {
+  background-color: rgb(var(--c-surface));
+  color: rgb(var(--c-on-surface));
+}

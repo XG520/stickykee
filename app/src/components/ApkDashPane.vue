@@ -13,14 +13,13 @@
       <div class="flex items-center gap-2">
         <span class="material-symbols-outlined text-primary text-xl shrink-0" aria-hidden="true">smartphone</span>
         <h2 class="text-sm font-semibold text-on-surface whitespace-nowrap">手机 App 仪表盘</h2>
-        <select
+        <UiSelect
           v-if="devices.length"
           v-model="deviceId"
-          class="min-w-0 flex-1 h-9 px-2 rounded-lg bg-surface border border-border text-xs text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 cursor-pointer"
+          class="min-w-0 flex-1 h-9"
+          :options="deviceOptions"
           title="选择要编辑的手机设备"
-        >
-          <option v-for="d in devices" :key="d.device_id" :value="d.device_id">{{ d.name }}</option>
-        </select>
+        />
         <!-- 操作按钮区固定宽度（v-show 占位）：dirty 出现/消失时下拉框宽度不抖动 -->
         <div class="shrink-0 w-24 flex items-center justify-end gap-2">
           <button
@@ -156,6 +155,7 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import CodeCard from '@/components/cards/CodeCard.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 import { cardDefaults } from '@/components/cards/defaults'
 import { getPrefs, putPrefs } from '@/utils/prefs'
 import { useDashGrid } from '@/composables/useDashGrid'
@@ -196,6 +196,7 @@ const cards = computed(() => pages.value[pageIndex.value]?.cards ?? [])
 const selectedCard = computed(() => multiSelectMode.value ? null : (cards.value.find((c) => c.uid === selectedUid.value) || null))
 const dirty = computed(() => loaded.value && serializeDashboard(pages.value) !== snapshot)
 const deviceName = computed(() => props.devices.find((d) => d.device_id === deviceId.value)?.name || deviceId.value.slice(0, 8))
+const deviceOptions = computed(() => props.devices.map((d) => ({ label: d.name, value: d.device_id })))
 
 // ---- 布局加载：回退链 dashboard_apk_<id> → dashboard_apk → dashboard；读取该机真实列数 ----
 async function load(force = false) {

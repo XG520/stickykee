@@ -20,6 +20,7 @@ import { store, entityStates, requestEntityRefresh } from '@/store'
 import HomeMap from '@/components/map/HomeMap.vue'
 import router from '@/router'
 import AlmanacCard from './AlmanacCard.vue'
+import BirthdayCard from './BirthdayCard.vue'
 
 const props = defineProps({
   card: { type: Object, required: true },
@@ -394,6 +395,25 @@ function unmountAlmanac() {
   }
 }
 
+// ---- 生日 / 生日倒计时卡：同 almanac 模式挂载（列表 / 倒计时由占位 data-mode 指定） ----
+let birthdayApp = null
+async function mountBirthday() {
+  if (props.card.type !== 'birthday' && props.card.type !== 'birthdayCountdown') return
+  await nextTick()
+  const holder = root.value && root.value.querySelector('[data-birthday]')
+  if (!holder || birthdayApp) return
+  birthdayApp = createApp(BirthdayCard, {
+    mode: holder.dataset.mode === 'countdown' ? 'countdown' : 'list',
+  })
+  birthdayApp.mount(holder)
+}
+function unmountBirthday() {
+  if (birthdayApp) {
+    birthdayApp.unmount()
+    birthdayApp = null
+  }
+}
+
 // ---- 视口门控：图标替换 / 跑马灯扫描都含强制回流（scrollWidth / getComputedStyle），
 // 卡片很多时对「视口外卡片」逐次执行会造成布局抖动累积卡顿。
 // 用 IntersectionObserver 跟踪可见性：不可见时只记脏标记，滚入视口（含 300px 余量）再补做。
@@ -416,11 +436,11 @@ watch(
   () => [props.card.html, props.card.css, props.card.js],
   () => {
     nextTick(() => {
-      unmountMap(); unmountAlmanac()
+      unmountMap(); unmountAlmanac(); unmountBirthday()
       applyCss()
       schedulePostRender()
       applyJs()
-      mountMap(); mountAlmanac()
+      mountMap(); mountAlmanac(); mountBirthday()
     })
   },
   { deep: true },
@@ -462,6 +482,7 @@ onMounted(() => {
   applyJs()
   mountMap()
   mountAlmanac()
+  mountBirthday()
   schedulePostRender()
 })
 onBeforeUnmount(() => {
@@ -474,6 +495,7 @@ onBeforeUnmount(() => {
   rangeTimers.clear()
   unmountMap()
   unmountAlmanac()
+  unmountBirthday()
   if (styleEl.value) {
     styleEl.value.remove()
     styleEl.value = null

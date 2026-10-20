@@ -130,6 +130,17 @@ export function upgradeWeatherCard(card) {
   }
 }
 
+// 日历（almanac）卡去实体化：农历等全部本地算法，历史上因可选域含 sensor 曾自动预选误绑
+// （如距离传感器），且覆盖层对无关实体完全无效。这里统一清掉绑定，编辑器也不再显示选实体入口。
+// 同时统一为 3×2 版式（格子更宽，数字/农历字号已相应加大）。
+function upgradeAlmanacCard(card) {
+  if (!card || card.type !== 'almanac') return
+  if (card.entity_id) card.entity_id = ''
+  if (Array.isArray(card.entity_ids) && card.entity_ids.length) card.entity_ids = []
+  card.w = 3
+  card.h = 2
+}
+
 // 卡片数组归一化：字符串（旧的卡片类型简写）→ 卡片对象；丢弃未知类型；跑卡片级迁移。
 // 幂等：已有 uid 的卡片保留原 uid，因此可安全地重复调用（load / import 共用）。
 export function normalizeCards(list) {
@@ -152,6 +163,7 @@ export function normalizeCards(list) {
   out.forEach(upgradeFlipClockCard)
   out.forEach(upgradeAmapWeatherCard)
   out.forEach(upgradeWeatherCard)
+  out.forEach(upgradeAlmanacCard)
   out.forEach(upgradeCardBorderCss)
   return out
 }

@@ -68,13 +68,13 @@
           <template v-else-if="c.kind === 'select'">
             <div class="flex items-center justify-between gap-3" data-mi="select">
               <span class="font-body text-sm text-muted shrink-0">{{ c.label }}</span>
-              <select
-                class="flex-1 min-w-0 px-2 py-1.5 rounded-xl bg-surface-alt border border-border text-sm font-body text-on-background outline-none focus:border-primary"
-                :value="c.value" :disabled="!writable" @change="onSelect(c, $event)"
-              >
-                <option v-if="!hasOption(c, c.value)" value="">—</option>
-                <option v-for="o in c.options" :key="o.value" :value="o.value">{{ o.label }}</option>
-              </select>
+              <UiSelect
+                class="flex-1 min-w-0"
+                :model-value="c.value"
+                :disabled="!writable"
+                :options="!hasOption(c, c.value) ? [{ label: '—', value: '' }, ...(c.options || [])] : (c.options || [])"
+                @change="(v) => call(c, v)"
+              />
             </div>
           </template>
 
@@ -152,6 +152,7 @@ import api from '@/api'
 import { store, requestEntityRefresh } from '@/store'
 import { iconFor, domainGlyph, domainColorCls, isAvailable } from '@/utils/entities'
 import { buildControls, buildServiceCall, stateLabelOf } from '@/utils/entityControls'
+import UiSelect from '@/components/ui/UiSelect.vue'
 
 const props = defineProps({
   entity: { type: Object, required: true },

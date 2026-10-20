@@ -70,18 +70,15 @@
                   :class="isAssistant ? 'text-primary' : 'text-accent'">{{ isAssistant ? 'smart_toy' : 'account_circle' }}</span>
                 <h3 class="text-on-background font-semibold text-sm truncate">{{ displayName(activeUser) }}</h3>
                 <!-- TTS 朗读引擎快选（仅智家助手）：读写当前运行环境对应的偏好键，与设置页格式一致 -->
-                <select v-if="isAssistant" v-model="ttsSel" @change="saveTTS" @click.stop
+                <UiSelect v-if="isAssistant" v-model="ttsSel" @change="saveTTS" @click.stop
                   title="朗读引擎：智家助手回复用哪种声音朗读"
-                  class="ml-auto max-w-[42%] shrink-0 bg-surface-alt border border-border rounded-lg px-2 py-1.5 text-xs text-muted focus:border-primary focus:outline-none truncate">
-                  <option v-for="o in ttsOptions" :key="o.v || 'auto'" :value="o.v">{{ o.label }}</option>
-                </select>
+                  class="ml-auto max-w-[42%] shrink-0"
+                  :options="ttsOptions" />
                 <!-- 对话代理选择（仅智家助手）：内置代理只能控制设备，LLM 代理才能闲聊问答 -->
-                <select v-if="isAssistant && haAgents.length" v-model="haAgentSel" @change="saveHaAgent" @click.stop
+                <UiSelect v-if="isAssistant && haAgents.length" v-model="haAgentSel" @change="saveHaAgent" @click.stop
                   title="对话代理：决定智家助手如何思考与回答"
-                  class="max-w-[42%] shrink-0 bg-surface-alt border border-border rounded-lg px-2 py-1.5 text-xs text-muted focus:border-primary focus:outline-none truncate">
-                  <option value="auto">自动（优先 AI 代理）</option>
-                  <option v-for="a in haAgents" :key="a.id" :value="a.id">{{ agentLabel(a) }}</option>
-                </select>
+                  class="max-w-[42%] shrink-0"
+                  :options="haAgentOptions" />
               </div>
 
               <div ref="listEl" class="flex-1 overflow-y-auto px-4 py-3 space-y-3 bg-background/40">
@@ -411,6 +408,7 @@ import { isApk } from '@/utils/serverConfig'
 import { VoiceRecorder, WavRecorder, NativeWavRecorder } from '@/utils/recorder'
 import { startCall } from '@/utils/call'
 import { openEnvelope, withCrypto } from '@/utils/crypto'
+import UiSelect from '@/components/ui/UiSelect.vue'
 
 // ---- 对话代理选择（智家助手会话头部下拉）----
 const haAgents = ref([])
@@ -424,6 +422,11 @@ let ttsLoading = false
 function agentLabel(a) {
   return a.builtin ? 'Home Assistant（内置·仅设备控制）' : (a.name || a.id)
 }
+// 对话代理下拉选项：智能选择 + 动态代理列表
+const haAgentOptions = computed(() => [
+  { label: '自动（优先 AI 代理）', value: 'auto' },
+  ...haAgents.value.map((a) => ({ label: agentLabel(a), value: a.id })),
+])
 
 // 每次进入助手会话都重新拉取：HA 装/删 LLM 集成后列表自动跟随；
 // 已保存的代理若已被删除（不在列表中），自动回退到智能选择并持久化
@@ -486,14 +489,14 @@ let ttsPrefsLoaded = false
 
 // 选项：智能选择 + 内置 Edge TTS（多音色）+ 系统/浏览器自带 + HA TTS 引擎（动态列表）
 const ttsOptions = computed(() => {
-  const o = [{ v: '', label: '朗读：智能选择（推荐）' }]
-  o.push({ v: 'edge', label: '朗读：内置 Edge TTS · 晓晓（默认）' })
-  for (const [v, l] of EDGE_VOICES) o.push({ v: 'edge:' + v, label: '朗读：Edge · ' + l })
-  o.push({ v: 'sys', label: TTS_IS_APK ? '朗读：系统自带 TTS（离线）' : '朗读：浏览器自带语音' })
-  for (const t of haTts.value) o.push({ v: 'ha:' + t.id, label: '朗读：HA · ' + (t.name || t.id) })
+  const o = [{ value: '', label: '朗读：智能选择（推荐）' }]
+  o.push({ value: 'edge', label: '朗读：内置 Edge TTS · 晓晓（默认）' })
+  for (const [v, l] of EDGE_VOICES) o.push({ value: 'edge:' + v, label: '朗读：Edge · ' + l })
+  o.push({ value: 'sys', label: TTS_IS_APK ? '朗读：系统自带 TTS（离线）' : '朗读：浏览器自带语音' })
+  for (const t of haTts.value) o.push({ value: 'ha:' + t.id, label: '朗读：HA · ' + (t.name || t.id) })
   const cur = ttsSel.value
   // 遗留值（如已删除的 HA 引擎）：保留占位供回显，loadHaTts 会自动回退
-  if (cur && cur !== 'sys' && !o.some((x) => x.v === cur)) o.push({ v: cur, label: '朗读：HA 引擎 · ' + cur })
+  if (cur && cur !== 'sys' && !o.some((x) => x.value === cur)) o.push({ value: cur, label: '朗读：HA 引擎 · ' + cur })
   return o
 })
 

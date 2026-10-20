@@ -86,14 +86,7 @@
           <span class="text-xs text-muted font-body bg-surface-alt border border-border px-2 py-0.5 rounded-full">{{ rules.length }} 条</span>
         </div>
         <div class="flex items-center gap-2">
-          <select
-            v-model="stateFilter"
-            class="bg-surface border border-border text-muted text-xs font-body rounded-lg px-3 py-1.5 outline-none focus:border-primary/40"
-          >
-            <option value="">全部状态</option>
-            <option value="on">已启用</option>
-            <option value="off">已关闭</option>
-          </select>
+          <UiSelect v-model="stateFilter" :options="stateFilterOptions" />
           <button
             class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/30 text-primary hover:bg-primary/20 transition-colors font-body text-xs font-medium"
             @click="newWizard()"
@@ -245,16 +238,11 @@
                 >
                   <!-- 触发器头部：类型 + 删除 -->
                   <div class="flex items-center gap-2">
-                    <select
+                    <UiSelect
                       v-model="tr.platform"
-                      class="bg-surface border border-border rounded-lg px-2 py-1 text-xs font-body text-on-background outline-none focus:border-primary/50"
+                      :options="triggerPlatformOptions"
                       @change="onTriggerPlatformChange(tr)"
-                    >
-                      <option value="state">设备状态变化</option>
-                      <option value="time">定时触发</option>
-                      <option value="sun">日出/日落</option>
-                      <option value="numeric_state">数值变化</option>
-                    </select>
+                    />
                     <span class="text-xs text-faint font-body flex-1">#{{ ti + 1 }}</span>
                     <button
                       class="p-1 rounded text-faint hover:text-error transition-colors"
@@ -313,35 +301,14 @@
                     </div>
                     <!-- 事件类型 -->
                     <div class="flex items-center gap-2">
-                      <select
-                        v-model="tr.event_type"
-                        class="bg-surface border border-border rounded-lg px-2 py-1 text-xs font-body text-on-background outline-none focus:border-primary/50"
-                      >
-                        <option value="">状态变化（任意）</option>
-                        <option value="changed">变化时</option>
-                        <option value="turned_on">打开时</option>
-                        <option value="turned_off">关闭时</option>
-                        <option value="pressed">按下</option>
-                        <option value="double_pressed">双击</option>
-                        <option value="held">长按</option>
-                      </select>
+                      <UiSelect v-model="tr.event_type" :options="eventTypeOptions" />
                       <template v-if="tr.event_type !== ''">
                         <!-- 二进制实体：下拉选择状态 -->
-                        <select
+                        <UiSelect
                           v-if="isBinaryEntity(tr.entity_id)"
                           v-model="tr.to"
-                          class="bg-surface border border-border rounded-lg px-2 py-1 text-xs font-body text-on-background outline-none focus:border-primary/50"
-                        >
-                          <option value="">等于</option>
-                          <option value="on">on</option>
-                          <option value="off">off</option>
-                          <option value="open">open</option>
-                          <option value="closed">closed</option>
-                          <option value="home">home</option>
-                          <option value="not_home">not_home</option>
-                          <option value="true">true</option>
-                          <option value="false">false</option>
-                        </select>
+                          :options="binaryStateOptions"
+                        />
                         <input
                           v-else
                           v-model="tr.to"
@@ -381,13 +348,7 @@
 
                   <!-- 日出日落 -->
                   <template v-else-if="tr.platform === 'sun'">
-                    <select
-                      v-model="tr.event"
-                      class="bg-surface border border-border rounded-lg px-2 py-1 text-xs font-body text-on-background outline-none focus:border-primary/50"
-                    >
-                      <option value="sunrise">日出</option>
-                      <option value="sunset">日落</option>
-                    </select>
+                    <UiSelect v-model="tr.event" :options="sunEventOptions" />
                     <input
                       v-model="tr.offset"
                       type="text"
@@ -507,16 +468,11 @@
                 >
                   <!-- 条件头部：类型 + 删除 -->
                   <div class="flex items-center gap-2">
-                    <select
+                    <UiSelect
                       v-model="cond.platform"
-                      class="bg-surface border border-border rounded-lg px-2 py-1 text-xs font-body text-on-background outline-none focus:border-primary/50"
+                      :options="conditionPlatformOptions"
                       @change="onConditionPlatformChange(cond)"
-                    >
-                      <option value="state">设备状态</option>
-                      <option value="numeric_state">数值范围</option>
-                      <option value="time">时间窗口</option>
-                      <option value="sun">日出日落</option>
-                    </select>
+                    />
                     <span class="text-xs text-faint font-body flex-1">#{{ ci + 1 }}</span>
                     <button
                       class="p-1 rounded text-faint hover:text-error transition-colors"
@@ -674,13 +630,7 @@
                   <!-- 日出日落条件 -->
                   <template v-else-if="cond.platform === 'sun'">
                     <div class="flex items-center gap-2">
-                      <select
-                        v-model="cond.event"
-                        class="bg-surface border border-border rounded-lg px-2 py-1 text-xs font-body text-on-background outline-none focus:border-primary/50"
-                      >
-                        <option value="sunrise">日出</option>
-                        <option value="sunset">日落</option>
-                      </select>
+                      <UiSelect v-model="cond.event" :options="sunEventOptions" />
                       <input
                         v-model="cond.offset"
                         type="text"
@@ -722,17 +672,12 @@
                 <!-- 动作类型（对应 HA 动作的 service / delay / wait_template / stop） -->
                 <div class="flex items-center gap-2">
                   <span class="text-xs text-faint font-body flex-shrink-0 w-6">#{{ i + 1 }}</span>
-                  <select
+                  <UiSelect
                     v-model="a.type"
-                    class="flex-1 min-w-0 bg-surface border border-border rounded-lg px-2 py-1 text-xs font-body text-on-background outline-none focus:border-primary/50"
+                    class="flex-1 min-w-0"
+                    :options="actionTypeOptions(a)"
                     @change="onActionTypeChange(a)"
-                  >
-                    <option v-if="a.raw" value="raw">复杂动作（原样保留）</option>
-                    <option value="service">调用服务</option>
-                    <option value="delay">延时</option>
-                    <option value="wait_template">等待条件</option>
-                    <option value="stop">停止</option>
-                  </select>
+                  />
                   <button v-if="i > 0" class="p-1 rounded text-faint hover:text-on-surface transition-colors" title="上移" @click="moveAction(i, -1)">
                     <span class="material-symbols-outlined text-sm">arrow_upward</span>
                   </button>
@@ -862,14 +807,12 @@
                         :checked="a.params[f.name] === true"
                         @change="a.params[f.name] = $event.target.checked"
                       />
-                      <select
+                      <UiSelect
                         v-else-if="f.kind === 'select'"
                         v-model="a.params[f.name]"
-                        class="flex-1 min-w-0 bg-surface border border-border rounded-lg px-2 py-1 text-xs font-body text-on-background outline-none focus:border-primary/50"
-                      >
-                        <option value="">（默认）</option>
-                        <option v-for="o in f.options" :key="o.value" :value="o.value">{{ o.label }}</option>
-                      </select>
+                        class="flex-1 min-w-0"
+                        :options="serviceSelectOptions(f)"
+                      />
                       <input
                         v-else-if="f.kind === 'number'"
                         v-model.number="a.params[f.name]"
@@ -985,6 +928,59 @@ import api from '@/api'
 import { store } from '@/store'
 import { isOn, iconFor, attr } from '@/utils/entities'
 import EmptyState from '@/components/EmptyState.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
+
+// 下拉选项（替代原生 select 的 option 列表，value 保持字符串类型）
+const stateFilterOptions = [
+  { label: '全部状态', value: '' },
+  { label: '已启用', value: 'on' },
+  { label: '已关闭', value: 'off' },
+]
+const triggerPlatformOptions = [
+  { label: '设备状态变化', value: 'state' },
+  { label: '定时触发', value: 'time' },
+  { label: '日出/日落', value: 'sun' },
+  { label: '数值变化', value: 'numeric_state' },
+]
+const conditionPlatformOptions = [
+  { label: '设备状态', value: 'state' },
+  { label: '数值范围', value: 'numeric_state' },
+  { label: '时间窗口', value: 'time' },
+  { label: '日出日落', value: 'sun' },
+]
+const eventTypeOptions = [
+  { label: '状态变化（任意）', value: '' },
+  { label: '变化时', value: 'changed' },
+  { label: '打开时', value: 'turned_on' },
+  { label: '关闭时', value: 'turned_off' },
+  { label: '按下', value: 'pressed' },
+  { label: '双击', value: 'double_pressed' },
+  { label: '长按', value: 'held' },
+]
+const binaryStateOptions = [
+  { label: '等于', value: '' },
+  { label: 'on', value: 'on' },
+  { label: 'off', value: 'off' },
+  { label: 'open', value: 'open' },
+  { label: 'closed', value: 'closed' },
+  { label: 'home', value: 'home' },
+  { label: 'not_home', value: 'not_home' },
+  { label: 'true', value: 'true' },
+  { label: 'false', value: 'false' },
+]
+const sunEventOptions = [
+  { label: '日出', value: 'sunrise' },
+  { label: '日落', value: 'sunset' },
+]
+const ACTION_TYPE_OPTIONS = [
+  { label: '调用服务', value: 'service' },
+  { label: '延时', value: 'delay' },
+  { label: '等待条件', value: 'wait_template' },
+  { label: '停止', value: 'stop' },
+]
+const actionTypeOptions = (a) =>
+  a.raw ? [{ label: '复杂动作（原样保留）', value: 'raw' }, ...ACTION_TYPE_OPTIONS] : ACTION_TYPE_OPTIONS
+const serviceSelectOptions = (f) => [{ label: '（默认）', value: '' }, ...(f.options || [])]
 
 // 场景卡配色轮换。
 const scenePalettes = [

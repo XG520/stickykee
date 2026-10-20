@@ -1183,6 +1183,8 @@ export function computeData(type, ctx) {
     case 'lawn_mower': d = lawnMowerData(entity, hasData); break
     case 'image': d = imageData(entity, hasData); break
     case 'almanac': d = almanacData(entity); break
+    // 生日 / 生日倒计时：数据全部由 BirthdayCard 组件自行读取 prefs（birthdays）
+    case 'birthday': case 'birthdayCountdown': d = {}; break
     case 'custom': d = {}; break
     default: d = genericData(entities && entities.length ? entities : (entity ? [entity] : []), hasData, ctx.card); break
   }

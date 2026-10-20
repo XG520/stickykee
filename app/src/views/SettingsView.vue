@@ -328,10 +328,7 @@
           <p class="text-on-surface text-xs font-semibold">上报间隔</p>
           <p class="text-muted text-xs mt-0.5 leading-relaxed">App 退后台后由常驻服务按此间隔唤醒上报，被杀后自动恢复</p>
         </div>
-        <select :value="sensorInterval" @change="changeInterval($event.target.value)"
-          class="shrink-0 bg-surface border border-border rounded-lg px-2 py-1.5 text-xs text-on-surface outline-none">
-          <option v-for="o in INTERVALS" :key="o.v" :value="o.v">{{ o.label }}</option>
-        </select>
+        <UiSelect :model-value="sensorInterval" :options="INTERVALS" class="shrink-0" @change="changeInterval" />
       </div>
 
       <!-- 后台定位授权（原生采集模式）：授予「始终允许」后 geocoded_location 才能退后台刷新 -->
@@ -1034,6 +1031,7 @@
 import { ref, reactive, watch, onMounted, onUnmounted, computed } from 'vue'
 import ToggleRow from '@/components/ToggleRow.vue'
 import SiteIcon from '@/components/SiteIcon.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 import api, { getToken } from '@/api'
 import { listDevices, ensureDevice, renameDevice, deleteDevice, getDeviceId, currentDevice, readCache } from '@/utils/device'
 import { availableSensors, unavailableReason, startSensorMonitor, buildReportPayload, isNativeSensorMode } from '@/utils/sensors'
@@ -1352,8 +1350,8 @@ const sensorDefs = ref([])          // 后端定义 [{key,label,desc,icon}]
 // 上报间隔（秒，设备级配置存 sensor_config.<deviceId>._interval）：
 // 前台为前端周期 timer 周期；APK 退后台由保活服务原生心跳按同间隔注入接管
 const INTERVALS = [
-  { v: 15, label: '15 秒' }, { v: 30, label: '30 秒' }, { v: 60, label: '1 分钟' },
-  { v: 120, label: '2 分钟' }, { v: 300, label: '5 分钟' }, { v: 900, label: '15 分钟' },
+  { value: 15, label: '15 秒' }, { value: 30, label: '30 秒' }, { value: 60, label: '1 分钟' },
+  { value: 120, label: '2 分钟' }, { value: 300, label: '5 分钟' }, { value: 900, label: '15 分钟' },
 ]
 const sensorInterval = ref(60)
 async function changeInterval(v) {
