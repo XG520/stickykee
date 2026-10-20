@@ -123,6 +123,33 @@ func (m *Manager) Rest(ctx context.Context, id int64) (*client.Rest, error) {
 	return r, nil
 }
 
+// RestForUser 同 Rest，但显式指定用户（供后台任务 / 管理员代操作场景：
+// 这些调用链上没有请求身份上下文，无法经 fromCtx 解析用户）。
+// 复用同一 connKey 缓存与失效逻辑（InvalidateUser 对两者一致生效）。
+func (m *Manager) RestForUser(ctx context.Context, id int64, user string) (*client.Rest, error) {
+	i, err := m.resolve(ctx, id)
+	if err != nil {
+		return nil, errNoInstance
+	}
+	if user == "" {
+		return nil, ErrNoHAToken
+	}
+	tok := m.userPrefs.Get(ctx, user, "ha_token")
+	if tok == "" {
+		return nil, ErrNoHAToken
+	}
+	key := connKey{instance: i.ID, user: user}
+	skipTLS := i.SkipTLS || m.tlsInsecure
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if r, ok := m.clients[key]; ok {
+		return r, nil
+	}
+	r := client.NewRest(i.URL, tok, skipTLS)
+	m.clients[key] = r
+	return r, nil
+}
+
 // Live 获取某用户在某实例上的实时状态缓存；必要时启动其各自 HA WebSocket 连接。
 func (m *Manager) Live(ctx context.Context, id int64) (*StateStore, error) {
 	key, i, err := m.resolveKey(ctx, id)

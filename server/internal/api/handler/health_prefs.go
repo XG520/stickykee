@@ -1,10 +1,12 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"stickynuo/server/internal/auth"
@@ -21,11 +23,13 @@ type Prefs struct {
 	userPrefs *store.UserPrefs
 	manager   *ha.Manager
 	hb        *hub.Hub
+	bd        *Birthdays // 生日写入后触发 HA 传感器同步（账号级，见 birthdays.go）
 }
 
-// NewPrefs 构造 handler。hb 用于仪表盘变更后向本人全部设备推送刷新通知。
-func NewPrefs(repo *store.InstanceRepo, userPrefs *store.UserPrefs, manager *ha.Manager, hb *hub.Hub) *Prefs {
-	return &Prefs{repo: repo, userPrefs: userPrefs, manager: manager, hb: hb}
+// NewPrefs 构造 handler。hb 用于仪表盘变更后向本人全部设备推送刷新通知；
+// bd 可为 nil（未启用生日同步时）。
+func NewPrefs(repo *store.InstanceRepo, userPrefs *store.UserPrefs, manager *ha.Manager, hb *hub.Hub, bd *Birthdays) *Prefs {
+	return &Prefs{repo: repo, userPrefs: userPrefs, manager: manager, hb: hb, bd: bd}
 }
 
 // 用户级偏好 key：按登录用户隔离；无值回退全局 prefs。
@@ -35,7 +39,7 @@ func NewPrefs(repo *store.InstanceRepo, userPrefs *store.UserPrefs, manager *ha.
 // 按设备隔离的键 dashboard_apk_<deviceId>（布局）/ dashboard_apk_cols_<deviceId>
 // （列数）键名随设备 ID 动态变化，无法列入此固定清单，由 GET 全量扫描后按前缀
 // 放行、PUT 按前缀写入（见 isUserLayoutKey）。
-var userScoped = []string{"theme", "font", "icons", "floorplan", "floorplan_doc", "animation", "wakeWord", "dashboard", "dashboard_apk", "tts_engine", "tts_engine_apk"}
+var userScoped = []string{"theme", "font", "icons", "floorplan", "floorplan_doc", "animation", "wakeWord", "dashboard", "dashboard_apk", "tts_engine", "tts_engine_apk", "birthdays"}
 
 // isUserLayoutKey 判断 k 是否为用户级仪表盘布局键（需按用户隔离写入）。
 // dashboard=Web 端；dashboard_apk=手机端全局回退；dashboard_apk_<deviceId>=按设备隔离。
@@ -455,6 +459,15 @@ func (h *Prefs) Put(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	// 生日变更：异步同步该账号的 HA 生日传感器（注册+推送，见 birthdays.go）
+	if _, touched := body["birthdays"]; touched && h.bd != nil {
+		go func(u string) {
+			c, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			h.bd.SyncUser(c, u)
+		}(username)
+	}
+
 	// 仪表盘已变更：经 WebSocket 通知本人全部设备热刷新（含发起保存的设备，
 	// 前端对「刚在本地保存过」的端做时间窗去重，不会打断当前界面）。
 	// keys 指明受影响的布局键（dashboard=Web 端 / dashboard_apk=手机端全局回退 /

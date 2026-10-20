@@ -782,7 +782,7 @@ b 为高空卷云；两层遮罩均为「上下双向渐隐」，避免云层顶
 架构约定（关键）：场景 class 由本引擎独占写入，Vue 只负责 data-* 属性，
 两者互不覆盖 —— 彻底消除「Vue 刷新把 class 覆盖回实时值」导致的动画分裂/不生效问题。
 幂等重启、DOM 重建后认领新 canvas、页面隐藏/卡片离场自动暂停。 */
-var WX_VER = 20 /* 迁移版本标记：dashboard.js upgradeWeatherCard 据此重写旧卡代码 */
+var WX_VER = 21 /* 迁移版本标记：dashboard.js upgradeWeatherCard 据此重写旧卡代码 */
 if (el._wxStop) { el._wxStop() }
 var cv = el.querySelector('.wx-cv')
 if (!cv) return
@@ -841,8 +841,16 @@ function scene() {
 }
 // ---- 预报择日：点某天 → 卡面显示该日具体天气信息 + 动画切换到该日天气（按当前时间叠加昼夜）；
 // 再点同一天或点卡片空白处 → 恢复实时天气。状态存在 el 上（Vue 重建 DOM 不丢），
+// 并持久化到 localStorage（按卡片 uid 键）——刷新页面后仍保持所选日期，不会回到默认实时。
 // 数据来源是 Vue 每次渲染刷新的 data-* 属性（唯一真相源），引擎只覆写 class/文本，故不会互相打架。
-var selDay = -1
+var SEL_KEY = 'hc_wx_sel_' + (card && card.uid ? card.uid : 'x')
+function selLoad() {
+  try { var v = parseInt(localStorage.getItem(SEL_KEY), 10); return isNaN(v) ? -1 : v } catch (e) { return -1 }
+}
+function selSave(v) {
+  try { if (v < 0) localStorage.removeItem(SEL_KEY); else localStorage.setItem(SEL_KEY, String(v)) } catch (e) {}
+}
+var selDay = selLoad()
 function wxInfo() {
   var w = el.querySelector('.wx')
   if (!w) return null
@@ -892,6 +900,9 @@ function getRefs() {
 function wxSync() {
   var r = getRefs()
   if (!r) return
+  // 越界回落：持久化的择日索引超出当前预报天数（数据未到/变少）时回实时（无数据时保留待恢复）
+  var nc = el.querySelectorAll('.fc7d').length
+  if (nc > 0 && selDay >= nc) { selDay = -1; selSave(-1) }
   var live = selDay < 0
   var d = live ? wxInfo() : dayInfo(selDay)
   if (!d) return
@@ -917,7 +928,7 @@ function wxSync() {
     if (cells[i].classList.contains('on') !== on) cells[i].classList.toggle('on', on)
   }
 }
-function wxRestore() { selDay = -1; wxSync() }
+function wxRestore() { selDay = -1; selSave(-1); wxSync() }
 function onPick(ev) {
   var t = ev.target
   var d = t && t.closest ? t.closest('.fc7d') : null
@@ -927,6 +938,7 @@ function onPick(ev) {
   if (idx < 0) return
   if (idx === selDay) { wxRestore(); return } // 再点同一天恢复实时
   selDay = idx
+  selSave(idx)
   wxSync()
 }
 // 全局缩放：所有天空元素尺寸按卡片短边等比缩放（小卡小动画，大卡大动画）

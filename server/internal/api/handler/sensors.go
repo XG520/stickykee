@@ -243,7 +243,18 @@ func webhookInvalid(err error) bool {
 //     （HA webhook 组件「始终返回 200 以隐藏 hook 是否存在」），此时响应体无 hass_device_id → 失效；
 //     HA 重启后会将其重新注册为返回 410 的「Deleted Webhook」→ 同样失效。
 func (h *Sensors) webhookAlive(ctx context.Context, rest *client.Rest, reg *mobileReg) bool {
-	status, resp, err := rest.ProbeWebhook(ctx, "/api/webhook/"+reg.WebhookID, map[string]any{"type": "get_config"})
+	return probeWebhookAlive(ctx, rest, reg.WebhookID)
+}
+
+// probeWebhookAlive 探测某个 webhook 是否仍然有效（包级工具，账号级生日传感器同步复用）。
+//   - 网络层失败（连接/超时）：视为仍有效，避免 HA 短暂不可达时误删缓存反复注册；
+//   - HTTP 4xx/410：设备已删除/集成不可用 → 失效需重新注册；
+//   - HTTP 200：仍须校验响应体中存在 hass_device_id。
+//     设备被删除后该 webhook 已被注销：HA 重启前其 webhook 端点恒返回 200 且响应体为空
+//     （HA webhook 组件「始终返回 200 以隐藏 hook 是否存在」），此时响应体无 hass_device_id → 失效；
+//     HA 重启后会将其重新注册为返回 410 的「Deleted Webhook」→ 同样失效。
+func probeWebhookAlive(ctx context.Context, rest *client.Rest, webhookID string) bool {
+	status, resp, err := rest.ProbeWebhook(ctx, "/api/webhook/"+webhookID, map[string]any{"type": "get_config"})
 	if err != nil {
 		// 网络层失败 → 无法判定，保守视为仍有效
 		return true

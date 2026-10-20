@@ -204,6 +204,9 @@ export const api = {
   updateUser: (username, b) => api.put(`/users/${username}`, b),
   setUserMapPolicy: (username, useAdmin) => api.put(`/users/${username}/map`, { use_admin: useAdmin }),
   setUserHAToken: (username, token) => api.put(`/users/${username}/ha`, { token }),
+  // 账号级生日（管理员代设）：GET 读列表，PUT 传数组；保存后服务端同步该账号 HA 生日传感器
+  getUserBirthdays: (username) => api.get(`/users/${encodeURIComponent(username)}/birthdays`),
+  setUserBirthdays: (username, list) => api.put(`/users/${encodeURIComponent(username)}/birthdays`, { birthdays: list }),
   deleteUser: (username) => api.del(`/users/${username}`),
 
   // 用户间 IM & 仪表盘共享

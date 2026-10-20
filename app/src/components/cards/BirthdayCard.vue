@@ -85,7 +85,7 @@
 // 点卡片行或「+」打开编辑弹窗（称呼 / 公历-农历 / 月日 / 删除）。
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { getPrefs, putPrefs } from '@/utils/prefs'
-import { nextBirthday, birthdayDateText } from '@/utils/birthday'
+import { nextBirthday, birthdayDateText, readBirthdays } from '@/utils/birthday'
 import UiSelect from '@/components/ui/UiSelect.vue'
 
 const props = defineProps({ mode: { type: String, default: 'list' } })
@@ -97,7 +97,7 @@ let timer = null
 onMounted(async () => {
   timer = setInterval(() => { now.value = new Date() }, 60000)
   const { data } = await getPrefs()
-  list.value = Array.isArray(data?.birthdays) ? data.birthdays : []
+  list.value = readBirthdays(data?.birthdays)
 })
 onBeforeUnmount(() => clearInterval(timer))
 
@@ -137,14 +137,15 @@ function save() {
   if (!e) return
   const item = { id: e.id || Date.now().toString(36), name: e.name || '生日', calendar: e.calendar, month: e.month, day: e.day }
   list.value = e.id ? list.value.map((x) => (x.id === e.id ? item : x)) : [...list.value, item]
-  putPrefs({ birthdays: list.value }).catch(() => {})
+  // /prefs 通道只收字符串值：序列化后保存，服务端据此同步该账号的 HA 生日传感器
+  putPrefs({ birthdays: JSON.stringify(list.value) }).catch(() => {})
   editing.value = null
 }
 function remove() {
   const e = editing.value
   if (!e?.id) return
   list.value = list.value.filter((x) => x.id !== e.id)
-  putPrefs({ birthdays: list.value }).catch(() => {})
+  putPrefs({ birthdays: JSON.stringify(list.value) }).catch(() => {})
   editing.value = null
 }
 </script>

@@ -159,7 +159,7 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { Solar } from 'lunar-javascript'
 import { getPrefs } from '@/utils/prefs'
-import { birthdaySolarInYear } from '@/utils/birthday'
+import { birthdaySolarInYear, readBirthdays } from '@/utils/birthday'
 
 // ================= 公共常量 =================
 const WEEK_LABELS = ['日', '一', '二', '三', '四', '五', '六']
@@ -186,7 +186,7 @@ const detail = ref(null)        // 计算后的详情对象
 const birthdays = ref([])
 onMounted(async () => {
   const { data } = await getPrefs()
-  birthdays.value = Array.isArray(data?.birthdays) ? data.birthdays : []
+  birthdays.value = readBirthdays(data?.birthdays)
 })
 // key "YYYY-MM-DD" → 生日称呼；农历生日换算成当年/次年公历后匹配
 const birthdayMap = computed(() => {

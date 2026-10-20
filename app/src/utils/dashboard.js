@@ -123,7 +123,7 @@ export function upgradeWeatherCard(card) {
   const d = cardDefaults.weather
   if (!d) return
   // 迁移标记：模板 js 自带 WX_VER 版本号，升级模板时同步 +1 即可（勿再累加特征字符串）
-  if (!/WX_VER\s*=\s*20/.test(String(card.js || ''))) {
+  if (!/WX_VER\s*=\s*21/.test(String(card.js || ''))) {
     card.html = d.html; card.css = d.css; card.js = d.js
     // 统一默认尺寸 2×2
     card.w = 2; card.h = 2
@@ -132,13 +132,12 @@ export function upgradeWeatherCard(card) {
 
 // 日历（almanac）卡去实体化：农历等全部本地算法，历史上因可选域含 sensor 曾自动预选误绑
 // （如距离传感器），且覆盖层对无关实体完全无效。这里统一清掉绑定，编辑器也不再显示选实体入口。
-// 同时统一为 3×2 版式（格子更宽，数字/农历字号已相应加大）。
+// 3×2 统一版式不再在此强制：该迁移早已全量生效（存量卡都被重设过），持续强制会在每次加载
+// 把用户调整过的尺寸改回去——「改宽度保存后刷新又回 3×2」的根因；新卡由 defaults 默认 3×2。
 function upgradeAlmanacCard(card) {
   if (!card || card.type !== 'almanac') return
   if (card.entity_id) card.entity_id = ''
   if (Array.isArray(card.entity_ids) && card.entity_ids.length) card.entity_ids = []
-  card.w = 3
-  card.h = 2
 }
 
 // 卡片数组归一化：字符串（旧的卡片类型简写）→ 卡片对象；丢弃未知类型；跑卡片级迁移。

@@ -1015,6 +1015,12 @@
               class="px-3 py-1.5 rounded-lg bg-primary hover:bg-primary-hover text-on-primary text-xs font-semibold transition-colors">保存</button>
           </div>
 
+          <!-- 账号生日（管理员代设；保存后服务端同步该账号 HA 生日传感器） -->
+          <button type="button" @click="openUserBirthdays(u)"
+            class="px-2.5 py-1.5 rounded-lg bg-surface-hover hover:bg-surface border border-border text-xs text-on-surface transition-colors flex items-center gap-1">
+            <span class="material-symbols-outlined text-sm">cake</span> 生日
+          </button>
+
           <button @click="removeUser(u)" :disabled="u.username === auth.user"
             class="p-1.5 rounded-lg hover:bg-error/10 text-muted hover:text-error transition-colors disabled:opacity-40 disabled:pointer-events-none">
             <span class="material-symbols-outlined text-lg">delete</span>
@@ -1023,6 +1029,52 @@
         <p v-if="!users.length" class="text-muted text-sm font-body">暂无其他用户。首个注册用户为管理员，其余用户需在此创建。</p>
       </div>
     </section>
+
+    <!-- 管理员代设账号生日弹窗（body 层浮层） -->
+    <Teleport to="body">
+      <div v-if="bdUser" class="fixed inset-0 z-[2000] bg-background/55 backdrop-blur-sm flex items-center justify-center p-4"
+        @click.self="bdUser = null">
+        <div class="w-full max-w-md rounded-2xl bg-surface border border-border shadow-2xl p-4" @click.stop>
+          <div class="flex items-center gap-2 mb-3">
+            <span class="material-symbols-outlined text-primary text-xl">cake</span>
+            <span class="text-on-surface font-semibold text-sm">「{{ bdUser }}」的生日</span>
+            <button type="button" class="ml-auto text-muted hover:text-on-surface" @click="bdUser = null">
+              <span class="material-symbols-outlined text-lg">close</span>
+            </button>
+          </div>
+          <div class="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
+            <div v-for="(it, i) in bdList" :key="i" class="flex items-center gap-2 rounded-xl bg-background border border-border p-2">
+              <input v-model.trim="it.name" maxlength="12" placeholder="称呼"
+                class="w-20 bg-surface border border-border rounded-lg px-2 py-1.5 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none" />
+              <div class="flex rounded-md overflow-hidden border border-border text-xs flex-none">
+                <button type="button" class="px-2 py-1.5 font-semibold" :class="it.calendar === 'solar' ? 'bg-primary text-on-primary' : 'text-muted bg-surface'"
+                  @click="it.calendar = 'solar'">公</button>
+                <button type="button" class="px-2 py-1.5 font-semibold" :class="it.calendar === 'lunar' ? 'bg-primary text-on-primary' : 'text-muted bg-surface'"
+                  @click="it.calendar = 'lunar'; clampBdDay(it)">农</button>
+              </div>
+              <UiSelect v-model="it.month" class="flex-1 min-w-0" :options="bdMonthOptions" @change="clampBdDay(it)" />
+              <UiSelect v-model="it.day" class="flex-1 min-w-0" :options="bdDayOptions(it)" />
+              <button type="button" class="p-1 rounded-lg text-muted hover:text-error hover:bg-error/10 flex-none" @click="bdList.splice(i, 1)">
+                <span class="material-symbols-outlined text-base">delete</span>
+              </button>
+            </div>
+            <p v-if="!bdList.length" class="text-muted text-xs text-center py-3">暂无生日，点击下方添加。</p>
+          </div>
+          <div class="flex items-center gap-2 mt-3">
+            <button type="button" @click="addUserBirthday"
+              class="px-2.5 py-1.5 rounded-lg bg-surface-hover hover:bg-surface border border-border text-xs text-on-surface flex items-center gap-1">
+              <span class="material-symbols-outlined text-sm">add</span> 添加
+            </button>
+            <span class="flex-1"></span>
+            <button type="button" @click="saveUserBirthdays" :disabled="bdSaving"
+              class="px-3 py-1.5 rounded-lg bg-primary hover:bg-primary-hover text-on-primary text-xs font-semibold disabled:opacity-50">
+              {{ bdSaving ? '保存中…' : '保存' }}
+            </button>
+          </div>
+          <p class="text-muted text-xs mt-2">保存后自动同步为该账号在 HA 中的 Birthday 传感器实体（每账号一个，全部设备共用）。</p>
+        </div>
+      </div>
+    </Teleport>
     </div>
   </div>
 </template>
@@ -1694,6 +1746,40 @@ async function setUserHAToken(u) {
     u._editHA = false
     uflash(tok ? `「${u.username}」的 HA Token 已保存并即时生效` : `已清除「${u.username}」的 HA Token（其 HA 访问已禁用）`)
   } catch (e) { uflash(e.message, true) }
+}
+
+// ---- 管理员代设账号生日（服务端 user_prefs 用户级键；保存后同步该账号 HA 生日传感器） ----
+const bdUser = ref('')
+const bdList = ref([])
+const bdSaving = ref(false)
+const bdMonthOptions = Array.from({ length: 12 }, (_, i) => ({ label: `${i + 1}月`, value: i + 1 }))
+function bdMaxDay(it) { return it.calendar === 'lunar' ? 30 : new Date(2000, it.month, 0).getDate() }
+function bdDayOptions(it) {
+  return Array.from({ length: bdMaxDay(it) }, (_, i) => ({ label: `${i + 1}日`, value: i + 1 }))
+}
+function clampBdDay(it) {
+  const max = bdMaxDay(it)
+  if (it.day > max) it.day = max
+}
+async function openUserBirthdays(u) {
+  bdUser.value = u.username
+  bdList.value = []
+  try { bdList.value = (await api.getUserBirthdays(u.username)).data || [] }
+  catch (e) { uflash(e.message, true); bdUser.value = '' }
+}
+function addUserBirthday() {
+  bdList.value.push({ id: Date.now().toString(36), name: '', calendar: 'solar', month: 1, day: 1 })
+}
+async function saveUserBirthdays() {
+  if (!bdUser.value) return
+  bdSaving.value = true
+  try {
+    const list = bdList.value.map((it) => ({ id: it.id, name: it.name || '生日', calendar: it.calendar, month: it.month, day: it.day }))
+    await api.setUserBirthdays(bdUser.value, list)
+    uflash(`「${bdUser.value}」的生日已保存并同步到其 HA 生日传感器`)
+    bdUser.value = ''
+  } catch (e) { uflash(e.message, true) }
+  finally { bdSaving.value = false }
 }
 
 // ---- 偏好加载与保存 ----

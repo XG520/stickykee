@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -64,7 +65,9 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 	instances := handler.NewInstances(repo, manager)
 	entities := handler.NewEntities(manager)
 	services := handler.NewServices(manager)
-	prefs := handler.NewPrefs(repo, userPrefs, manager, hb)
+	// 账号级生日（存取 + HA 传感器同步）：prefs 写入回调与管理员接口都依赖它
+	birthdays := handler.NewBirthdays(manager, repo, userPrefs, userRepo)
+	prefs := handler.NewPrefs(repo, userPrefs, manager, hb, birthdays)
 	users := handler.NewUsers(userRepo, userPrefs, manager)
 	// 语音通话：内存房间 + 事件推送 + 语音帧 WS 中继（8080 媒体中继，不经 P2P）。
 	// push 回调供房间超时清理时向全员推送 ended 事件（如无人接听自动结束）。
@@ -201,10 +204,16 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 				r.Put("/{username}", users.Update)
 				r.Put("/{username}/map", users.SetMapPolicy)
 				r.Put("/{username}/ha", users.SetHAToken)
+				// 账号级生日：管理员代设（数组）；保存后服务端立即同步该账号 HA 生日传感器
+				r.Get("/{username}/birthdays", birthdays.GetFor)
+				r.Put("/{username}/birthdays", birthdays.SetFor)
 				r.Delete("/{username}", users.Delete)
 			})
 		})
 	})
+
+	// 生日倒计时随日期跨天推进：每小时校正一次全部账号的 HA 生日传感器状态。
+	go birthdays.StartTicker(context.Background())
 
 	return r
 }

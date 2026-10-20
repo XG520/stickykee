@@ -1,6 +1,19 @@
 // 生日工具：农历/公历生日的公历换算与倒计时。
-// 生日数据存在 prefs 全局键 birthdays：[{ id, name, calendar: 'solar'|'lunar', month, day }]
+// 生日数据存在 prefs 用户级键 birthdays：[{ id, name, calendar: 'solar'|'lunar', month, day }]
+// 存储值为 JSON 字符串（/prefs 通道只收字符串）；readBirthdays 兼容历史数组格式。
 import { Lunar } from 'lunar-javascript'
+
+// 读取 prefs 里的 birthdays（兼容数组 / JSON 字符串 / 缺失）。
+export function readBirthdays(raw) {
+  if (Array.isArray(raw)) return raw
+  if (typeof raw === 'string') {
+    try {
+      const a = JSON.parse(raw)
+      return Array.isArray(a) ? a : []
+    } catch { return [] }
+  }
+  return []
+}
 
 // 生日在某公历年的日期 [y, m, d]；换不出返回 null。
 // 特例：公历 2·29 平年回落 2·28；农历三十缺位回落二十九。
