@@ -672,10 +672,13 @@ export function tplWeather() {
   <div class="wx-panel">{{forecastHtml}}</div>
 </div>`
   const css = shell + `
-.wx{position:relative;padding:8px;gap:5px;color:#fff;border-color:rgb(255 255 255 / .12);background:linear-gradient(168deg,#3f9df6,#1f6cd0 55%,#0c4398);font-size:10px}
+.wx{position:relative;padding:8px;gap:5px;color:#fff;border-radius:14px;border-color:transparent;background:rgba(255,255,255,.08);backdrop-filter:blur(14px) saturate(140%);-webkit-backdrop-filter:blur(14px) saturate(140%);font-size:10px;overflow:hidden}
 .wx>*:not(.wx-sky){position:relative;z-index:4}
 /* ---- 天空场景层（粒子常驻 DOM，按场景显隐） ---- */
-.wx-sky{position:absolute;inset:0;z-index:0;pointer-events:none}
+.wx-sky{position:absolute;inset:0;border-radius:inherit;overflow:hidden;z-index:0;pointer-events:none;clip-path:inset(0 round 14px)}
+/* clip-path 兜底：漂移云层的 translate3d 会被提升为合成层，Chromium 下祖先的
+   overflow:hidden+border-radius 对合成层裁剪不可靠（云角以直角溢出卡片圆角），
+   clip-path 对合成层依然生效，保证任何场景内容都被圆角完整裁住 */
 /* ---- 真实云纹理层（AI 黑底白云 + screen 混合）----
 刻意不平铺、不纵向拉伸：background-size:cover 保住云团的原始比例（只截取纹理中部），
 元素左右各超出卡片 32% 而漂移幅度远小于该余量 → 纹理边缘永不入画：
@@ -697,14 +700,32 @@ a = 近景积云（纹理下半的云团，落在中下部），云的稀疏处�
 .wx-smk.s2{bottom:-4%;opacity:.26;animation-duration:37s;animation-direction:alternate-reverse}
 /* 云层漂移：小幅往返 + 轻微上下起伏；alternate 使位移首尾相接，永不跳变 */
 @keyframes wxDrift{from{transform:translate3d(2.4%,1.1%,0)}to{transform:translate3d(-2.4%,-1.1%,0)}}
+/* 阴天云循环滚动：纹理为边缘交叉淡化拼接的无缝图（clouds-*-loop.jpg，ffmpeg 将右尾平滑淡化叠到左头再裁边，
+   非镜像拼接，无轴对称重复感；源图 clouds-*.jpg 约 1/4 宽为淡化带），
+   background-position-x 线性滑过恰好一个周期后回卷 → 首尾相连、单向无限飘移，永不露白。
+   每层独立平铺周期（近大远小：880/700/620px，卷云 540px）并匹配各自的 keyframes 滚动距离；
+   速度按 px/s 对齐旧版观感（≈2.7/1.8/1.3/4 px/s），避免背景定位整像素吸附导致慢层顿挫；
+   ::before/::after 额外加纵向错位（88%/96% + 高度 118%/112%），防止同纹理三尺度叠加被认出是同一片云 */
+@keyframes wxScroll{from{background-position-x:0}to{background-position-x:880px}}          /* a 主层周期 880px */
+@keyframes wxScroll2{from{background-position-x:233px}to{background-position-x:933px}}   /* ::before 周期 700px，相位 1/3 */
+@keyframes wxScroll3{from{background-position-x:310px}to{background-position-x:930px}}   /* ::after 周期 620px，相位 1/2 */
+@keyframes wxScroll4{from{background-position-x:0}to{background-position-x:540px}}       /* b 卷云周期 540px */
 @keyframes wxSmoke{from{transform:translateX(-3%)}to{transform:translateX(4%)}}
-.wx-cl,.wx-smk{z-index:3}
-/* ---- Canvas 粒子层（雨/雪/星/闪电/日月，卡片 JS 自驱动） ---- */
-.wx-cv{position:absolute;inset:0;width:100%;height:100%;z-index:2}
+.wx-cl,.wx-smk{z-index:2}
+/* ---- Canvas 粒子层（雨/雪/星/闪电/日月，卡片 JS 自驱动） ----
+   z-index:4 —— 太阳/月亮/雨滴/雪花必须在云层之上，否则晴天光斑被云盖住 ---- */
+.wx-cv{position:absolute;inset:0;width:100%;height:100%;border-radius:inherit;z-index:4}
 /* 云/雾在 canvas 之上：遮挡星月更有纵深；内容最上 */
 /* ---- 场景元素可见性 ---- */
-.wx-partly .wx-cl.b{display:block;opacity:.18}
-.wx-cloudy .wx-cl{display:block}
+.wx-sunny .wx-cl{display:none}          /* 晴天：干净天空，完全无云 */
+.wx-partly .wx-cl.b{display:block;opacity:.18}  /* 少云：一层薄云 */
+.wx-cloudy .wx-cl{display:block}        /* 多云/阴天：两层云 */
+/* 阴天云层：近景积云经 ::before/::after 伪元素拆成 3 层，各层平铺周期不同（近大远小），
+   起始相位错开防重叠，越下层越慢：320s/380s/465s，上层卷云 135s */
+.wx-cloudy .wx-cl.a{display:block;left:0;width:100%;top:-4%;height:34%;background-image:url(/img/wx/clouds-a-loop.jpg);background-repeat:repeat-x;background-size:880px 100%;background-position:0 bottom;opacity:.6;animation:wxScroll 320s linear infinite}   /* 近景主层（最大最快）：右移 */
+.wx-cloudy .wx-cl.a::before{content:'';position:absolute;inset:0;background:url(/img/wx/clouds-a-loop.jpg) repeat-x 233px 88%/700px 118%;mix-blend-mode:screen;opacity:.35;animation:wxScroll2 380s linear infinite}  /* 近景第 2 层：略小更慢，纵向错位 */
+.wx-cloudy .wx-cl.a::after{content:'';position:absolute;inset:0;background:url(/img/wx/clouds-a-loop.jpg) repeat-x 310px 96%/620px 112%;mix-blend-mode:screen;opacity:.25;animation:wxScroll3 465s linear infinite}   /* 近景第 3 层（最小最慢） */
+.wx-cloudy .wx-cl.b{display:block;left:0;width:100%;top:-6%;height:26%;background-image:url(/img/wx/clouds-b-loop.jpg);background-repeat:repeat-x;background-size:540px 100%;background-position:0 center;opacity:.42;animation:wxScroll4 135s linear infinite}  /* 高空卷云（最上）：最快，视差 */
 .wx-rain .wx-cl{display:block;filter:brightness(.6) saturate(.8)}
 .wx-rain .wx-cl.b{opacity:.2}
 .wx-thunder .wx-cl{display:block;filter:brightness(.4) saturate(.7)}
@@ -716,29 +737,31 @@ a = 近景积云（纹理下半的云团，落在中下部），云的稀疏处�
 .wx-night .wx-cl,.wx-dark .wx-cl{filter:brightness(.52)}
 .wx-thunder.wx-dark .wx-cl{filter:brightness(.34) saturate(.65)}
 .wx-rain.wx-dark .wx-cl{filter:brightness(.44) saturate(.75)}
-/* ---- 场景配色（天幕渐变；夜色置后，覆盖同权重的日景） ---- */
-.wx-partly{background:linear-gradient(168deg,#57a8f8,#2a66d4 55%,#153a8f)}
-.wx-cloudy{background:linear-gradient(168deg,#5f6d80,#455264 55%,#2c3543)}
-.wx-rain{background:linear-gradient(168deg,#33455a,#243548 55%,#152030)}
-.wx-snow{background:linear-gradient(168deg,#5f9fd8,#3f74b4 55%,#27508c)}
-.wx-thunder{background:linear-gradient(168deg,#3b2d68,#282048 55%,#151130)}
-.wx-fog{background:linear-gradient(168deg,#8c99ab,#667385 55%,#485260)}
-.wx-night{background:linear-gradient(168deg,#131a3c,#1c2352 50%,#0a0f26)}
-.wx-dark{background:linear-gradient(168deg,#171d40,#202656 50%,#0b1028)}
-.wx-hail{background:linear-gradient(168deg,#46586c,#334457 55%,#1f2b3a)}
+/* ---- 场景配色（天幕渐变；全部画在 .wx-sky 上，由它的 overflow:hidden + border-radius 彻底裁剪
+   —— 背景只在一层元素上，避免壳层与绝对定位背景的 subpixel 对齐缝） ----
+.wx-sky{background:linear-gradient(180deg,#46649a 0%,#52719f 34%,#5f7ead 62%,#6d8ab8 100%)}  /* 默认：晴天（对齐参考实拍天幕） */
+.wx-partly .wx-sky{background:linear-gradient(180deg,#4f8be8 0%,#5fa4f0 50%,#b2d2f7 75%,#d4e6fb 100%)}
+.wx-cloudy .wx-sky{background:linear-gradient(180deg,#4a5c86 0%,#66799f 42%,#97a8c2 74%,#bcc8d9 100%)}  /* 阴天（对齐参考实拍）：上段饱和深蓝，亮度交给明亮云层 */
+.wx-rain .wx-sky{background:linear-gradient(180deg,#2f3f55 0%,#3d516a 50%,#6a829f 75%,#8ea5bc 100%)}
+.wx-snow .wx-sky{background:linear-gradient(180deg,#5490c4 0%,#6aabd6 50%,#b2d3ee 75%,#d5e6f3 100%)}
+.wx-thunder .wx-sky{background:linear-gradient(180deg,#2f2556 0%,#3f316e 50%,#6b5ea0 75%,#8d82b8 100%)}
+.wx-fog .wx-sky{background:linear-gradient(180deg,#7d8a9b 0%,#95a1b1 50%,#b7c1ce 75%,#d2d9e1 100%)}
+.wx-night .wx-sky{background:linear-gradient(180deg,#111733 0%,#162044 50%,#374680 75%,#52629a 100%)}
+.wx-dark .wx-sky{background:linear-gradient(180deg,#141a36 0%,#1b244a 50%,#3c4780 75%,#5764a0 100%)}
+.wx-hail .wx-sky{background:linear-gradient(180deg,#3e4d60 0%,#53667c 50%,#7e94ab 75%,#a3b5c7 100%)}
 .wx-hail .wx-cl{display:block;filter:brightness(.55) saturate(.75)}
 .wx-hail .wx-cl.b{opacity:.18}
 .wx-hail.wx-dark .wx-cl{filter:brightness(.4) saturate(.7)}
-.wx-windy{background:linear-gradient(168deg,#5f6d80,#455264 55%,#2c3543)}
+.wx-windy .wx-sky{background:linear-gradient(180deg,#4a5c86 0%,#66799f 42%,#97a8c2 74%,#bcc8d9 100%)}  /* 与阴天共用蓝灰天幕 */
 .wx-windy .wx-cl{display:block}
 .wx-windy .wx-cl.a{animation-duration:26s}
 .wx-windy .wx-cl.b{animation-duration:34s}
 .wx-windy.wx-dark .wx-cl{filter:brightness(.5)}
-.wx-heavy{background:linear-gradient(168deg,#2c3d50,#1f2f42 55%,#121c2b)}
-/* ---- 阴天/夜阴天：仅换天幕与云层亮度，不叠加烟雾/光点等额外部件（保持「一种天气 = 一套连贯天空」） ---- */
-.wx-cloudy.wx-dark{background:linear-gradient(180deg,#2a3346,#1a2231 52%,#0d1320)}
+.wx-heavy .wx-sky{background:linear-gradient(180deg,#283646 0%,#374a5e 50%,#5a7288 75%,#7a91a3 100%)}
+/* ---- 阴天/夜阴天叠加（覆盖 .wx-dark 的天空） ---- */
+.wx-cloudy.wx-dark .wx-sky{background:linear-gradient(180deg,#242e41 0%,#2f3a50 50%,#4d5d78 75%,#687a96 100%)}
 .wx-cloudy.wx-dark .wx-cl{filter:brightness(.5) saturate(.7)}
-.wx-partly.wx-dark{background:linear-gradient(180deg,#1f2940,#161e33 52%,#0b101e)}
+.wx-partly.wx-dark .wx-sky{background:linear-gradient(180deg,#1c2440 0%,#263152 50%,#465580 75%,#617199 100%)}
 /* ---- 内容排版（小米天气式：大号渐变温度 + 状况/高低温） ---- */
 .wx-head{display:flex;align-items:center}
 .wx-title{display:flex;align-items:center;gap:4px;font-size:10px;font-weight:600;color:rgb(255 255 255 / .92);letter-spacing:.02em}
@@ -766,7 +789,7 @@ a = 近景积云（纹理下半的云团，落在中下部），云的稀疏处�
 架构约定（关键）：场景 class 由本引擎独占写入，Vue 只负责 data-* 属性，
 两者互不覆盖 —— 彻底消除「Vue 刷新把 class 覆盖回实时值」导致的动画分裂/不生效问题。
 幂等重启、DOM 重建后认领新 canvas、页面隐藏/卡片离场自动暂停。 */
-var WX_VER = 18 /* 迁移版本标记：dashboard.js upgradeWeatherCard 据此重写旧卡代码 */
+var WX_VER = 19 /* 迁移版本标记：dashboard.js upgradeWeatherCard 据此重写旧卡代码 */
 if (el._wxStop) { el._wxStop() }
 var cv = el.querySelector('.wx-cv')
 if (!cv) return
@@ -928,22 +951,78 @@ function moonPos() {
 }
 function drawSun(t) {
   var k = skyScale(), sp = sunPos()
-  var sx = sp.x, sy = sp.y, pl = 1 + Math.sin(t * .0012) * .05
-  var g = ctx.createRadialGradient(sx, sy, 2, sx, sy, 36 * k * pl)
-  g.addColorStop(0, 'rgba(255,246,205,.95)'); g.addColorStop(.3, 'rgba(255,215,105,.5)'); g.addColorStop(1, 'rgba(255,200,80,0)')
-  ctx.fillStyle = g; ctx.fillRect(sx - 44 * k, sy - 44 * k, 88 * k, 88 * k)
-  ctx.save(); ctx.translate(sx, sy); ctx.rotate(t * .00007)
-  ctx.strokeStyle = 'rgba(255,226,140,.15)'; ctx.lineWidth = 1.6 * k
-  for (var i = 0; i < 12; i++) { ctx.rotate(.524); ctx.beginPath(); ctx.moveTo(15 * k, 0); ctx.lineTo(27 * k, 0); ctx.stroke() }
+  var sx = sp.x, sy = sp.y
+  // 写实照片感太阳（对齐参考图）：大气泛光 + 细星芒射线 + 白金光晕 + 纯白小核心 + 镜头光斑
+  ctx.save()
+  ctx.globalCompositeOperation = 'lighter'
+  // 1. 大气散射：大范围柔和日辉（随时间缓慢呼吸，模拟空气透明度变化）
+  var bp = .5 + .5 * Math.sin(t * .0007)
+  var amb = ctx.createRadialGradient(sx, sy, 0, sx, sy, 78 * k)
+  amb.addColorStop(0, 'rgba(255,244,214,' + (.28 + .1 * bp) + ')')
+  amb.addColorStop(.45, 'rgba(255,236,190,' + (.09 + .06 * bp) + ')')
+  amb.addColorStop(1, 'rgba(255,228,176,0)')
+  ctx.fillStyle = amb; ctx.beginPath(); ctx.arc(sx, sy, 78 * k, 0, 6.29); ctx.fill()
+  // 2. 柔光射线：仅 6 根，角度不规则分布，发散梯形向外变宽变淡；
+  //    整组套 blur 滤镜让边缘完全柔化（参考图：射线少而朦胧，无硬边）
+  var frac = function (x) { return x - Math.floor(x) }
+  var rot = t * 0.000012
+  ctx.filter = 'blur(' + 2.2 * k + 'px)'
+  for (var i = 0; i < 6; i++) {
+    var h1 = frac(Math.sin(i * 127.1) * 43758.5453)
+    var h2 = frac(Math.sin(i * 269.5 + 13.7) * 24634.6345)
+    var a = rot + i / 6 * 6.2832 + (h1 - .5) * .9
+    var inn = 6 * k
+    // 每根射线独立缓慢伸缩（周期约 10s，相位错开）
+    var len = (26 + h2 * 58) * (.82 + .18 * Math.sin(t * .0006 + i * 1.7)) * k
+    var ca = Math.cos(a), sa = Math.sin(a)
+    var hwN = .8 * k, hwF = (3.5 + h2 * 4.5) * k // 近端窄、远端发散宽
+    var bx = sx + ca * inn, by = sy + sa * inn
+    var tx = sx + ca * (inn + len), ty = sy + sa * (inn + len)
+    var lg = ctx.createLinearGradient(bx, by, tx, ty)
+    var al = .18 + h1 * .16 + .07 * Math.sin(t * .0009 + i * 2.1)
+    lg.addColorStop(0, 'rgba(255,250,232,' + al + ')')
+    lg.addColorStop(.5, 'rgba(255,250,232,' + al * .45 + ')')
+    lg.addColorStop(1, 'rgba(255,250,232,0)')
+    ctx.fillStyle = lg
+    ctx.beginPath()
+    ctx.moveTo(bx - sa * hwN, by + ca * hwN)
+    ctx.lineTo(bx + sa * hwN, by - ca * hwN)
+    ctx.lineTo(tx + sa * hwF, ty - ca * hwF)
+    ctx.lineTo(tx - sa * hwF, ty + ca * hwF)
+    ctx.closePath(); ctx.fill()
+  }
+  ctx.filter = 'none' // 后续核心/光晕保持清晰，只有射线柔化
+  // 3. 核心光晕：白转暖金的紧致强 bloom（半径随呼吸轻微起伏）
+  var hr = (25 + 1.8 * bp) * k
+  var halo = ctx.createRadialGradient(sx, sy, 0, sx, sy, hr)
+  halo.addColorStop(0, 'rgba(255,252,240,.95)')
+  halo.addColorStop(.3, 'rgba(255,244,214,.6)')
+  halo.addColorStop(.7, 'rgba(255,232,176,.18)')
+  halo.addColorStop(1, 'rgba(255,226,166,0)')
+  ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(sx, sy, hr, 0, 6.29); ctx.fill()
+  // 4. 太阳核心：纯白小圆
+  ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(sx, sy, 7.5 * k, 0, 6.29); ctx.fill()
+  // 5. 镜头光斑：沿太阳→画面中心对角线的淡彩圆形 bokeh（透过镜片看到的反射光斑）
+  var dx = W / 2 - sx, dy = H / 2 - sy
+  var fl = [[1.5, 13, 'rgba(150,190,255,.07)'], [2.2, 7, 'rgba(255,215,160,.09)'], [2.9, 20, 'rgba(170,205,255,.05)']]
+  for (var j = 0; j < fl.length; j++) {
+    ctx.fillStyle = fl[j][2]; ctx.beginPath(); ctx.arc(sx + dx * fl[j][0], sy + dy * fl[j][0], fl[j][1] * k, 0, 6.29); ctx.fill()
+  }
+  // 6. 彩虹光环：围绕太阳的完整圆环，半径为卡片短边的 1/2；
+  //    圆心在太阳正下方 R/2 处 → 太阳位于环内偏心靠上；
+  //    用连续径向渐变（内红外紫）让各色之间自然模糊过渡，无硬边界
+  var R = Math.min(W, H) * .35
+  var rcx = sx, rcy = sy + R * .2
+  var rg = ctx.createRadialGradient(rcx, rcy, R * .72, rcx, rcy, R * 1.12)
+  rg.addColorStop(0, 'rgba(255,110,75,0)')
+  rg.addColorStop(.12, 'rgba(255,110,75,.10)')
+  rg.addColorStop(.28, 'rgba(255,195,85,.11)')
+  rg.addColorStop(.44, 'rgba(160,235,140,.11)')
+  rg.addColorStop(.62, 'rgba(100,180,255,.11)')
+  rg.addColorStop(.78, 'rgba(160,120,255,.09)')
+  rg.addColorStop(1, 'rgba(160,120,255,0)')
+  ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H)
   ctx.restore()
-  var c = ctx.createRadialGradient(sx - 2 * k, sy - 2 * k, 1, sx, sy, 9 * k)
-  c.addColorStop(0, '#fffbe8'); c.addColorStop(1, '#ffcf48')
-  ctx.fillStyle = c; ctx.beginPath(); ctx.arc(sx, sy, 9 * k, 0, 6.29); ctx.fill()
-  var dx = W * .42 - sx, dy = H * .45 - sy
-  ctx.fillStyle = 'rgba(255,230,160,.14)'
-  ctx.beginPath(); ctx.arc(sx + dx * 1.3, sy + dy * 1.3, 3.2 * k, 0, 6.29); ctx.fill()
-  ctx.fillStyle = 'rgba(255,230,160,.1)'
-  ctx.beginPath(); ctx.arc(sx + dx * .55, sy + dy * .55, 5 * k, 0, 6.29); ctx.fill()
 }
 function drawMoon(t) {
   var k = skyScale(), mp = moonPos()
@@ -1166,7 +1245,8 @@ function frame(now) {
         drawMoon(now)
       }
     } else if (sc.s === 'sunny' || sc.s === 'partly') drawSun(now)
-    if (sc.s === 'sunny' || sc.s === 'partly') motesDraw(dt)
+    // 旧版 motesDraw（晴天浮尘）已废弃：在蓝色天幕上呈现为白色气泡，
+    // 用更干净的 drawSun 柔和光晕替代。
     if (sc.s === 'rain' || sc.s === 'thunder') rain(dt)
     if (sc.s === 'hail') hail(dt)
     if (sc.s === 'snow') snow(dt)

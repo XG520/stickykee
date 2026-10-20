@@ -540,30 +540,52 @@ func (h *Im) Accept(w http.ResponseWriter, r *http.Request) {
 		WriteJSON(w, 200, map[string]any{"ok": true, "status": "accepted"})
 		return
 	}
-	// 目标端决定覆盖哪些键：web→dashboard，apk→dashboard_apk（全局回退键）。
-	// apk 写入 dashboard_apk 而非某台设备的 dashboard_apk_<deviceId>，因为分享时无法
-	// 指定具体设备——写入全局回退键后，所有尚未单独定制的手机都会经回退链
-	// （dashboard_apk_<deviceId> → dashboard_apk → dashboard）拾取这份共享布局；
-	// 已单独定制的手机不受影响（其自身键优先）。旧消息无 targets 按仅 Web 端处理。
+	// 目标端决定覆盖哪些键：web→dashboard；apk→全局回退键 dashboard_apk
+	// + 接收方每台已注册设备的本机键 dashboard_apk_<deviceId>。
+	// 只写全局键时，保存过自身布局的手机（本机键非空）经回退链
+	// （dashboard_apk_<deviceId> → dashboard_apk → dashboard）仍优先读到旧布局，
+	// 表现为「提示已接受但界面没变」；逐台写本机键后接受即覆盖该手机当前排版，
+	// 全局键继续作为未注册/新设备的回退。旧消息无 targets 按仅 Web 端处理。
 	targets := msg.Targets
 	if len(targets) == 0 {
 		targets = []string{"web"}
 	}
 	keys := make([]string, 0, len(targets))
-	for _, t := range targets {
-		k := "dashboard"
-		if t == "apk" {
-			k = "dashboard_apk"
-		}
+	setKey := func(k string) bool {
 		if err := h.userPrefs.Set(r.Context(), me, k, dashboard); err != nil {
 			WriteErr(w, 500, "internal", err.Error())
-			return
+			return false
 		}
 		keys = append(keys, k)
+		return true
+	}
+	for _, t := range targets {
+		if t != "apk" {
+			if !setKey("dashboard") {
+				return
+			}
+			continue
+		}
+		// 设备注册表存于用户偏好键 devices（JSON 数组，含 device_id，与前端
+		// layoutKeyFor 的 hc_device_id 同源）；解析失败/为空时仅写全局键。
+		if !setKey("dashboard_apk") {
+			return
+		}
+		var devs []struct {
+			DeviceID string `json:"device_id"`
+		}
+		if v := h.userPrefs.Get(r.Context(), me, "devices"); v != "" {
+			_ = json.Unmarshal([]byte(v), &devs)
+		}
+		for _, d := range devs {
+			if d.DeviceID != "" && !setKey("dashboard_apk_"+d.DeviceID) {
+				return
+			}
+		}
 	}
 	// 通知接收者本人全部设备热刷新仪表盘：keys 指明受影响的布局键
-	// （dashboard=Web 端 / dashboard_apk=手机端全局回退），前端按本端键前缀过滤，
-	// 未受影响的端不重载（另端排版不受影响）。
+	// （dashboard=Web 端 / dashboard_apk=手机端全局回退 / dashboard_apk_<deviceId>=本机键），
+	// 前端按本端键过滤，未受影响的端不重载（另端排版不受影响）。
 	if h.hub != nil {
 		if b, err := json.Marshal(map[string]any{"type": "prefs", "keys": keys}); err == nil {
 			h.hub.BroadcastUser(me, b)
