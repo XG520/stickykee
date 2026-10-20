@@ -1108,6 +1108,36 @@ function overviewData({ all }) {
   return { total, online: active, offline: total - active, lightsOn, domains }
 }
 
+// 日历 / 黄历卡覆盖层：如果用户绑定了天元历法 / HA calendar / datetime 等实体，
+// 把它的 attributes 拆解成 AlmanacCard 可直接使用的 override 字段。
+// AlmanacCard 自身会用 lunar-javascript 算月历，这里只提供可选覆盖（零实体也能跑）。
+// 天元历法集成常见 attributes：yi / ji / ji_shen / xiong_sha / chong / sha / good_fortune / bad_fortune ……
+// 因为集成字段名可能变化，我们用启发式匹配（别名字典）+ 兜底 rawAttributes。
+const ALMANAC_KEY_ALIASES = [
+  // 宜忌
+  ['yi', ['yi', 'suitable', 'favorable', 'good_fortune', 'good_activities']],
+  ['ji', ['ji', 'avoid', 'unfavorable', 'bad_fortune', 'bad_activities']],
+  ['jiShen', ['ji_shen', 'jishen', 'auspicious_gods', 'good_gods', '吉神']],
+  ['xiongSha', ['xiong_sha', 'xiongsha', 'inauspicious', 'bad_gods', '凶煞']],
+  ['chongSha', ['chong_sha', 'chongsha', '冲煞']],
+]
+function almanacData(entity) {
+  const out = { yiOverride: '', jiOverride: '', jiShenOverride: '', xiongShaOverride: '', chongShaOverride: '', rawAttributes: {} }
+  if (!entity || !entity.attributes) return out
+  const attrs = entity.attributes
+  out.rawAttributes = attrs
+  for (const [target, aliases] of ALMANAC_KEY_ALIASES) {
+    for (const a of aliases) {
+      if (attrs[a] !== undefined && attrs[a] !== null && String(attrs[a]).trim()) {
+        // 兼容 array / string 两种形态（HA 集成可能返回数组或分隔字符串）
+        out[target] = Array.isArray(attrs[a]) ? attrs[a].join('、') : String(attrs[a])
+        break
+      }
+    }
+  }
+  return out
+}
+
 // 基础卡默认头部图标（可被卡片自定义图标 card.icon 覆盖）
 const DEF_GLYPH = {
   greeting: 'home', weather: 'partly_cloudy_day',
@@ -1152,6 +1182,8 @@ export function computeData(type, ctx) {
     case 'plant': d = plantData(entity, hasData); break
     case 'lawn_mower': d = lawnMowerData(entity, hasData); break
     case 'image': d = imageData(entity, hasData); break
+    case 'almanac': d = almanacData(entity); break
+    case 'custom': d = {}; break
     default: d = genericData(entities && entities.length ? entities : (entity ? [entity] : []), hasData, ctx.card); break
   }
   // 基础卡头部图标默认值（领域卡的 base() 已自带 glyph，不会被覆盖）

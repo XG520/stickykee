@@ -26,10 +26,14 @@
       <div v-if="showHint" class="ve-hint-card">
         <p><b>图形设计模式</b>（不会调用任何真实设备操作）</p>
         <ul>
+          <li><span class="material-symbols-outlined">add_box</span>右侧「组件」页可从组件库插入文字/图标/形状/数据控件（鼠标可直接拖入画布）</li>
           <li><span class="material-symbols-outlined">ads_click</span>点击元素选中，再次点击内层元素可精确选择</li>
-          <li><span class="material-symbols-outlined">open_with</span>按住元素直接拖动，调整摆放位置</li>
+          <li><span class="material-symbols-outlined">open_with</span>按住元素直接拖动，边缘会出参考线并自动吸附（按住 Alt 临时关闭吸附）</li>
+          <li><span class="material-symbols-outlined">keyboard</span>选中后方向键微调 1px，Shift+方向键 10px</li>
+          <li><span class="material-symbols-outlined">aspect_ratio</span>拖动选中框上的 8 个方块柄可改尺寸（Shift 等比）</li>
           <li><span class="material-symbols-outlined">stylus</span>双击文字直接改内容；双击图标换图标</li>
-          <li><span class="material-symbols-outlined">tune</span>选中后用下方属性条调色/字号/圆角等</li>
+          <li><span class="material-symbols-outlined">tune</span>选中后用下方属性条调色/字号/圆角，以及上下移动层级</li>
+          <li><span class="material-symbols-outlined">layers</span>右侧「图层」页可查看元素树、点击选中、拖动行调整同一容器内的顺序</li>
           <li><span class="material-symbols-outlined">code</span>所有改动会同步写入右侧 HTML 代码，可随时切回代码微调</li>
         </ul>
         <button class="ve-hint-close" @click="showHint = false">我知道了</button>
@@ -179,14 +183,32 @@
 
           <span class="ve-sep"></span>
           <!-- 位置复位 -->
-          <button class="ve-chip" :disabled="!selVals.hasPos" title="恢复元素在布局中的原始位置" @click="resetPosition">
-            <span class="material-symbols-outlined">center_focus_strong</span>复位位置
+          <button class="ve-chip" :disabled="!selVals.hasPos" title="恢复元素在布局中的原始位置与尺寸" @click="resetPosition">
+            <span class="material-symbols-outlined">center_focus_strong</span>复位位置/尺寸
+          </button>
+          <span class="ve-sep"></span>
+          <!-- 层级顺序（同父容器内，以 DOM 顺序为准） -->
+          <button class="ve-chip ve-chip-mini" :disabled="selIsSurface" title="置于最上层" @click="layerOp(selectedVid, 'front')">
+            <span class="material-symbols-outlined">vertical_align_top</span>
+          </button>
+          <button class="ve-chip ve-chip-mini" :disabled="selIsSurface" title="上移一层" @click="layerOp(selectedVid, 'up')">
+            <span class="material-symbols-outlined">arrow_upward</span>
+          </button>
+          <button class="ve-chip ve-chip-mini" :disabled="selIsSurface" title="下移一层" @click="layerOp(selectedVid, 'down')">
+            <span class="material-symbols-outlined">arrow_downward</span>
+          </button>
+          <button class="ve-chip ve-chip-mini" :disabled="selIsSurface" title="置于最下层" @click="layerOp(selectedVid, 'back')">
+            <span class="material-symbols-outlined">vertical_align_bottom</span>
           </button>
           <!-- 删除 -->
           <button v-if="!selIsSurface" class="ve-chip ve-chip-danger" title="删除该元素" @click="deleteElement">
             <span class="material-symbols-outlined">delete</span>删除
           </button>
         </div>
+        <p class="ve-bar-hint">
+          <span class="material-symbols-outlined">tips_and_updates</span>
+          拖动元素可自动吸附对齐（按住 Alt 临时关闭）；方向键微调 1px，Shift+方向键 10px；拖动选中框上的方块柄改尺寸
+        </p>
       </div>
     </Transition>
     </Teleport>
@@ -251,6 +273,19 @@
         </div>
       </div>
     </Transition>
+
+    <!-- ============ 缩放句柄：挂到 body 层，避免被 .ve-wrap 的 overflow:hidden 裁掉 ============ -->
+    <Teleport to="body">
+      <div v-if="handlesOn" class="ve-hz-layer" :style="hzLayerStyle">
+        <i
+          v-for="d in HANDLE_DIRS"
+          :key="d"
+          class="ve-hz"
+          :class="'hz-' + d"
+          @pointerdown.stop.prevent="onHandleDown($event, d)"
+        ></i>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -258,6 +293,7 @@
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import CodeCard from './CodeCard.vue'
 import { cardDefaults, computeData, renderTemplate } from './defaults'
+import { widgetDef, widgetHtml } from './widgets'
 import { useEntities } from '@/composables/useLive'
 import { entityStates } from '@/store'
 import { iconUrl } from '@/utils/hcIcons'
@@ -330,10 +366,16 @@ function ensureDoc() {
   if (lastSrc === props.card.html && parserDoc) return parserDoc
   const d = new DOMParser().parseFromString(props.card.html || '<div></div>', 'text/html')
   const box = d.body
-  let i = 0
+  // data-vid 是元素身份：已存在的保留，缺失的补「未被占用的最小序号」。
+  // 不能用文档下标命名（删掉中间元素后再插入会与新元素撞号，导致选择/属性条/删除全部错乱）。
+  const used = new Set()
+  box.querySelectorAll('[data-vid]').forEach((el) => used.add(el.getAttribute('data-vid')))
+  let n = 0
   box.querySelectorAll('*').forEach((el) => {
-    if (!el.hasAttribute('data-vid')) el.setAttribute('data-vid', 'e' + i)
-    i++
+    if (el.hasAttribute('data-vid')) return
+    while (used.has('e' + n)) n++
+    el.setAttribute('data-vid', 'e' + n)
+    used.add('e' + n)
   })
   parserDoc = d
   lastSrc = props.card.html
@@ -342,6 +384,15 @@ function ensureDoc() {
 function docBox() { return ensureDoc().body }
 function docEl(vid) { return docBox().querySelector('[data-vid="' + vid + '"]') }
 function serialize() { return docBox().innerHTML }
+// 新元素身份：现有 data-vid 数字后缀最大值 +1，保证唯一
+function newVid() {
+  let max = -1
+  docBox().querySelectorAll('[data-vid]').forEach((el) => {
+    const m = /^e(\d+)$/.exec(el.getAttribute('data-vid') || '')
+    if (m) max = Math.max(max, Number(m[1]))
+  })
+  return 'e' + (max + 1)
+}
 
 const visualCard = computed(() => {
   const box = docBox()
@@ -373,6 +424,81 @@ const zoomStyle = computed(() => ({
   flex: 'none',
 }))
 
+// ================= 几何换算与位移抽象 =================
+// 设计像素 = 卡片内局部 CSS px（外层只做 transform:scale，不影响计算样式）；
+// 屏幕像素 = 设计像素 × K（K 综合了 previewScale 与 zoom 两层缩放）。
+function K() {
+  const r = cardRoot()?.getBoundingClientRect()
+  if (!r || !r.width) return props.scale || 1
+  return r.width / (effW.value * baseCell)
+}
+const round1 = (n) => Math.round(n * 10) / 10
+const round2 = (n) => Math.round(n * 2) / 2
+
+// 绝对定位的包含块原点：根元素自带 position 时包含块是它的 padding box（要扣掉边框厚度），
+// 否则回落 .hc-code-card 的 padding box（CodeCard 里它是 position:relative 且无内边距）。
+// 各卡模板根元素有的 relative（.hc/.dk/.wx）有的是 static，不能硬编码，必须运行时测量。
+function cbOrigin() {
+  const root = cardRoot()
+  if (!root) return null
+  const r = root.getBoundingClientRect()
+  const k = K()
+  const first = root.firstElementChild
+  const cs = first ? getComputedStyle(first) : null
+  if (first && cs && cs.position !== 'static') {
+    return {
+      left: r.left + (parseFloat(cs.borderLeftWidth) || 0) * k,
+      top: r.top + (parseFloat(cs.borderTopWidth) || 0) * k,
+      right: r.right - (parseFloat(cs.borderRightWidth) || 0) * k,
+      bottom: r.bottom - (parseFloat(cs.borderBottomWidth) || 0) * k,
+    }
+  }
+  return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }
+}
+
+// 模板文档元素对应的运行时元素（doc 元素脱离文档、没有计算样式，读基准值必须走运行时）
+function rtEl(vid) {
+  if (!vid) return null
+  return cardRoot()?.querySelector('[data-vid="' + vid + '"]') || null
+}
+
+// ---- 位移抽象：flow（文档流内累计 transform 位移）与 abs（绝对定位 left/top）----
+// 两种模式并存是为了向后兼容：历史卡片元素都在文档流里，靠 translate 位移（兄弟不重排）；
+// 组件库插入的控件是自由摆放的绝对定位元素，直接改 left/top。
+// doc 层元素没有计算样式，基准值必须在手势开始时从运行时元素抓一次，之后统一写 base + 累计位移。
+function moveMode(rt) {
+  const pos = rt ? getComputedStyle(rt).position : ''
+  return pos === 'absolute' || pos === 'fixed' ? 'abs' : 'flow'
+}
+let moveBase = null
+function captureMoveBase(rt, vid) {
+  moveBase = null
+  if (!rt) return null
+  const mode = moveMode(rt)
+  const base = { mode, left: 0, top: 0, tx: 0, ty: 0 }
+  if (mode === 'abs') {
+    const cs = getComputedStyle(rt)
+    base.left = cs.left === 'auto' ? rt.offsetLeft : parseFloat(cs.left) || 0
+    base.top = cs.top === 'auto' ? rt.offsetTop : parseFloat(cs.top) || 0
+  } else {
+    const t = parseTranslate(docEl(vid)?.getAttribute('style') || '')
+    base.tx = t.x
+    base.ty = t.y
+  }
+  moveBase = base
+  return base
+}
+// 把设计像素位移写入模板文档元素
+function writeMove(dDoc, dx, dy) {
+  if (!dDoc || !moveBase) return
+  if (moveBase.mode === 'abs') {
+    rawSet(dDoc, 'left', round2(moveBase.left + dx) + 'px')
+    rawSet(dDoc, 'top', round2(moveBase.top + dy) + 'px')
+  } else {
+    rawSet(dDoc, 'transform', `translate(${round1(moveBase.tx + dx)}px, ${round1(moveBase.ty + dy)}px)`)
+  }
+}
+
 const { all, hasData } = useEntities()
 
 // ================= 运行时根元素 =================
@@ -385,19 +511,27 @@ function surfaceEl() {
 }
 const hasTemplate = ref(true)
 
+// 最近一次「已落地」的 HTML：emit 之后 props.card.html 要下一帧才更新，
+// 而撤销栈 / 重做栈需要立即拿到准确值，故本地镜像一份。
+let lastHtml = props.card.html
 // 重渲染后重新定位选中态（CodeCard 的 v-html 会整体重建 DOM）
-watch(() => props.card.html, () => nextTick(afterRender))
+watch(() => props.card.html, (v) => { lastHtml = v; nextTick(afterRender) })
 // 切换实体 / 实时数据首次到达时 CodeCard 也会重渲染，选中态同样需要重绑
 watch(() => [props.card.entity_id, hasData.value], () => nextTick(afterRender))
 onMounted(() => {
   nextTick(afterRender)
   wrapRef.value?.focus({ preventScroll: true })
+  window.addEventListener('resize', syncOverlay)
+  if (typeof ResizeObserver !== 'undefined' && cardRoot()) {
+    new ResizeObserver(() => syncOverlay()).observe(wrapRef.value)
+  }
 })
 function afterRender() {
   hasTemplate.value = !!cardRoot()?.querySelector('[data-vid]')
   setHover(null)
   markSelected()
   readSelVals()
+  syncOverlay()
 }
 
 // ================= 选择 / 悬停 =================
@@ -418,10 +552,12 @@ function candidateFromEvent(e) {
   return surfaceEl()
 }
 function selectEl(el) {
+  flushEmit()
   selectedVid.value = el?.dataset.vid || ''
   closePopovers()
   markSelected()
   readSelVals()
+  syncOverlay()
   wrapRef.value?.focus({ preventScroll: true })
 }
 function markSelected() {
@@ -482,7 +618,8 @@ let drag = null
 function onPointerDown(e) {
   if (e.button !== 0 && e.pointerType === 'mouse') return
   // 点击浮层内部不触发画布交互（浮层自身已 capture.stop，双保险）
-  if (e.target.closest && e.target.closest('.ve-pop, .ve-icon-pop, .ve-bar, .ve-tools, .ve-hint-card, .ve-needentity')) return
+  if (e.target.closest && e.target.closest('.ve-pop, .ve-icon-pop, .ve-bar, .ve-tools, .ve-hint-card, .ve-needentity, .ve-hz-layer')) return
+  flushEmit() // 方向键微调等延迟回写先落地，避免与新改动交叉
   closePopovers()
   const el = candidateFromEvent(e)
   if (!el) return
@@ -498,6 +635,80 @@ function onPointerDown(e) {
   window.addEventListener('pointermove', onDragMove)
   window.addEventListener('pointerup', onDragUp)
   window.addEventListener('pointercancel', onDragUp)
+}
+// body 层浮层容器：fixed + 零尺寸 + 不吃指针事件，祖先的 zoom / transform:scale 都干扰不到它，
+// 坐标即屏幕像素（无需换算），也不会被 .ve-wrap 的 overflow:hidden 裁掉。
+function makeBodyLayer(z) {
+  const d = document.createElement('div')
+  d.style.cssText = `position:fixed;left:0;top:0;width:0;height:0;z-index:${z};pointer-events:none`
+  document.body.appendChild(d)
+  return d
+}
+// 浮层上的坐标/尺寸徽章（body 层元素拿不到 scoped 样式，故样式内联）
+function makeBadge() {
+  const b = document.createElement('div')
+  b.style.cssText = 'position:absolute;transform:translateX(-50%);padding:2px 7px;border-radius:6px;'
+    + 'background:rgba(18,19,26,.92);color:#f5a623;border:1px solid rgba(245,166,35,.45);'
+    + 'font:600 10px/1.3 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap;pointer-events:none'
+  return b
+}
+// 吸附目标：卡片边界 + 中轴，以及其它元素的三边与中轴。
+// 拖动开始时抓一次即可——原件只是 visibility:hidden，兄弟布局不变。
+function collectSnapTargets(exceptEl) {
+  const t = { xs: [], ys: [] }
+  const cb = cbOrigin()
+  if (cb) {
+    t.xs.push(cb.left, (cb.left + cb.right) / 2, cb.right)
+    t.ys.push(cb.top, (cb.top + cb.bottom) / 2, cb.bottom)
+  }
+  const root = cardRoot()
+  if (root) {
+    root.querySelectorAll('[data-vid]').forEach((el) => {
+      if (t.xs.length > 60) return
+      if (el === exceptEl || el.contains(exceptEl) || exceptEl.contains(el)) return
+      const r = el.getBoundingClientRect()
+      if (!r.width && !r.height) return
+      t.xs.push(r.left, r.left + r.width / 2, r.right)
+      t.ys.push(r.top, r.top + r.height / 2, r.bottom)
+    })
+  }
+  return t
+}
+// 单轴吸附：把元素的「起点 / 中点 / 终点」与参考值比对，取阈值内最近的一个做修正
+function snapAxis(edges, values, th) {
+  let best = null
+  for (const g of edges) {
+    for (const v of values) {
+      const d = v - g
+      if (Math.abs(d) <= th && (!best || Math.abs(d) < Math.abs(best.d))) best = { d, guide: v }
+    }
+  }
+  return best
+}
+// 计算样式里的纯平移矩阵（上一次拖动写入的位移）；含旋转/缩放则返回 null 表示需要保留
+function translateFromMatrix(tf) {
+  const m = /matrix\(([^)]+)\)/.exec(tf || '')
+  if (!m) return null
+  const p = m[1].split(',').map((x) => parseFloat(x.trim()))
+  if (p.length !== 6) return null
+  if (Math.abs(p[0] - 1) > 1e-4 || Math.abs(p[1]) > 1e-4 || Math.abs(p[2]) > 1e-4 || Math.abs(p[3] - 1) > 1e-4) return null
+  return { x: p[4] || 0, y: p[5] || 0 }
+}
+// 参考线与坐标徽章画在独立浮层里（幽灵 holder 自身带位移 transform，放一起会被一起平移）
+function updateGuides(d, guideX, guideY) {
+  if (!d.guideHolder) return
+  const cb = cbOrigin()
+  if (!cb) return
+  d.guideX.style.cssText = guideX === null || guideX === undefined
+    ? 'display:none'
+    : `position:absolute;left:${guideX}px;top:${cb.top}px;width:1px;height:${cb.bottom - cb.top}px;background:rgba(245,166,35,.9)`
+  d.guideY.style.cssText = guideY === null || guideY === undefined
+    ? 'display:none'
+    : `position:absolute;left:${cb.left}px;top:${guideY}px;width:${cb.right - cb.left}px;height:1px;background:rgba(245,166,35,.9)`
+  const k = K()
+  d.badge.textContent = `X ${round1((d.x - cb.left) / k)}  Y ${round1((d.y - cb.top) / k)} ｜ ${round1(d.rect.width / k)}×${round1(d.rect.height / k)}`
+  d.badge.style.left = d.x + d.rect.width / 2 + 'px'
+  d.badge.style.top = Math.max(cb.top, d.y - 22) + 'px'
 }
 // 深拷贝元素并把「计算后样式」逐节点内联到副本上，
 // 使幽灵脱离卡片作用域 CSS 也能 1:1 还原屏幕外观（含 zoom 后的实际尺寸）。
@@ -519,10 +730,11 @@ function startDrag() {
   drag.x = r.left
   drag.y = r.top
   drag.cardRect = cardRoot().getBoundingClientRect()
+  drag.targets = collectSnapTargets(el)
+  captureMoveBase(el, drag.vid)
 
   // 幽灵挂在 body 层 fixed 容器中：祖先的 zoom / transform 都不会干扰它
-  const holder = document.createElement('div')
-  holder.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;z-index:2147483000;pointer-events:none'
+  const holder = makeBodyLayer(2147483000)
   const ghost = cloneWithStyles(el)
   Object.assign(ghost.style, {
     position: 'absolute',
@@ -536,9 +748,18 @@ function startDrag() {
     boxShadow: '0 10px 34px rgba(0,0,0,0.45)',
     outline: '1.5px solid rgba(245,166,35,0.9)',
   })
+  // 计算样式里带着上一次拖动写入的纯平移矩阵，而 drag.rect 取的是「已含该位移」的视觉矩形，
+  // 不清掉会再叠加一次 → 二次拖动起手必跳。非平移变换（旋转/缩放）保留。
+  if (translateFromMatrix(getComputedStyle(el).transform)) ghost.style.transform = 'none'
   holder.appendChild(ghost)
-  document.body.appendChild(holder)
   drag.holder = holder
+
+  // 参考线 / 坐标徽章放到不带位移的独立浮层
+  drag.guideHolder = makeBodyLayer(2147483002)
+  drag.guideX = document.createElement('div')
+  drag.guideY = document.createElement('div')
+  drag.badge = makeBadge()
+  drag.guideHolder.append(drag.guideX, drag.guideY, drag.badge)
 
   el.style.visibility = 'hidden'
   setHover(null)
@@ -546,6 +767,7 @@ function startDrag() {
   readSelVals()
   wrapRef.value?.classList.add('ve-dragging')
   wrapRef.value?.focus({ preventScroll: true })
+  updateGuides(drag, null, null)
 }
 // 把幽灵限制在卡片屏幕范围内（拖不丢）
 function clampGhost(d) {
@@ -563,26 +785,33 @@ function onDragMove(e) {
   drag.x = e.clientX - drag.grabX
   drag.y = e.clientY - drag.grabY
   clampGhost(drag)
+
+  // 吸附：元素的起/中/终点对上参考值取最近（按住 Alt 临时关闭；触屏阈值放宽，否则难以精确落位）
+  let guideX = null
+  let guideY = null
+  const th = e.pointerType === 'touch' ? 10 : 6
+  if (!e.altKey && drag.targets) {
+    const gx = snapAxis([drag.x, drag.x + drag.rect.width / 2, drag.x + drag.rect.width], drag.targets.xs, th)
+    if (gx) { drag.x += gx.d; guideX = gx.guide }
+    const gy = snapAxis([drag.y, drag.y + drag.rect.height / 2, drag.y + drag.rect.height], drag.targets.ys, th)
+    if (gy) { drag.y += gy.d; guideY = gy.guide }
+  }
+
   // 纯屏幕像素位移：transform 只作用于 body 层容器，零换算、必然跟手
   drag.holder.style.transform = `translate(${drag.x - drag.rect.left}px, ${drag.y - drag.rect.top}px)`
+  updateGuides(drag, guideX, guideY)
 }
-const round1 = (n) => Math.round(n * 10) / 10
 // 解析元素已存在的 translate 位移（多次拖动累计），仅支持 px
 function parseTranslate(style) {
   const m = /translate\(\s*(-?[\d.]+)px\s*,\s*(-?[\d.]+)px\s*\)/.exec(style || '')
   return m ? { x: parseFloat(m[1]) || 0, y: parseFloat(m[2]) || 0 } : { x: 0, y: 0 }
 }
 function commitDrag(d) {
-  const rootRect = cardRoot().getBoundingClientRect()
-  const K = rootRect.width > 0 ? rootRect.width / (effW.value * baseCell) : 1
-  pushHistory()
   const tel = docEl(d.vid)
   if (!tel) return
-  // 幽灵屏幕位移 → 设计像素位移，叠加已有 translate（元素保留在文档流中占位）
-  const t = parseTranslate(tel.getAttribute('style'))
-  const dx = round1(t.x + (d.x - d.rect.left) / K)
-  const dy = round1(t.y + (d.y - d.rect.top) / K)
-  rawSet(tel, 'transform', `translate(${dx}px, ${dy}px)`)
+  pushHistory()
+  // 幽灵屏幕位移 → 设计像素位移，按元素实际定位模式写入（flow：translate 累计 / abs：left·top）
+  writeMove(tel, (d.x - d.rect.left) / K(), (d.y - d.rect.top) / K())
   rawSet(tel, 'z-index', '6')
   emitHtml()
 }
@@ -597,7 +826,8 @@ function onDragUp() {
     selectEl(d.el)
     return
   }
-  d.holder.remove()
+  d.holder?.remove()
+  d.guideHolder?.remove()
   commitDrag(d)
   // commitDrag → emitHtml 会整体重建卡片 DOM，原元素的 visibility 随旧节点一并销毁
 }
@@ -606,6 +836,7 @@ function cancelDrag() {
   window.removeEventListener('pointermove', onDragMove)
   window.removeEventListener('pointercancel', onDragUp)
   drag.holder?.remove()
+  drag.guideHolder?.remove()
   drag.el.style.visibility = ''
   wrapRef.value?.classList.remove('ve-dragging')
   drag = null
@@ -890,8 +1121,8 @@ function resetPosition() {
   const dEl = docEl(selectedVid.value)
   if (!dEl) return
   pushHistory()
-  // 清除拖动写入的位移/层级/冻结尺寸，让元素完全回到原始文档流布局
-  ;['position', 'left', 'top', 'right', 'bottom', 'z-index', 'width', 'height', 'transform'].forEach((p) => rawSet(dEl, p, null))
+  // 清除拖动写入的位移/层级/冻结尺寸与为保证尺寸生效的 flex 覆盖，让元素完全回到原始文档流布局
+  ;['position', 'left', 'top', 'right', 'bottom', 'z-index', 'width', 'height', 'transform', 'flex', 'align-self', 'display'].forEach((p) => rawSet(dEl, p, null))
   emitHtml()
 }
 function deleteElement() {
@@ -907,34 +1138,108 @@ function openIconFromBar() {
   if (el) openIcon(el)
 }
 
-// ================= 撤销 / 重做 =================
+// ================= 撤销 / 重做 / 回写 =================
+// emit('html') 会让 CodeCard 用 v-html 整体重建卡片 DOM（卡内 JS 重新执行、动画重启），
+// 所以指针交互期间绝不 emit；高频的键盘微调走 trailing 防抖，关键时机再 flushEmit 落地。
 const undoStack = ref([])
 const redoStack = ref([])
+let emitTimer = 0
+let emitDirty = false
+function emitHtml() {
+  clearTimeout(emitTimer)
+  emitTimer = 0
+  emitDirty = false
+  nudgePending = false
+  nudgeX = 0
+  nudgeY = 0
+  const s = serialize()
+  lastHtml = s
+  emit('html', s)
+}
+// 只改模板文档、推迟回写：doc 变更不重建 DOM，画面反馈靠运行时元素即时写入
+function scheduleEmit(delay = 220) {
+  emitDirty = true
+  clearTimeout(emitTimer)
+  emitTimer = setTimeout(() => {
+    emitTimer = 0
+    emitDirty = false
+    nudgePending = false
+    const s = serialize()
+    lastHtml = s
+    emit('html', s)
+  }, delay)
+}
+function flushEmit() {
+  if (!emitDirty) { nudgePending = false; return }
+  clearTimeout(emitTimer)
+  emitTimer = 0
+  emitDirty = false
+  nudgePending = false
+  const s = serialize()
+  lastHtml = s
+  emit('html', s)
+}
 function pushHistory() {
-  undoStack.value.push(props.card.html)
+  flushEmit() // 先落地未回写的改动，否则压栈的 html 与当前状态不一致
+  undoStack.value.push(lastHtml)
   if (undoStack.value.length > 60) undoStack.value.shift()
   redoStack.value = []
 }
-function emitHtml() {
-  emit('html', serialize())
-}
 function undo() {
+  flushEmit()
   if (!undoStack.value.length) return
-  redoStack.value.push(props.card.html)
-  emit('html', undoStack.value.pop())
+  redoStack.value.push(lastHtml)
+  const s = undoStack.value.pop()
+  lastHtml = s
+  emit('html', s)
 }
 function redo() {
+  flushEmit()
   if (!redoStack.value.length) return
-  undoStack.value.push(props.card.html)
-  emit('html', redoStack.value.pop())
+  undoStack.value.push(lastHtml)
+  const s = redoStack.value.pop()
+  lastHtml = s
+  emit('html', s)
 }
+
+// ================= 方向键微调 =================
+// 一次连续微调 = 一条历史；doc 与运行时元素都实时写，只有回写走防抖。
+let nudgePending = false
+let nudgeX = 0
+let nudgeY = 0
+function nudge(dx, dy) {
+  const vid = selectedVid.value
+  const rt = rtEl(vid)
+  const dEl = docEl(vid)
+  if (!rt || !dEl || selIsSurface.value) return
+  if (!nudgePending) {
+    flushEmit()
+    pushHistory()
+    nudgePending = true
+    nudgeX = 0
+    nudgeY = 0
+    captureMoveBase(rt, vid)
+  }
+  nudgeX += dx
+  nudgeY += dy
+  writeMove(dEl, nudgeX, nudgeY)
+  if (moveBase?.mode === 'abs') {
+    rt.style.left = round2(moveBase.left + nudgeX) + 'px'
+    rt.style.top = round2(moveBase.top + nudgeY) + 'px'
+  } else {
+    rt.style.transform = `translate(${round1((moveBase?.tx || 0) + nudgeX)}px, ${round1((moveBase?.ty || 0) + nudgeY)}px)`
+  }
+  scheduleEmit()
+  syncOverlay()
+}
+
 function onKey(e) {
   const tag = (e.target.tagName || '').toLowerCase()
   const typing = tag === 'input' || tag === 'textarea' || e.target.isContentEditable
   if (e.key === 'Escape') {
     if (textPop.open || iconPop.open) { e.stopPropagation(); closePopovers(); return }
     if (drag) { e.stopPropagation(); cancelDrag(); return }
-    if (selectedVid.value) { e.stopPropagation(); selectedVid.value = ''; markSelected(); return }
+    if (selectedVid.value) { e.stopPropagation(); selectedVid.value = ''; markSelected(); syncOverlay(); return }
   }
   if (typing) return
   if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
@@ -945,6 +1250,15 @@ function onKey(e) {
   if ((e.key === 'Delete' || e.key === 'Backspace') && selectedVid.value && !selIsSurface.value) {
     e.preventDefault()
     deleteElement()
+    return
+  }
+  const step = e.shiftKey ? 10 : 1
+  const ARROWS = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }
+  const a = ARROWS[e.key]
+  if (a && selectedVid.value && !selIsSurface.value) {
+    e.preventDefault()
+    e.stopPropagation()
+    nudge(a[0], a[1])
   }
 }
 
@@ -981,14 +1295,315 @@ function applyElementHtml(html) {
   emitHtml()
   return ''
 }
-defineExpose({ getElementHtml, getSelectedDescriptor, applyElementHtml })
+// ================= 组件库：插入新控件 =================
+// 插入的控件是「自由摆放」的绝对定位元素（position:absolute + left/top），与历史卡片里
+// 靠 transform:translate 位移的文档流元素并存；两种模式由 moveMode() 判定后统一走 writeMove()。
+const insertSeq = ref(0)
+// 数据上下文：镜像 CodeCard 的 liveData，供数据绑定类控件的 {{token}} 取实际可用键
+const widgetData = computed(() => {
+  const ids = Array.isArray(props.card.entity_ids) && props.card.entity_ids.length
+    ? props.card.entity_ids
+    : (props.card.entity_id ? [props.card.entity_id] : [])
+  const ents = ids.map((id) => entityStates[id]).filter(Boolean)
+  const d = computeData(props.card.type, {
+    all: all.value,
+    hasData: hasData.value,
+    entity: ents[0] || null,
+    entities: ents,
+    entityId: props.card.entity_id,
+    now: new Date(),
+    card: props.card,
+  })
+  if (props.card.icon) d.glyph = props.card.icon
+  return d || {}
+})
+// 屏幕坐标 → 设计像素落点（相对绝对定位包含块），并夹在卡片范围内
+function designPoint(clientX, clientY, w, h) {
+  const cb = cbOrigin()
+  const k = K()
+  const maxX = Math.max(0, effW.value * baseCell - w)
+  const maxY = Math.max(0, effH.value * baseCell - h)
+  if (!cb) return { x: maxX / 2, y: maxY / 2 }
+  return {
+    x: Math.max(0, Math.min((clientX - cb.left) / k, maxX)),
+    y: Math.max(0, Math.min((clientY - cb.top) / k, maxY)),
+  }
+}
+// 插入控件；at 为空时落到卡片中央（触摸端点按的主路径），连续插入按 8px 级联错开
+function insertWidget(key, at) {
+  if (!hasTemplate.value || !docBox().firstElementChild) return 'no-template'
+  const def = widgetDef(key)
+  if (!def) return 'unknown-widget'
+  let node
+  try {
+    node = new DOMParser().parseFromString(widgetHtml(def, widgetData.value), 'text/html').body.firstElementChild
+  } catch {
+    node = null
+  }
+  if (!node) return 'parse-failed'
+  let p
+  if (at && at.clientX != null) {
+    p = designPoint(at.clientX, at.clientY, def.w, def.h)
+  } else {
+    const off = (insertSeq.value % 6) * 8
+    insertSeq.value++
+    p = {
+      x: Math.max(0, (effW.value * baseCell - def.w) / 2 + off),
+      y: Math.max(0, (effH.value * baseCell - def.h) / 2 + off),
+    }
+  }
+  const host = docBox().firstElementChild
+  node.setAttribute('data-vid', newVid())
+  rawSet(node, 'position', 'absolute')
+  rawSet(node, 'left', round2(p.x) + 'px')
+  rawSet(node, 'top', round2(p.y) + 'px')
+  rawSet(node, 'width', def.w + 'px')
+  rawSet(node, 'height', def.h + 'px')
+  // 容器里已有内联 z-index（历史拖拽会写 6）时取最大值 +1，确保新控件落在最上层
+  let maxZ = 0
+  ;[...host.children].forEach((c) => {
+    const z = parseInt(c.style?.zIndex || '')
+    if (Number.isFinite(z)) maxZ = Math.max(maxZ, z)
+  })
+  if (maxZ) rawSet(node, 'z-index', String(maxZ + 1))
+  pushHistory()
+  host.appendChild(node)
+  selectedVid.value = node.getAttribute('data-vid')
+  emitHtml()
+  return ''
+}
+// 供桌面端「从组件库拖入」绘制预览框：是否落在卡内 + 预览框屏幕矩形
+function widgetDropRect(key, clientX, clientY) {
+  const def = widgetDef(key)
+  const cb = cbOrigin()
+  if (!def || !cb || !hasTemplate.value) return { inside: false }
+  const k = K()
+  const inside = clientX >= cb.left && clientX <= cb.right && clientY >= cb.top && clientY <= cb.bottom
+  const p = designPoint(clientX, clientY, def.w, def.h)
+  return {
+    inside,
+    rect: { left: cb.left + p.x * k, top: cb.top + p.y * k, width: def.w * k, height: def.h * k },
+  }
+}
+
+// ================= 缩放句柄 =================
+const MIN_SIZE = 6
+const HANDLE_DIRS = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
+const selRectScreen = reactive({ on: false, left: 0, top: 0, width: 0, height: 0 })
+const handlesOn = computed(() => selRectScreen.on)
+const hzLayerStyle = computed(() => ({
+  left: selRectScreen.left + 'px',
+  top: selRectScreen.top + 'px',
+  width: selRectScreen.width + 'px',
+  height: selRectScreen.height + 'px',
+}))
+let resize = null
+// 选中态变化 / 卡片重渲染 / 画布尺寸变化后重新定位句柄
+function syncOverlay() {
+  const rt = rtEl(selectedVid.value)
+  const on = !!rt && !selIsSurface.value && hasTemplate.value && !drag && !resize && !textPop.open && !iconPop.open
+  selRectScreen.on = on
+  if (!on) return
+  const r = rt.getBoundingClientRect()
+  selRectScreen.left = r.left
+  selRectScreen.top = r.top
+  selRectScreen.width = r.width
+  selRectScreen.height = r.height
+}
+// 句柄位置随选中态 / 缩放 / 卡片尺寸变化刷新
+watch([selectedVid, () => props.scale, () => props.cellSize, () => props.card.w, () => props.card.h], () => nextTick(syncOverlay))
+// 面板/图层树选中：按 vid 直接从运行时 DOM 选（不依赖画布指针事件）
+function selectVid(vid) {
+  flushEmit()
+  const el = rtEl(vid)
+  if (!el) return false
+  selectedVid.value = vid
+  closePopovers()
+  markSelected()
+  readSelVals()
+  syncOverlay()
+  wrapRef.value?.focus({ preventScroll: true })
+  return true
+}
+function onHandleDown(e, dir) {
+  const vid = selectedVid.value
+  const rt = rtEl(vid)
+  const dEl = docEl(vid)
+  if (!e || !rt || !dEl || selIsSurface.value) return
+  e.preventDefault()
+  e.stopPropagation()
+  const cs = getComputedStyle(rt)
+  const r = rt.getBoundingClientRect()
+  captureMoveBase(rt, vid)
+  resize = {
+    vid, dEl, dir, cs,
+    sx: e.clientX,
+    sy: e.clientY,
+    rect: { left: r.left, top: r.top, width: r.width, height: r.height },
+    localW: parseFloat(cs.width) || r.width / K(),
+    localH: parseFloat(cs.height) || r.height / K(),
+    w: 0, h: 0, mx: 0, my: 0,
+  }
+  resize.w = resize.localW
+  resize.h = resize.localH
+  // 尺寸框 / 尺寸徽章用 body 层浮层（不重建 DOM，只拖拽预览）
+  resize.layer = makeBodyLayer(2147483001)
+  resize.box = document.createElement('div')
+  resize.badge = makeBadge()
+  resize.layer.append(resize.box, resize.badge)
+  drawResizeBox()
+  selRectScreen.on = false
+  wrapRef.value?.classList.add('ve-dragging')
+  window.addEventListener('pointermove', onResizeMove)
+  window.addEventListener('pointerup', onResizeUp)
+  window.addEventListener('pointercancel', onResizeUp)
+}
+function drawResizeBox() {
+  const d = resize
+  if (!d) return
+  const k = K()
+  const left = d.rect.left + d.mx * k
+  const top = d.rect.top + d.my * k
+  const w = Math.max(MIN_SIZE, d.w) * k
+  const h = Math.max(MIN_SIZE, d.h) * k
+  d.box.style.cssText = `position:absolute;left:${left}px;top:${top}px;width:${w}px;height:${h}px;border:1.5px dashed rgba(245,166,35,.95);border-radius:4px;box-sizing:border-box`
+  d.badge.textContent = `${round2(d.w)} × ${round2(d.h)}`
+  d.badge.style.left = left + w / 2 + 'px'
+  d.badge.style.top = Math.max(0, top - 22) + 'px'
+}
+function onResizeMove(e) {
+  const d = resize
+  if (!d) return
+  const k = K()
+  const dLX = (e.clientX - d.sx) / k
+  const dLY = (e.clientY - d.sy) / k
+  let w = d.localW
+  let h = d.localH
+  if (d.dir.includes('e')) w = d.localW + dLX
+  if (d.dir.includes('w')) w = d.localW - dLX
+  if (d.dir.includes('s')) h = d.localH + dLY
+  if (d.dir.includes('n')) h = d.localH - dLY
+  w = Math.max(MIN_SIZE, w)
+  h = Math.max(MIN_SIZE, h)
+  // Shift + 角柄：等比缩放（以宽度为基准）
+  if (e.shiftKey && d.dir.length === 2 && d.localW > 0) h = Math.max(MIN_SIZE, w * (d.localH / d.localW))
+  d.w = w
+  d.h = h
+  // W/N 边：对边固定 → 同时位移（复用位移抽象，flow / abs 两种元素都对）
+  d.mx = d.dir.includes('w') ? -(w - d.localW) : 0
+  d.my = d.dir.includes('n') ? -(h - d.localH) : 0
+  drawResizeBox()
+}
+// 写入宽高；flex 子项 / inline 元素 / stretch 交叉轴会让固定尺寸失效，先解除这些约束
+function applySize(dEl, w, h, cs) {
+  if (!dEl) return
+  if ((parseFloat(cs?.flexGrow) || 0) > 0 || (cs?.flexBasis && cs.flexBasis !== 'auto' && cs.flexBasis !== '0%')) rawSet(dEl, 'flex', '0 0 auto')
+  if (cs?.alignSelf === 'stretch') rawSet(dEl, 'align-self', 'flex-start')
+  if (cs?.display === 'inline') rawSet(dEl, 'display', 'inline-block')
+  rawSet(dEl, 'width', round2(w) + 'px')
+  rawSet(dEl, 'height', round2(h) + 'px')
+}
+function onResizeUp() {
+  window.removeEventListener('pointermove', onResizeMove)
+  window.removeEventListener('pointercancel', onResizeUp)
+  const d = resize
+  resize = null
+  wrapRef.value?.classList.remove('ve-dragging')
+  if (!d) return
+  d.layer?.remove()
+  pushHistory()
+  applySize(d.dEl, d.w, d.h, d.cs)
+  if (d.mx || d.my) writeMove(d.dEl, d.mx, d.my)
+  emitHtml()
+  syncOverlay()
+}
+
+// ================= 图层（元素树 / 层级顺序） =================
+function layerName(el) {
+  const t = (el.textContent || '').trim().replace(/\s+/g, ' ')
+  return t ? t.slice(0, 14) : descriptor(el)
+}
+// 从模板文档读元素树：doc 与 draft.html 天然同步，父级面板据此渲染缩进列表
+function getLayerTree() {
+  const host = docBox().firstElementChild
+  if (!host) return []
+  const out = []
+  const walk = (el, depth) => {
+    if (out.length >= 160) return
+    const vid = el.getAttribute('data-vid')
+    if (vid) out.push({ vid, depth, tag: el.tagName.toLowerCase(), name: layerName(el), isSurface: el === host })
+    ;[...el.children].forEach((c) => walk(c, depth + 1))
+  }
+  walk(host, 0)
+  return out
+}
+// 层级以「DOM 顺序」为唯一权威：置顶/置底/上移/下移都落成节点顺序。
+// 必须先清掉同父所有内联 z-index——拖拽会留下 z-index:6，不清则永远压住 DOM 顺序，
+// 用户点「上移/置底」会看起来完全没反应。
+function layerOp(vid, op) {
+  const el = docEl(vid)
+  if (!el || !el.parentElement) return 'no-el'
+  if (el === docBox().firstElementChild) return 'surface'
+  const parent = el.parentElement
+  const sibs = [...parent.children].filter((c) => c.hasAttribute('data-vid'))
+  if (sibs.length < 2) return 'single'
+  const i = sibs.indexOf(el)
+  const target = op === 'front' ? sibs[sibs.length - 1]
+    : op === 'back' ? sibs[0]
+      : op === 'up' ? sibs[i - 1]
+        : op === 'down' ? sibs[i + 1] : null
+  if (!target || target === el) return 'edge'
+  pushHistory()
+  sibs.forEach((c) => rawSet(c, 'z-index', null))
+  if (op === 'front') parent.appendChild(el)
+  else if (op === 'back') parent.insertBefore(el, sibs[0])
+  else if (op === 'up') parent.insertBefore(el, sibs[i - 1])
+  else parent.insertBefore(el, sibs[i + 1])
+  emitHtml()
+  return ''
+}
+// 图层面板拖行重排：仅支持同一父容器内排序（跨容器会改变布局语义，明确拒绝）
+function reorderLayer(vid, targetVid, place) {
+  const el = docEl(vid)
+  const tgt = docEl(targetVid)
+  if (!el || !tgt || el === tgt) return 'no-el'
+  if (el === docBox().firstElementChild) return 'surface'
+  const parent = el.parentElement
+  if (!parent || tgt.parentElement !== parent) return 'cross-parent'
+  pushHistory()
+  ;[...parent.children].forEach((c) => rawSet(c, 'z-index', null))
+  parent.insertBefore(el, place === 'after' ? tgt.nextSibling : tgt)
+  emitHtml()
+  return ''
+}
+
+defineExpose({
+  getElementHtml,
+  getSelectedDescriptor,
+  applyElementHtml,
+  insertWidget,
+  widgetDropRect,
+  getLayerTree,
+  layerOp,
+  reorderLayer,
+  selectVid,
+})
 
 onBeforeUnmount(() => {
+  flushEmit()
+  clearTimeout(emitTimer)
   window.removeEventListener('pointermove', onDragMove)
   window.removeEventListener('pointercancel', onDragUp)
   window.removeEventListener('pointerup', onDragUp)
+  window.removeEventListener('pointermove', onResizeMove)
+  window.removeEventListener('pointercancel', onResizeUp)
+  window.removeEventListener('pointerup', onResizeUp)
+  window.removeEventListener('resize', syncOverlay)
   drag?.holder?.remove()
+  drag?.guideHolder?.remove()
+  resize?.layer?.remove()
   drag = null
+  resize = null
 })
 </script>
 
@@ -1132,6 +1747,37 @@ onBeforeUnmount(() => {
   padding: 20px;
 }
 .ve-ne-icon { font-size: 34px; color: #8a8986; }
+
+/* ============ 缩放句柄（挂 body 层） ============ */
+.ve-hz-layer {
+  position: fixed;
+  pointer-events: none;
+  z-index: 2147483001;
+}
+.ve-hz {
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  margin: -5.5px 0 0 -5.5px;
+  border-radius: 2px;
+  background: #f5a623;
+  border: 1.5px solid #12131a;
+  box-sizing: border-box;
+  pointer-events: auto;
+  touch-action: none;
+}
+.hz-nw { left: 0; top: 0; cursor: nwse-resize; }
+.hz-n { left: 50%; top: 0; cursor: ns-resize; }
+.hz-ne { left: 100%; top: 0; cursor: nesw-resize; }
+.hz-e { left: 100%; top: 50%; cursor: ew-resize; }
+.hz-se { left: 100%; top: 100%; cursor: nwse-resize; }
+.hz-s { left: 50%; top: 100%; cursor: ns-resize; }
+.hz-sw { left: 0; top: 100%; cursor: nesw-resize; }
+.hz-w { left: 0; top: 50%; cursor: ew-resize; }
+/* 触屏放大的命中区 */
+@media (pointer: coarse) {
+  .ve-hz { width: 16px; height: 16px; margin: -8px 0 0 -8px; }
+}
 .ve-needentity p { margin: 0; font-size: 12.5px; color: #b6b4ad; max-width: 260px; }
 .ve-ne-btn {
   margin-top: 4px;
@@ -1276,6 +1922,18 @@ onBeforeUnmount(() => {
 }
 /* 大面板内：分隔符占满整行形成横向分组线 */
 .ve-bar-scroll .ve-sep { flex: 0 0 100%; width: auto; height: 1px; margin: 2px 0; }
+/* 属性条底部的操作提示（拖动吸附 / 键盘微调 / 句柄缩放） */
+.ve-bar-hint {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  margin: 2px 0 0;
+  color: #7d7a73;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.ve-bar-hint .material-symbols-outlined { font-size: 14px; color: #f5a623; flex: none; margin-top: 1px; }
 .ve-chip {
   flex: none;
   height: 30px;

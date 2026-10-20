@@ -19,6 +19,7 @@ import api from '@/api'
 import { store, entityStates, requestEntityRefresh } from '@/store'
 import HomeMap from '@/components/map/HomeMap.vue'
 import router from '@/router'
+import AlmanacCard from './AlmanacCard.vue'
 
 const props = defineProps({
   card: { type: Object, required: true },
@@ -366,6 +367,33 @@ function unmountMap() {
   }
 }
 
+// ---- 日历 / 黄历卡：Vue 子组件挂载到 [data-almanac]（类似 map 卡）。
+// AlmanacCard 默认前端用 lunar-javascript 计算（零配置可跑）；若用户可选绑定一个天元历法实体，
+// data.js 会把 entity.attributes 拆解成 override 字段传入。 ----
+let almanacApp = null
+async function mountAlmanac() {
+  if (props.card.type !== 'almanac') return
+  await nextTick()
+  const holder = root.value && root.value.querySelector('[data-almanac]')
+  if (!holder || almanacApp) return
+  const live = liveData.value || {}
+  almanacApp = createApp(AlmanacCard, {
+    yiOverride: live.yiOverride || '',
+    jiOverride: live.jiOverride || '',
+    jiShenOverride: live.jiShenOverride || '',
+    xiongShaOverride: live.xiongShaOverride || '',
+    chongShaOverride: live.chongShaOverride || '',
+    rawAttributes: live.rawAttributes || {},
+  })
+  almanacApp.mount(holder)
+}
+function unmountAlmanac() {
+  if (almanacApp) {
+    almanacApp.unmount()
+    almanacApp = null
+  }
+}
+
 // ---- 视口门控：图标替换 / 跑马灯扫描都含强制回流（scrollWidth / getComputedStyle），
 // 卡片很多时对「视口外卡片」逐次执行会造成布局抖动累积卡顿。
 // 用 IntersectionObserver 跟踪可见性：不可见时只记脏标记，滚入视口（含 300px 余量）再补做。
@@ -388,11 +416,11 @@ watch(
   () => [props.card.html, props.card.css, props.card.js],
   () => {
     nextTick(() => {
-      unmountMap()
+      unmountMap(); unmountAlmanac()
       applyCss()
       schedulePostRender()
       applyJs()
-      mountMap()
+      mountMap(); mountAlmanac()
     })
   },
   { deep: true },
@@ -400,6 +428,13 @@ watch(
 
 // 实时数据（实体状态）变化会导致 v-html 重渲染、DOM 重建，需重新应用图标替换与文本滚动。
 watch(renderedHtml, () => schedulePostRender())
+
+// 日历卡若绑定了天元历法实体，entity.attributes 的覆盖值需重新注入 AlmanacCard ——
+// AlmanacCard 自身没有 state（内部用 reactive），不能靠 createApp 的 props 更新，必须 unmount 后重挂。
+watch(liveData, () => {
+  if (props.card.type !== 'almanac' || props.freeze) return
+  nextTick(() => { unmountAlmanac(); mountAlmanac() })
+}, { deep: true })
 
 // 图标替换：确保后端图标列表就绪后替换本卡图标（依赖已知集合，幂等）。
 function applyIcons() {
@@ -426,6 +461,7 @@ onMounted(() => {
   applyCss()
   applyJs()
   mountMap()
+  mountAlmanac()
   schedulePostRender()
 })
 onBeforeUnmount(() => {
@@ -437,6 +473,7 @@ onBeforeUnmount(() => {
   rangeTimers.forEach((t) => clearTimeout(t))
   rangeTimers.clear()
   unmountMap()
+  unmountAlmanac()
   if (styleEl.value) {
     styleEl.value.remove()
     styleEl.value = null

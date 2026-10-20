@@ -22,6 +22,10 @@
                 <span class="material-symbols-outlined">restart_alt</span>
                 <span class="ce-btn-text">恢复默认</span>
               </button>
+              <button class="ce-btn ce-ghost" :class="{ 'is-dirty': dirty }" @click="banner = banner === 'save-as-tpl' ? null : 'save-as-tpl'" title="把当前这张卡保存为模板（下次添加卡片时就能找到）">
+                <span class="material-symbols-outlined">bookmark_add</span>
+                <span class="ce-btn-text">保存为模板</span>
+              </button>
               <button class="ce-btn ce-ghost" @click="requestClose">
                 取消
                 <kbd class="ce-kbd">Esc</kbd>
@@ -34,6 +38,14 @@
             </div>
           </header>
 
+          <!-- 瞬时 toast：保存模板 / 保存更改 等操作的非阻断提示（顶栏下方，单条自动消失） -->
+          <Transition name="ce-banner">
+            <div v-if="topMsg" class="ce-banner" :class="{ 'ce-danger-banner': topMsg.err }">
+              <span class="material-symbols-outlined ce-banner-icon">{{ topMsg.err ? 'error' : 'check_circle' }}</span>
+              <span>{{ topMsg.text }}</span>
+            </div>
+          </Transition>
+
           <!-- ============ 二次确认横幅 ============ -->
           <Transition name="ce-banner">
             <div v-if="banner" class="ce-banner">
@@ -44,7 +56,25 @@
                 <button class="ce-btn ce-ghost ce-btn-sm" @click="banner = null">继续编辑</button>
                 <button class="ce-btn ce-danger-btn ce-btn-sm" @click="discardAndClose">放弃更改</button>
               </template>
-              <template v-else>
+              <template v-else-if="banner === 'save-as-tpl'">
+                <span class="material-symbols-outlined ce-banner-icon">bookmark_add</span>
+                <span class="flex items-center gap-2 flex-wrap">
+                  <label class="text-on-surface/85">模板名</label>
+                  <input v-model="tplName" class="ce-input ce-input-sm w-40" maxlength="20" placeholder="我的模板" @keydown.enter="confirmSaveAsTpl" />
+                  <label class="text-on-surface/85">图标</label>
+                  <input v-model="tplIcon" class="ce-input ce-input-sm w-28" maxlength="32" placeholder="construction" @keydown.enter="confirmSaveAsTpl" />
+                  <label class="inline-flex items-center gap-1 text-on-surface/85 ml-1">
+                    <input type="checkbox" v-model="tplNeedEntity" class="accent-primary" />
+                    需要绑定实体
+                  </label>
+                </span>
+                <span class="ce-spacer"></span>
+                <button class="ce-btn ce-ghost ce-btn-sm" @click="banner = null">取消</button>
+                <button class="ce-btn ce-primary ce-btn-sm" :disabled="!tplName.trim() || savingAsTpl" @click="confirmSaveAsTpl">
+                  <span class="material-symbols-outlined">{{ savingAsTpl ? 'progress_activity' : 'save' }}</span>保存为模板
+                </button>
+              </template>
+              <template v-else-if="banner === 'reset'">
                 <span class="material-symbols-outlined ce-banner-icon">restart_alt</span>
                 <span>恢复默认会用内置模板覆盖当前的 HTML / CSS / JS 三段代码。</span>
                 <span class="ce-spacer"></span>
@@ -304,15 +334,34 @@
                 </div>
               </div>
 
-              <!-- 设计模式：元素属性 / 代码编辑 视图切换（属性面板默认占满代码区） -->
+              <!-- 设计模式：元素属性 / 组件库 / 图层 / 代码编辑 视图切换（属性面板默认占满代码区） -->
               <div v-if="designMode" class="ce-viewswitch" role="tablist">
                 <button
                   role="tab"
                   class="ce-vs-btn"
                   :class="{ on: rightView === 'props' }"
+                  title="选中元素的样式与层级"
                   @click="rightView = 'props'"
                 >
-                  <span class="material-symbols-outlined">tune</span>元素属性
+                  <span class="material-symbols-outlined">tune</span>属性
+                </button>
+                <button
+                  role="tab"
+                  class="ce-vs-btn"
+                  :class="{ on: rightView === 'widgets' }"
+                  title="从组件库插入新控件（鼠标可直接拖到画布）"
+                  @click="rightView = 'widgets'"
+                >
+                  <span class="material-symbols-outlined">add_box</span>组件
+                </button>
+                <button
+                  role="tab"
+                  class="ce-vs-btn"
+                  :class="{ on: rightView === 'layers' }"
+                  title="元素树与同容器内的顺序调整"
+                  @click="rightView = 'layers'"
+                >
+                  <span class="material-symbols-outlined">layers</span>图层
                 </button>
                 <button
                   role="tab"
@@ -320,7 +369,7 @@
                   :class="{ on: rightView === 'code' }"
                   @click="rightView = 'code'"
                 >
-                  <span class="material-symbols-outlined">code</span>代码编辑
+                  <span class="material-symbols-outlined">code</span>代码
                 </button>
                 <button
                   role="tab"
@@ -330,7 +379,7 @@
                   title="只显示并编辑选中元素的 HTML 代码"
                   @click="openElCodeView"
                 >
-                  <span class="material-symbols-outlined">data_object</span>元素代码
+                  <span class="material-symbols-outlined">data_object</span>元素
                 </button>
               </div>
 
@@ -358,12 +407,70 @@
                   <span class="material-symbols-outlined">ads_click</span>
                   <p class="ce-dp-title">在左侧预览中点选一个元素</p>
                   <ul class="ce-dp-guides">
-                    <li><span class="material-symbols-outlined">open_with</span>按住元素拖动，调整摆放位置</li>
+                    <li><span class="material-symbols-outlined">open_with</span>按住元素拖动，边缘吸附并显示参考线</li>
+                    <li><span class="material-symbols-outlined">aspect_ratio</span>拖选中框上的方块柄改尺寸</li>
                     <li><span class="material-symbols-outlined">stylus</span>双击文字直接改内容</li>
                     <li><span class="material-symbols-outlined">progress</span>双击图标即可更换</li>
-                    <li><span class="material-symbols-outlined">tune</span>选中后在此调整颜色、字号、圆角等</li>
+                    <li><span class="material-symbols-outlined">tune</span>选中后在此调整颜色、字号、圆角与层级</li>
                   </ul>
                 </div>
+              </div>
+
+              <!-- 组件库：点按插入（触摸主路径），鼠标可直接拖到左侧画布落点插入 -->
+              <div v-show="designMode && rightView === 'widgets'" class="ce-palette">
+                <p class="ce-pal-tip">
+                  <span class="material-symbols-outlined">info</span>
+                  点按插入到卡片中央；鼠标可按住拖到画布上指定位置（插入后自动选中，可在元素属性里微调）
+                </p>
+                <div v-for="g in WIDGET_GROUPS" :key="g.key" class="ce-pal-group">
+                  <p class="ce-pal-gtitle">{{ g.label }}</p>
+                  <div class="ce-pal-grid">
+                    <button
+                      v-for="w in widgetsOf(g.key)"
+                      :key="w.key"
+                      class="ce-pal-tile"
+                      :title="'插入：' + w.label"
+                      @click="insertWidgetAt(w)"
+                      @pointerdown="onPaletteDown($event, w)"
+                    >
+                      <span class="material-symbols-outlined">{{ w.icon }}</span>
+                      <em>{{ w.label }}</em>
+                    </button>
+                  </div>
+                </div>
+                <p v-if="paletteMsg" class="ce-pal-msg" :class="{ err: paletteMsg.err }">
+                  <span class="material-symbols-outlined">{{ paletteMsg.err ? 'error' : 'check_circle' }}</span>{{ paletteMsg.text }}
+                </p>
+              </div>
+
+              <!-- 图层：元素树（点击选中）+ 同容器内顺序调整 -->
+              <div v-show="designMode && rightView === 'layers'" class="ce-layers">
+                <p class="ce-pal-tip">
+                  <span class="material-symbols-outlined">info</span>
+                  以 DOM 顺序为准；鼠标按住行可拖到同容器其它行之间重排
+                </p>
+                <p v-if="!layerTree.length" class="ce-ly-empty">当前卡片没有可编辑的元素</p>
+                <div
+                  v-for="(row, i) in layerTree"
+                  :key="row.vid"
+                  class="ce-ly-row"
+                  :class="{ on: row.vid === elVid, surf: row.isSurface, drop: dropIndex === i }"
+                  :style="{ paddingLeft: 8 + row.depth * 12 + 'px' }"
+                  @click="selectLayer(row)"
+                  @pointerdown="onLayerDown($event, i, row)"
+                >
+                  <span class="material-symbols-outlined ce-ly-ic">{{ layerIcon(row) }}</span>
+                  <em class="ce-ly-name">{{ row.isSurface ? '卡片根' : row.name }}</em>
+                  <span class="ce-ly-acts" @pointerdown.stop @click.stop>
+                    <button title="置于最上层" :disabled="row.isSurface" @click="doLayerOp(row, 'front')"><span class="material-symbols-outlined">vertical_align_top</span></button>
+                    <button title="上移一层" :disabled="row.isSurface" @click="doLayerOp(row, 'up')"><span class="material-symbols-outlined">arrow_upward</span></button>
+                    <button title="下移一层" :disabled="row.isSurface" @click="doLayerOp(row, 'down')"><span class="material-symbols-outlined">arrow_downward</span></button>
+                    <button title="置于最下层" :disabled="row.isSurface" @click="doLayerOp(row, 'back')"><span class="material-symbols-outlined">vertical_align_bottom</span></button>
+                  </span>
+                </div>
+                <p v-if="layerMsg" class="ce-pal-msg err">
+                  <span class="material-symbols-outlined">error</span>{{ layerMsg }}
+                </p>
               </div>
 
               <!-- 代码编辑区：行号 + 高亮层 + 透明 textarea -->
@@ -463,6 +570,8 @@
 import { ref, reactive, computed, watch, nextTick, onBeforeUnmount } from 'vue'
 import { entityStates } from '@/store'
 import { cardDefaults } from './defaults'
+import { WIDGET_DEFS, WIDGET_GROUPS } from './widgets'
+import { saveAsTemplate } from '@/composables/useCustomTemplates'
 import CodeCard from './CodeCard.vue'
 import VisualStage from './VisualStage.vue'
 
@@ -558,6 +667,43 @@ function resetToDefault() {
 function save() {
   emit('save', { uid: draft.uid, ...pickDraft() })
 }
+
+// ================= 保存为用户自定义模板 =================
+const tplName = ref('')
+const tplIcon = ref('')
+const tplNeedEntity = ref(false)
+const savingAsTpl = ref(false)
+// 打开保存对话框时预填当前 draft 的元信息，方便用户快速确认
+watch(banner, (v) => {
+  if (v !== 'save-as-tpl') return
+  tplName.value = props.card?.title?.trim() || cardDefaults[draft.type]?.label || '我的模板'
+  tplIcon.value = draft.icon || cardDefaults[draft.type]?.icon || 'construction'
+  tplNeedEntity.value = !!metaOf(draft.type).needEntity
+})
+async function confirmSaveAsTpl() {
+  if (savingAsTpl.value) return
+  if (!tplName.value.trim()) return
+  savingAsTpl.value = true
+  try {
+    const res = await saveAsTemplate(draft, {
+      name: tplName.value.trim(),
+      icon: tplIcon.value.trim() || 'construction',
+      needEntity: tplNeedEntity.value,
+    })
+    if (res?.err === 'limit') showTopMsg(res.msg, true)
+    else if (res?.err === 'no-name') showTopMsg('请输入模板名', true)
+    else if (res?.err) showTopMsg('保存失败：' + res.err, true)
+    else showTopMsg(`模板「${res.name}」已保存，下次添加卡片时就能找到了`)
+    banner.value = null
+  } finally { savingAsTpl.value = false }
+}
+function showTopMsg(text, err) {
+  topMsg.value = { text, err: !!err }
+  clearTimeout(topMsgTimer)
+  topMsgTimer = setTimeout(() => { topMsg.value = null }, 3200)
+}
+const topMsg = ref(null)
+let topMsgTimer = 0
 
 // ================= 自定义图标 =================
 const iconInput = ref('')
@@ -894,6 +1040,15 @@ function enterDesign() {
   rightView.value = 'props'
   nextTick(computePreviewScale)
 }
+// 新建的「自定义卡」需要自动进入图形化设计模式，并把右侧视图默认切到组件库，
+// 让用户第一眼就能开始搭积木（_autoDesign 是运行时瞬时标记，不会被持久化）。
+watch(() => props.card, (v) => {
+  if (v && v._autoDesign) {
+    delete v._autoDesign
+    enterDesign()
+    rightView.value = 'widgets'
+  }
+})
 // VisualStage 的所有图形编辑都序列化为 HTML 回写草稿，右侧代码实时同步
 function onVisualHtml(html) {
   draft.html = html
@@ -905,9 +1060,151 @@ function onVisualChangeEntity() {
   nextTick(() => entityWrapRef.value?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }))
 }
 
-// ================= 元素代码编辑（只编辑选中元素的 HTML） =================
+// ================= 组件库（右侧「组件」页） =================
+// 低代码搭建入口：点按插入到卡片中央（触摸主路径），鼠标可按住拖到画布指定位置插入。
 const visualStageRef = ref(null)
 const elVid = ref('')
+const paletteMsg = ref(null)
+let paletteTimer = 0
+// 鼠标拖入结束后紧随的 click 需要忽略，避免重复插入
+let palSuppressUntil = 0
+let palDrag = null
+function widgetsOf(group) {
+  return WIDGET_DEFS.filter((w) => w.group === group)
+}
+function showPaletteMsg(text, err) {
+  paletteMsg.value = { text, err: !!err }
+  clearTimeout(paletteTimer)
+  paletteTimer = setTimeout(() => { paletteMsg.value = null }, 3000)
+}
+function insertWidgetAt(def, at) {
+  if (Date.now() < palSuppressUntil) return
+  const err = visualStageRef.value?.insertWidget(def.key, at || null)
+  if (err === 'no-template') showPaletteMsg('该卡片需要先绑定实体（或模板为空），请在上方配置区选择实体后再设计', true)
+  else if (err) showPaletteMsg('插入失败：' + err, true)
+  else showPaletteMsg(`已插入「${def.label}」，可在左侧拖动或用方向键微调`)
+}
+function onPaletteDown(e, def) {
+  // 触摸端不拦滚动，直接走点按插入
+  if (e.pointerType !== 'mouse') return
+  palDrag = { def, sx: e.clientX, sy: e.clientY, moved: false, inside: false, layer: null }
+  window.addEventListener('pointermove', onPaletteMove)
+  window.addEventListener('pointerup', onPaletteUp)
+  window.addEventListener('pointercancel', onPaletteUp)
+}
+function onPaletteMove(e) {
+  const d = palDrag
+  if (!d) return
+  if (!d.moved) {
+    if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 6) return
+    d.moved = true
+    d.layer = document.createElement('div')
+    d.layer.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;z-index:2147483500;pointer-events:none'
+    d.box = document.createElement('div')
+    d.chip = document.createElement('div')
+    d.chip.textContent = d.def.label
+    d.chip.style.cssText = 'position:absolute;transform:translate(-50%,-50%);padding:3px 9px;border-radius:8px;'
+      + 'background:rgba(245,166,35,.92);color:#12131a;font:700 11px/1.3 system-ui,sans-serif;white-space:nowrap;'
+      + 'box-shadow:0 6px 18px rgba(0,0,0,.45)'
+    d.box.style.cssText = 'display:none'
+    d.layer.append(d.box, d.chip)
+    document.body.appendChild(d.layer)
+  }
+  d.chip.style.left = e.clientX + 'px'
+  d.chip.style.top = e.clientY + 'px'
+  const r = visualStageRef.value?.widgetDropRect(d.def.key, e.clientX, e.clientY)
+  if (r && r.inside) {
+    d.inside = true
+    d.box.style.cssText = `position:absolute;left:${r.rect.left}px;top:${r.rect.top}px;width:${r.rect.width}px;`
+      + `height:${r.rect.height}px;border:1.5px dashed rgba(245,166,35,.95);background:rgba(245,166,35,.12);border-radius:4px;box-sizing:border-box`
+  } else {
+    d.inside = false
+    d.box.style.cssText = 'display:none'
+  }
+}
+function onPaletteUp(e) {
+  window.removeEventListener('pointermove', onPaletteMove)
+  window.removeEventListener('pointercancel', onPaletteUp)
+  const d = palDrag
+  palDrag = null
+  if (!d) return
+  d.layer?.remove()
+  if (!d.moved) return // 未拖动：交给 click 处理（插入到卡片中央）
+  palSuppressUntil = Date.now() + 350
+  if (d.inside) insertWidgetAt(d.def, { clientX: e.clientX, clientY: e.clientY })
+}
+
+// ================= 图层（右侧「图层」页） =================
+const layerTree = ref([])
+const layerMsg = ref('')
+let layerMsgTimer = 0
+let layerDrag = null
+const dropIndex = ref(-1)
+const LAYER_ICON = { div: 'crop_square', span: 'text_fields', button: 'smart_button', p: 'notes', img: 'image', svg: 'shapes', a: 'link', i: 'star' }
+function layerIcon(row) { return LAYER_ICON[row.tag] || 'widgets' }
+function showLayerMsg(text) {
+  layerMsg.value = text
+  clearTimeout(layerMsgTimer)
+  layerMsgTimer = setTimeout(() => { layerMsg.value = '' }, 3000)
+}
+// 元素树从 VisualStage 现取（读模板文档），依赖 draft.html 但需等子组件重渲染完
+function refreshLayers() {
+  if (!designMode.value || rightView.value !== 'layers') { layerTree.value = []; return }
+  layerTree.value = visualStageRef.value?.getLayerTree() || []
+}
+watch([() => draft.html, rightView, designMode], () => nextTick(refreshLayers))
+function selectLayer(row) {
+  if (row.vid === elVid.value) return
+  visualStageRef.value?.selectVid(row.vid)
+}
+function doLayerOp(row, op) {
+  const err = visualStageRef.value?.layerOp(row.vid, op) || ''
+  if (err === 'single') showLayerMsg('该元素在所在容器内没有可调换的邻居')
+  else if (err === 'surface') showLayerMsg('卡片根元素不能调整层级')
+  else if (err === 'edge') showLayerMsg('已经到该方向的边界了')
+  else if (err) showLayerMsg('调整失败：' + err)
+}
+// 鼠标按住行拖到同容器其它行之间重排（跨容器会被拒绝）
+function onLayerDown(e, i, row) {
+  if (e.pointerType !== 'mouse' || row.isSurface) return
+  layerDrag = { vid: row.vid, from: i, sx: e.clientX, sy: e.clientY, moved: false, to: -1 }
+  window.addEventListener('pointermove', onLayerMove)
+  window.addEventListener('pointerup', onLayerUp)
+  window.addEventListener('pointercancel', onLayerUp)
+}
+function onLayerMove(e) {
+  const d = layerDrag
+  if (!d) return
+  if (!d.moved) {
+    if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 6) return
+    d.moved = true
+  }
+  let idx = -1
+  document.querySelectorAll('.ce-ly-row').forEach((el, k) => {
+    const r = el.getBoundingClientRect()
+    if (e.clientY >= r.top && e.clientY <= r.bottom) idx = k
+  })
+  d.to = idx
+  dropIndex.value = idx
+}
+function onLayerUp() {
+  window.removeEventListener('pointermove', onLayerMove)
+  window.removeEventListener('pointercancel', onLayerUp)
+  const d = layerDrag
+  layerDrag = null
+  dropIndex.value = -1
+  if (!d || !d.moved) return
+  const target = layerTree.value[d.to]
+  if (!target || target.vid === d.vid) return
+  if (target.isSurface) { showLayerMsg('卡片根元素不能作为排序目标'); return }
+  const err = visualStageRef.value?.reorderLayer(d.vid, target.vid, d.to > d.from ? 'after' : 'before') || ''
+  if (err === 'cross-parent') showLayerMsg('仅支持同一容器内的元素排序（跨容器请用代码编辑）')
+  else if (err === 'surface') showLayerMsg('卡片根元素不能调整层级')
+  else if (err) showLayerMsg('排序失败：' + err)
+  else visualStageRef.value?.selectVid(d.vid)
+}
+
+// ================= 元素代码编辑（只编辑选中元素的 HTML） =================
 const elDesc = ref('')
 const elHtml = ref('')
 const elCodeErr = ref('')
@@ -1066,6 +1363,17 @@ document.addEventListener('mousedown', onDocMouseDown)
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', onDocKeydown)
   document.removeEventListener('mousedown', onDocMouseDown)
+  window.removeEventListener('pointermove', onPaletteMove)
+  window.removeEventListener('pointerup', onPaletteUp)
+  window.removeEventListener('pointercancel', onPaletteUp)
+  window.removeEventListener('pointermove', onLayerMove)
+  window.removeEventListener('pointerup', onLayerUp)
+  window.removeEventListener('pointercancel', onLayerUp)
+  clearTimeout(paletteTimer)
+  clearTimeout(layerMsgTimer)
+  palDrag?.layer?.remove()
+  palDrag = null
+  layerDrag = null
   if (ro) { ro.disconnect(); ro = null }
 })
 watch(
@@ -1369,17 +1677,19 @@ watch(
 }
 .ce-vs-btn {
   flex: 1;
+  min-width: 0;
   height: 30px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 5px;
   border: none;
   border-radius: 7px;
   background: transparent;
   color: #8a8986;
   font-size: 12px;
   font-weight: 600;
+  white-space: nowrap;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
@@ -1395,6 +1705,140 @@ watch(
   cursor: default;
 }
 .ce-vs-btn:disabled:hover { color: #8a8986; }
+
+/* ================= 组件库（组件页） ================= */
+.ce-palette,
+.ce-layers {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  background: #141518;
+  border: 1px solid #2a2b2f;
+  border-radius: 10px;
+}
+.ce-pal-tip {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: rgba(245, 166, 35, 0.08);
+  color: #b9b6ae;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.ce-pal-tip .material-symbols-outlined { font-size: 14px; color: #f5a623; flex: none; margin-top: 1px; }
+.ce-pal-group { flex: none; display: flex; flex-direction: column; gap: 6px; }
+.ce-pal-gtitle {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #7d7a73;
+}
+.ce-pal-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 6px;
+}
+.ce-pal-tile {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 9px;
+  border: 1px solid #2a2b2f;
+  border-radius: 9px;
+  background: #1b1c21;
+  color: #cfccc4;
+  font-size: 12px;
+  cursor: grab;
+  touch-action: manipulation;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.ce-pal-tile .material-symbols-outlined { font-size: 17px; color: #8a8986; }
+.ce-pal-tile em { font-style: normal; font-weight: 600; }
+.ce-pal-tile:hover {
+  background: #23242a;
+  border-color: rgba(245, 166, 35, 0.45);
+  color: #f5a623;
+}
+.ce-pal-tile:hover .material-symbols-outlined { color: #f5a623; }
+.ce-pal-tile:active { cursor: grabbing; }
+.ce-pal-msg {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: rgba(94, 196, 176, 0.12);
+  color: #5ec4b0;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.ce-pal-msg.err { background: rgba(240, 110, 110, 0.12); color: #f08a8a; }
+.ce-pal-msg .material-symbols-outlined { font-size: 14px; flex: none; margin-top: 1px; }
+
+/* ================= 图层页 ================= */
+.ce-ly-empty { margin: 0; font-size: 12px; color: #7d7a73; }
+.ce-ly-row {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: #1b1c21;
+  color: #cfccc4;
+  font-size: 12px;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background 0.15s, border-color 0.15s;
+}
+.ce-ly-row:hover { background: #23242a; }
+.ce-ly-row.on {
+  border-color: rgba(245, 166, 35, 0.5);
+  background: rgba(245, 166, 35, 0.12);
+  color: #f5a623;
+}
+.ce-ly-row.surf { color: #7d7a73; }
+.ce-ly-row.drop { box-shadow: 0 -2px 0 0 #f5a623; }
+.ce-ly-ic { font-size: 15px; flex: none; color: #8a8986; }
+.ce-ly-row.on .ce-ly-ic { color: #f5a623; }
+.ce-ly-name {
+  font-style: normal;
+  font-weight: 600;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ce-ly-acts { flex: none; display: flex; gap: 2px; }
+.ce-ly-acts button {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #8a8986;
+  cursor: pointer;
+}
+.ce-ly-acts button .material-symbols-outlined { font-size: 14px; }
+.ce-ly-acts button:hover { background: rgba(245, 166, 35, 0.16); color: #f5a623; }
+.ce-ly-acts button:disabled { opacity: 0.3; cursor: default; }
+.ce-ly-acts button:disabled:hover { background: transparent; color: #8a8986; }
 
 /* 元素代码视图：只编辑选中元素的 HTML */
 .ce-elcode {

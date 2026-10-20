@@ -676,31 +676,28 @@ export function tplWeather() {
 .wx>*:not(.wx-sky){position:relative;z-index:4}
 /* ---- 天空场景层（粒子常驻 DOM，按场景显隐） ---- */
 .wx-sky{position:absolute;inset:0;border-radius:inherit;overflow:hidden;z-index:0;pointer-events:none;clip-path:inset(0 round 14px)}
-/* clip-path 兜底：漂移云层的 translate3d 会被提升为合成层，Chromium 下祖先的
+/* clip-path 兜底：云层背景滚动会被提升为合成层，Chromium 下祖先的
    overflow:hidden+border-radius 对合成层裁剪不可靠（云角以直角溢出卡片圆角），
    clip-path 对合成层依然生效，保证任何场景内容都被圆角完整裁住 */
-/* ---- 真实云纹理层（AI 黑底白云 + screen 混合）----
-刻意不平铺、不纵向拉伸：background-size:cover 保住云团的原始比例（只截取纹理中部），
-元素左右各超出卡片 32% 而漂移幅度远小于该余量 → 纹理边缘永不入画：
-既没有平铺接缝，也不会出现「同一片云原地重现」的循环感。
-漂移用 ease-in-out 往返（alternate）并带轻微上下浮动，像真的云在风里缓缓移动。
-两层取自纹理的不同分区、不同高度：b = 高空卷云丝（纹理中段的丝带，覆盖卡片上端），
-a = 近景积云（纹理下半的云团，落在中下部），云的稀疏处彼此衔接 → 一整片连贯天空。
-两层遮罩均为「上下双向渐隐」（上缘渐隐区落在卡片外，因此不会削弱画面内的云，
-但能避免云层顶端直接撞上卡片顶边形成硬边）。---- */
-.wx-cl{display:none;position:absolute;left:-32%;width:164%;mix-blend-mode:screen;background-repeat:no-repeat;background-size:cover;animation:wxDrift ease-in-out infinite alternate;will-change:transform;pointer-events:none}
-.wx-cl.a{top:8%;height:66%;background-image:url(/img/wx/clouds-a.jpg);background-position:38% bottom;opacity:.5;animation-duration:118s;
+/* ---- 云纹理层（所有会显示云的场景共用：无缝循环滚动 + screen 混合）----
+纹理为边缘交叉淡化拼接的无缝图（clouds-*-loop.jpg，ffmpeg 将右尾平滑淡化叠到左头再裁边，
+非镜像拼接，无轴对称重复感），background-position-x 线性滑过恰好一个周期后回卷
+→ 首尾相连、单向匀速无限飘移，永不露白，且不需要超出卡面的额外宽度。
+近景积云 a 经 ::before/::after 拆成 3 层（各层平铺周期近大远小、起始相位与纵向错位），
+b 为高空卷云；两层遮罩均为「上下双向渐隐」，避免云层顶端撞卡片顶边形成硬边。---- */
+.wx-cl{display:none;position:absolute;left:0;width:100%;mix-blend-mode:screen;background-repeat:repeat-x;pointer-events:none}
+.wx-cl.a{top:-4%;height:34%;background-image:url(/img/wx/clouds-a-loop.jpg);background-size:880px 100%;background-position:0 bottom;opacity:.6;animation:wxScroll 320s linear infinite;
   -webkit-mask-image:linear-gradient(180deg,transparent 0,#000 12%,#000 74%,transparent 100%);mask-image:linear-gradient(180deg,transparent 0,#000 12%,#000 74%,transparent 100%)}
-.wx-cl.b{top:-16%;height:60%;background-image:url(/img/wx/clouds-b.jpg);background-position:60% center;opacity:.26;animation-duration:196s;animation-delay:-52s;
+.wx-cl.a::before{content:'';position:absolute;inset:0;background:url(/img/wx/clouds-a-loop.jpg) repeat-x 233px 88%/700px 118%;mix-blend-mode:screen;opacity:.35;animation:wxScroll2 380s linear infinite}
+.wx-cl.a::after{content:'';position:absolute;inset:0;background:url(/img/wx/clouds-a-loop.jpg) repeat-x 310px 96%/620px 112%;mix-blend-mode:screen;opacity:.25;animation:wxScroll3 465s linear infinite}
+.wx-cl.b{top:-6%;height:26%;background-image:url(/img/wx/clouds-b-loop.jpg);background-size:540px 100%;background-position:0 center;opacity:.42;animation:wxScroll4 135s linear infinite;
   -webkit-mask-image:linear-gradient(180deg,transparent 0,#000 16%,#000 62%,transparent 100%);mask-image:linear-gradient(180deg,transparent 0,#000 16%,#000 62%,transparent 100%)}
 /* ---- 烟雾层（雾天）：大幅烟雾纹理缓慢漂移 ---- */
 .wx-smk{display:none;position:absolute;left:-30%;width:160%;height:72%;mix-blend-mode:screen;background:url(/img/wx/smoke.jpg) center/cover no-repeat;animation:wxSmoke ease-in-out infinite alternate;pointer-events:none;
   -webkit-mask-image:linear-gradient(180deg,transparent 0,#000 24%,#000 76%,transparent 100%);mask-image:linear-gradient(180deg,transparent 0,#000 24%,#000 76%,transparent 100%)}
 .wx-smk.s1{top:6%;opacity:.4;animation-duration:26s}
 .wx-smk.s2{bottom:-4%;opacity:.26;animation-duration:37s;animation-direction:alternate-reverse}
-/* 云层漂移：小幅往返 + 轻微上下起伏；alternate 使位移首尾相接，永不跳变 */
-@keyframes wxDrift{from{transform:translate3d(2.4%,1.1%,0)}to{transform:translate3d(-2.4%,-1.1%,0)}}
-/* 阴天云循环滚动：纹理为边缘交叉淡化拼接的无缝图（clouds-*-loop.jpg，ffmpeg 将右尾平滑淡化叠到左头再裁边，
+/* 云层循环滚动（所有云场景共用）：纹理为边缘交叉淡化拼接的无缝图（clouds-*-loop.jpg，ffmpeg 将右尾平滑淡化叠到左头再裁边，
    非镜像拼接，无轴对称重复感；源图 clouds-*.jpg 约 1/4 宽为淡化带），
    background-position-x 线性滑过恰好一个周期后回卷 → 首尾相连、单向无限飘移，永不露白。
    每层独立平铺周期（近大远小：880/700/620px，卷云 540px）并匹配各自的 keyframes 滚动距离；
@@ -719,13 +716,7 @@ a = 近景积云（纹理下半的云团，落在中下部），云的稀疏处�
 /* ---- 场景元素可见性 ---- */
 .wx-sunny .wx-cl{display:none}          /* 晴天：干净天空，完全无云 */
 .wx-partly .wx-cl.b{display:block;opacity:.18}  /* 少云：一层薄云 */
-.wx-cloudy .wx-cl{display:block}        /* 多云/阴天：两层云 */
-/* 阴天云层：近景积云经 ::before/::after 伪元素拆成 3 层，各层平铺周期不同（近大远小），
-   起始相位错开防重叠，越下层越慢：320s/380s/465s，上层卷云 135s */
-.wx-cloudy .wx-cl.a{display:block;left:0;width:100%;top:-4%;height:34%;background-image:url(/img/wx/clouds-a-loop.jpg);background-repeat:repeat-x;background-size:880px 100%;background-position:0 bottom;opacity:.6;animation:wxScroll 320s linear infinite}   /* 近景主层（最大最快）：右移 */
-.wx-cloudy .wx-cl.a::before{content:'';position:absolute;inset:0;background:url(/img/wx/clouds-a-loop.jpg) repeat-x 233px 88%/700px 118%;mix-blend-mode:screen;opacity:.35;animation:wxScroll2 380s linear infinite}  /* 近景第 2 层：略小更慢，纵向错位 */
-.wx-cloudy .wx-cl.a::after{content:'';position:absolute;inset:0;background:url(/img/wx/clouds-a-loop.jpg) repeat-x 310px 96%/620px 112%;mix-blend-mode:screen;opacity:.25;animation:wxScroll3 465s linear infinite}   /* 近景第 3 层（最小最慢） */
-.wx-cloudy .wx-cl.b{display:block;left:0;width:100%;top:-6%;height:26%;background-image:url(/img/wx/clouds-b-loop.jpg);background-repeat:repeat-x;background-size:540px 100%;background-position:0 center;opacity:.42;animation:wxScroll4 135s linear infinite}  /* 高空卷云（最上）：最快，视差 */
+.wx-cloudy .wx-cl{display:block}        /* 多云/阴天：两层云（近景积云 3 尺度 + 高空卷云，见上方共用滚动层） */
 .wx-rain .wx-cl{display:block;filter:brightness(.6) saturate(.8)}
 .wx-rain .wx-cl.b{opacity:.2}
 .wx-thunder .wx-cl{display:block;filter:brightness(.4) saturate(.7)}
@@ -755,6 +746,8 @@ a = 近景积云（纹理下半的云团，落在中下部），云的稀疏处�
 .wx-windy .wx-sky{background:linear-gradient(180deg,#4a5c86 0%,#66799f 42%,#97a8c2 74%,#bcc8d9 100%)}  /* 与阴天共用蓝灰天幕 */
 .wx-windy .wx-cl{display:block}
 .wx-windy .wx-cl.a{animation-duration:26s}
+.wx-windy .wx-cl.a::before{animation-duration:31s}
+.wx-windy .wx-cl.a::after{animation-duration:38s}
 .wx-windy .wx-cl.b{animation-duration:34s}
 .wx-windy.wx-dark .wx-cl{filter:brightness(.5)}
 .wx-heavy .wx-sky{background:linear-gradient(180deg,#283646 0%,#374a5e 50%,#5a7288 75%,#7a91a3 100%)}
@@ -789,7 +782,7 @@ a = 近景积云（纹理下半的云团，落在中下部），云的稀疏处�
 架构约定（关键）：场景 class 由本引擎独占写入，Vue 只负责 data-* 属性，
 两者互不覆盖 —— 彻底消除「Vue 刷新把 class 覆盖回实时值」导致的动画分裂/不生效问题。
 幂等重启、DOM 重建后认领新 canvas、页面隐藏/卡片离场自动暂停。 */
-var WX_VER = 19 /* 迁移版本标记：dashboard.js upgradeWeatherCard 据此重写旧卡代码 */
+var WX_VER = 20 /* 迁移版本标记：dashboard.js upgradeWeatherCard 据此重写旧卡代码 */
 if (el._wxStop) { el._wxStop() }
 var cv = el.querySelector('.wx-cv')
 if (!cv) return
@@ -1002,11 +995,26 @@ function drawSun(t) {
   ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(sx, sy, hr, 0, 6.29); ctx.fill()
   // 4. 太阳核心：纯白小圆
   ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(sx, sy, 7.5 * k, 0, 6.29); ctx.fill()
-  // 5. 镜头光斑：沿太阳→画面中心对角线的淡彩圆形 bokeh（透过镜片看到的反射光斑）
+  // 5. 镜头光斑：沿太阳→画面中心的镜头轴线散布的圆形「透明光点」（对焦失焦的 bokeh），
+  //    中心淡色 → 向外经多段停靠点平滑衰减到全透明，边缘完全虚化、无硬边圆盘；
+  //    尺寸放大到与卡面比例相当，像参考图那样在天空上留下朦胧的圆形光晕
   var dx = W / 2 - sx, dy = H / 2 - sy
-  var fl = [[1.5, 13, 'rgba(150,190,255,.07)'], [2.2, 7, 'rgba(255,215,160,.09)'], [2.9, 20, 'rgba(170,205,255,.05)']]
+  var fl = [
+    [1.12, 34, '208,226,255', .10],
+    [1.48, 26, '255,238,206', .09],
+    [1.9, 40, '196,216,255', .08],
+    [2.35, 20, '255,220,176', .07],
+    [2.85, 30, '206,224,255', .06],
+  ]
   for (var j = 0; j < fl.length; j++) {
-    ctx.fillStyle = fl[j][2]; ctx.beginPath(); ctx.arc(sx + dx * fl[j][0], sy + dy * fl[j][0], fl[j][1] * k, 0, 6.29); ctx.fill()
+    var fx = sx + dx * fl[j][0], fy = sy + dy * fl[j][0], fr = fl[j][1] * k
+    var fg = ctx.createRadialGradient(fx, fy, 0, fx, fy, fr)
+    fg.addColorStop(0, 'rgba(' + fl[j][2] + ',' + fl[j][3] + ')')
+    fg.addColorStop(.35, 'rgba(' + fl[j][2] + ',' + (fl[j][3] * .7) + ')')
+    fg.addColorStop(.65, 'rgba(' + fl[j][2] + ',' + (fl[j][3] * .28) + ')')
+    fg.addColorStop(1, 'rgba(' + fl[j][2] + ',0)')
+    ctx.fillStyle = fg
+    ctx.beginPath(); ctx.arc(fx, fy, fr, 0, 6.29); ctx.fill()
   }
   // 6. 彩虹光环：围绕太阳的完整圆环，半径为卡片短边的 1/2；
   //    圆心在太阳正下方 R/2 处 → 太阳位于环内偏心靠上；

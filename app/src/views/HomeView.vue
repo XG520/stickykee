@@ -181,16 +181,28 @@
           </div>
           <div class="max-h-[40vh] overflow-y-auto -mx-0.5 px-0.5 pb-0.5 hc-panel-scroll">
             <div v-for="g in addGroups" :key="g.name" class="mb-2 last:mb-0">
-              <p class="text-muted text-[10px] font-body mb-1">{{ g.name }}</p>
+              <p class="text-muted text-[10px] font-body mb-1 flex items-center justify-between pr-0.5">
+                <span>{{ g.name }}</span>
+                <span v-if="g.name === '我的模板'" class="text-[10px] opacity-60">模板由「卡片工作室 → 保存为模板」生成</span>
+              </p>
               <div class="grid grid-cols-2 gap-1.5">
                 <button
                   v-for="opt in g.items"
                   :key="opt.type"
+                  class="min-h-[38px] relative flex items-center gap-1.5 pl-2 pr-6 py-1.5 rounded-lg bg-surface border border-border hover:border-primary/50 hover:bg-primary/5 active:scale-[.98] transition-all text-xs text-on-surface text-left"
+                  :class="{ 'border-primary/40 bg-primary/5': isUserTemplate(opt.type) }"
                   @click="addCard(opt)"
-                  class="min-h-[38px] flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-surface border border-border hover:border-primary/50 hover:bg-primary/5 active:scale-[.98] transition-all text-xs text-on-surface text-left"
                 >
                   <span class="material-symbols-outlined text-[17px] shrink-0" :class="opt.colorCls">{{ opt.icon }}</span>
                   <span class="min-w-0 flex-1 truncate">{{ opt.label }}</span>
+                  <button
+                    v-if="isUserTemplate(opt.type)"
+                    @click.stop="removeUserTemplate(opt.type)"
+                    class="absolute right-0.5 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center rounded-md text-error hover:bg-error/15 transition-colors"
+                    title="删除该模板" aria-label="删除模板"
+                  >
+                    <span class="material-symbols-outlined text-sm">close</span>
+                  </button>
                 </button>
               </div>
             </div>
@@ -516,6 +528,7 @@ import CodeCard from '@/components/cards/CodeCard.vue'
 import CardEditor from '@/components/cards/CardEditor.vue'
 import ApkDashPane from '@/components/ApkDashPane.vue'
 import { cardDefaults } from '@/components/cards/defaults'
+import { isUserTemplate, deleteTemplate } from '@/composables/useCustomTemplates'
 import EmptyState from '@/components/EmptyState.vue'
 import { newCard, newPage, migrateDashboard, serializeDashboard, downloadDashboard, parseImportPayload, autoComposeHomepage, LAYOUT_KEY_WEB, LAYOUT_KEY_APK, layoutKeyFor, colsKeyFor, moveCards, removeCards } from '@/utils/dashboard'
 import { getDeviceId, listDevices } from '@/utils/device'
@@ -945,8 +958,17 @@ function addCard(opt) {
     card.entity_id = opts[0].id
     if (['generic', 'person', 'group'].includes(opt.type)) card.entity_ids = [opts[0].id]
   }
+  // 自定义卡 / 用户模板：新建后立即打开编辑弹窗，空卡自动进设计模式
+  if (opt.type === 'custom') card._autoDesign = true
+  if (isUserTemplate(opt.type)) card._autoDesign = true
   cards.value.push(card)
   openEditor(card)
+}
+async function removeUserTemplate(type) {
+  if (!confirm('确认删除这个卡片模板？（已用该模板创建的卡片不受影响）')) return
+  try {
+    await deleteTemplate(type)
+  } catch { /* prefs 离线：本地体验不变 */ }
 }
 function removeCard(card) {
   const i = cards.value.indexOf(card)

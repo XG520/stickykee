@@ -134,6 +134,14 @@ async function restoreTheme() {
     applyTheme(r.themeKey, r.themeKey === 'custom' && r.colors ? r.colors : r.customHex)
   } catch { /* 无会话/离线：保持本地缓存主题 */ }
 }
+// 用户自定义模板：从 prefs 加载并热注入 cardDefaults，让「添加卡片」面板立即出现。
+// 与 restoreTheme 并行，结果独立（模板失败不影响其他启动流程）。
+async function restoreTemplates() {
+  try {
+    const mod = await import('@/composables/useCustomTemplates')
+    await mod.loadTemplates()
+  } catch { /* 离线 / prefs 暂不可达：模板在下次登录后再恢复 */ }
+}
 
 // 登录态变化：登录成功 → 加载实例 + 恢复后端主题；
 // 退出登录 → 回到登录页并恢复本地缓存主题。
@@ -143,6 +151,7 @@ watch(
     if (u) {
       loadInstances()
       restoreTheme()
+      restoreTemplates()
       // 登录后常驻自动同步：自动定位 + 自动上传传感器（无需手动）
       startAutoSync()
       // 人接近自动亮屏（依赖环境光阴影 + 屏幕唤醒锁，不支持时返回 null）
@@ -162,5 +171,6 @@ watch(
 onMounted(() => {
   loadThemeFromCache()
   restoreTheme()
+  restoreTemplates()
 })
 </script>

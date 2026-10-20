@@ -26,6 +26,22 @@ export const cardDefaults = {
   // entityOptional：可不绑定实体（未指定时自动取第一个 weather 实体），也可在属性面板手动指定来源实体
   weather: mk({ label: '天气', icon: 'partly_cloudy_day', colorCls: 'text-info', w: 2, h: 2, needEntity: false, entityOptional: true, entityDomains: ['weather'], group: '基础仪表盘' }, tplWeather),
   map: mk({ label: '地图', icon: 'map', colorCls: 'text-accent', w: 4, h: 2, needEntity: false, entityDomains: null, group: '基础仪表盘' }, tplMap),
+  // 黄历 / 日历：默认 2×2；needEntity=false + entityOptional=true —— 零 HA 配置即可用（前端本地计算），
+  // 但用户可手动绑定天元历法 / HA calendar 等实体，其 attributes 作为覆盖层（宜忌/冲煞等优先用集成提供的值）
+  almanac: {
+    label: '日历',
+    icon: 'calendar_month',
+    colorCls: 'text-warning',
+    w: 2,
+    h: 2,
+    needEntity: false,
+    entityOptional: true,
+    entityDomains: ['sensor', 'calendar', 'date', 'datetime', 'time', 'input_datetime'],
+    group: '基础仪表盘',
+    html: '<div class="hc-almanac" data-almanac></div>',
+    css: '',
+    js: '',
+  },
   // 基础开关：未指定实体时自动取第一个开关类实体，也可在属性面板手动指定
   toggle: mk({ label: '开关', icon: 'toggle_on', colorCls: 'text-primary', w: 1, h: 1, needEntity: false, entityOptional: true, entityDomains: ['switch', 'light', 'plug', 'valve', 'input_boolean', 'fan', 'humidifier', 'group', 'remote', 'siren'], group: '基础仪表盘' }, tplToggle),
   clock: mk({ label: '时钟', icon: 'av_timer', colorCls: 'text-info', w: 1, h: 1, needEntity: false, entityDomains: null, group: '基础仪表盘' }, tplClock),
@@ -68,6 +84,22 @@ export const cardDefaults = {
   generic: mk({ label: '通用卡片', icon: 'widgets', colorCls: 'text-accent', w: 2, h: 2, needEntity: true, entityDomains: null, group: '通用' }, tplGeneric),
   // 实体组：一个组（如「卧室」）装该组全部设备，卡面即设备列表，点开弹窗集中控制
   group: mk({ label: '实体组', icon: 'group_work', colorCls: 'text-primary', w: 2, h: 2, needEntity: true, entityDomains: null, group: '通用' }, tplGroup),
+
+  // ---- 自定义卡：用户自己从空白搭起；needEntity=false，没有绑定实体时也能正常渲染
+  custom: {
+    label: '自定义',
+    icon: 'construction',
+    colorCls: 'text-muted',
+    w: 1,
+    h: 1,
+    needEntity: false,
+    entityDomains: null,
+    group: '自定义',
+    // 模板只有一个居中占位提示；用户一进设计模式就能在里面自由搭积木（组件库 / 代码都可以）
+    html: '<div class="hc-custom-empty" style="display:flex;align-items:center;justify-content:center;height:100%;width:100%;color:var(--hc-sub);font-size:10px;text-align:center;line-height:1.5;padding:6px;box-sizing:border-box"><div><span class="material-symbols-outlined" style="font-size:18px;display:block;margin-bottom:4px;color:var(--hc-color,var(--hc-primary))">draw</span>点卡片右上角齿轮 → 选设计 → 从右侧组件库搭积木</div></div>',
+    css: '.hc-custom-empty .material-symbols-outlined{opacity:.9}',
+    js: '',
+  },
 }
 
 // ================= 占位符渲染 =================
