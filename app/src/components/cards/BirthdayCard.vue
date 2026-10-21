@@ -4,8 +4,8 @@
     <template v-if="mode === 'list'">
       <div class="bd-head">
         <span class="material-symbols-outlined bd-hicon">cake</span>
-        <span class="bd-title">生日</span>
-        <button class="bd-add" title="添加生日" @click.stop="openEdit(null)">
+        <span class="bd-title">{{ headTitle }}</span>
+        <button v-if="!denied" class="bd-add" title="添加生日" @click.stop="openEdit(null)">
           <span class="material-symbols-outlined">add</span>
         </button>
       </div>
@@ -16,9 +16,9 @@
           <span class="bd-date">{{ r.dateText }}</span>
           <span class="bd-count" :class="{ zero: r.days === 0 }">{{ r.days === 0 ? '今天' : r.days + '天' }}</span>
         </button>
-        <div v-if="!rows.length" class="bd-empty" @click.stop="openEdit(null)">
+        <div v-if="!rows.length" class="bd-empty" @click.stop="!denied && openEdit(null)">
           <span class="material-symbols-outlined">cake</span>
-          <span>添加第一个生日</span>
+          <span>{{ denied ? '无权限查看该账号生日' : '添加第一个生日' }}</span>
         </div>
       </div>
     </template>
@@ -27,17 +27,17 @@
     <template v-else>
       <div class="bd-head">
         <span class="material-symbols-outlined bd-hicon">cake</span>
-        <span class="bd-title">生日倒计时</span>
-        <button class="bd-add" title="添加生日" @click.stop="openEdit(null)"><span class="material-symbols-outlined">add</span></button>
+        <span class="bd-title">{{ headTitle }}</span>
+        <button v-if="!denied" class="bd-add" title="添加生日" @click.stop="openEdit(null)"><span class="material-symbols-outlined">add</span></button>
       </div>
       <div v-if="next" class="bd-cd" @click.stop="openEdit(next)">
         <div class="bd-cd-name">{{ next.name }}</div>
         <div class="bd-cd-num">{{ next.days === 0 ? '今天' : next.days }}</div>
         <div class="bd-cd-unit">{{ next.days === 0 ? '祝你生日快乐' : '天后 · ' + next.dateText }}</div>
       </div>
-      <div v-else class="bd-empty" @click.stop="openEdit(null)">
+      <div v-else class="bd-empty" @click.stop="!denied && openEdit(null)">
         <span class="material-symbols-outlined">cake</span>
-        <span>添加第一个生日</span>
+        <span>{{ denied ? '无权限查看该账号生日' : '添加第一个生日' }}</span>
       </div>
     </template>
 
@@ -83,23 +83,49 @@
 <script setup>
 // 生日卡 / 生日倒计时卡：共用本组件与 prefs 键 birthdays（跨端同步，随面板加载读取）。
 // 点卡片行或「+」打开编辑弹窗（称呼 / 公历-农历 / 月日 / 删除）。
+// user 属性（卡片 HTML data-user="账号"）：展示指定账号的生日，走管理员接口读写，
+// 仅管理员可用；普通用户打开该卡片显示「无权限查看」。
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { getPrefs, putPrefs } from '@/utils/prefs'
 import { nextBirthday, birthdayDateText, readBirthdays } from '@/utils/birthday'
+import api from '@/api'
 import UiSelect from '@/components/ui/UiSelect.vue'
 
-const props = defineProps({ mode: { type: String, default: 'list' } })
+const props = defineProps({
+  mode: { type: String, default: 'list' },
+  user: { type: String, default: '' },
+})
 
 const now = ref(new Date())
 const list = ref([])
+const denied = ref(false)
 let timer = null
+
+// 绑定其他账号时标题带账号名，便于与本人生日卡区分
+const headTitle = computed(() => {
+  const base = props.mode === 'list' ? '生日' : '生日倒计时'
+  return props.user ? `${base} · ${props.user}` : base
+})
 
 onMounted(async () => {
   timer = setInterval(() => { now.value = new Date() }, 60000)
+  if (props.user) {
+    try {
+      const { data } = await api.getUserBirthdays(props.user)
+      list.value = Array.isArray(data) ? data : []
+    } catch { denied.value = true }
+    return
+  }
   const { data } = await getPrefs()
   list.value = readBirthdays(data?.birthdays)
 })
 onBeforeUnmount(() => clearInterval(timer))
+
+// 持久化：本人走 /prefs（服务端据此同步 HA 生日传感器）；指定账号走管理员接口（同样触发同步）
+function persist() {
+  if (props.user) return api.setUserBirthdays(props.user, list.value).catch(() => {})
+  return putPrefs({ birthdays: JSON.stringify(list.value) }).catch(() => {})
+}
 
 // 按倒计时排序的行（今天生日排最前）
 const rows = computed(() => {
@@ -137,15 +163,14 @@ function save() {
   if (!e) return
   const item = { id: e.id || Date.now().toString(36), name: e.name || '生日', calendar: e.calendar, month: e.month, day: e.day }
   list.value = e.id ? list.value.map((x) => (x.id === e.id ? item : x)) : [...list.value, item]
-  // /prefs 通道只收字符串值：序列化后保存，服务端据此同步该账号的 HA 生日传感器
-  putPrefs({ birthdays: JSON.stringify(list.value) }).catch(() => {})
+  persist()
   editing.value = null
 }
 function remove() {
   const e = editing.value
   if (!e?.id) return
   list.value = list.value.filter((x) => x.id !== e.id)
-  putPrefs({ birthdays: JSON.stringify(list.value) }).catch(() => {})
+  persist()
   editing.value = null
 }
 </script>

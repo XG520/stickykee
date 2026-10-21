@@ -1,12 +1,10 @@
 package handler
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"stickynuo/server/internal/auth"
@@ -459,13 +457,9 @@ func (h *Prefs) Put(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	// 生日变更：异步同步该账号的 HA 生日传感器（注册+推送，见 birthdays.go）
+	// 生日变更：异步同步该账号的 HA 生日传感器（限频入口，防高频写放大 HA 请求）
 	if _, touched := body["birthdays"]; touched && h.bd != nil {
-		go func(u string) {
-			c, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-			defer cancel()
-			h.bd.SyncUser(c, u)
-		}(username)
+		h.bd.RequestSync(username)
 	}
 
 	// 仪表盘已变更：经 WebSocket 通知本人全部设备热刷新（含发起保存的设备，

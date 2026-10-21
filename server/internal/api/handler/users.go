@@ -86,6 +86,10 @@ func (h *Users) Create(w http.ResponseWriter, r *http.Request) {
 		WriteErr(w, 400, "reserved", "该用户名为系统保留（智家助手）")
 		return
 	}
+	if p.Username == bdRegBackendUser {
+		WriteErr(w, 400, "reserved", "该用户名为系统保留（服务端虚拟设备）")
+		return
+	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(p.Password), bcrypt.DefaultCost)
 	if err != nil {
 		WriteErr(w, 500, "internal", "hash failed")

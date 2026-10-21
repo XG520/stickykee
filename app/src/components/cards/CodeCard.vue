@@ -449,6 +449,7 @@ async function mountBirthday() {
   if (!holder || birthdayApp) return
   birthdayApp = createApp(BirthdayCard, {
     mode: holder.dataset.mode === 'countdown' ? 'countdown' : 'list',
+    user: holder.dataset.user || '', // data-user="账号"：展示指定账号生日（仅管理员接口可读）
   })
   birthdayApp.mount(holder)
 }
