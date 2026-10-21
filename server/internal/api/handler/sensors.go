@@ -47,6 +47,12 @@ var SENSOR_DEFS = []SensorDef{
 	{Key: "geocoded_location", Name: "Geocoded Location", Icon: "mdi:map-marker", Category: "diagnostic", Label: "所在位置", Desc: "基于定位解析的地址（需浏览器授权定位）"},
 }
 
+// sensorDefVersion 传感器定义版本：每次修改 SENSOR_DEFS 的元数据（device_class/state_class/unit）
+// 就 +1。HA 侧实体注册信息只在首次注册时落库，后续不会再校验；版本升级后由 registerSensors
+// 对已登记项重发一次 register_sensor，让 HA 按「更新」覆盖为新定义（含显式 null 清理旧字段），
+// 否则历史误标 state_class 的字符串传感器会持续在 HA 日志刷 ValueError。
+const sensorDefVersion = 2
+
 // sensorDefByKey 按 key 查传感器注册表项；未命中返回空项（icon 默认 mdi:cellphone）。
 func sensorDefByKey(key string) SensorDef {
 	for _, d := range SENSOR_DEFS {
@@ -109,6 +115,8 @@ type mobileReg struct {
 	DeviceID  string          `json:"device_id"`
 	DevID     string          `json:"dev_id"` // 稳定 dev_id，用于构造 unique_id
 	Sensors   map[string]bool `json:"sensors"`
+	// DefVersion 已按 sensorDefVersion 完成注册同步的定义版本；低于当前值说明需要重注册一遍。
+	DefVersion int `json:"def_version,omitempty"`
 }
 
 // Report POST /instances/{id}/sensors/report
@@ -194,7 +202,7 @@ func (h *Sensors) Report(w http.ResponseWriter, r *http.Request) {
 // pushStates 登记未注册的传感器实体并上报状态，返回实际上报的传感器数量。
 // 若 registerSensors 或 update_sensor_states 失败（设备已被 HA 删除），返回错误供上层重注册。
 func (h *Sensors) pushStates(ctx context.Context, username string, rest *client.Rest, reg *mobileReg, body sensorReport, enabled map[string]bool) (int, error) {
-	if err := h.registerSensors(ctx, username, rest, reg, enabled); err != nil {
+	if err := h.registerSensors(ctx, username, rest, reg, enabled, body); err != nil {
 		return 0, err
 	}
 	states := make([]map[string]any, 0, len(enabled))
@@ -363,16 +371,23 @@ func (h *Sensors) doRegister(ctx context.Context, username string, rest *client.
 	if osName == "" {
 		osName = "web"
 	}
+	// HA 移动应用注册要求 os_version 存在：缺该字段时 HA 能创建条目，但每次启动
+	// async_setup_entry 都会 KeyError('os_version')，设备与 webhook 全部不可用。
+	// 协议允许任意字符串，非 App 上报场景（纯浏览器）用服务端版本号兜底，绝不留空。
+	osVersion := body.OSVersion
+	if osVersion == "" {
+		osVersion = Version
+	}
 	payload := map[string]any{
 		"app_id":              "stickynuo",
 		"app_name":            "stickynuo",
-		"app_version":         "1.0.0",
+		"app_version":         Version,
 		"device_id":           "stickynuo_" + dev.DevID,
 		"device_name":         deviceName,
 		"manufacturer":        manufacturer,
 		"model":               model,
 		"os_name":             osName,
-		"os_version":          body.OSVersion,
+		"os_version":          osVersion,
 		"supports_encryption": false,
 	}
 	var resp struct {
@@ -405,40 +420,73 @@ func (h *Sensors) doRegister(ctx context.Context, username string, rest *client.
 	return &reg, nil
 }
 
-// registerSensors 经官方 webhook 协议逐个登记尚未注册的传感器实体（忽略 already_registered）。
-func (h *Sensors) registerSensors(ctx context.Context, username string, rest *client.Rest, reg *mobileReg, enabled map[string]bool) error {
+// sensorRegisterPayload 构造 register_sensor 的 data。
+// device_class/unit_of_measurement/state_class/entity_category 一律显式给出（未设置时为 null）：
+// HA 对已存在实体的重复注册按「更新」处理，会把请求里的字段覆盖到实体与注册表，
+// 显式 null 才能清掉历史版本误标的 state_class（仅省略字段不会清除，旧值会一直保留）。
+func sensorRegisterPayload(def SensorDef, sv *sensorValue) map[string]any {
+	nullIfEmpty := func(s string) any {
+		if s == "" {
+			return nil
+		}
+		return s
+	}
+	p := map[string]any{
+		"type":                "sensor",
+		"unique_id":           def.Key,
+		"name":                def.Name,
+		"icon":                def.Icon,
+		"unit_of_measurement": nullIfEmpty(def.Unit),
+		"device_class":        nullIfEmpty(def.DeviceClass),
+		"state_class":         nullIfEmpty(def.StateClass),
+		"entity_category":     nullIfEmpty(def.Category),
+	}
+	// 重注册会顺带覆盖状态：必须带上本次上报的当前值，否则 HA 会把实体状态写成 unknown。
+	if sv != nil {
+		p["state"] = sv.State
+		if len(sv.Attributes) > 0 {
+			p["attributes"] = sv.Attributes
+		}
+	}
+	return p
+}
+
+// registerSensors 经官方 webhook 协议登记传感器实体。
+// 两类情况会重发 register_sensor：
+//   - 首次启用（本地无登记记录）；
+//   - 定义版本落后（sensorDefVersion 升级后清理/校正 HA 侧旧元数据），此时仅同步本次带值的项，
+//     避免把未上报的传感器状态写成 unknown。
+func (h *Sensors) registerSensors(ctx context.Context, username string, rest *client.Rest, reg *mobileReg, enabled map[string]bool, body sensorReport) error {
 	regs := h.readRegs(ctx, username)
 	current := regs[reg.DeviceID]
 	if current.Sensors == nil {
 		current.Sensors = map[string]bool{}
 	}
+	// 定义版本升级 → 对已登记项做一次同步重注册
+	syncDefs := current.DefVersion < sensorDefVersion
+	pending := false
 	changed := false
 	for _, def := range SENSOR_DEFS {
-		if !enabled[def.Key] || current.Sensors[def.Key] {
+		if !enabled[def.Key] {
 			continue
 		}
-		regPayload := map[string]any{
-			"type":      "sensor",
-			"unique_id": def.Key,
-			"name":      def.Name,
-			"icon":      def.Icon,
+		registered := current.Sensors[def.Key]
+		if registered && !syncDefs {
+			continue
 		}
-		if def.Unit != "" {
-			regPayload["unit_of_measurement"] = def.Unit
+		var sv *sensorValue
+		if v, ok := body.Sensors[def.Key]; ok {
+			sv = &v
 		}
-		if def.DeviceClass != "" {
-			regPayload["device_class"] = def.DeviceClass
-		}
-		if def.StateClass != "" {
-			regPayload["state_class"] = def.StateClass
-		}
-		if def.Category != "" {
-			regPayload["entity_category"] = def.Category
+		// 版本同步时若本次没有该项的值，跳过等下次上报，避免把状态刷成 unknown
+		if registered && sv == nil {
+			pending = true
+			continue
 		}
 		// 官方 webhook 协议：POST /api/webhook/{webhook_id} {type: register_sensor, data: {...}}
 		if err := rest.PostJSON(ctx, "/api/webhook/"+reg.WebhookID,
-			map[string]any{"type": "register_sensor", "data": regPayload}, nil); err != nil {
-			// 已登记过（例如传感器此前已启用、或 HA 侧已存在）→ 忽略。
+			map[string]any{"type": "register_sensor", "data": sensorRegisterPayload(def, sv)}, nil); err != nil {
+			// 旧版 HA 对重复注册返回 already_registered → 视为已登记
 			if !strings.Contains(err.Error(), "already_registered") {
 				return err
 			}
@@ -446,7 +494,16 @@ func (h *Sensors) registerSensors(ctx context.Context, username string, rest *cl
 		current.Sensors[def.Key] = true
 		changed = true
 	}
+	// 仍有未同步项 → 不推进版本号，下次带值上报时继续同步
+	if syncDefs && !pending {
+		current.DefVersion = sensorDefVersion
+		changed = true
+	}
 	if changed {
+		current.WebhookID = reg.WebhookID
+		current.Secret = reg.Secret
+		current.DeviceID = reg.DeviceID
+		current.DevID = reg.DevID
 		regs[reg.DeviceID] = current
 		if err := h.saveRegs(ctx, username, regs); err != nil {
 			return err

@@ -26,6 +26,18 @@ RUN go mod download
 COPY server/ ./
 RUN go build -trimpath -ldflags="-s -w" -o /out/stickynuo ./cmd/server
 
+# ---------- APK 版本 sidecar：构建期自动提取，无需人工维护 ----------
+# 版本号由 scripts/bump-version.ps1 保证 app/package.json 与 build.gradle versionName
+# 同步，故从 package.json 提取即等价于 APK 实际版本（.dockerignore 排除了 apk/ 目录，
+# build.gradle 不在构建上下文，故不直接读它）。
+# 历史事故：手工打包漏改 release/app_version.txt，镜像内 sidecar 停留旧版，
+# /api/v1/app/info 一直报旧版本，客户端误判「已是最新」。
+FROM alpine:3.20 AS apkver
+COPY app/package.json /tmp/package.json
+RUN v=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' /tmp/package.json | head -1) \
+ && { [ -n "$v" ] || { echo 'FATAL: 无法从 app/package.json 提取 version' >&2; exit 1; }; } \
+ && printf '%s\n' "$v" > /tmp/app_version.txt
+
 # ---------- 运行层：单二进制 + 前端产物，数据统一落 /data 卷 ----------
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates tzdata \
@@ -43,10 +55,10 @@ COPY --from=web /web/dist ./dist
 #   $ mkdir -p release && cp apk/android/app/build/outputs/apk/debug/app-debug.apk release/stickykee-app.apk
 # 无 APK 时此 COPY 会构建失败——按需注释掉下行与 SN_APK_FILE。
 COPY release/stickykee-app.apk /var/apk/stickykee-app.apk
-# APK 版本 sidecar：打包流程从 build.gradle 提取 versionName 写入
-# release/app_version.txt，后端 /api/v1/app/info 读它向 APK 客户端发布新版本号。
-# 必须用 COPY 把构建上下文里的文件带进本层（RUN 里直接判断宿主路径永远不存在）。
-COPY release/app_version.txt /var/apk/app_version.txt
+# APK 版本 sidecar：由上面 apkver 阶段在构建期从 app/package.json 自动生成，
+# 后端 /api/v1/app/info 读它向 APK 客户端发布新版本号；不再依赖人工同步的
+# release/app_version.txt（该文件仍由 bump-version.ps1 维护，供本地打包流程使用）。
+COPY --from=apkver /tmp/app_version.txt /var/apk/app_version.txt
 # 数据库、聊天图片（/data/uploads/im）、图标缓存（/data/icons）都在 /data 下
 ENV SN_HTTP_ADDR=:8080 \
     SN_DB_PATH=/data/stickynuo.db \

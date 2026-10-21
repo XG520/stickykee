@@ -147,11 +147,12 @@
 </template>
 
 <script setup>
-import { ref, computed, reactive, watch, onMounted, onUnmounted } from 'vue'
+import { computed, reactive, watch, onMounted, onUnmounted } from 'vue'
 import api from '@/api'
 import { store, requestEntityRefresh } from '@/store'
 import { iconFor, domainGlyph, domainColorCls, isAvailable } from '@/utils/entities'
 import { buildControls, buildServiceCall, stateLabelOf } from '@/utils/entityControls'
+import { setOptimistic, clearOptimistic, applyOptimistic, setServiceOptimistic } from '@/composables/useOptimistic'
 import UiSelect from '@/components/ui/UiSelect.vue'
 
 const props = defineProps({
@@ -159,19 +160,22 @@ const props = defineProps({
 })
 const emit = defineEmits(['close'])
 
-const controls = computed(() => buildControls(props.entity))
+// 面板数据源：实体经乐观覆盖包层（点击任意控件立即按目标态渲染，校正由 useOptimistic 统一管理）。
+// 控件模型/状态文案/图标/属性明细全部读包层后的实体，一处覆盖全面板联动。
+const ent = computed(() => applyOptimistic(props.entity))
+const controls = computed(() => buildControls(ent.value))
 const power = computed(() => controls.value.find((c) => c.kind === 'toggle') || null)
 const readonly = computed(() => controls.value.filter((c) => c.kind === 'readonly'))
 const writableControls = computed(() => controls.value.filter((c) => c.kind !== 'toggle' && c.kind !== 'readonly'))
 // 只读读数：优先用显式 readonly 控件，其次用可写 range 的当前值已在控件内展示，不重复
 const readouts = computed(() => readonly.value)
 
-const writable = computed(() => isAvailable(props.entity))
+const writable = computed(() => isAvailable(ent.value))
 
-const glyph = computed(() => iconFor(props.entity, domainGlyph[props.entity.domain] || 'widgets'))
+const glyph = computed(() => iconFor(ent.value, domainGlyph[ent.value.domain] || 'widgets'))
 const name = computed(() => props.entity.friendly_name || props.entity.entity_id)
-const stateLabel = computed(() => stateLabelOf(props.entity))
-const cls = computed(() => domainColorCls[props.entity.domain] || 'text-primary')
+const stateLabel = computed(() => stateLabelOf(ent.value))
+const cls = computed(() => domainColorCls[ent.value.domain] || 'text-primary')
 const accentText = computed(() => cls.value)
 const accentBg = computed(() => ({
   'text-warning': 'bg-warning',
@@ -185,12 +189,10 @@ const accentBg = computed(() => ({
 // ---- 本地编辑态：拖动滑条/输入框时不与实时推送互相打架 ----
 const localVals = reactive({})
 const drafts = reactive({})
-const toggleOverride = ref(null)
 
 watch(() => props.entity.entity_id, () => {
   for (const k of Object.keys(localVals)) delete localVals[k]
   for (const k of Object.keys(drafts)) delete drafts[k]
-  toggleOverride.value = null
   for (const c of controls.value) {
     if (c.kind === 'text' || c.kind === 'datetime') drafts[c.id] = c.value
   }
@@ -206,14 +208,16 @@ function fmt(v) {
 }
 function hasOption(c, v) { return (c.options || []).some((o) => String(o.value) === String(v)) }
 
-// ---- 写入：统一经 buildServiceCall 生成服务载荷 ----
+// ---- 写入：统一经 buildServiceCall 生成服务载荷；乐观覆盖由服务语义映射 ----
 function send(control, value) {
   const payload = buildServiceCall(control, value)
   if (!payload) return Promise.resolve()
   const { domain, service, data } = payload
+  // 乐观更新：模式芯片/按钮/数值提交均立即按目标态渲染；失败回滚，WS 确认/超时校正
+  const patched = setServiceOptimistic(props.entity.entity_id, domain, service, data || {})
   return api.callService(store.activeID, {
     domain, service, entity_id: props.entity.entity_id, service_data: data || {},
-  }).then(() => requestEntityRefresh(300)).catch(() => {})
+  }).then(() => requestEntityRefresh(300)).catch(() => { if (patched) clearOptimistic(props.entity.entity_id) })
 }
 
 function call(control, value) { send(control, value) }
@@ -234,22 +238,22 @@ function onRangeCommit(c, e) {
   send(c, v)
 }
 
-// ---- 大开关：乐观更新，失败回滚；实时状态确认后清除覆盖 ----
-const toggleOn = computed(() => (toggleOverride.value != null ? toggleOverride.value : !!(power.value && power.value.on)))
-watch(() => props.entity.state, (s) => {
-  if (toggleOverride.value == null) return
-  const expect = toggleOverride.value ? 'on' : 'off'
-  if (String(s || '').toLowerCase() === expect) toggleOverride.value = null
-})
+// ---- 大开关：乐观更新（全局 useOptimistic），失败回滚；WS 确认/8s 超时自动校正 ----
+// 开关态直接读包层后实体的能力模型（power.on），覆盖存在时自然反映目标态
+const toggleOn = computed(() => !!(power.value && power.value.on))
 function onToggle() {
   const c = power.value
   if (!c || !writable.value) return
-  const next = !toggleOn.value
-  toggleOverride.value = next
   const payload = buildServiceCall(c, null)
+  if (!payload) return
+  const id = props.entity.entity_id
+  // 优先按服务语义精确覆盖（空调 → 目标模式、媒体 → 播放态…）；映射不到回退布尔开态
+  if (!setServiceOptimistic(id, payload.domain, payload.service, payload.data || {})) {
+    setOptimistic(id, !toggleOn.value)
+  }
   api.callService(store.activeID, {
-    domain: payload.domain, service: payload.service, entity_id: props.entity.entity_id, service_data: payload.data || {},
-  }).then(() => requestEntityRefresh(300)).catch(() => { toggleOverride.value = null })
+    domain: payload.domain, service: payload.service, entity_id: id, service_data: payload.data || {},
+  }).then(() => requestEntityRefresh(300)).catch(() => clearOptimistic(id))
 }
 
 // ---- 属性明细：跳过内部实现键 ----
@@ -258,7 +262,7 @@ const PROP_SKIP = new Set([
   'device_class', 'entity_picture', 'editable', 'restored',
 ])
 const propRows = computed(() => {
-  const a = props.entity.attributes || {}
+  const a = ent.value.attributes || {}
   const out = []
   for (const [k, v] of Object.entries(a)) {
     if (PROP_SKIP.has(k) || v === null || v === undefined || v === '') continue

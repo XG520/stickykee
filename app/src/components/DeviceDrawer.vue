@@ -124,7 +124,8 @@ import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import api from '@/api'
 import { store, entityStates, refreshEntities, loadRegistry, registryDevices as regDevices, registryUnassigned as regUnassigned, registryLoaded, deviceDrawer } from '@/store'
 import { isOn, isAvailable, iconFor, domainGlyph, powerOf } from '@/utils/entities'
-import { buildControls } from '@/utils/entityControls'
+import { buildControls, buildServiceCall } from '@/utils/entityControls'
+import { setOptimistic, clearOptimistic, effectiveOn, applyOptimistic, setServiceOptimistic } from '@/composables/useOptimistic'
 
 const emit = defineEmits(['close'])
 
@@ -251,13 +252,14 @@ function sensorValue(e) {
 // 实体控制能力（同源 entityControls）
 function liveEntityOf(e) {
   const live = entityStates[e.entity_id]
-  if (!live) return e
-  return {
+  const merged = !live ? e : {
     ...e,
     state: live.state !== undefined ? live.state : e.state,
     attributes: { ...(e.attributes || {}), ...(live.attributes || {}) },
     domain: e.domain || live.domain,
   }
+  // 乐观覆盖：点击后立即以目标态渲染，确认/超时/回滚由 useOptimistic 统一管理
+  return applyOptimistic(merged)
 }
 function controlsOf(e) { return buildControls(liveEntityOf(e)) }
 function canToggle(e) { return controlsOf(e).some((c) => c.kind === 'toggle') }
@@ -269,17 +271,18 @@ function openDetail(d) {
   // 桌面选中；手机端由父级提供给覆盖面板，这里保持选中态
 }
 function onToggleEntity(e) {
-  // 乐观更新：直接写全局 entityStates 实时字段，liveEntities 经 liveEntityOf 合并后即时联动。
-  // 若实体尚未被 WS 收录（entityStates 无该 id），就地补一条实时记录，否则乐观翻转会静默丢失（UI 不随设备真实状态变化）。
-  const live = entityStates[e.entity_id]
-  const prev = live ? live.state : e.state
-  const optimistic = isOn(e) ? 'off' : 'on'
-  if (live) live.state = optimistic
-  else entityStates[e.entity_id] = { ...e, state: optimistic, domain: e.domain }
-  // 强制触发 liveEntities 重算：实体可能尚未被 WS 收录，新增 entityStates key 的依赖追踪
-  // 不一定可靠，替换 detail 引用可保证 computed 即时读取到乐观状态。
-  if (detail.value) detail.value = { ...detail.value }
-  api.toggle(store.activeID, e.entity_id).catch(() => { if (live) live.state = prev; else entityStates[e.entity_id].state = prev })
+  // 乐观更新：useOptimistic 统一管理（WS 确认 / 8s 超时回退 / 失败回滚）。
+  // 不再直接写 entityStates.state——污染真实缓存会与 WS 原地更新互相覆盖，行为不可控；
+  // override 是独立 reactive，liveEntities/设备状态计数经 liveEntityOf 天然即时联动。
+  // 优先按能力模型取开关服务载荷精确覆盖（空调→目标模式、媒体→播放态…），兜底布尔开态。
+  const id = e.entity_id
+  const live = liveEntityOf(e)
+  const t = buildControls(live).find((c) => c.kind === 'toggle')
+  const payload = t ? buildServiceCall(t, null) : null
+  if (!(payload && setServiceOptimistic(id, payload.domain, payload.service, payload.data || {}))) {
+    setOptimistic(id, !effectiveOn(live))
+  }
+  api.toggle(store.activeID, id).catch(() => clearOptimistic(id))
 }
 function noop() {}
 

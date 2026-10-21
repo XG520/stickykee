@@ -17,6 +17,8 @@ import { domainColorCls } from '@/utils/entities'
 import { loadIconList, replaceIconsIn } from '@/utils/hcIcons'
 import api from '@/api'
 import { store, entityStates, requestEntityRefresh } from '@/store'
+import { setOptimistic, clearOptimistic, effectiveOn, applyOptimistic, setServiceOptimistic } from '@/composables/useOptimistic'
+import { buildControls, buildServiceCall } from '@/utils/entityControls'
 import HomeMap from '@/components/map/HomeMap.vue'
 import router from '@/router'
 import AlmanacCard from './AlmanacCard.vue'
@@ -54,7 +56,11 @@ const entityIds = computed(() => {
 const entities = computed(() =>
   // 直接按 id 取（O(1) + 只订阅这几个实体），原先是在全表数组上 find，
   // 卡片数 × 实体数 的扫描会随每次状态推送反复发生
-  entityIds.value.map((id) => entityStates[id]).filter(Boolean))
+  entityIds.value.map((id) =>
+    // 乐观覆盖：点击后立即以目标态渲染（新对象，不污染 entityStates）；
+    // 确认/超时/回滚由 useOptimistic 统一管理，模板层零改动
+    applyOptimistic(entityStates[id] || null),
+  ).filter(Boolean))
 const entity = computed(() => entities.value[0] || null)
 
 const liveData = computed(() => {
@@ -145,7 +151,11 @@ function applyCss() {
     sel + ' .hc-mq-copy{display:inline-block}' +
     sel + ' .hc-mq-gap{display:inline-block;width:var(--hc-mq-gap,24px)}' +
     '@keyframes hc-marquee{0%{transform:translateX(0)}100%{transform:translateX(calc(-1 * var(--hc-mq-dx,0px)))}}'
-  styleEl.value.textContent = scopeCss(css, sel) + '\n' + marqueeCss
+  // 无状态服务调用的点击即时反馈：亮度脉冲（只用 filter，不影响布局），动画结束移除 class
+  const firedCss =
+    sel + ' .hc-fired{animation:hc-fired-pulse .6s ease-out}' +
+    '@keyframes hc-fired-pulse{0%{filter:brightness(1.8)}100%{filter:brightness(1)}}'
+  styleEl.value.textContent = scopeCss(css, sel) + '\n' + marqueeCss + '\n' + firedCss
 }
 
 // 文本溢出自动右向左循环滚动：渲染后扫描常见文本元素，
@@ -219,9 +229,22 @@ window.addEventListener('sk-theme-applied', restartCardJs)
 //  data-hc="toggle"                  → 切换实体开关
 //  data-hc="svc"  data-svc="d.svc"   → 调用 HA 服务（data-args 静态参数 / data-from 取输入值）
 //  data-hc="link" data-href="#/map"  → 路由跳转
+// ---- 无状态服务调用（svc/select）的即时反馈与防连点 ----
+// 点击立即脉冲反馈（hc-fired 动画，结束自动移除），不等服务端返回；
+// 同一控件 1s 内重复触发忽略（反馈已即时给出，重复调用只会骚扰设备）。
+// WeakSet 键随 v-html 重渲染丢弃的旧元素一起被 GC，无泄漏。
+const svcLock = new WeakSet()
+function markFired(el) {
+  el.classList.add('hc-fired')
+  el.addEventListener('animationend', () => el.classList.remove('hc-fired'), { once: true })
+}
 function doSvc(el) {
   const svc = el.dataset.svc
   if (!svc) return
+  if (svcLock.has(el)) return
+  svcLock.add(el)
+  setTimeout(() => svcLock.delete(el), 1000)
+  markFired(el)
   const dot = svc.indexOf('.')
   const domain = svc.slice(0, dot)
   const service = svc.slice(dot + 1)
@@ -242,9 +265,11 @@ function doSvc(el) {
   }
   // data-entity 可将操作定向到多实体卡（通用卡）中的具体实体，缺省回退到卡片主实体
   const targetId = el.dataset.entity || props.card.entity_id
+  // 乐观更新：可映射状态/属性的服务立即按目标态渲染，WS 确认/超时/失败校正。
+  const patched = targetId ? setServiceOptimistic(targetId, domain, service, args) : false
   api.callService(store.activeID, { domain, service, entity_id: targetId, service_data: args })
     .then(() => requestEntityRefresh(300))
-    .catch(() => {})
+    .catch(() => { if (patched) clearOptimistic(targetId) })
 }
 function onClick(e) {
   if (!props.interactive) return
@@ -263,7 +288,21 @@ function onClick(e) {
   const hc = el.dataset.hc
   if (hc === 'toggle') {
     const targetId = el.dataset.entity || props.card.entity_id
-    if (targetId) api.toggle(store.activeID, targetId).then(() => requestEntityRefresh(300)).catch(() => {})
+    if (targetId) {
+      // 乐观更新：立即按目标态渲染，不等服务端往返（消除动画滞后与连带误点）。
+      // 优先按能力模型取开关服务载荷精确覆盖（空调→目标模式、媒体→播放态…），
+      // 映射不到回退布尔开态；override 存在期间再点 = 反转目标并重发（连点改主意），
+      // 8s 未确认自动回退真实态。
+      const live = entityStates[targetId]
+      const t = live ? buildControls(applyOptimistic(live)).find((c) => c.kind === 'toggle') : null
+      const payload = t ? buildServiceCall(t, null) : null
+      if (!(payload && setServiceOptimistic(targetId, payload.domain, payload.service, payload.data || {}))) {
+        setOptimistic(targetId, !effectiveOn(live))
+      }
+      api.toggle(store.activeID, targetId)
+        .then(() => requestEntityRefresh(300))
+        .catch(() => clearOptimistic(targetId))
+    }
   } else if (hc === 'svc') {
     doSvc(el)
   } else if (hc === 'link') {
@@ -317,6 +356,9 @@ function pushRange(el) {
   const div = Number(el.dataset.div || 1) || 1
   const val = v / div
   const targetId = el.dataset.entity || props.card.entity_id
+  // 乐观更新：滑条拖动即刷新关联读数（音量/亮度/温度等属性目标值）。
+  // 节流期间连续触发，单次失败不清除（后续推流会纠正，避免拖动中读数跳变）。
+  if (targetId) setServiceOptimistic(targetId, domain, service, { [key]: val })
   api.callService(store.activeID, { domain, service, entity_id: targetId, service_data: { [key]: val } })
     .then(() => requestEntityRefresh(600))
     .catch(() => {})
@@ -338,6 +380,7 @@ function onChange(e) {
   if (!svc) return
   const opt = el.value
   if (opt === '') return
+  markFired(el)
   const dot = svc.indexOf('.')
   const domain = svc.slice(0, dot)
   const service = svc.slice(dot + 1)
@@ -346,9 +389,11 @@ function onChange(e) {
   try { args = JSON.parse(el.dataset.args || '{}') } catch { /* 忽略非法 JSON */ }
   args = { ...args, [key]: opt }
   const targetId = el.dataset.entity || props.card.entity_id
+  // 乐观更新：下拉选定即按目标态渲染，WS 确认/超时/失败校正。
+  const patched = targetId ? setServiceOptimistic(targetId, domain, service, args) : false
   api.callService(store.activeID, { domain, service, entity_id: targetId, service_data: args })
     .then(() => requestEntityRefresh(300))
-    .catch(() => {})
+    .catch(() => { if (patched) clearOptimistic(targetId) })
 }
 
 // ---- 地图：把 HomeMap 挂载到模板中的 [data-map] 容器（注入 router 以支持内部跳转） ----

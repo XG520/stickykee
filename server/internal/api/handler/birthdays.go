@@ -234,6 +234,9 @@ func (h *Birthdays) ensureReg(ctx context.Context, username string, rest *client
 		"manufacturer":        "stickynuo",
 		"model":               "birthday",
 		"os_name":             "stickynuo",
+		// os_version 必填：缺失时 HA 每次启动 async_setup_entry 抛 KeyError('os_version')，
+		// 该虚拟设备与 webhook 全部不可用（历史版本缺此字段导致的报错由此修复）。
+		"os_version":          Version,
 		"supports_encryption": false,
 	}
 	var resp struct {
