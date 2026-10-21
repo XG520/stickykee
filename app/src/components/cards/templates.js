@@ -394,11 +394,13 @@ export function tplPerson() {
 
 // ================= 12b. 人员信息（三槽位：主实体状态角标 / 中部循环翻动 / 底部滚动轮播） =================
 export function tplPersonInfo() {
+  // 槽位3 无缝滚动：轨道内渲染两份完全相同的内容（{{marqueeItemsHtml}}×2），
+  // 每项自带右间距作间隙，位移 -50% 时第二份恰好接上第一份（从右向左，无需 JS 测量）。
   const html = `<div class="hc">
   ${head}
   <div class="h-fill h-mid">{{avatarHtml}}</div>
-  <div class="pi-cycle{{cycleCls}}"><span class="pi-cy-item">{{cycleText}}</span></div>
-  <div class="pi-mq{{mqCls}}"><span class="hc-mq-auto pi-mq-t" data-mq-dir="ltr">{{marqueeText}}</span></div>
+  <div class="pi-cycle{{cycleCls}}">{{cycleItemsHtml}}</div>
+  <div class="pi-mq{{mqCls}}"><div class="pi-mq-in">{{marqueeItemsHtml}}{{marqueeItemsHtml}}</div></div>
 </div>`
   const css = shell + `
 .hc{padding:6px}
@@ -406,12 +408,15 @@ export function tplPersonInfo() {
 .avatar-f{width:38px;height:38px;border-radius:99px;display:flex;align-items:center;justify-content:center;border:2px solid var(--hc-border);background:var(--hc-bg2);color:var(--hc-color,var(--hc-success))}
 .pi-cycle{display:flex;align-items:center;justify-content:center;min-height:13px;min-width:0}
 .pi-cycle.is-hide{display:none}
-.pi-cy-item{font-size:9px;font-weight:600;color:var(--hc-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;
-  animation:pi-flip .45s ease}
+.pi-cy-item{display:none;align-items:center;gap:3px;font-size:9px;font-weight:600;color:var(--hc-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.pi-cy-item.on{display:inline-flex;animation:pi-flip .45s ease}
 @keyframes pi-flip{0%{opacity:0;transform:translateY(7px)}100%{opacity:1;transform:translateY(0)}}
-.pi-mq{margin-top:auto;display:flex;min-width:0;overflow:hidden}
+.pi-it-ic{font-size:10px;line-height:1;flex:none;color:var(--hc-color,var(--hc-success))}
+.pi-mq{margin-top:auto;min-width:0;overflow:hidden}
 .pi-mq.is-hide{display:none}
-.pi-mq-t{font-size:9px;font-weight:600;color:var(--hc-sub);white-space:nowrap;max-width:100%}`
+.pi-mq-in{display:inline-flex;align-items:center;white-space:nowrap;will-change:transform;animation:pi-mq-scroll 14s linear infinite}
+.pi-mq-it{display:inline-flex;align-items:center;gap:3px;margin-right:28px;font-size:9px;font-weight:600;color:var(--hc-sub)}
+@keyframes pi-mq-scroll{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}`
   return { html, css }
 }
 

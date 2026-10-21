@@ -68,18 +68,35 @@ const slotIds2 = computed(() => (Array.isArray(props.card.entity_ids2) ? props.c
 const slotIds3 = computed(() => (Array.isArray(props.card.entity_ids3) ? props.card.entity_ids3.filter(Boolean) : []))
 const entities2 = computed(() => slotIds2.value.map((id) => applyOptimistic(entityStates[id] || null)).filter(Boolean))
 const entities3 = computed(() => slotIds3.value.map((id) => applyOptimistic(entityStates[id] || null)).filter(Boolean))
-// 槽位2 多实体时每 3s 翻动一项：驱动 liveData 重算（v-html 重建，进入动画由模板 CSS 承担）
-const cycleIdx = ref(0)
+// 槽位2 多实体时循环翻动：DOM 层轮换 .on 类（6s 间隔），不走数据驱动——
+// 若由 cycleIdx 驱动 liveData，每次翻动都会重建 v-html，下方跑马灯会被一并重置。
+// tick 时现查 DOM，v-html 因状态推送重建后依然安全（initCycle 在 postRender 兜底首项可见）。
 let cycleTimer = null
+function cycleTick() {
+  const r = root.value
+  if (!r) return
+  const items = r.querySelectorAll('.pi-cy-item')
+  if (items.length < 2) return
+  let cur = -1
+  items.forEach((n, i) => { if (n.classList.contains('on')) cur = i })
+  const next = (cur + 1) % items.length
+  items.forEach((n, i) => n.classList.toggle('on', i === next))
+}
+function initCycle() {
+  const r = root.value
+  if (!r) return
+  const items = r.querySelectorAll('.pi-cy-item')
+  if (items.length && !r.querySelector('.pi-cy-item.on')) items[0].classList.add('on')
+}
 function setupCycle() {
   if (cycleTimer) { clearInterval(cycleTimer); cycleTimer = null }
-  if (props.freeze || props.card.type !== 'personInfo' || entities2.value.length < 2) return
-  cycleTimer = setInterval(() => { cycleIdx.value = (cycleIdx.value + 1) % entities2.value.length }, 3000)
+  if (props.freeze || props.card.type !== 'personInfo') return
+  cycleTimer = setInterval(cycleTick, 6000)
 }
-watch(() => [props.card.type, entities2.value.length, props.freeze], setupCycle)
+watch(() => [props.card.type, props.freeze], setupCycle)
 
 const liveData = computed(() => {
-  const d = computeData(props.card.type, { all: all.value, hasData: hasData.value, entity: entity.value, entities: entities.value, entityId: props.card.entity_id, now: now.value, card: props.card, entities2: entities2.value, entities3: entities3.value, cycleIdx: cycleIdx.value })
+  const d = computeData(props.card.type, { all: all.value, hasData: hasData.value, entity: entity.value, entities: entities.value, entityId: props.card.entity_id, now: now.value, card: props.card, entities2: entities2.value, entities3: entities3.value })
   // 卡片自定义图标：覆盖模板头部 {{glyph}}（领域实体图标 / 基础卡默认图标均可替换）
   if (props.card.icon) d.glyph = props.card.icon
   return d
@@ -165,8 +182,6 @@ function applyCss() {
     sel + ' .hc-mq-in{display:inline-block;white-space:nowrap;animation:hc-marquee var(--hc-mq-dur,6s) linear infinite;will-change:transform}' +
     sel + ' .hc-mq-copy{display:inline-block}' +
     sel + ' .hc-mq-gap{display:inline-block;width:var(--hc-mq-gap,24px)}' +
-    // data-mq-dir="ltr"：反向播放，内容从左向右滚动（人员信息卡槽位3 滚动轮播用）
-    sel + ' .hc-mq-rev{animation-direction:reverse}' +
     '@keyframes hc-marquee{0%{transform:translateX(0)}100%{transform:translateX(calc(-1 * var(--hc-mq-dx,0px)))}}'
   // 无状态服务调用的点击即时反馈：亮度脉冲（只用 filter，不影响布局），动画结束移除 class
   const firedCss =
@@ -177,15 +192,13 @@ function applyCss() {
 
 // 文本溢出自动右向左循环滚动：渲染后扫描常见文本元素，
 // 内容宽度超出容器时包一层 .hc-mq-in 并设置位移/时长变量，循环显示完整文本。
-// .hc-mq-auto：无条件强制滚动（人员信息卡槽位3）；data-mq-dir="ltr" 改为从左向右。
 // 单次合并查询（原为 5 次遍历），scrollWidth 读取会强制回流，属于热路径。
 function applyMarquee() {
   const r = root.value
   if (!r) return
-  for (const el of r.querySelectorAll('.h-t,.h-mut,.h-nm,.h-big,.c-sec,.h-sub-v,.hc-mq-auto')) {
+  for (const el of r.querySelectorAll('.h-t,.h-mut,.h-nm,.h-big,.c-sec,.h-sub-v')) {
     if (el.querySelector('.hc-mq-in, [data-hc]')) continue
-    const force = el.classList.contains('hc-mq-auto')
-    if (!force && el.scrollWidth <= el.clientWidth + 2) continue
+    if (el.scrollWidth <= el.clientWidth + 2) continue
     // 保证单行 + 溢出裁剪（模板一般已设置，缺失时补齐，避免动画溢出）
     el.style.whiteSpace = 'nowrap'
     el.style.overflow = 'hidden'
@@ -203,7 +216,6 @@ function applyMarquee() {
     c2.className = 'hc-mq-copy'
     c2.textContent = text
     inner.append(c1, gap, c2)
-    if (el.dataset.mqDir === 'ltr') inner.classList.add('hc-mq-rev')
     el.textContent = ''
     el.appendChild(inner)
     const copyW = c1.scrollWidth
@@ -491,6 +503,7 @@ function runPostRender() {
   if (!root.value) return
   applyIcons()
   applyMarquee()
+  initCycle()
 }
 function schedulePostRender() {
   if (!rootVisible.value) { postPending = true; return }

@@ -66,6 +66,39 @@ export function newCard(type, extra = {}) {
   return o
 }
 
+// 人员信息卡旧模板升级（按片段独立替换，全部幂等）：
+//  1) 槽位2：数据驱动单项（{{cycleText}}）→ 全量堆叠（{{cycleItemsHtml}}）+ DOM 轮换 .on，
+//     避免每次翻动重建 v-html 导致下方滚动被重置；
+//  2) 槽位3：纯文本跑马灯（hc-mq-auto/{{marqueeText}}，左向右）→ 图标项双拷贝轨道
+//     （{{marqueeItemsHtml}}×2 + translateX(-50%)，从右向左，保留图标结构）；
+//  3) 项结构升级为「领域图标 + 值」，CSS 同步替换（.pi-cy-item/.pi-mq 规则逐条迁移）。
+export function upgradePersonInfoCard(card) {
+  if (!card || card.type !== 'personInfo' || !card.html) return
+  card.html = String(card.html)
+    .replace(
+      '<div class="pi-cycle{{cycleCls}}"><span class="pi-cy-item">{{cycleText}}</span></div>',
+      '<div class="pi-cycle{{cycleCls}}">{{cycleItemsHtml}}</div>',
+    )
+    .replace(
+      '<div class="pi-mq{{mqCls}}"><span class="hc-mq-auto pi-mq-t" data-mq-dir="ltr">{{marqueeText}}</span></div>',
+      '<div class="pi-mq{{mqCls}}"><div class="pi-mq-in">{{marqueeItemsHtml}}{{marqueeItemsHtml}}</div></div>',
+    )
+  card.css = String(card.css || '')
+    .replace(
+      /\.pi-cy-item\{font-size:9px;font-weight:600;color:var\(--hc-text\);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;\s*animation:pi-flip \.45s ease\}/,
+      '.pi-cy-item{display:none;font-size:9px;font-weight:600;color:var(--hc-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}\n.pi-cy-item.on{display:inline-flex;align-items:center;gap:3px;animation:pi-flip .45s ease}',
+    )
+    .replace(
+      '.pi-cy-item.on{display:block;animation:pi-flip .45s ease}',
+      '.pi-cy-item.on{display:inline-flex;align-items:center;gap:3px;animation:pi-flip .45s ease}',
+    )
+    .replace('.pi-mq{margin-top:auto;display:flex;', '.pi-mq{margin-top:auto;')
+    .replace(
+      /\.pi-mq-t\{font-size:9px;font-weight:600;color:var\(--hc-sub\);white-space:nowrap;max-width:100%\}/,
+      '.pi-it-ic{font-size:10px;line-height:1;flex:none;color:var(--hc-color,var(--hc-success))}\n.pi-mq-in{display:inline-flex;align-items:center;white-space:nowrap;will-change:transform;animation:pi-mq-scroll 14s linear infinite}\n.pi-mq-it{display:inline-flex;align-items:center;gap:3px;margin-right:28px;font-size:9px;font-weight:600;color:var(--hc-sub)}\n@keyframes pi-mq-scroll{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}',
+    )
+}
+
 // 人员卡旧模板升级：早期模板没有「第二实体（子属性）」元素，加载时自动注入，
 // 使已存在的人员卡也能显示第二个实体的图标+值（幂等，已含 h-sub 则跳过）。
 export function upgradePersonCard(card) {
@@ -164,6 +197,7 @@ export function normalizeCards(list) {
     out.push(card)
   }
   out.forEach(upgradePersonCard)
+  out.forEach(upgradePersonInfoCard)
   out.forEach(upgradeToggleCard)
   out.forEach(upgradeFlipClockCard)
   out.forEach(upgradeAmapWeatherCard)

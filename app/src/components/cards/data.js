@@ -463,11 +463,15 @@ function personData(entities, hasData, ctx) {
 
 // ================= 人员信息卡（三槽位） =================
 // 槽位1 = entity_id（person/device_tracker）：名称居左、在家/离家角标居右上、头像居中
-// 槽位2 = ctx.entities2（多选）：中部区域循环翻动，每次显示一个实体的「名称 状态」
-// 槽位3 = ctx.entities3（多选）：底部区域从左到右滚动轮播（CodeCard 跑马灯，强制启用）
-function slotEntityText(e) {
+// 槽位2/3 的项统一为「领域图标 + 状态值」（不显示实体名）：
+//   槽位2 = ctx.entities2（多选）：中部循环翻动——全部项一次渲染，CodeCard 在 DOM 层
+//           轮换 .on 类（不走数据驱动，避免每次翻动重建 v-html 导致下方滚动被重置）
+//   槽位3 = ctx.entities3（多选）：底部从右向左无缝滚动（模板双拷贝 + translateX(-50%)）
+function slotEntityHtml(e) {
   const unit = e.unit || attr(e, 'unit_of_measurement') || ''
-  return `${e.friendly_name || e.entity_id} ${String(e.state)}${unit ? ' ' + unit : ''}`
+  const icon = iconFor(e, domainGlyph[e.domain] || 'widgets')
+  const val = `${String(e.state)}${unit ? ' ' + unit : ''}`
+  return `<span class="material-symbols-outlined pi-it-ic">${icon}</span>${escHtml(val)}`
 }
 
 function personInfoData(ctx) {
@@ -478,22 +482,21 @@ function personInfoData(ctx) {
   if (!main) {
     return {
       ...b, badge: '<span class="h-badge b-off">—</span>', avatarHtml: personAvatarHtml(null, card?.avatar),
-      cycleCls: ' is-hide', cycleText: '', mqCls: ' is-hide', marqueeText: '',
+      cycleCls: ' is-hide', cycleItemsHtml: '', mqCls: ' is-hide', marqueeItemsHtml: '',
     }
   }
   const { home, label } = personHomeState(main)
   const badge = `<span class="h-badge ${home ? 'b-on' : 'b-warn'}">${escHtml(label)}</span>`
-  const items2 = list2.map(slotEntityText)
-  const idx = items2.length ? (Math.abs(ctx.cycleIdx || 0) % items2.length) : 0
-  const items3 = list3.map(slotEntityText)
+  const items2 = list2.map(slotEntityHtml)
+  const items3 = list3.map(slotEntityHtml)
   return {
     ...b,
     badge,
     avatarHtml: personAvatarHtml(main, card?.avatar),
     cycleCls: items2.length ? '' : ' is-hide',
-    cycleText: items2.length ? escHtml(items2[idx]) : '',
+    cycleItemsHtml: items2.map((h) => `<span class="pi-cy-item">${h}</span>`).join(''),
     mqCls: items3.length ? '' : ' is-hide',
-    marqueeText: escHtml(items3.join('　·　')),
+    marqueeItemsHtml: items3.map((h) => `<span class="pi-mq-it">${h}</span>`).join(''),
   }
 }
 
