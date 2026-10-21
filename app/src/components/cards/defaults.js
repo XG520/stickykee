@@ -5,7 +5,7 @@
 //  - js  ：渲染后执行的逻辑，参数 (el, card, data)
 import {
   tplToggle, tplSensor, tplBinary, tplClimate, tplCover, tplMedia, tplSecurity, tplCamera,
-  tplVacuum, tplAction, tplGeneric, tplPerson, tplWeatherEntity, tplSelect, tplText, tplGroup,
+  tplVacuum, tplAction, tplGeneric, tplPerson, tplPersonInfo, tplWeatherEntity, tplSelect, tplText, tplGroup,
   tplDatetime, tplTimer, tplCalendar, tplUpdate, tplEvent, tplPlant, tplLawnMower, tplSun,
   tplImage, tplGreeting, tplWeather, tplMap, tplClock, tplFlipClock, tplDate, tplOverview, JS_COMMON, JS_FLIP_CLOCK, tplAmapWeather, JS_AMAP_WEATHER,
 } from './templates'
@@ -94,6 +94,9 @@ export const cardDefaults = {
   scene: mk({ label: '场景', icon: 'magic_button', colorCls: 'text-info', w: 1, h: 1, needEntity: true, entityDomains: ['scene'], group: '场景' }, tplAction),
   script: mk({ label: '脚本/自动化', icon: 'terminal', colorCls: 'text-info', w: 1, h: 1, needEntity: true, entityDomains: ['script', 'automation', 'button', 'input_button'], group: '场景' }, tplAction),
   person: mk({ label: '人员位置', icon: 'person_pin', colorCls: 'text-success', w: 1, h: 1, needEntity: true, entityDomains: ['person', 'device_tracker', 'zone', 'geocoded_location', 'sensor'], group: '人员' }, tplPerson),
+  // 人员信息：三槽位卡——主实体（person/device_tracker）状态角标置右上；
+  // entity_ids2 中部循环翻动（多选）；entity_ids3 底部从左到右滚动轮播（多选）
+  personInfo: mk({ label: '人员信息', icon: 'badge', colorCls: 'text-success', w: 1, h: 1, needEntity: true, entityDomains: ['person', 'device_tracker'], group: '人员' }, tplPersonInfo),
   weather_entity: mk({ label: '天气实体', icon: 'partly_cloudy_day', colorCls: 'text-info', w: 2, h: 2, needEntity: true, entityDomains: ['weather'], group: '环境气候' }, tplWeatherEntity),
   sun: mk({ label: '太阳', icon: 'wb_sunny', colorCls: 'text-warning', w: 1, h: 1, needEntity: true, entityDomains: ['sun'], group: '环境气候' }, tplSun),
   select: mk({ label: '选项选择', icon: 'arrow_drop_down_circle', colorCls: 'text-info', w: 1, h: 1, needEntity: true, entityDomains: ['select', 'input_select'], group: '输入控制' }, tplSelect),

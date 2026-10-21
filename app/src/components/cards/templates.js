@@ -392,6 +392,29 @@ export function tplPerson() {
   return { html, css }
 }
 
+// ================= 12b. 人员信息（三槽位：主实体状态角标 / 中部循环翻动 / 底部滚动轮播） =================
+export function tplPersonInfo() {
+  const html = `<div class="hc">
+  ${head}
+  <div class="h-fill h-mid">{{avatarHtml}}</div>
+  <div class="pi-cycle{{cycleCls}}"><span class="pi-cy-item">{{cycleText}}</span></div>
+  <div class="pi-mq{{mqCls}}"><span class="hc-mq-auto pi-mq-t" data-mq-dir="ltr">{{marqueeText}}</span></div>
+</div>`
+  const css = shell + `
+.hc{padding:6px}
+.avatar{width:38px;height:38px;border-radius:99px;object-fit:cover;border:2px solid var(--hc-border)}
+.avatar-f{width:38px;height:38px;border-radius:99px;display:flex;align-items:center;justify-content:center;border:2px solid var(--hc-border);background:var(--hc-bg2);color:var(--hc-color,var(--hc-success))}
+.pi-cycle{display:flex;align-items:center;justify-content:center;min-height:13px;min-width:0}
+.pi-cycle.is-hide{display:none}
+.pi-cy-item{font-size:9px;font-weight:600;color:var(--hc-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;
+  animation:pi-flip .45s ease}
+@keyframes pi-flip{0%{opacity:0;transform:translateY(7px)}100%{opacity:1;transform:translateY(0)}}
+.pi-mq{margin-top:auto;display:flex;min-width:0;overflow:hidden}
+.pi-mq.is-hide{display:none}
+.pi-mq-t{font-size:9px;font-weight:600;color:var(--hc-sub);white-space:nowrap;max-width:100%}`
+  return { html, css }
+}
+
 // ================= 13. 天气实体（weather） =================
 export function tplWeatherEntity() {
   const html = `<div class="hc">

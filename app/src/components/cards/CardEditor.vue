@@ -265,6 +265,77 @@
                   </div>
                 </div>
 
+                <!-- 人员信息卡：扩展绑定槽位（中部循环翻动 / 底部滚动轮播，均不限数量、不限域） -->
+                <div v-for="slot in extraSlots" :key="slot.key" class="ce-field ce-field-entity ce-slot-box">
+                  <label class="ce-label">
+                    {{ slot.label }}
+                    <span class="ce-label-sub">已选 {{ draft[slot.key].length }} 个 · 不限数量</span>
+                  </label>
+                  <div class="ce-combobox ce-multi-box">
+                    <ul class="ce-multi-list">
+                      <li
+                        v-for="id in draft[slot.key]"
+                        :key="id"
+                        class="ce-entity-item ce-multi-item"
+                      >
+                        <span class="ce-domain-badge">{{ slotRowOf(id).domain }}</span>
+                        <span class="ce-en-text">
+                          <span class="ce-en-name">{{ slotRowOf(id).label }}</span>
+                          <span class="ce-en-id">{{ id }}</span>
+                        </span>
+                        <button type="button" class="ce-multi-del" title="移除该实体" @click="removeSlotEntity(slot.key, id)">
+                          <span class="material-symbols-outlined">close</span>
+                        </button>
+                      </li>
+                      <li v-if="!draft[slot.key].length" class="ce-entity-empty">
+                        {{ slot.empty }}
+                      </li>
+                    </ul>
+                    <button type="button" class="ce-add-entity" @click="toggleSlotMenu(slot.key)">
+                      <span class="material-symbols-outlined">add</span>
+                      添加实体
+                      <span class="material-symbols-outlined ce-combo-caret" v-if="slotMenuKey === slot.key">expand_less</span>
+                    </button>
+                    <Transition name="ce-menu">
+                      <div v-if="slotMenuKey === slot.key" class="ce-dropdown">
+                        <div class="ce-search">
+                          <span class="material-symbols-outlined">search</span>
+                          <input
+                            ref="slotSearchRef"
+                            v-model="slotQuery"
+                            class="ce-search-input"
+                            type="text"
+                            placeholder="搜索名称或 entity_id…"
+                          />
+                        </div>
+                        <ul class="ce-entity-list">
+                          <li
+                            v-for="o in filteredSlotEntities"
+                            :key="o.id"
+                            class="ce-entity-item"
+                            :class="{ on: draft[slot.key].includes(o.id) }"
+                            @click="pickSlotEntity(o.id)"
+                          >
+                            <span class="ce-domain-badge">{{ o.domain }}</span>
+                            <span class="ce-en-text">
+                              <span class="ce-en-name">{{ o.label }}</span>
+                              <span class="ce-en-id">{{ o.id }}</span>
+                            </span>
+                            <span v-if="draft[slot.key].includes(o.id)" class="material-symbols-outlined ce-en-check">check</span>
+                          </li>
+                          <li v-if="!filteredSlotEntities.length" class="ce-entity-empty">
+                            {{ allEntityOptions.length ? '没有匹配的实体' : '暂无可用实体（需先连接 Home Assistant）' }}
+                          </li>
+                        </ul>
+                        <div class="ce-dd-foot">
+                          <span class="ce-dd-tip">点击实体即可加入 / 移除，可连续添加，不限数量</span>
+                          <button type="button" class="ce-btn ce-primary ce-btn-sm" @click="slotMenuKey = ''">完成</button>
+                        </div>
+                      </div>
+                    </Transition>
+                  </div>
+                </div>
+
                 <div v-if="meta.needEntity" class="ce-field ce-field-title">
                   <label class="ce-label">
                     卡片标题
@@ -601,7 +672,7 @@ const emit = defineEmits(['close', 'save'])
 const baseCell = 120
 
 // ================= 草稿与脏状态 =================
-const draft = reactive({ type: '', uid: '', entity_id: '', entity_ids: [], w: 1, h: 1, html: '', css: '', js: '', icon: '', avatar: '', title: '' })
+const draft = reactive({ type: '', uid: '', entity_id: '', entity_ids: [], entity_ids2: [], entity_ids3: [], w: 1, h: 1, html: '', css: '', js: '', icon: '', avatar: '', title: '' })
 let snapshot = ''
 const dirty = computed(() => JSON.stringify(pickDraft()) !== snapshot)
 
@@ -610,6 +681,8 @@ function pickDraft() {
     w: draft.w, h: draft.h, html: draft.html, css: draft.css, js: draft.js,
     entity_id: metaOf(draft.type).needEntity || metaOf(draft.type).entityOptional ? draft.entity_id : '',
     entity_ids: ['generic', 'person', 'group'].includes(draft.type) ? [...draft.entity_ids] : [],
+    entity_ids2: draft.type === 'personInfo' ? [...draft.entity_ids2] : [],
+    entity_ids3: draft.type === 'personInfo' ? [...draft.entity_ids3] : [],
     icon: draft.icon,
     avatar: draft.avatar,
     title: draft.title || '',
@@ -631,6 +704,8 @@ watch(
       draft.entity_ids = Array.isArray(props.card.entity_ids)
         ? props.card.entity_ids.filter(Boolean)
         : (props.card.entity_id ? [props.card.entity_id] : [])
+      draft.entity_ids2 = Array.isArray(props.card.entity_ids2) ? props.card.entity_ids2.filter(Boolean) : []
+      draft.entity_ids3 = Array.isArray(props.card.entity_ids3) ? props.card.entity_ids3.filter(Boolean) : []
       draft.w = props.card.w || 1
       draft.h = props.card.h || 1
       draft.html = props.card.html || ''
@@ -643,6 +718,8 @@ watch(
       tab.value = 'html'
       banner.value = null
       entityQuery.value = ''
+      slotMenuKey.value = ''
+      slotQuery.value = ''
       hoverCell.value = 0
       designMode.value = false
       snapshot = JSON.stringify(pickDraft())
@@ -814,8 +891,55 @@ function removeEntity(id) {
   if (i >= 0) draft.entity_ids.splice(i, 1)
   syncPrimaryEntity()
 }
+
+// ================= 人员信息卡：扩展绑定槽位（entity_ids2 循环翻动 / entity_ids3 滚动轮播） =================
+// 与主实体框独立：不限域、不限数量；两个槽位共用一个打开中的下拉（slotMenuKey）与搜索词（slotQuery）
+const extraSlots = computed(() => (draft.type === 'personInfo'
+  ? [
+    { key: 'entity_ids2', label: '循环翻动实体', empty: '可选：多个实体时状态在卡片中部轮流翻动显示' },
+    { key: 'entity_ids3', label: '滚动轮播实体', empty: '可选：实体状态在卡片底部从左到右滚动显示' },
+  ]
+  : []))
+const slotMenuKey = ref('')
+const slotQuery = ref('')
+const slotSearchRef = ref(null)
+const allEntityOptions = computed(() =>
+  Object.values(entityStates)
+    .map((e) => ({ id: e.entity_id, label: e.friendly_name || e.entity_id, domain: e.domain || e.entity_id.split('.')[0] }))
+    .sort((a, b) => a.label.localeCompare(b.label, 'zh')))
+const filteredSlotEntities = computed(() => {
+  const q = slotQuery.value.trim().toLowerCase()
+  if (!q) return allEntityOptions.value
+  return allEntityOptions.value.filter((o) => o.label.toLowerCase().includes(q) || o.id.toLowerCase().includes(q))
+})
+function slotRowOf(id) {
+  return allEntityOptions.value.find((o) => o.id === id) || { id, label: id, domain: id.split('.')[0] }
+}
+function toggleSlotMenu(key) {
+  slotMenuKey.value = slotMenuKey.value === key ? '' : key
+  slotQuery.value = ''
+  if (slotMenuKey.value) {
+    nextTick(() => {
+      const el = Array.isArray(slotSearchRef.value) ? slotSearchRef.value[0] : slotSearchRef.value
+      el?.focus?.()
+    })
+  }
+}
+function pickSlotEntity(id) {
+  const list = draft[slotMenuKey.value]
+  if (!Array.isArray(list)) return
+  const i = list.indexOf(id)
+  if (i >= 0) list.splice(i, 1)
+  else list.push(id)
+}
+function removeSlotEntity(key, id) {
+  const list = draft[key]
+  const i = Array.isArray(list) ? list.indexOf(id) : -1
+  if (i >= 0) list.splice(i, 1)
+}
 function onDocMouseDown(e) {
   if (entityMenu.value && entityWrapRef.value && !entityWrapRef.value.contains(e.target)) entityMenu.value = false
+  if (slotMenuKey.value && !e.target?.closest?.('.ce-slot-box')) slotMenuKey.value = ''
 }
 
 // ================= 可视化尺寸选择（4×3） =================

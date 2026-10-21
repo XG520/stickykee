@@ -659,6 +659,11 @@ function onEditorSave(p) {
   } else if (meta(c.type).needEntity) {
     c.entity_id = p.entity_id
   }
+  // 人员信息卡：扩展绑定槽位（中部循环翻动 / 底部滚动轮播）
+  if (c.type === 'personInfo') {
+    c.entity_ids2 = Array.isArray(p.entity_ids2) ? [...p.entity_ids2] : []
+    c.entity_ids3 = Array.isArray(p.entity_ids3) ? [...p.entity_ids3] : []
+  }
   c.title = p.title || ''
   c.icon = p.icon
   c.avatar = p.avatar

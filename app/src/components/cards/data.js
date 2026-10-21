@@ -383,6 +383,24 @@ function actionData(entity, hasData) {
   return { ...b, runSvc: runSvcMap[entity.domain] || entity.domain + '.turn_on', stateText: String(entity.state) }
 }
 
+// 人员头像片段：自定义图 > HA 实体头像 > 默认人形图标（人员位置 / 人员信息卡共用）
+function personAvatarHtml(main, custom) {
+  if (custom) return `<img class="avatar" src="${escHtml(custom)}" referrerpolicy="no-referrer" alt="">`
+  const pic = attr(main, 'entity_picture')
+  if (pic && String(pic).startsWith('/api/')) {
+    return `<img class="avatar" src="${api.pictureUrl(store.activeID, main.entity_id)}" referrerpolicy="no-referrer" alt="">`
+  }
+  return `<div class="avatar-f"><span class="material-symbols-outlined" style="font-size:18px">person</span></div>`
+}
+
+// 人员在家/离家角标（人员位置 / 人员信息卡共用）
+function personHomeState(main) {
+  const s = String(main.state).toLowerCase()
+  const home = !['away', 'not_home', 'none'].includes(s)
+  const label = s === 'home' ? '在家' : (s === 'away' || s === 'not_home') ? '离家' : String(main.state)
+  return { home, label }
+}
+
 function personData(entities, hasData, ctx) {
   const list = Array.isArray(entities) ? entities.filter(Boolean) : []
   // 主实体：人员/设备跟踪/区域/sensor；可选第二实体：地理编码位置（geocoded_location，提供 address）
@@ -441,6 +459,42 @@ function personData(entities, hasData, ctx) {
     }
   }
   return { ...b, avatarHtml, onCls: home ? 'b-on' : 'b-warn', stateLabel: label, detail, subCls, subGlyph, subValue }
+}
+
+// ================= 人员信息卡（三槽位） =================
+// 槽位1 = entity_id（person/device_tracker）：名称居左、在家/离家角标居右上、头像居中
+// 槽位2 = ctx.entities2（多选）：中部区域循环翻动，每次显示一个实体的「名称 状态」
+// 槽位3 = ctx.entities3（多选）：底部区域从左到右滚动轮播（CodeCard 跑马灯，强制启用）
+function slotEntityText(e) {
+  const unit = e.unit || attr(e, 'unit_of_measurement') || ''
+  return `${e.friendly_name || e.entity_id} ${String(e.state)}${unit ? ' ' + unit : ''}`
+}
+
+function personInfoData(ctx) {
+  const { hasData, entity: main, card } = ctx
+  const list2 = Array.isArray(ctx.entities2) ? ctx.entities2.filter(Boolean) : []
+  const list3 = Array.isArray(ctx.entities3) ? ctx.entities3.filter(Boolean) : []
+  const b = base(main, hasData, 'person')
+  if (!main) {
+    return {
+      ...b, badge: '<span class="h-badge b-off">—</span>', avatarHtml: personAvatarHtml(null, card?.avatar),
+      cycleCls: ' is-hide', cycleText: '', mqCls: ' is-hide', marqueeText: '',
+    }
+  }
+  const { home, label } = personHomeState(main)
+  const badge = `<span class="h-badge ${home ? 'b-on' : 'b-warn'}">${escHtml(label)}</span>`
+  const items2 = list2.map(slotEntityText)
+  const idx = items2.length ? (Math.abs(ctx.cycleIdx || 0) % items2.length) : 0
+  const items3 = list3.map(slotEntityText)
+  return {
+    ...b,
+    badge,
+    avatarHtml: personAvatarHtml(main, card?.avatar),
+    cycleCls: items2.length ? '' : ' is-hide',
+    cycleText: items2.length ? escHtml(items2[idx]) : '',
+    mqCls: items3.length ? '' : ' is-hide',
+    marqueeText: escHtml(items3.join('　·　')),
+  }
 }
 
 function weatherEntityData(entity, hasData) {
@@ -1169,6 +1223,7 @@ export function computeData(type, ctx) {
     case 'vacuum': d = vacuumData(entity, hasData); break
     case 'scene': case 'script': d = actionData(entity, hasData); break
     case 'person': d = personData(entities, hasData, ctx); break
+    case 'personInfo': d = personInfoData(ctx); break
     case 'group': d = groupData(entities && entities.length ? entities : (entity ? [entity] : []), hasData, ctx.card); break
     case 'weather_entity': d = weatherEntityData(entity, hasData); break
     case 'sun': d = sunData(entity, hasData); break
