@@ -13,6 +13,8 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, onUpdated, onActivate
 import { useEntities } from '@/composables/useLive'
 import { count as perfCount } from '@/utils/perf'
 import { renderTemplate, scopeCss, computeData, cardDefaults } from './defaults'
+import { bindingSlotTokens } from './data'
+import { renderSchemaToHtml } from './designer/blockDefs'
 import { domainColorCls } from '@/utils/entities'
 import { loadIconList, replaceIconsIn } from '@/utils/hcIcons'
 import api from '@/api'
@@ -48,9 +50,31 @@ let clock = null
 
 // 绑定实体：需要实体的卡片未绑定时渲染统一空态。
 // 通用卡为多实体卡：card.entity_ids 保存完整列表；entity_id 为首项，兼容单实体链路。
+// 双路读取：优先从 entitySlotMap.entity_ids（Designer 设计产生），兼容旧 card.entity_ids 直读
 const needsEntity = computed(() => !!cardDefaults[props.card.type]?.needEntity)
+
+// ---- 人员信息卡的扩展槽位 + 主槽 ----
+// entity_ids 主实体 / entity_ids2 中部循环翻动 / entity_ids3 底部滚动轮播 / entity_ids_status head内状态跑马灯
+// 双路读取：优先从 entitySlotMap（Designer 设计产生），兼容旧 card.entity_ids* 直读
+const slotIds = computed(() => {
+  if (props.card.entitySlotMap?.entity_ids?.length) return props.card.entitySlotMap.entity_ids
+  return Array.isArray(props.card.entity_ids) ? props.card.entity_ids.filter(Boolean) : []
+})
+const slotIds2 = computed(() => {
+  if (props.card.entitySlotMap?.entity_ids2?.length) return props.card.entitySlotMap.entity_ids2
+  return Array.isArray(props.card.entity_ids2) ? props.card.entity_ids2.filter(Boolean) : []
+})
+const slotIds3 = computed(() => {
+  if (props.card.entitySlotMap?.entity_ids3?.length) return props.card.entitySlotMap.entity_ids3
+  return Array.isArray(props.card.entity_ids3) ? props.card.entity_ids3.filter(Boolean) : []
+})
+const slotIdsStatus = computed(() => {
+  if (props.card.entitySlotMap?.entity_ids_status?.length) return props.card.entitySlotMap.entity_ids_status
+  return Array.isArray(props.card.entity_ids_status) ? props.card.entity_ids_status.filter(Boolean) : []
+})
 const entityIds = computed(() => {
-  if (Array.isArray(props.card.entity_ids) && props.card.entity_ids.length) return props.card.entity_ids
+  if (slotIds.value.length) return slotIds.value
+  if (Array.isArray(props.card.entity_ids) && props.card.entity_ids.length) return props.card.entity_ids.filter(Boolean)
   return props.card.entity_id ? [props.card.entity_id] : []
 })
 const entities = computed(() =>
@@ -62,12 +86,9 @@ const entities = computed(() =>
     applyOptimistic(entityStates[id] || null),
   ).filter(Boolean))
 const entity = computed(() => entities.value[0] || null)
-
-// ---- 人员信息卡的扩展槽位（entity_ids2 中部循环翻动 / entity_ids3 底部滚动轮播） ----
-const slotIds2 = computed(() => (Array.isArray(props.card.entity_ids2) ? props.card.entity_ids2.filter(Boolean) : []))
-const slotIds3 = computed(() => (Array.isArray(props.card.entity_ids3) ? props.card.entity_ids3.filter(Boolean) : []))
 const entities2 = computed(() => slotIds2.value.map((id) => applyOptimistic(entityStates[id] || null)).filter(Boolean))
 const entities3 = computed(() => slotIds3.value.map((id) => applyOptimistic(entityStates[id] || null)).filter(Boolean))
+const entitiesStatus = computed(() => slotIdsStatus.value.map((id) => applyOptimistic(entityStates[id] || null)).filter(Boolean))
 // 槽位2 多实体时循环翻动：DOM 层轮换 .on 类（6s 间隔），不走数据驱动——
 // 若由 cycleIdx 驱动 liveData，每次翻动都会重建 v-html，下方跑马灯会被一并重置。
 // tick 时现查 DOM，v-html 因状态推送重建后依然安全（initCycle 在 postRender 兜底首项可见）。
@@ -96,9 +117,19 @@ function setupCycle() {
 watch(() => [props.card.type, props.freeze], setupCycle)
 
 const liveData = computed(() => {
-  const d = computeData(props.card.type, { all: all.value, hasData: hasData.value, entity: entity.value, entities: entities.value, entityId: props.card.entity_id, now: now.value, card: props.card, entities2: entities2.value, entities3: entities3.value })
+  const d = computeData(props.card.type, { all: all.value, hasData: hasData.value, entity: entity.value, entities: entities.value, entityId: props.card.entity_id, now: now.value, card: props.card, entities2: entities2.value, entities3: entities3.value, entitiesStatus: entitiesStatus.value })
   // 卡片自定义图标：覆盖模板头部 {{glyph}}（领域实体图标 / 基础卡默认图标均可替换）
   if (props.card.icon) d.glyph = props.card.icon
+  // 积木设计器：binding_entity 按槽位下标输出 s_<slot>_<index>_{icon,name,state,unit} 占位符，
+  // 仅在设计器产物上注入，旧卡片零额外开销
+  if (props.card._designerSchema || props.card.compiledHtml || props.card.schema) {
+    Object.assign(d, bindingSlotTokens({
+      entity_ids: entities.value,
+      entity_ids2: entities2.value,
+      entity_ids3: entities3.value,
+      entity_ids_status: entitiesStatus.value,
+    }))
+  }
   return d
 })
 
@@ -110,11 +141,28 @@ watch(() => [props.card.entity_id, entityIds.value.join(), slotIds2.value.join()
 watch(() => props.card.type, refreshFrozen)
 watch(hasData, (v) => { if (v && props.freeze && !frozenData.value) refreshFrozen() })
 const data = computed(() => (props.freeze ? frozenData.value || liveData.value : liveData.value))
+
+// Phase 3：有 schema / compiledHtml 时优先使用；否则走原有 card.html 路径
+// 双路渲染的占位符替换沿用 {{xxx}} → data.value 注入，保持向后兼容
+
 const renderedHtml = computed(() => {
   if (needsEntity.value && !entity.value) {
     const msg = hasData.value ? '未绑定实体或实体不存在' : '等待 Home Assistant 连接…'
     return `<div class="hc-empty"><span class="material-symbols-outlined" style="font-size:20px;opacity:.5">link_off</span><span>${msg}</span></div>`
   }
+
+  // Phase 3：schema 路径
+  const schema = props.card._designerSchema || props.card.schema
+  if (schema || props.card.compiledHtml) {
+    let html = props.card.compiledHtml
+    if (!html && schema) {
+      html = renderSchemaToHtml(schema, { entitySlots: {} })
+    }
+    // 占位符替换：把 {{key}} 替换为 data.value 中的值，缺失的保留原样
+    return renderTemplate(html || '', data.value)
+  }
+
+  // 旧路径：没有 schema → 走现有 card.html
   return renderTemplate(props.card.html, data.value)
 })
 

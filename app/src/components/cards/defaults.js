@@ -9,13 +9,15 @@ import {
   tplDatetime, tplTimer, tplCalendar, tplUpdate, tplEvent, tplPlant, tplLawnMower, tplSun,
   tplImage, tplGreeting, tplWeather, tplMap, tplClock, tplFlipClock, tplDate, tplOverview, JS_COMMON, JS_FLIP_CLOCK, tplAmapWeather, JS_AMAP_WEATHER,
 } from './templates'
+import { PERSON_INFO_SCHEMA, PERSON_SCHEMA, TOGGLE_SCHEMA, CLIMATE_SCHEMA } from './designer/presets'
 
 export { computeData } from './data'
 
 // 组装：元信息 + 默认三栏代码（模板自带 js 的卡片如天气/翻页时钟用它，否则回落通用示例）
-function mk(meta, tplFn) {
+// Phase 3 扩展：mk 第三个可选参数 schemaFn，让预设卡指向 BlockInstance schema 构造函数
+function mk(meta, tplFn, schemaFn) {
   const { html, css, js } = tplFn()
-  return { ...meta, html, css, js: js || JS_COMMON }
+  return { ...meta, html, css, js: js || JS_COMMON, schema: schemaFn ?? null }
 }
 
 // ================= 卡片注册表（36 个类型） =================
@@ -68,7 +70,7 @@ export const cardDefaults = {
     js: '',
   },
   // 基础开关：未指定实体时自动取第一个开关类实体，也可在属性面板手动指定
-  toggle: mk({ label: '开关', icon: 'toggle_on', colorCls: 'text-primary', w: 1, h: 1, needEntity: false, entityOptional: true, entityDomains: ['switch', 'light', 'plug', 'valve', 'input_boolean', 'fan', 'humidifier', 'group', 'remote', 'siren'], group: '基础仪表盘' }, tplToggle),
+  toggle: mk({ label: '开关', icon: 'toggle_on', colorCls: 'text-primary', w: 1, h: 1, needEntity: false, entityOptional: true, entityDomains: ['switch', 'light', 'plug', 'valve', 'input_boolean', 'fan', 'humidifier', 'group', 'remote', 'siren'], group: '基础仪表盘' }, tplToggle, TOGGLE_SCHEMA),
   clock: mk({ label: '时钟', icon: 'av_timer', colorCls: 'text-info', w: 1, h: 1, needEntity: false, entityDomains: null, group: '基础仪表盘' }, tplClock),
   // 翻页时钟：默认 js 为翻页驱动逻辑（用户可改），其余同 mk 组装
   flipclock: { ...mk({ label: '翻页时钟', icon: 'flip', colorCls: 'text-info', w: 2, h: 1, needEntity: false, entityDomains: null, group: '基础仪表盘' }, tplFlipClock), js: JS_FLIP_CLOCK },
@@ -84,7 +86,7 @@ export const cardDefaults = {
   input_boolean: mk({ label: '辅助开关', icon: 'check_circle', colorCls: 'text-success', w: 1, h: 1, needEntity: true, entityDomains: ['input_boolean'], group: '开关设备' }, tplToggle),
   sensor: mk({ label: '传感器', icon: 'sensors', colorCls: 'text-info', w: 1, h: 1, needEntity: true, entityDomains: ['sensor', 'number', 'input_number', 'counter'], group: '传感器' }, tplSensor),
   binary_sensor: mk({ label: '二值传感器', icon: 'sensors', colorCls: 'text-success', w: 1, h: 1, needEntity: true, entityDomains: ['binary_sensor'], group: '传感器' }, tplBinary),
-  climate: mk({ label: '空调/恒温', icon: 'thermostat', colorCls: 'text-info', w: 1, h: 2, needEntity: true, entityDomains: ['climate', 'water_heater', 'humidifier'], group: '环境气候' }, tplClimate),
+  climate: mk({ label: '空调/恒温', icon: 'thermostat', colorCls: 'text-info', w: 1, h: 2, needEntity: true, entityDomains: ['climate', 'water_heater', 'humidifier'], group: '环境气候' }, tplClimate, CLIMATE_SCHEMA),
   cover: mk({ label: '窗帘', icon: 'curtains', colorCls: 'text-warning', w: 1, h: 1, needEntity: true, entityDomains: ['cover'], group: '门窗窗帘' }, tplCover),
   media_player: mk({ label: '媒体播放', icon: 'tv', colorCls: 'text-accent', w: 1, h: 2, needEntity: true, entityDomains: ['media_player'], group: '影音媒体' }, tplMedia),
   lock: mk({ label: '门锁', icon: 'lock', colorCls: 'text-success', w: 1, h: 1, needEntity: true, entityDomains: ['lock'], group: '安防' }, tplSecurity),
@@ -93,10 +95,10 @@ export const cardDefaults = {
   vacuum: mk({ label: '扫地机', icon: 'robot', colorCls: 'text-info', w: 1, h: 1, needEntity: true, entityDomains: ['vacuum'], group: '清洁' }, tplVacuum),
   scene: mk({ label: '场景', icon: 'magic_button', colorCls: 'text-info', w: 1, h: 1, needEntity: true, entityDomains: ['scene'], group: '场景' }, tplAction),
   script: mk({ label: '脚本/自动化', icon: 'terminal', colorCls: 'text-info', w: 1, h: 1, needEntity: true, entityDomains: ['script', 'automation', 'button', 'input_button'], group: '场景' }, tplAction),
-  person: mk({ label: '人员位置', icon: 'person_pin', colorCls: 'text-success', w: 1, h: 1, needEntity: true, entityDomains: ['person', 'device_tracker', 'zone', 'geocoded_location', 'sensor'], group: '人员' }, tplPerson),
+  person: mk({ label: '人员位置', icon: 'person_pin', colorCls: 'text-success', w: 1, h: 1, needEntity: true, entityDomains: ['person', 'device_tracker', 'zone', 'geocoded_location', 'sensor'], group: '人员' }, tplPerson, PERSON_SCHEMA),
   // 人员信息：三槽位卡——主实体（person/device_tracker）状态角标置右上；
   // entity_ids2 中部循环翻动（多选）；entity_ids3 底部从左到右滚动轮播（多选）
-  personInfo: mk({ label: '人员信息', icon: 'badge', colorCls: 'text-success', w: 1, h: 1, needEntity: true, entityDomains: ['person', 'device_tracker'], group: '人员' }, tplPersonInfo),
+  personInfo: mk({ label: '人员信息', icon: 'badge', colorCls: 'text-success', w: 1, h: 1, needEntity: true, entityDomains: ['person', 'device_tracker'], group: '人员' }, tplPersonInfo, PERSON_INFO_SCHEMA),
   weather_entity: mk({ label: '天气实体', icon: 'partly_cloudy_day', colorCls: 'text-info', w: 2, h: 2, needEntity: true, entityDomains: ['weather'], group: '环境气候' }, tplWeatherEntity),
   sun: mk({ label: '太阳', icon: 'wb_sunny', colorCls: 'text-warning', w: 1, h: 1, needEntity: true, entityDomains: ['sun'], group: '环境气候' }, tplSun),
   select: mk({ label: '选项选择', icon: 'arrow_drop_down_circle', colorCls: 'text-info', w: 1, h: 1, needEntity: true, entityDomains: ['select', 'input_select'], group: '输入控制' }, tplSelect),

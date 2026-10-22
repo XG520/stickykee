@@ -34,8 +34,8 @@ let uidSeq = 0
 function uid() { return (++uidSeq).toString(36) + Date.now().toString(36) }
 
 // 卡片字段白名单：序列化 / 导出时统一裁剪，避免把运行时字段带进库里
-// entity_ids2/3：人员信息卡的扩展绑定槽位（中部循环翻动 / 底部滚动轮播）
-const CARD_FIELDS = ['type', 'w', 'h', 'html', 'css', 'js', 'entity_id', 'entity_ids', 'entity_ids2', 'entity_ids3', 'icon', 'avatar', 'title']
+// entity_ids2/3/status：人员信息卡的扩展绑定槽位（中部循环翻动 / 底部滚动轮播 / head内状态跑马灯）
+const CARD_FIELDS = ['type', 'w', 'h', 'html', 'css', 'js', 'entity_id', 'entity_ids', 'entity_ids2', 'entity_ids3', 'entity_ids_status', 'icon', 'avatar', 'title', '_designerSchema', 'compiledHtml', 'entitySlotMap']
 
 function stripCard(card) {
   const o = {}
@@ -49,8 +49,8 @@ export function newPage(name, cards = []) {
 
 export function newCard(type, extra = {}) {
   const d = cardDefaults[type] || cardDefaults.generic
-  const o = { type, uid: uid(), w: d.w, h: d.h, html: d.html, css: d.css, js: d.js, entity_id: '', entity_ids: [], entity_ids2: [], entity_ids3: [], icon: '', avatar: '', title: '' }
-  for (const k of ['w', 'h', 'html', 'css', 'js', 'entity_id', 'entity_ids', 'entity_ids2', 'entity_ids3', 'icon', 'avatar', 'title']) {
+  const o = { type, uid: uid(), w: d.w, h: d.h, html: d.html, css: d.css, js: d.js, entity_id: '', entity_ids: [], entity_ids2: [], entity_ids3: [], entity_ids_status: [], icon: '', avatar: '', title: '', _designerSchema: null, compiledHtml: '', entitySlotMap: {} }
+  for (const k of ['w', 'h', 'html', 'css', 'js', 'entity_id', 'entity_ids', 'entity_ids2', 'entity_ids3', 'entity_ids_status', 'icon', 'avatar', 'title', '_designerSchema', 'compiledHtml', 'entitySlotMap']) {
     if (extra[k] !== undefined) o[k] = extra[k]
   }
   // 多实体卡（通用卡/人员位置卡）：实体列表以 entity_ids 为准，entity_id 始终同步为第一个（兼容单实体链路）

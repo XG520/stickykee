@@ -12,7 +12,7 @@
 // 公共外壳样式（每张卡的 CSS 都以此为基底）
 // 设计语言：统一卡片壳（细边框 + 顶光渐变 + 柔和落影）、头部图标升级为类型色芯片、
 // 徽章/按钮/大数字统一排版节奏——与设备聚合卡 .dk 保持同一视觉体系。
-const SHELL_BASE = `.hc{flex:1;min-height:0;display:flex;flex-direction:column;gap:4px;overflow:hidden;padding:8px;border-radius:14px;
+export const SHELL_BASE = `.hc{flex:1;min-height:0;display:flex;flex-direction:column;gap:4px;overflow:hidden;padding:8px;border-radius:14px;
   background:linear-gradient(165deg,rgb(255 255 255 / .05),rgb(255 255 255 / 0) 46%),color-mix(in srgb,var(--hc-bg2) 72%,var(--hc-bg));
   border:1px solid var(--hc-border);
   /* 边框厚度补偿：仪表盘/预览以 transform:scale 等比放大整卡，1px 会被同步放大
@@ -396,14 +396,24 @@ export function tplPerson() {
 export function tplPersonInfo() {
   // 槽位3 无缝滚动：轨道内渲染两份完全相同的内容（{{marqueeItemsHtml}}×2），
   // 每项自带右间距作间隙，位移 -50% 时第二份恰好接上第一份（从右向左，无需 JS 测量）。
+  // 顶部状态跑马灯（{{headStatusHtml}}）插在 {{name}} 和 {{badge}} 之间——
+  // 标题独占图标到跑马灯的全部空间，跑马灯是次要元素在标题右侧滚动，互不挤占。
   const html = `<div class="hc">
-  ${head}
+  ${head.replace('{{name}}</span>{{badge}}', '{{name}}</span>{{headStatusHtml}}{{badge}}')}
   <div class="h-fill h-mid">{{avatarHtml}}</div>
   <div class="pi-cycle{{cycleCls}}">{{cycleItemsHtml}}</div>
   <div class="pi-mq{{mqCls}}"><div class="pi-mq-in">{{marqueeItemsHtml}}{{marqueeItemsHtml}}</div></div>
 </div>`
   const css = shell + `
 .hc{padding:6px}
+/* head 内设备状态跑马灯：在标题右侧（h-t → pi-hs → badge）从右向左滚动 */
+/* 关键：跑马灯是次要元素，flex:0 0 auto + max-width:38% 不抢占标题空间 */
+.h-head .pi-hs{flex:0 0 auto;min-width:0;max-width:38%;overflow:hidden}
+.h-head .pi-hs.is-hide{display:none}
+.h-head .pi-hs-in{display:inline-flex;align-items:center;white-space:nowrap;will-change:transform;animation:pi-mq-scroll 10s linear infinite}
+.h-head .pi-hs-it{display:inline-flex;align-items:center;gap:2px;margin-right:16px;font-size:8px;font-weight:600;color:var(--hc-sub)}
+/* 标题永远优先：独占剩余空间，不截断 */
+.h-head .h-t{flex:1 1 auto;min-width:0;max-width:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .avatar{width:38px;height:38px;border-radius:99px;object-fit:cover;border:2px solid var(--hc-border)}
 .avatar-f{width:38px;height:38px;border-radius:99px;display:flex;align-items:center;justify-content:center;border:2px solid var(--hc-border);background:var(--hc-bg2);color:var(--hc-color,var(--hc-success))}
 .pi-cycle{display:flex;align-items:center;justify-content:center;min-height:13px;min-width:0}

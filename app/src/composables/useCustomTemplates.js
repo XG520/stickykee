@@ -9,7 +9,7 @@ const GROUP = '我的模板'
 const MAX_TEMPLATES = 40
 
 // 模板字段（持久化）；其他字段（needEntity/entityDomains/group）在注入时由我们统一补齐
-export const TEMPLATE_FIELDS = ['name', 'icon', 'w', 'h', 'html', 'css', 'js', 'needEntity', 'entityDomains']
+export const TEMPLATE_FIELDS = ['name', 'icon', 'w', 'h', 'html', 'css', 'js', 'needEntity', 'entityDomains', '_designerSchema', 'compiledHtml', 'entitySlotMap']
 
 // 生成唯一 type key（运行时注册用）；ID 自带时间便于排序 / 查重
 function makeId() {
@@ -37,6 +37,9 @@ function injectTemplate(t) {
     html: t.html || '',
     css: t.css || '',
     js: t.js || '',
+    _designerSchema: t._designerSchema || null,
+    compiledHtml: t.compiledHtml || '',
+    entitySlotMap: t.entitySlotMap || {},
     __template: true, // 标记是用户模板（删除时用到）
   }
 }
@@ -84,6 +87,9 @@ export async function saveAsTemplate(card, { name, icon, needEntity, entityDomai
     js: card.js || '',
     needEntity: !!needEntity,
     entityDomains: needEntity && Array.isArray(entityDomains) && entityDomains.length ? entityDomains : null,
+    _designerSchema: card._designerSchema || null,
+    compiledHtml: card.compiledHtml || '',
+    entitySlotMap: card.entitySlotMap || {},
     createdAt: exist?.createdAt || Date.now(),
     updatedAt: Date.now(),
   }

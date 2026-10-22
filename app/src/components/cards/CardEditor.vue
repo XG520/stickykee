@@ -22,6 +22,10 @@
                 <span class="material-symbols-outlined">restart_alt</span>
                 <span class="ce-btn-text">恢复默认</span>
               </button>
+              <button v-if="meta.needEntity || meta.group" class="ce-btn ce-ghost" @click="openDesigner" title="用预设积木克隆一份，进入可视化设计器微调">
+                <span class="material-symbols-outlined">auto_fix_high</span>
+                <span class="ce-btn-text">克隆并设计</span>
+              </button>
               <button class="ce-btn ce-ghost" :class="{ 'is-dirty': dirty }" @click="banner = banner === 'save-as-tpl' ? null : 'save-as-tpl'" title="把当前这张卡保存为模板（下次添加卡片时就能找到）">
                 <span class="material-symbols-outlined">bookmark_add</span>
                 <span class="ce-btn-text">保存为模板</span>
@@ -287,7 +291,7 @@
                     <div class="ce-combobox ce-multi-box">
                       <ul class="ce-multi-list">
                         <li
-                          v-for="id in draft[slot.key]"
+                          v-for="(id, idx) in draft[slot.key]"
                           :key="id"
                           class="ce-entity-item ce-multi-item"
                         >
@@ -296,9 +300,17 @@
                             <span class="ce-en-name">{{ slotRowOf(id).label }}</span>
                             <span class="ce-en-id">{{ id }}</span>
                           </span>
-                          <button type="button" class="ce-multi-del" title="移除该实体" @click="removeSlotEntity(slot.key, id)">
-                            <span class="material-symbols-outlined">close</span>
-                          </button>
+                          <span class="ce-multi-act">
+                            <button type="button" class="ce-multi-mv" title="上移" :disabled="idx === 0" @click.stop="moveSlotEntity(slot.key, id, -1)">
+                              <span class="material-symbols-outlined">expand_less</span>
+                            </button>
+                            <button type="button" class="ce-multi-mv" title="下移" :disabled="idx === draft[slot.key].length - 1" @click.stop="moveSlotEntity(slot.key, id, 1)">
+                              <span class="material-symbols-outlined">expand_more</span>
+                            </button>
+                            <button type="button" class="ce-multi-del" title="移除该实体" @click.stop="removeSlotEntity(slot.key, id)">
+                              <span class="material-symbols-outlined">close</span>
+                            </button>
+                          </span>
                         </li>
                         <li v-if="!draft[slot.key].length" class="ce-entity-empty">
                           {{ slot.empty }}
@@ -667,6 +679,9 @@
         </div>
       </div>
     </Transition>
+
+    <!-- 卡片设计器（Phase 3 新增）：独立全屏弹窗 -->
+    <Designer v-if="designerOpen" v-model="designerOpen" :initial-schema="designerSchema" @save="onDesignerSave" />
   </Teleport>
 </template>
 
@@ -678,6 +693,9 @@ import { WIDGET_DEFS, WIDGET_GROUPS } from './widgets'
 import { saveAsTemplate } from '@/composables/useCustomTemplates'
 import CodeCard from './CodeCard.vue'
 import VisualStage from './VisualStage.vue'
+import Designer from './designer/Designer.vue'
+import { makeBlockId } from './designer/blockDefs'
+import { PRESET_MAP } from './designer/presets'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -691,7 +709,7 @@ const emit = defineEmits(['close', 'save'])
 const baseCell = 120
 
 // ================= 草稿与脏状态 =================
-const draft = reactive({ type: '', uid: '', entity_id: '', entity_ids: [], entity_ids2: [], entity_ids3: [], w: 1, h: 1, html: '', css: '', js: '', icon: '', avatar: '', title: '' })
+const draft = reactive({ type: '', uid: '', entity_id: '', entity_ids: [], entity_ids2: [], entity_ids3: [], entity_ids_status: [], w: 1, h: 1, html: '', css: '', js: '', icon: '', avatar: '', title: '', _designerSchema: null, compiledHtml: '', entitySlotMap: {} })
 let snapshot = ''
 const dirty = computed(() => JSON.stringify(pickDraft()) !== snapshot)
 
@@ -702,9 +720,13 @@ function pickDraft() {
     entity_ids: ['generic', 'person', 'group'].includes(draft.type) ? [...draft.entity_ids] : [],
     entity_ids2: draft.type === 'personInfo' ? [...draft.entity_ids2] : [],
     entity_ids3: draft.type === 'personInfo' ? [...draft.entity_ids3] : [],
+    entity_ids_status: draft.type === 'personInfo' ? [...draft.entity_ids_status] : [],
     icon: draft.icon,
     avatar: draft.avatar,
     title: draft.title || '',
+    _designerSchema: draft._designerSchema,
+    compiledHtml: draft.compiledHtml,
+    entitySlotMap: draft.entitySlotMap,
   }
 }
 // 通用卡与人员位置卡为多实体卡（不限数量）；其余卡仍为单实体
@@ -725,6 +747,7 @@ watch(
         : (props.card.entity_id ? [props.card.entity_id] : [])
       draft.entity_ids2 = Array.isArray(props.card.entity_ids2) ? props.card.entity_ids2.filter(Boolean) : []
       draft.entity_ids3 = Array.isArray(props.card.entity_ids3) ? props.card.entity_ids3.filter(Boolean) : []
+      draft.entity_ids_status = Array.isArray(props.card.entity_ids_status) ? props.card.entity_ids_status.filter(Boolean) : []
       draft.w = props.card.w || 1
       draft.h = props.card.h || 1
       draft.html = props.card.html || ''
@@ -734,6 +757,9 @@ watch(
       iconInput.value = draft.icon
       draft.avatar = props.card.avatar || ''
       draft.title = props.card.title || ''
+      draft._designerSchema = props.card._designerSchema || null
+      draft.compiledHtml = props.card.compiledHtml || ''
+      draft.entitySlotMap = props.card.entitySlotMap || {}
       tab.value = 'html'
       banner.value = null
       entityQuery.value = ''
@@ -774,6 +800,58 @@ function resetToDefault() {
   banner.value = null
   nextTick(syncScroll)
 }
+
+// ================= 卡片设计器（Phase 3） =================
+const designerOpen = ref(false)
+const designerSchema = ref(null)
+function openDesigner() {
+  // 已有设计产物：在其上继续二次编辑（含已绑定的实体）
+  if (draft._designerSchema) {
+    designerSchema.value = JSON.parse(JSON.stringify(draft._designerSchema))
+    designerOpen.value = true
+    return
+  }
+  // 否则用预设 schema 克隆一份
+  let schemaFn = PRESET_MAP[draft.type]
+  if (!schemaFn && cardDefaults[draft.type]?.schema) {
+    schemaFn = cardDefaults[draft.type].schema
+  }
+  if (!schemaFn) {
+    // 自定义卡片：从空白画布开始独立设计（显式传空白根，避免复用设计器上一次的树）
+    if (draft.type === 'custom') {
+      designerSchema.value = { id: makeBlockId(), defType: 'slot_root', props: { padding: 8, gap: 4 }, children: [] }
+      designerOpen.value = true
+      return
+    }
+    showTopMsg('该卡类型暂无预设积木，只能手动编辑代码', true)
+    return
+  }
+  const fresh = JSON.parse(JSON.stringify(schemaFn()))
+  designerSchema.value = fresh
+  designerOpen.value = true
+}
+function onDesignerSave(payload) {
+  // payload = { schema, entitySlotMap, compiledHtml, css, extraCss }（由 designerStore.serialize() 产出）
+  draft._designerSchema = JSON.parse(JSON.stringify(payload.schema))
+  draft.entitySlotMap = JSON.parse(JSON.stringify(payload.entitySlotMap))
+  draft.compiledHtml = payload.compiledHtml
+  draft.html = payload.compiledHtml
+  // 回填槽位：设计器里绑定的实体同步到编辑器已有的槽位选择器，两端看到的实体一致
+  const em = payload.entitySlotMap || {}
+  draft.entity_ids = [...(em.entity_ids || [])]
+  draft.entity_ids2 = [...(em.entity_ids2 || [])]
+  draft.entity_ids3 = [...(em.entity_ids3 || [])]
+  draft.entity_ids_status = [...(em.entity_ids_status || [])]
+  if (draft.entity_ids.length) draft.entity_id = draft.entity_ids[0]
+  // CSS：空白起手的自定义卡需要补齐积木基础样式；预设卡保留自己的完整 CSS，只补缺失的积木类
+  if (!draft.css || !draft.css.includes('.hc{')) {
+    draft.css = payload.css || draft.css
+  } else if (payload.extraCss && !draft.css.includes('.hc-mq-wrap')) {
+    draft.css += '\n' + payload.extraCss
+  }
+  showTopMsg('已应用设计器生成的 HTML 到草稿')
+}
+
 function save() {
   emit('save', { uid: draft.uid, ...pickDraft() })
 }
@@ -915,6 +993,7 @@ function removeEntity(id) {
 // 与主实体框独立：不限域、不限数量；两个槽位共用一个打开中的下拉（slotMenuKey）与搜索词（slotQuery）
 const extraSlots = computed(() => (draft.type === 'personInfo'
   ? [
+    { key: 'entity_ids_status', label: '顶部状态跑马灯', empty: '可选：设备状态实体，从右向左滚动显示在标题与角标之间' },
     { key: 'entity_ids2', label: '循环翻动实体', empty: '可选：多个实体时状态在卡片中部轮流翻动显示' },
     { key: 'entity_ids3', label: '滚动轮播实体', empty: '可选：实体状态在卡片底部从左到右滚动显示' },
   ]
@@ -959,6 +1038,16 @@ function removeSlotEntity(key, id) {
   const list = draft[key]
   const i = Array.isArray(list) ? list.indexOf(id) : -1
   if (i >= 0) list.splice(i, 1)
+}
+// 调整槽位内实体顺序：dir = -1 上移 / +1 下移
+function moveSlotEntity(key, id, dir) {
+  const list = draft[key]
+  if (!Array.isArray(list) || dir === 0) return
+  const i = list.indexOf(id)
+  if (i < 0) return
+  const j = i + dir
+  if (j < 0 || j >= list.length) return
+  ;[list[i], list[j]] = [list[j], list[i]]
 }
 function onDocMouseDown(e) {
   if (entityMenu.value && entityWrapRef.value && !entityWrapRef.value.contains(e.target)) entityMenu.value = false
@@ -2187,6 +2276,23 @@ watch(
   border-radius: 5px;
   padding: 1px 5px;
 }
+/* chip 右侧按钮组（上移 / 下移 / 删除） */
+.ce-multi-act { display: inline-flex; align-items: center; gap: 1px; flex: none; margin-left: auto; }
+.ce-multi-mv {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #8a8a8a;
+  border-radius: 4px;
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer;
+}
+.ce-multi-mv:hover:not(:disabled) { background: #2a2b2f; color: #d0d0d0; }
+.ce-multi-mv:disabled { opacity: 0.3; cursor: not-allowed; }
+.ce-multi-mv .material-symbols-outlined { font-size: 13px; line-height: 1; }
 .ce-multi-del {
   flex: none;
   width: 20px;

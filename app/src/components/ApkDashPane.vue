@@ -177,7 +177,7 @@ const emit = defineEmits(['device-drawer', 'toast', 'select', 'open-person', 'op
 
 // 拖拽数据 MIME：左栏卡片 dragstart 写入，本面板 drop 读取（只传白名单字段，克隆后生成新 uid）
 const MIME = 'application/x-hc-card'
-const CARD_FIELDS = ['w', 'h', 'html', 'css', 'js', 'entity_id', 'entity_ids', 'entity_ids2', 'entity_ids3', 'icon', 'avatar', 'title']
+const CARD_FIELDS = ['w', 'h', 'html', 'css', 'js', 'entity_id', 'entity_ids', 'entity_ids2', 'entity_ids3', 'entity_ids_status', 'icon', 'avatar', 'title', '_designerSchema', 'compiledHtml', 'entitySlotMap']
 const frameMaxWidth = 392
 
 const deviceId = ref('')

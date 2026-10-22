@@ -473,22 +473,54 @@ function slotEntityHtml(e) {
   const val = `${String(e.state)}${unit ? ' ' + unit : ''}`
   return `<span class="material-symbols-outlined pi-it-ic">${icon}</span>${escHtml(val)}`
 }
+// 不带图标的纯值版本：用于 head 行跑马灯（空间紧张、不需要图标）
+function slotValueHtml(e) {
+  const unit = e.unit || attr(e, 'unit_of_measurement') || ''
+  return `${escHtml(String(e.state))}${unit ? ' ' + unit : ''}`
+}
+
+// 积木设计器的实体占位符注入表：
+// binding_entity 积木按槽位下标输出 `{{s_<slot>_<index>_<field>}}`，
+// 这里按四个实体槽位数组生成对应值（与 blockDefs 的 entitySlotMap 顺序一致）。
+export function bindingSlotTokens(slots) {
+  const out = {}
+  Object.entries(slots || {}).forEach(([key, list]) => {
+    if (!Array.isArray(list)) return
+    list.forEach((e, i) => {
+      if (!e) return
+      const unit = e.unit || attr(e, 'unit_of_measurement') || ''
+      const p = `s_${key}_${i}`
+      out[`${p}_icon`] = iconFor(e, domainGlyph[e.domain] || 'widgets')
+      out[`${p}_name`] = e.friendly_name || e.entity_id || ''
+      out[`${p}_state`] = String(e.state)
+      out[`${p}_unit`] = unit
+    })
+  })
+  return out
+}
 
 function personInfoData(ctx) {
   const { hasData, entity: main, card } = ctx
   const list2 = Array.isArray(ctx.entities2) ? ctx.entities2.filter(Boolean) : []
   const list3 = Array.isArray(ctx.entities3) ? ctx.entities3.filter(Boolean) : []
+  const listSt = Array.isArray(ctx.entitiesStatus) ? ctx.entitiesStatus.filter(Boolean) : []
   const b = base(main, hasData, 'person')
   if (!main) {
     return {
       ...b, badge: '<span class="h-badge b-off">—</span>', avatarHtml: personAvatarHtml(null, card?.avatar),
       cycleCls: ' is-hide', cycleItemsHtml: '', mqCls: ' is-hide', marqueeItemsHtml: '',
+      headStatusHtml: '<span class="pi-hs is-hide"></span>',
     }
   }
   const { home, label } = personHomeState(main)
   const badge = `<span class="h-badge ${home ? 'b-on' : 'b-warn'}">${escHtml(label)}</span>`
   const items2 = list2.map(slotEntityHtml)
   const items3 = list3.map(slotEntityHtml)
+  // head 跑马灯不带图标（空间紧张），只显示值
+  const itemsSt = listSt.map(slotValueHtml).map((v) => `<span class="pi-hs-it">${v}</span>`).join('')
+  const headStatusHtml = itemsSt.length
+    ? `<span class="pi-hs"><span class="pi-hs-in">${itemsSt}${itemsSt}</span></span>`
+    : `<span class="pi-hs is-hide"></span>`
   return {
     ...b,
     badge,
@@ -497,6 +529,7 @@ function personInfoData(ctx) {
     cycleItemsHtml: items2.map((h) => `<span class="pi-cy-item">${h}</span>`).join(''),
     mqCls: items3.length ? '' : ' is-hide',
     marqueeItemsHtml: items3.map((h) => `<span class="pi-mq-it">${h}</span>`).join(''),
+    headStatusHtml,
   }
 }
 

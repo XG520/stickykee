@@ -11,6 +11,7 @@ const routes = [
   { path: '/devices', name: 'devices', component: () => import('@/views/DevicesView.vue'), meta: { title: '设备' } },
   { path: '/scenes', name: 'scenes', component: () => import('@/views/ScenesView.vue'), meta: { title: '场景' } },
   { path: '/settings', name: 'settings', component: () => import('@/views/SettingsView.vue'), meta: { title: '设置' } },
+  { path: '/designer', name: 'designer', component: () => import('@/views/DesignerDemo.vue'), meta: { title: '卡片设计器', public: true } },
 ]
 
 const router = createRouter({
