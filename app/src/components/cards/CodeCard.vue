@@ -151,9 +151,11 @@ const renderedHtml = computed(() => {
     return `<div class="hc-empty"><span class="material-symbols-outlined" style="font-size:20px;opacity:.5">link_off</span><span>${msg}</span></div>`
   }
 
-  // Phase 3：schema 路径
+  // Phase 3：schema 路径。但用户在编辑器里手改过 HTML（与编译产物不一致）时以手改内容为准，
+  // 否则 schema 会把编辑器的修改悄悄盖掉
   const schema = props.card._designerSchema || props.card.schema
-  if (schema || props.card.compiledHtml) {
+  const handEdited = !!(props.card.html && props.card.compiledHtml && props.card.html !== props.card.compiledHtml)
+  if (!handEdited && (schema || props.card.compiledHtml)) {
     let html = props.card.compiledHtml
     if (!html && schema) {
       html = renderSchemaToHtml(schema, { entitySlots: {} })

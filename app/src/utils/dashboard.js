@@ -49,7 +49,9 @@ export function newPage(name, cards = []) {
 
 export function newCard(type, extra = {}) {
   const d = cardDefaults[type] || cardDefaults.generic
-  const o = { type, uid: uid(), w: d.w, h: d.h, html: d.html, css: d.css, js: d.js, entity_id: '', entity_ids: [], entity_ids2: [], entity_ids3: [], entity_ids_status: [], icon: '', avatar: '', title: '', _designerSchema: null, compiledHtml: '', entitySlotMap: {} }
+  // 用户模板（设计器产物）自带 schema / 编译 HTML / 实体槽位映射，新建卡片时一并继承，
+  // 否则只有 html 而无 schema，CodeCard 会退化成字符串渲染
+  const o = { type, uid: uid(), w: d.w, h: d.h, html: d.html, css: d.css, js: d.js, entity_id: '', entity_ids: [], entity_ids2: [], entity_ids3: [], entity_ids_status: [], icon: '', avatar: '', title: '', _designerSchema: d._designerSchema || null, compiledHtml: d.compiledHtml || '', entitySlotMap: d.entitySlotMap ? JSON.parse(JSON.stringify(d.entitySlotMap)) : {} }
   for (const k of ['w', 'h', 'html', 'css', 'js', 'entity_id', 'entity_ids', 'entity_ids2', 'entity_ids3', 'entity_ids_status', 'icon', 'avatar', 'title', '_designerSchema', 'compiledHtml', 'entitySlotMap']) {
     if (extra[k] !== undefined) o[k] = extra[k]
   }

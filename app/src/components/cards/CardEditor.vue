@@ -22,10 +22,6 @@
                 <span class="material-symbols-outlined">restart_alt</span>
                 <span class="ce-btn-text">恢复默认</span>
               </button>
-              <button v-if="meta.needEntity || meta.group" class="ce-btn ce-ghost" @click="openDesigner" title="用预设积木克隆一份，进入可视化设计器微调">
-                <span class="material-symbols-outlined">auto_fix_high</span>
-                <span class="ce-btn-text">克隆并设计</span>
-              </button>
               <button class="ce-btn ce-ghost" :class="{ 'is-dirty': dirty }" @click="banner = banner === 'save-as-tpl' ? null : 'save-as-tpl'" title="把当前这张卡保存为模板（下次添加卡片时就能找到）">
                 <span class="material-symbols-outlined">bookmark_add</span>
                 <span class="ce-btn-text">保存为模板</span>
@@ -679,9 +675,6 @@
         </div>
       </div>
     </Transition>
-
-    <!-- 卡片设计器（Phase 3 新增）：独立全屏弹窗 -->
-    <Designer v-if="designerOpen" v-model="designerOpen" :initial-schema="designerSchema" @save="onDesignerSave" />
   </Teleport>
 </template>
 
@@ -693,10 +686,6 @@ import { WIDGET_DEFS, WIDGET_GROUPS } from './widgets'
 import { saveAsTemplate } from '@/composables/useCustomTemplates'
 import CodeCard from './CodeCard.vue'
 import VisualStage from './VisualStage.vue'
-import Designer from './designer/Designer.vue'
-import { makeBlockId } from './designer/blockDefs'
-import { PRESET_MAP } from './designer/presets'
-
 const props = defineProps({
   open: { type: Boolean, default: false },
   card: { type: Object, default: null },
@@ -799,57 +788,6 @@ function resetToDefault() {
   draft.js = d.js
   banner.value = null
   nextTick(syncScroll)
-}
-
-// ================= 卡片设计器（Phase 3） =================
-const designerOpen = ref(false)
-const designerSchema = ref(null)
-function openDesigner() {
-  // 已有设计产物：在其上继续二次编辑（含已绑定的实体）
-  if (draft._designerSchema) {
-    designerSchema.value = JSON.parse(JSON.stringify(draft._designerSchema))
-    designerOpen.value = true
-    return
-  }
-  // 否则用预设 schema 克隆一份
-  let schemaFn = PRESET_MAP[draft.type]
-  if (!schemaFn && cardDefaults[draft.type]?.schema) {
-    schemaFn = cardDefaults[draft.type].schema
-  }
-  if (!schemaFn) {
-    // 自定义卡片：从空白画布开始独立设计（显式传空白根，避免复用设计器上一次的树）
-    if (draft.type === 'custom') {
-      designerSchema.value = { id: makeBlockId(), defType: 'slot_root', props: { padding: 8, gap: 4 }, children: [] }
-      designerOpen.value = true
-      return
-    }
-    showTopMsg('该卡类型暂无预设积木，只能手动编辑代码', true)
-    return
-  }
-  const fresh = JSON.parse(JSON.stringify(schemaFn()))
-  designerSchema.value = fresh
-  designerOpen.value = true
-}
-function onDesignerSave(payload) {
-  // payload = { schema, entitySlotMap, compiledHtml, css, extraCss }（由 designerStore.serialize() 产出）
-  draft._designerSchema = JSON.parse(JSON.stringify(payload.schema))
-  draft.entitySlotMap = JSON.parse(JSON.stringify(payload.entitySlotMap))
-  draft.compiledHtml = payload.compiledHtml
-  draft.html = payload.compiledHtml
-  // 回填槽位：设计器里绑定的实体同步到编辑器已有的槽位选择器，两端看到的实体一致
-  const em = payload.entitySlotMap || {}
-  draft.entity_ids = [...(em.entity_ids || [])]
-  draft.entity_ids2 = [...(em.entity_ids2 || [])]
-  draft.entity_ids3 = [...(em.entity_ids3 || [])]
-  draft.entity_ids_status = [...(em.entity_ids_status || [])]
-  if (draft.entity_ids.length) draft.entity_id = draft.entity_ids[0]
-  // CSS：空白起手的自定义卡需要补齐积木基础样式；预设卡保留自己的完整 CSS，只补缺失的积木类
-  if (!draft.css || !draft.css.includes('.hc{')) {
-    draft.css = payload.css || draft.css
-  } else if (payload.extraCss && !draft.css.includes('.hc-mq-wrap')) {
-    draft.css += '\n' + payload.extraCss
-  }
-  showTopMsg('已应用设计器生成的 HTML 到草稿')
 }
 
 function save() {

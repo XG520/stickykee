@@ -653,6 +653,23 @@
       </div>
     </section>
 
+    <!-- 卡片设计器：独立功能入口（积木式设计，产物保存为「我的模板」） -->
+    <section id="sec-designer" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
+      <div class="flex items-center gap-2.5 mb-4">
+        <div class="w-8 h-8 rounded-xl bg-primary/20 flex items-center justify-center">
+          <span class="material-symbols-outlined text-primary text-lg">auto_awesome</span>
+        </div>
+        <div>
+          <h2 class="font-headline text-on-background text-base font-semibold">卡片设计器</h2>
+          <p class="text-muted text-xs mt-0.5">用积木搭出一张完整的卡片，保存后添加到仪表盘</p>
+        </div>
+      </div>
+      <button class="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-on-primary text-sm font-medium shadow-md shadow-primary/25 active:scale-95 transition-transform" @click="router.push('/designer')">
+        <span class="material-symbols-outlined text-base">dashboard_customize</span>
+        进入设计器
+      </button>
+    </section>
+
     <!-- 语音助手 -->
     <section id="sec-voice" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
       <div class="flex items-center gap-2.5 mb-4">
@@ -1081,6 +1098,7 @@
 
 <script setup>
 import { ref, reactive, watch, onMounted, onUnmounted, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import ToggleRow from '@/components/ToggleRow.vue'
 import SiteIcon from '@/components/SiteIcon.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
@@ -1255,6 +1273,7 @@ const tabs = [
   ...(auth.isAdmin ? [{ key: 'users', icon: 'group', label: '用户管理' }] : []),
 ]
 const activeTab = ref('connect')
+const router = useRouter()
 // 锚点导航：每个标签页的区块快捷跳转列表
 const anchors = {
   connect: [
@@ -1274,6 +1293,7 @@ const anchors = {
     { id: 'sec-icon-style', label: '图标' },
     { id: 'sec-floorplan', label: '户型图' },
     { id: 'sec-animation', label: '动画' },
+    { id: 'sec-designer', label: '设计器' },
     { id: 'sec-voice', label: '语音' },
   ],
   account: [
