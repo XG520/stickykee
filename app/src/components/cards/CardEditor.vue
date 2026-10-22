@@ -271,31 +271,49 @@
                     {{ slot.label }}
                     <span class="ce-label-sub">已选 {{ draft[slot.key].length }} 个 · 不限数量</span>
                   </label>
-                  <div class="ce-combobox ce-multi-box">
-                    <ul class="ce-multi-list">
-                      <li
-                        v-for="id in draft[slot.key]"
-                        :key="id"
-                        class="ce-entity-item ce-multi-item"
-                      >
-                        <span class="ce-domain-badge">{{ slotRowOf(id).domain }}</span>
-                        <span class="ce-en-text">
-                          <span class="ce-en-name">{{ slotRowOf(id).label }}</span>
-                          <span class="ce-en-id">{{ id }}</span>
-                        </span>
-                        <button type="button" class="ce-multi-del" title="移除该实体" @click="removeSlotEntity(slot.key, id)">
-                          <span class="material-symbols-outlined">close</span>
-                        </button>
-                      </li>
-                      <li v-if="!draft[slot.key].length" class="ce-entity-empty">
-                        {{ slot.empty }}
-                      </li>
-                    </ul>
-                    <button type="button" class="ce-add-entity" @click="toggleSlotMenu(slot.key)">
-                      <span class="material-symbols-outlined">add</span>
-                      添加实体
-                      <span class="material-symbols-outlined ce-combo-caret" v-if="slotMenuKey === slot.key">expand_less</span>
+                  <!-- 默认折叠态：只显示数量摘要 + 添加按钮，避免多实体时每个槽位框占满 132px -->
+                  <div v-if="!slotExpanded[slot.key]" class="ce-slot-collapsed">
+                    <span class="ce-slot-num">{{ draft[slot.key].length }}</span>
+                    <span class="ce-slot-num-sub">个实体</span>
+                    <button type="button" class="ce-btn ce-ghost ce-btn-sm ce-slot-act" @click="slotExpanded[slot.key] = true">
+                      <span class="material-symbols-outlined">expand_more</span>展开
                     </button>
+                    <button type="button" class="ce-btn ce-primary ce-btn-sm" @click="toggleSlotMenu(slot.key)">
+                      <span class="material-symbols-outlined">add</span>添加
+                    </button>
+                  </div>
+                  <!-- 展开态：完整 chip list + 收起/添加按钮 + 下拉搜索 -->
+                  <template v-else>
+                    <div class="ce-combobox ce-multi-box">
+                      <ul class="ce-multi-list">
+                        <li
+                          v-for="id in draft[slot.key]"
+                          :key="id"
+                          class="ce-entity-item ce-multi-item"
+                        >
+                          <span class="ce-domain-badge">{{ slotRowOf(id).domain }}</span>
+                          <span class="ce-en-text">
+                            <span class="ce-en-name">{{ slotRowOf(id).label }}</span>
+                            <span class="ce-en-id">{{ id }}</span>
+                          </span>
+                          <button type="button" class="ce-multi-del" title="移除该实体" @click="removeSlotEntity(slot.key, id)">
+                            <span class="material-symbols-outlined">close</span>
+                          </button>
+                        </li>
+                        <li v-if="!draft[slot.key].length" class="ce-entity-empty">
+                          {{ slot.empty }}
+                        </li>
+                      </ul>
+                    </div>
+                    <div class="ce-slot-actions">
+                      <button type="button" class="ce-btn ce-ghost ce-btn-sm ce-slot-act" @click="slotExpanded[slot.key] = false">
+                        <span class="material-symbols-outlined">expand_less</span>收起
+                      </button>
+                      <button type="button" class="ce-add-entity" @click="toggleSlotMenu(slot.key)">
+                        <span class="material-symbols-outlined">add</span>添加实体
+                        <span class="material-symbols-outlined ce-combo-caret" v-if="slotMenuKey === slot.key">expand_less</span>
+                      </button>
+                    </div>
                     <Transition name="ce-menu">
                       <div v-if="slotMenuKey === slot.key" class="ce-dropdown">
                         <div class="ce-search">
@@ -333,7 +351,7 @@
                         </div>
                       </div>
                     </Transition>
-                  </div>
+                  </template>
                 </div>
 
                 <div v-if="meta.needEntity" class="ce-field ce-field-title">
@@ -902,6 +920,7 @@ const extraSlots = computed(() => (draft.type === 'personInfo'
   : []))
 const slotMenuKey = ref('')
 const slotQuery = ref('')
+const slotExpanded = ref({}) // { entity_ids2: true } 控制槽位框 chip list 默认折叠
 const slotSearchRef = ref(null)
 const allEntityOptions = computed(() =>
   Object.values(entityStates)
@@ -1796,11 +1815,14 @@ watch(
 
 /* 配置区 */
 .ce-config {
-  flex: none;
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-start;
+  align-content: flex-start;
   gap: 12px;
+  overflow-y: auto;
+  padding-right: 4px; /* 滚动条预留，避免 chip 贴边 */
 }
 
 /* 设计模式：元素属性 / 代码编辑 视图切换 */
@@ -2121,6 +2143,32 @@ watch(
 }
 .ce-multi-item { background: #141518; border: 1px solid #2e2f33; cursor: default; }
 .ce-multi-item:hover { background: #17181b; }
+/* ===== 槽位框折叠态 / 展开态 ===== */
+.ce-slot-collapsed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 26px;
+}
+.ce-slot-num {
+  font-size: 17px;
+  font-weight: 800;
+  color: #f5a623;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.ce-slot-num-sub {
+  font-size: 9px;
+  color: #6f6e6a;
+  margin-right: auto;
+}
+.ce-slot-act { flex: none; }
+.ce-slot-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 5px;
+}
 .ce-primary-tag {
   flex: none;
   font-size: 9px;
