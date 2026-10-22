@@ -543,6 +543,15 @@ function connectWS() {
         }
       }
       else if (m.type === 'cmd') dispatchCommand(m.cmd, m.data)
+      // HA mobile_app 通知：HA 侧调用 notify.mobile_app_<device> 服务后 fire mobile_app.notify
+      // 事件 → 后端经 hub 定向推给对应设备（或 device_id 为空时广播给全用户）。
+      // 仅在 device_id 匹配本机 或 device_id 为空（广播）时处理，避免其它手机的通知被误弹。
+      else if (m.type === 'notify_apk') {
+        const ownDevice = getDeviceId()
+        if (!m.device_id || m.device_id === ownDevice) {
+          notifyFromHA(m.title || 'HA 通知', m.message || '')
+        }
+      }
       else if (m.type === 'im') {
         refreshIm().then(notifyNewIm).catch(() => {})
         // 提示音立即播放（不等 refreshIm 完毕，延迟越小体验越好）。
@@ -784,6 +793,26 @@ function playImBeep() {
     osc.start()
     osc.stop(ctx.currentTime + 0.3)
   } catch { /* AudioContext 不可用时静默 */ }
+}
+
+// HA mobile_app 通知到达：原生弹状态栏通知（APK 走 showNotification2，Web 走 Notification API）。
+// 与 IM 通知独立，不走 IM 面板/会话，每次都直接弹（HA 端已做触发频率控制）。
+async function notifyFromHA(title, body) {
+  if (!title && !body) return
+  const native = window.StickyKeeNative
+  if (native && typeof native.showNotification === 'function') {
+    if (typeof native.showNotification2 === 'function') {
+      native.showNotification2(title, body, false)
+    } else {
+      native.showNotification(title, body)
+    }
+    return
+  }
+  // Web 端降级：Notification API 或应用内 toast
+  try {
+    const { showNotify } = await import('@/utils/browserCommands')
+    showNotify({ title, message: body })
+  } catch { /* 静默 */ }
 }
 
 // 新消息到达后推送状态栏通知：APK 走原生桥，Web 走 Notification API。

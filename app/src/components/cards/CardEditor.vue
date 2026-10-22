@@ -395,8 +395,8 @@
                   </div>
                 </div>
 
-                <!-- 自定义头像（仅人员位置卡） -->
-                <div v-if="draft.type === 'person'" class="ce-field ce-field-avatar">
+                <!-- 自定义头像（人员位置卡 / 人员信息卡共用同一字段与上传逻辑） -->
+                <div v-if="draft.type === 'person' || draft.type === 'personInfo'" class="ce-field ce-field-avatar">
                   <label class="ce-label">
                     自定义头像
                     <span class="ce-label-sub">上传图片（自动缩放 256px），留空使用实体图片</span>

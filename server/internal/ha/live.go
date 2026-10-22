@@ -39,11 +39,17 @@ type Realtime struct {
 
 	cmdMu     sync.Mutex
 	onCommand CommandHandler // Browser_mod 风格命令回调（由 Manager 注入，路由到前端）
+	onNotify  NotifyHandler  // mobile_app 通知回调（由 Manager 注入，按 webhook_id 路由到 APK）
 }
 
 // CommandHandler 处理从 HA 事件总线收到的浏览器定向命令。
 // deviceID 为空或 "all" 表示广播到全部设备；payload 为已序列化的前端命令消息。
 type CommandHandler func(deviceID string, payload []byte)
+
+// NotifyHandler 处理 HA mobile_app 通知事件。HA 侧调用 notify.mobile_app_<device> 服务时
+// mobile_app 集成 fire 一个 event_type=mobile_app.notify 的事件，载荷含 webhook_id/title/message。
+// deviceID 为空表示无法由 webhook_id 反查到注册设备（降级广播给该用户所有在线端）。
+type NotifyHandler func(deviceID, title, message string, data json.RawMessage)
 
 // 从 HA 订阅的 Browser_mod 风格命令事件类型（与官方 browser_mod 兼容，便于迁移既有自动化）。
 var commandEventTypes = []string{"stickynuo_command", "browser_mod_command"}
@@ -82,6 +88,14 @@ func (r *Realtime) OnCommand(fn CommandHandler) {
 	r.cmdMu.Lock()
 	defer r.cmdMu.Unlock()
 	r.onCommand = fn
+}
+
+// OnNotify 注入通知回调。HA mobile_app 通知事件到达后，Manager 根据 webhook_id 反查
+// deviceID 并经 hub 定向推送给对应 APK；反查不到则降级广播给该用户所有在线端。
+func (r *Realtime) OnNotify(fn NotifyHandler) {
+	r.cmdMu.Lock()
+	defer r.cmdMu.Unlock()
+	r.onNotify = fn
 }
 
 // Start 阻塞式启动连接循环，直到 ctx 取消。
@@ -211,6 +225,18 @@ func (r *Realtime) run(ctx context.Context) error {
 				r.log.Warn("command event subscription unsupported", "instance", r.cfg.InstanceID, "event", et, "err", err)
 			}
 		}
+	}
+
+	// HA mobile_app 通知事件：HA 侧调用 notify.mobile_app_<device> 服务后，
+	// mobile_app 集成 fire 一个 event_type=mobile_app.notify 的事件，
+	// 载荷含 webhook_id / title / message / data（可选）。
+	// 订阅后服务端能实时把 HA 通知经 WS 推给对应 APK（原生弹通知栏）。
+	// 旧版 HA（< 2023.8）无此事件订阅，失败静默降级——此时依赖用户自己 fire_event。
+	opCtxM, opCancelM := context.WithTimeout(ctx, connectOp)
+	_, err = r.call(opCtxM, "subscribe_events", map[string]any{"event_type": "mobile_app.notify"})
+	opCancelM()
+	if err != nil && r.log != nil {
+		r.log.Warn("mobile_app.notify subscription unsupported", "instance", r.cfg.InstanceID, "err", err)
 	}
 
 	// HA 系统通知：专用订阅命令 persistent_notification/subscribe（HA 2022.3 起
@@ -374,6 +400,26 @@ func (r *Realtime) handleEvent(ev map[string]any) {
 			default: // added / updated（未知类型按增量合并，避免误清）
 				r.store.UpsertNotifications(notificationEntities(raw))
 			}
+		}
+		return
+	}
+	// HA mobile_app 通知事件：HA 侧调用 notify.mobile_app_<device> 服务后 fire。
+	// 载荷 data 形如：{webhook_id, title, message, data?}。
+	// 交给 Manager 根据 webhook_id 反查 APK 设备并经 hub 定向推送；
+	// 反查不到时 deviceID 为空，Manager 会降级广播给该用户所有在线端。
+	if eventType == "mobile_app.notify" && data != nil {
+		webhookID, _ := data["webhook_id"].(string)
+		title, _ := data["title"].(string)
+		message, _ := data["message"].(string)
+		if title == "" && message == "" {
+			return
+		}
+		extra, _ := data["data"].(json.RawMessage)
+		r.cmdMu.Lock()
+		onNotif := r.onNotify
+		r.cmdMu.Unlock()
+		if onNotif != nil {
+			onNotif(webhookID, title, message, extra)
 		}
 		return
 	}

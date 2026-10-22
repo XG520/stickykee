@@ -175,6 +175,28 @@ func (m *Manager) Live(ctx context.Context, id int64) (*StateStore, error) {
 	rt.OnCommand(func(deviceID string, payload []byte) {
 		m.SendCommand(kk, deviceID, payload)
 	})
+	// 注入 HA mobile_app 通知回调：HA 侧调用 notify.mobile_app_<device> 服务后 fire 事件，
+	// 按 webhook_id 反查该用户注册的 APK 设备 → 定向推送原生通知；反查不到则广播给全用户在线端。
+	user := key.user
+	rt.OnNotify(func(webhookID, title, message string, extra json.RawMessage) {
+		deviceID := m.deviceIDByWebhook(user, webhookID)
+		scope := hub.Scope{Instance: kk.instance, User: user}
+		payload, err := json.Marshal(map[string]any{
+			"type":      "notify_apk",
+			"device_id": deviceID,
+			"title":     title,
+			"message":   message,
+			"data":      json.RawMessage(extra),
+		})
+		if err != nil {
+			return
+		}
+		if deviceID != "" {
+			m.hub.SendToDevice(scope, deviceID, payload)
+		} else {
+			m.hub.Broadcast(scope, payload)
+		}
+	})
 	if !m.seedRT[key] {
 		store.SetOnChange(func(entityID string) {
 			m.pushEntityToLive(kk, entityID)
@@ -185,6 +207,34 @@ func (m *Manager) Live(ctx context.Context, id int64) (*StateStore, error) {
 	m.runtimes[key] = &runtime{store: store, rt: rt, cancel: cancel}
 	m.log.Info("ha live started", "instance", i.ID, "user", key.user)
 	return store, nil
+}
+
+// deviceIDByWebhook 在指定用户的 mobile_app 注册缓存里查 webhook_id 对应的 deviceID。
+// 返回空串表示该用户名下无匹配注册（设备被删除或 webhook 过期）。
+func (m *Manager) deviceIDByWebhook(user, webhookID string) string {
+	if webhookID == "" {
+		return ""
+	}
+	v := m.userPrefs.Get(context.Background(), user, "mobile_app_reg")
+	if v == "" {
+		return ""
+	}
+	var regs map[string]struct {
+		WebhookID string `json:"webhook_id"`
+		DeviceID  string `json:"device_id"`
+	}
+	if json.Unmarshal([]byte(v), &regs) != nil {
+		return ""
+	}
+	for devID, r := range regs {
+		if r.WebhookID == webhookID {
+			if r.DeviceID != "" {
+				return r.DeviceID
+			}
+			return devID
+		}
+	}
+	return ""
 }
 
 // pushEntityToLive 记录一个变化的实体，交给合并器按窗口批量推送。
