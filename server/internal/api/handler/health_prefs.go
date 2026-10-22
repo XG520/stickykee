@@ -515,7 +515,7 @@ func PublicCORS(next http.HandlerFunc) http.HandlerFunc {
 
 // Version 后端版本号：随发布递增，经 healthz 暴露，供前端设置页与 APK 壳页
 // 确认当前连接的服务端版本（排查「更新没生效」类问题）。
-const Version = "1.6.3"
+const Version = "1.6.4"
 
 // Healthz 存活探针（公开：附带后端版本号）。
 func (Health) Healthz(w http.ResponseWriter, r *http.Request) {
