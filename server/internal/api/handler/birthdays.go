@@ -28,7 +28,7 @@ import (
 //   - 管理员经 PUT /users/{username}/birthdays 代设（数组直接传）。
 //
 // HA 侧：后端为每个 HA 实例各注册一条**虚拟 mobile_app 设备**
-// （device_id=stickynuo_server_<instance_id>，device_name=Sticky Kee Server），
+// （device_id=stickynuo_server_<instance_id>，device_name=<site_name_en> Server），
 // 所有账号的生日都登记在这一台上（unique_id = birthday_<username>）。
 // 这样同一用户在多台手机上登录时 HA 里只会出现一个生日实体；
 // 同一 server 连接多台 HA 时各自有独立设备，互不串扰。
@@ -257,17 +257,25 @@ func (h *Birthdays) saveReg(ctx context.Context, instanceID int64, r bdReg) {
 
 // ensureReg 为某 HA 实例确保后端虚拟设备与生日传感器命名空间已注册。
 // 使用传入用户 token（需要有 HA 管理员权限）；webhook 失效（HA 侧删除设备）时自动重注册。
+// device_name 取自全局 site_name_en 首选项（管理员可改系统名），防止多台测试服务器同名冲突。
 func (h *Birthdays) ensureReg(ctx context.Context, instanceID int64, rest *client.Rest) (*bdReg, error) {
 	reg := h.readReg(ctx, instanceID)
 	if reg.WebhookID != "" && probeWebhookAlive(ctx, rest, reg.WebhookID) {
 		return &reg, nil
 	}
+	// 设备名：取系统英文名称 + " Server"；管理员在设置页改一次系统名，HA 侧注册的虚拟设备名就随之变化，
+	// 多台测试服务器（每个后端自己的 site_name_en）即可天然规避命名冲突。
+	devName, _ := h.repo.GetPref(ctx, "site_name_en")
+	if devName == "" {
+		devName = "Sticky Kee"
+	}
+	devName = strings.TrimSpace(devName) + " Server"
 	payload := map[string]any{
 		"app_id":              "stickynuo",
 		"app_name":            "stickynuo",
 		"app_version":         Version,
 		"device_id":           fmt.Sprintf("stickynuo_server_%d", instanceID),
-		"device_name":         "Sticky Kee Server",
+		"device_name":         devName,
 		"manufacturer":        "stickynuo",
 		"model":               "server",
 		"os_name":             "stickynuo",

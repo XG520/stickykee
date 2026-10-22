@@ -282,7 +282,7 @@
                       <span class="material-symbols-outlined">add</span>添加
                     </button>
                   </div>
-                  <!-- 展开态：完整 chip list + 收起/添加按钮 + 下拉搜索 -->
+                  <!-- 展开态：完整 chip list + 收起/添加按钮 -->
                   <template v-else>
                     <div class="ce-combobox ce-multi-box">
                       <ul class="ce-multi-list">
@@ -314,44 +314,45 @@
                         <span class="material-symbols-outlined ce-combo-caret" v-if="slotMenuKey === slot.key">expand_less</span>
                       </button>
                     </div>
-                    <Transition name="ce-menu">
-                      <div v-if="slotMenuKey === slot.key" class="ce-dropdown">
-                        <div class="ce-search">
-                          <span class="material-symbols-outlined">search</span>
-                          <input
-                            ref="slotSearchRef"
-                            v-model="slotQuery"
-                            class="ce-search-input"
-                            type="text"
-                            placeholder="搜索名称或 entity_id…"
-                          />
-                        </div>
-                        <ul class="ce-entity-list">
-                          <li
-                            v-for="o in filteredSlotEntities"
-                            :key="o.id"
-                            class="ce-entity-item"
-                            :class="{ on: draft[slot.key].includes(o.id) }"
-                            @click="pickSlotEntity(o.id)"
-                          >
-                            <span class="ce-domain-badge">{{ o.domain }}</span>
-                            <span class="ce-en-text">
-                              <span class="ce-en-name">{{ o.label }}</span>
-                              <span class="ce-en-id">{{ o.id }}</span>
-                            </span>
-                            <span v-if="draft[slot.key].includes(o.id)" class="material-symbols-outlined ce-en-check">check</span>
-                          </li>
-                          <li v-if="!filteredSlotEntities.length" class="ce-entity-empty">
-                            {{ allEntityOptions.length ? '没有匹配的实体' : '暂无可用实体（需先连接 Home Assistant）' }}
-                          </li>
-                        </ul>
-                        <div class="ce-dd-foot">
-                          <span class="ce-dd-tip">点击实体即可加入 / 移除，可连续添加，不限数量</span>
-                          <button type="button" class="ce-btn ce-primary ce-btn-sm" @click="slotMenuKey = ''">完成</button>
-                        </div>
-                      </div>
-                    </Transition>
                   </template>
+                  <!-- 下拉搜索菜单：独立于折叠/展开，始终渲染，v-if 由 slotMenuKey 控制显示 -->
+                  <Transition name="ce-menu">
+                    <div v-if="slotMenuKey === slot.key" class="ce-dropdown">
+                      <div class="ce-search">
+                        <span class="material-symbols-outlined">search</span>
+                        <input
+                          ref="slotSearchRef"
+                          v-model="slotQuery"
+                          class="ce-search-input"
+                          type="text"
+                          placeholder="搜索名称或 entity_id…"
+                        />
+                      </div>
+                      <ul class="ce-entity-list">
+                        <li
+                          v-for="o in filteredSlotEntities"
+                          :key="o.id"
+                          class="ce-entity-item"
+                          :class="{ on: draft[slot.key].includes(o.id) }"
+                          @click="pickSlotEntity(o.id)"
+                        >
+                          <span class="ce-domain-badge">{{ o.domain }}</span>
+                          <span class="ce-en-text">
+                            <span class="ce-en-name">{{ o.label }}</span>
+                            <span class="ce-en-id">{{ o.id }}</span>
+                          </span>
+                          <span v-if="draft[slot.key].includes(o.id)" class="material-symbols-outlined ce-en-check">check</span>
+                        </li>
+                        <li v-if="!filteredSlotEntities.length" class="ce-entity-empty">
+                          {{ allEntityOptions.length ? '没有匹配的实体' : '暂无可用实体（需先连接 Home Assistant）' }}
+                        </li>
+                      </ul>
+                      <div class="ce-dd-foot">
+                        <span class="ce-dd-tip">点击实体即可加入 / 移除，可连续添加，不限数量</span>
+                        <button type="button" class="ce-btn ce-primary ce-btn-sm" @click="slotMenuKey = ''">完成</button>
+                      </div>
+                    </div>
+                  </Transition>
                 </div>
 
                 <div v-if="meta.needEntity" class="ce-field ce-field-title">
@@ -938,7 +939,10 @@ function toggleSlotMenu(key) {
   slotMenuKey.value = slotMenuKey.value === key ? '' : key
   slotQuery.value = ''
   if (slotMenuKey.value) {
+    // 确保下拉展开的槽位框可见，避免被 .ce-config 的 overflow 滚动容器裁剪
     nextTick(() => {
+      const wrap = document.querySelector(`.ce-slot-box .ce-dropdown`)
+      wrap?.closest?.('.ce-slot-box')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
       const el = Array.isArray(slotSearchRef.value) ? slotSearchRef.value[0] : slotSearchRef.value
       el?.focus?.()
     })
@@ -2107,7 +2111,11 @@ watch(
   border: 1px solid #2a2b2f;
   border-radius: 12px;
   padding: 11px 13px;
+  position: relative;
 }
+.ce-slot-box { position: relative; overflow: visible; z-index: 2; }
+/* 槽位框在主实体之下时需要提升层级，防止下拉被下一个槽位框盖住 */
+.ce-slot-box + .ce-slot-box { z-index: 1; }
 .ce-field-entity { flex: 1 1 260px; min-width: 220px; }
 .ce-field-size { flex: none; display: flex; flex-direction: column; gap: 7px; }
 .ce-field-icon { flex: 0 1 auto; min-width: 0; }
