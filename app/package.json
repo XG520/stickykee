@@ -21,16 +21,20 @@
     "@noble/curves": "^1.9.7",
     "@noble/hashes": "^1.8.0",
     "@uzen/kokoro-js": "^1.2.4",
+    "@vueuse/core": "^15.0.0",
     "lunar-javascript": "^1.7.7",
     "material-symbols": "^0.47.2",
     "monaco-editor": "^0.52.2",
     "monaco-editor-vue3": "^1.0.5",
+    "selecto": "^1.26.3",
     "svg.draw.js": "^2.0.4",
     "svg.js": "^2.7.1",
     "three": "^0.186.1",
     "vue": "^3.5.13",
     "vue-draggable-plus": "^0.6.1",
-    "vue-router": "^4.5.0"
+    "vue-router": "^4.5.0",
+    "vue3-guides": "^0.12.2",
+    "vue3-moveable": "^0.28.0"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.5.2",

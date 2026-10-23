@@ -2,18 +2,16 @@
   <Teleport to="body">
     <div v-if="modelValue" class="hc-ds-overlay" @click.self="$emit('update:modelValue', false)">
       <div class="hc-ds-root">
-        <!-- 顶栏 -->
+        <!-- 顶栏（精简）：返回 / 撤销重做 / 预览+保存 -->
         <header class="hc-ds-header">
           <div class="hc-ds-header-left">
-            <button class="hc-ds-close" @click="$emit('update:modelValue', false)">
-              <span class="material-symbols-outlined">close</span>
+            <button class="hc-ds-close" :title="editHint" @click="$emit('update:modelValue', false)">
+              <span class="material-symbols-outlined">arrow_back</span>
             </button>
             <span class="hc-ds-title">卡片设计器</span>
-            <span class="hc-ds-breadcrumb" v-if="selectedBreadcrumb.length">
-              <template v-for="p in selectedBreadcrumb" :key="p.id">
-                <span class="hc-ds-breadcrumb-sep">/</span>
-                <span class="hc-ds-breadcrumb-item">{{ p.label }}</span>
-              </template>
+            <span class="hc-ds-breadcrumb" v-if="tplName">
+              <span class="hc-ds-breadcrumb-sep">/</span>
+              <span class="hc-ds-breadcrumb-item">{{ tplName }}</span>
             </span>
           </div>
           <div class="hc-ds-header-center">
@@ -23,44 +21,115 @@
             <button class="hc-ds-act" :disabled="!designerStore.canRedo.value" @click="designerStore.redo()">
               <span class="material-symbols-outlined">redo</span> 重做
             </button>
-            <span class="hc-ds-header-sep"></span>
-            <button class="hc-ds-act" :disabled="!designerStore.canUndo.value && !designerStore.canRedo.value" @click="loadEmpty">
-              <span class="material-symbols-outlined">delete_sweep</span> 清空
-            </button>
-            <button v-for="name in presetNames" :key="name" class="hc-ds-act" @click="loadPreset(name)">预设: {{ name }}</button>
           </div>
           <div class="hc-ds-header-right">
+            <button class="hc-ds-act" @click="previewOn = true">
+              <span class="material-symbols-outlined">play_circle</span> 预览
+            </button>
             <button class="hc-ds-act hc-ds-act-primary" @click="onSave">
-              <span class="material-symbols-outlined">save</span> 保存
+              <span class="material-symbols-outlined">save</span> {{ saveLabel }}
             </button>
           </div>
         </header>
 
-        <!-- 三栏 -->
+        <!-- 主体：rail + flyout + 画布 + 右侧上下文面板 -->
         <div class="hc-ds-body">
-          <BlockLibrary />
-          <Canvas />
+          <SideRail :active="flyout" @select="onRail" />
+          <FlyoutPanel v-if="flyout" :type="flyout" @close="flyout = ''" />
+
+          <section class="hc-ds-center">
+            <Canvas />
+          </section>
+
           <aside class="hc-ds-right">
-            <div class="hc-ds-right-tabs">
-              <button
-                v-for="tab in RIGHT_TABS"
-                :key="tab.key"
-                class="hc-ds-right-tab"
-                :class="{ 'is-on': rightTab === tab.key }"
-                @click="rightTab = tab.key"
-              >
-                <span class="material-symbols-outlined">{{ tab.icon }}</span>
-                <span>{{ tab.label }}</span>
+            <!-- 图层抽屉（可折叠） -->
+            <div class="hc-ds-drawer">
+              <button class="hc-ds-drawer-head" @click="layersOpen = !layersOpen">
+                <span class="material-symbols-outlined">layers</span>
+                <span>图层</span>
+                <span class="hc-ds-drawer-caret material-symbols-outlined">{{ layersOpen ? 'expand_less' : 'expand_more' }}</span>
               </button>
+              <SchemaOutline v-show="layersOpen" class="hc-ds-drawer-body" />
             </div>
-            <div class="hc-ds-right-body">
-              <PropertyPanel v-show="rightTab === 'props'" />
-              <SchemaOutline v-show="rightTab === 'outline'" />
-              <CodePreview v-show="rightTab === 'code'" />
+            <!-- 上下文面板：选中=元素属性；未选中=画布设置 -->
+            <PropertyPanel v-if="hasSelection" />
+            <div v-else class="hc-ds-canvas-settings">
+              <div class="hc-ds-cs-title">
+                <span class="material-symbols-outlined">crop_free</span> 画布设置
+              </div>
+              <div class="hc-ds-cs-row">
+                <label class="hc-ds-cs-field">
+                  <span>宽</span>
+                  <select :value="gridW" @change="onGrid(+ $event.target.value, gridH)">
+                    <option v-for="n in 4" :key="n" :value="n">{{ n }} 格</option>
+                  </select>
+                </label>
+                <label class="hc-ds-cs-field">
+                  <span>高</span>
+                  <select :value="gridH" @change="onGrid(gridW, + $event.target.value)">
+                    <option v-for="n in 4" :key="n" :value="n">{{ n }} 格</option>
+                  </select>
+                </label>
+              </div>
+              <div class="hc-ds-cs-meta">{{ canvasW }}×{{ canvasH }}px 设计基准（1 格 = 120px）</div>
+
+              <!-- 背景：无 / 纯色 / 渐变 / 上传图片 -->
+              <div class="hc-ds-cs-bg">
+                <div class="hc-ds-cs-bg-head">
+                  <span class="material-symbols-outlined">wallpaper</span> 背景
+                </div>
+                <div class="hc-ds-cs-bg-types">
+                  <button
+                    v-for="t in BG_TYPES"
+                    :key="t.value"
+                    class="hc-ds-cs-bg-type"
+                    :class="{ 'is-on': bgType === t.value }"
+                    @click="onBgType(t.value)"
+                  >{{ t.label }}</button>
+                </div>
+                <!-- 纯色 -->
+                <div v-if="bgType === 'color'" class="hc-ds-cs-bg-row">
+                  <input type="color" class="hc-ds-cs-swatch" :value="bgHex(bg.color, '#16213e')" @change="onBg({ type: 'color', color: $event.target.value })">
+                  <input type="text" class="hc-ds-cs-input" :value="bg.color || ''" placeholder="#16213e 或 CSS 变量" @change="onBg({ type: 'color', color: $event.target.value })">
+                </div>
+                <!-- 渐变 -->
+                <div v-else-if="bgType === 'gradient'" class="hc-ds-cs-bg-col">
+                  <div class="hc-ds-cs-bg-row">
+                    <input type="color" class="hc-ds-cs-swatch" :value="bgHex(bg.from, '#1a2a4a')" @change="onBg({ ...bg, from: $event.target.value })">
+                    <span class="hc-ds-cs-arrow material-symbols-outlined">arrow_forward</span>
+                    <input type="color" class="hc-ds-cs-swatch" :value="bgHex(bg.to, '#0e1626')" @change="onBg({ ...bg, to: $event.target.value })">
+                    <label class="hc-ds-cs-angle">
+                      <input type="number" min="0" max="360" step="15" :value="bg.angle ?? 135" @change="onBg({ ...bg, angle: +$event.target.value })">°
+                    </label>
+                  </div>
+                </div>
+                <!-- 图片 -->
+                <div v-else-if="bgType === 'image'" class="hc-ds-cs-bg-col">
+                  <div class="hc-ds-cs-bg-row">
+                    <button class="hc-ds-cs-upload" @click="uploadBg">
+                      <span class="material-symbols-outlined">upload</span> {{ bg.image ? '重新上传' : '上传图片' }}
+                    </button>
+                    <select class="hc-ds-cs-fit" :value="bg.fit || 'cover'" @change="onBg({ ...bg, fit: $event.target.value })">
+                      <option value="cover">裁剪填满</option>
+                      <option value="contain">完整包含</option>
+                    </select>
+                  </div>
+                  <div v-if="bg.image" class="hc-ds-cs-bg-preview" :style="{ backgroundImage: `url(${bg.image})` }"></div>
+                  <input type="text" class="hc-ds-cs-input" :value="bg.image && !bg.image.startsWith('data:') ? bg.image : ''" placeholder="或粘贴图片 URL" @change="onBg({ ...bg, image: $event.target.value })">
+                </div>
+              </div>
+
+              <button class="hc-ds-cs-clear" :disabled="!elementCount" @click="loadEmpty">
+                <span class="material-symbols-outlined">delete_sweep</span> 清空画布
+              </button>
+              <p class="hc-ds-cs-tip">从左侧「素材 / 文字 / 实体」添加元素，或点「模板」返回画廊换模板。</p>
             </div>
           </aside>
         </div>
       </div>
+
+      <!-- 全屏实时预览 -->
+      <LivePreview v-if="previewOn" @close="previewOn = false" />
     </div>
   </Teleport>
 </template>
@@ -68,80 +137,121 @@
 <script setup>
 import { computed, ref, watch, onMounted } from 'vue'
 import { designerStore } from '@/composables/designerStore'
-import { BLOCK_DEFS, PRESETS } from './blockDefs'
-import { PRESET_MAP } from './presets'
-import BlockLibrary from './BlockLibrary.vue'
+import { ELEMENT_DEFS } from './elementDefs'
+import { pickImageFile } from './imageUpload'
+import SideRail from './SideRail.vue'
+import FlyoutPanel from './FlyoutPanel.vue'
 import Canvas from './Canvas.vue'
+import LivePreview from './LivePreview.vue'
 import PropertyPanel from './PropertyPanel.vue'
 import SchemaOutline from './SchemaOutline.vue'
-import CodePreview from './CodePreview.vue'
-
-const RIGHT_TABS = [
-  { key: 'props', label: '属性', icon: 'tune' },
-  { key: 'outline', label: '结构', icon: 'account_tree' },
-  { key: 'code', label: '预览', icon: 'code' },
-]
-
-const rightTab = ref('props')
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
   initialSchema: { type: Object, default: null },
+  // 纯代码卡进入设计器时的既有代码（载入到手改区，保存时代码不丢）
+  initialCode: { type: Object, default: null },
+  // 保存按钮文案（uid 编辑模式为「保存到卡片」）
+  saveLabel: { type: String, default: '保存' },
+  // 初始 flyout（画廊「AI 设计」入口传 'ai'）
+  initialTab: { type: String, default: '' },
 })
 
 const emit = defineEmits(['update:modelValue', 'save'])
 
-// 选中积木的面包屑路径
-const selectedBreadcrumb = computed(() => {
-  const id = designerStore.state.selectedId
-  if (!id || !designerStore.state.schema) return []
-  // 从 schema 向下找路径
-  const path = []
-  function walk(node, trail) {
-    if (!node) return false
-    const newTrail = [...trail, { id: node.id, label: BLOCK_DEFS[node.defType]?.label || node.defType }]
-    if (node.id === id) { path.push(...newTrail); return true }
-    for (const c of node.children || []) {
-      if (walk(c, newTrail)) return true
-    }
-    return false
-  }
-  walk(designerStore.state.schema, [])
-  return path
-})
+// flyout 当前展开项（'' = 收起）；initialTab 兼容旧值 'ai'
+const flyout = ref(props.initialTab === 'ai' ? 'ai' : '')
+const previewOn = ref(false)
+const layersOpen = ref(false)
 
-function loadEmpty() {
-  designerStore.newEmpty()
+const editHint = '返回'
+
+// rail 选择：template = 返回画廊（关闭设计器，由 DesignerView 路由回画廊）
+function onRail(key) {
+  if (key === 'template') {
+    emit('update:modelValue', false)
+    return
+  }
+  flyout.value = flyout.value === key ? '' : key
 }
 
-// 预设列表：优先使用完整预设（presets/，Phase 3 四张卡），回退到 blockDefs 的骨架预设
-const presetNames = Object.keys(PRESET_MAP).length ? Object.keys(PRESET_MAP) : Object.keys(PRESETS)
-function loadPreset(name) {
-  const preset = PRESET_MAP[name] || PRESETS[name]
-  if (preset) designerStore.cloneFromPreset(preset())
+// 顶栏面包屑：来源模板名
+const tplName = computed(() => designerStore.state.tplMeta?.name || '')
+
+const hasSelection = computed(() => !!designerStore.selected.value)
+const elementCount = computed(() => designerStore.state.schema?.elements?.length || 0)
+
+// 画布尺寸按卡片格数切换（1 格 = 120px 设计基准）
+const canvasW = computed(() => designerStore.state.schema?.canvas?.w || 480)
+const canvasH = computed(() => designerStore.state.schema?.canvas?.h || 240)
+const gridW = computed(() => Math.round(canvasW.value / 120))
+const gridH = computed(() => Math.round(canvasH.value / 120))
+function onGrid(w, h) {
+  designerStore.setCanvas(w * 120, h * 120)
+}
+
+// —— 画布背景（无/纯色/渐变/图片，存 schema.canvas.background，随产物内联） ——
+const BG_TYPES = [
+  { value: 'none', label: '无' },
+  { value: 'color', label: '纯色' },
+  { value: 'gradient', label: '渐变' },
+  { value: 'image', label: '图片' },
+]
+const bg = computed(() => designerStore.state.schema?.canvas?.background || {})
+const bgType = computed(() => bg.value.type || 'none')
+// 原生 color 选择器只收 #rrggbb；CSS 变量等走文本框
+function bgHex(v, fallback) {
+  return /^#[0-9a-fA-F]{6}$/.test(v || '') ? v : fallback
+}
+function onBg(next) {
+  designerStore.setBackground({ ...next, type: next.type || bgType.value })
+}
+function onBgType(t) {
+  if (t === 'none') { designerStore.setBackground(null); return }
+  const b = bg.value
+  if (t === 'color') designerStore.setBackground({ type: 'color', color: b.color || '#16213e' })
+  else if (t === 'gradient') designerStore.setBackground({ type: 'gradient', from: b.from || '#1a2a4a', to: b.to || '#0e1626', angle: b.angle ?? 135 })
+  else if (t === 'image') designerStore.setBackground({ type: 'image', image: b.image || '', fit: b.fit || 'cover' })
+}
+function uploadBg() {
+  pickImageFile((dataUrl) => designerStore.setBackground({ type: 'image', image: dataUrl, fit: bg.value.fit || 'cover' }))
+}
+
+function loadEmpty() {
+  designerStore.newEmpty({ w: gridW.value * 120, h: gridH.value * 120 })
 }
 
 function onSave() {
   const payload = designerStore.serialize()
   emit('save', payload)
-  // 自动关闭（Phase 1）
   emit('update:modelValue', false)
 }
 
 // mounted 时初始化画布
-onMounted(() => {
-  if (props.initialSchema) {
-    designerStore.cloneFromPreset(props.initialSchema)
+function initCanvas() {
+  // v2 自由画布 schema：恢复元素；v1 积木/纯代码卡：空画布起步，代码载入手改区（代码不丢）
+  if (props.initialSchema && props.initialSchema.version === 2) {
+    designerStore.loadSchema(props.initialSchema)
+    if (props.initialCode) applyInitialCode()
+  } else if (props.initialCode) {
+    designerStore.newEmpty()
+    applyInitialCode()
   } else if (!designerStore.state.schema) {
     designerStore.newEmpty()
   }
-})
+}
+function applyInitialCode() {
+  designerStore.state.codeOverride = {
+    html: props.initialCode.html ?? null,
+    css: props.initialCode.css ?? null,
+    js: props.initialCode.js || '',
+  }
+}
+onMounted(initCanvas)
 
 // modelValue 变 true 时也可以用 initialSchema 覆盖
 watch(() => [props.modelValue, props.initialSchema], ([open, schema]) => {
-  if (open && schema) {
-    designerStore.cloneFromPreset(schema)
-  }
+  if (open && schema) initCanvas()
 }, { deep: true })
 </script>
 
@@ -164,13 +274,11 @@ watch(() => [props.modelValue, props.initialSchema], ([open, schema]) => {
   display: flex;
   flex-direction: column;
   width: 100%;
-  max-width: 1280px;
   height: 100vh;
   max-height: 100vh;
   margin: 0 auto;
   background: rgb(var(--c-background));
   color: rgb(var(--c-on-surface));
-  box-shadow: 0 8px 40px rgb(0 0 0 / .4);
   animation: hc-ds-slide-up .2s ease-out;
 }
 @keyframes hc-ds-slide-up {
@@ -192,6 +300,7 @@ watch(() => [props.modelValue, props.initialSchema], ([open, schema]) => {
   align-items: center;
   gap: 6px;
 }
+.hc-ds-header-center { flex: 1; justify-content: center; }
 .hc-ds-close {
   width: 28px;
   height: 28px;
@@ -205,7 +314,7 @@ watch(() => [props.modelValue, props.initialSchema], ([open, schema]) => {
   justify-content: center;
   transition: color .15s, background .15s;
 }
-.hc-ds-close:hover { color: rgb(var(--c-error)); background: rgb(var(--c-error) / .1); }
+.hc-ds-close:hover { color: rgb(var(--c-on-surface)); background: rgb(var(--c-surface-alt)); }
 .hc-ds-close .material-symbols-outlined { font-size: 18px; }
 .hc-ds-title {
   font-size: 14px;
@@ -224,12 +333,6 @@ watch(() => [props.modelValue, props.initialSchema], ([open, schema]) => {
   color: rgb(var(--c-on-surface));
 }
 .hc-ds-breadcrumb-sep { opacity: .5; }
-.hc-ds-header-center { flex: 1; justify-content: center; }
-.hc-ds-header-sep {
-  width: 1px; height: 18px;
-  background: rgb(var(--c-border));
-  margin: 0 4px;
-}
 .hc-ds-act {
   display: inline-flex;
   align-items: center;
@@ -265,7 +368,13 @@ watch(() => [props.modelValue, props.initialSchema], ([open, schema]) => {
   min-height: 0;
   overflow: hidden;
 }
-/* 子组件宽度由子组件自己控制 */
+.hc-ds-center {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
 .hc-ds-right {
   display: flex;
   flex-direction: column;
@@ -275,45 +384,208 @@ watch(() => [props.modelValue, props.initialSchema], ([open, schema]) => {
   background: var(--hc-bg2, rgb(var(--c-surface-alt)));
   min-height: 0;
 }
-.hc-ds-right-tabs {
-  display: flex;
+/* 图层抽屉 */
+.hc-ds-drawer {
   flex-shrink: 0;
   border-bottom: 1px solid rgb(var(--c-border));
+  display: flex;
+  flex-direction: column;
+  max-height: 40%;
+  min-height: 0;
+}
+.hc-ds-drawer-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: none;
+  background: rgb(var(--c-surface));
+  color: rgb(var(--c-muted));
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.hc-ds-drawer-head:hover { color: rgb(var(--c-on-surface)); }
+.hc-ds-drawer-head .material-symbols-outlined { font-size: 16px; }
+.hc-ds-drawer-caret { margin-left: auto; }
+.hc-ds-drawer-body {
+  min-height: 0;
+  overflow-y: auto;
+  max-height: 220px;
+}
+/* 画布设置（无选中态） */
+.hc-ds-canvas-settings {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.hc-ds-cs-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: rgb(var(--c-on-surface));
+}
+.hc-ds-cs-title .material-symbols-outlined { font-size: 16px; color: var(--hc-color, var(--hc-primary)); }
+.hc-ds-cs-row { display: flex; gap: 8px; }
+.hc-ds-cs-field {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.hc-ds-cs-field span {
+  font-size: 9px;
+  font-weight: 600;
+  color: rgb(var(--c-muted));
+  text-transform: uppercase;
+}
+.hc-ds-cs-field select {
+  font-size: 11px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid rgb(var(--c-border));
+  background: rgb(var(--c-surface));
+  color: rgb(var(--c-on-surface));
+  outline: none;
+}
+.hc-ds-cs-field select:focus { border-color: var(--hc-color, var(--hc-primary)); }
+.hc-ds-cs-meta { font-size: 10px; color: rgb(var(--c-muted)); }
+.hc-ds-cs-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid rgb(var(--c-border));
+  background: transparent;
+  color: rgb(var(--c-muted));
+  font-size: 11px;
+  cursor: pointer;
+}
+.hc-ds-cs-clear:hover:not(:disabled) { color: rgb(var(--c-error)); border-color: rgb(var(--c-error)); }
+.hc-ds-cs-clear:disabled { opacity: .4; cursor: not-allowed; }
+.hc-ds-cs-clear .material-symbols-outlined { font-size: 15px; }
+/* 背景编辑 */
+.hc-ds-cs-bg {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgb(var(--c-border));
+  border-radius: 10px;
   background: rgb(var(--c-surface));
 }
-.hc-ds-right-tab {
+.hc-ds-cs-bg-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  color: rgb(var(--c-on-surface));
+}
+.hc-ds-cs-bg-head .material-symbols-outlined { font-size: 15px; color: var(--hc-color, var(--hc-primary)); }
+.hc-ds-cs-bg-types { display: flex; gap: 4px; }
+.hc-ds-cs-bg-type {
+  flex: 1;
+  padding: 5px 0;
+  font-size: 10px;
+  border-radius: 6px;
+  border: 1px solid rgb(var(--c-border));
+  background: rgb(var(--c-surface-alt));
+  color: rgb(var(--c-muted));
+  cursor: pointer;
+}
+.hc-ds-cs-bg-type.is-on {
+  border-color: var(--hc-color, var(--hc-primary));
+  background: color-mix(in srgb, var(--hc-primary) 14%, rgb(var(--c-surface)));
+  color: rgb(var(--c-on-surface));
+  font-weight: 600;
+}
+.hc-ds-cs-bg-row { display: flex; align-items: center; gap: 6px; }
+.hc-ds-cs-bg-col { display: flex; flex-direction: column; gap: 6px; }
+.hc-ds-cs-swatch {
+  width: 28px; height: 26px;
+  padding: 0;
+  border: 1px solid rgb(var(--c-border));
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  flex: none;
+}
+.hc-ds-cs-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid rgb(var(--c-border));
+  background: rgb(var(--c-surface-alt));
+  color: rgb(var(--c-on-surface));
+  outline: none;
+}
+.hc-ds-cs-input:focus { border-color: var(--hc-color, var(--hc-primary)); }
+.hc-ds-cs-arrow { font-size: 14px; color: rgb(var(--c-muted)); }
+.hc-ds-cs-angle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 10px;
+  color: rgb(var(--c-muted));
+}
+.hc-ds-cs-angle input {
+  width: 46px;
+  font-size: 11px;
+  padding: 5px 4px;
+  border-radius: 6px;
+  border: 1px solid rgb(var(--c-border));
+  background: rgb(var(--c-surface-alt));
+  color: rgb(var(--c-on-surface));
+  outline: none;
+}
+.hc-ds-cs-upload {
   flex: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 3px;
-  padding: 6px 8px;
-  font-size: 10px;
-  font-weight: 500;
-  color: rgb(var(--c-muted));
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  transition: color .15s, background .15s, border-color .15s;
-  border-bottom: 2px solid transparent;
-}
-.hc-ds-right-tab .material-symbols-outlined {
-  font-size: 14px;
-}
-.hc-ds-right-tab:hover {
-  color: rgb(var(--c-on-surface));
+  gap: 5px;
+  padding: 7px;
+  border-radius: 7px;
+  border: 1px dashed rgb(var(--c-border));
   background: rgb(var(--c-surface-alt));
+  color: rgb(var(--c-on-surface));
+  font-size: 11px;
+  cursor: pointer;
 }
-.hc-ds-right-tab.is-on {
-  color: var(--hc-color, var(--hc-primary));
-  border-bottom-color: var(--hc-color, var(--hc-primary));
-  font-weight: 600;
+.hc-ds-cs-upload:hover { border-color: var(--hc-color, var(--hc-primary)); }
+.hc-ds-cs-upload .material-symbols-outlined { font-size: 15px; }
+.hc-ds-cs-fit {
+  font-size: 10px;
+  padding: 6px 4px;
+  border-radius: 6px;
+  border: 1px solid rgb(var(--c-border));
+  background: rgb(var(--c-surface-alt));
+  color: rgb(var(--c-on-surface));
+  outline: none;
 }
-.hc-ds-right-body {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
+.hc-ds-cs-bg-preview {
+  height: 56px;
+  border-radius: 7px;
+  border: 1px solid rgb(var(--c-border));
+  background: center / cover no-repeat;
+}
+.hc-ds-cs-tip {
+  margin-top: auto;
+  font-size: 10px;
+  line-height: 1.6;
+  color: rgb(var(--c-muted));
+  border-top: 1px dashed rgb(var(--c-border));
+  padding-top: 10px;
 }
 </style>

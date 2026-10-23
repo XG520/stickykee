@@ -37,7 +37,7 @@ func NewPrefs(repo *store.InstanceRepo, userPrefs *store.UserPrefs, manager *ha.
 // 按设备隔离的键 dashboard_apk_<deviceId>（布局）/ dashboard_apk_cols_<deviceId>
 // （列数）键名随设备 ID 动态变化，无法列入此固定清单，由 GET 全量扫描后按前缀
 // 放行、PUT 按前缀写入（见 isUserLayoutKey）。
-var userScoped = []string{"theme", "font", "icons", "floorplan", "floorplan_doc", "animation", "wakeWord", "dashboard", "dashboard_apk", "tts_engine", "tts_engine_apk", "birthdays"}
+var userScoped = []string{"theme", "font", "icons", "floorplan", "floorplan_doc", "animation", "wakeWord", "dashboard", "dashboard_apk", "tts_engine", "tts_engine_apk", "birthdays", "ai_config"}
 
 // isUserLayoutKey 判断 k 是否为用户级仪表盘布局键（需按用户隔离写入）。
 // dashboard=Web 端；dashboard_apk=手机端全局回退；dashboard_apk_<deviceId>=按设备隔离。
@@ -164,6 +164,18 @@ func (h *Prefs) Get(w http.ResponseWriter, r *http.Request) {
 		hasToken = h.userPrefs.Get(r.Context(), username, "ha_token") != ""
 	}
 	all["ha_token_configured"] = strconv.FormatBool(hasToken)
+
+	// ai_config：api_key 不明文回传，替换为 has_key 布尔（前端据此显示「已配置」）。
+	if raw, ok := all["ai_config"]; ok {
+		cfg := parseMapConfig(raw)
+		out := map[string]any{
+			"base_url": toString(cfg["base_url"]),
+			"model":    toString(cfg["model"]),
+			"has_key":  toString(cfg["api_key"]) != "",
+		}
+		b, _ := json.Marshal(out)
+		all["ai_config"] = string(b)
+	}
 
 	WriteJSON(w, 200, all)
 }
@@ -422,6 +434,20 @@ func (h *Prefs) Put(w http.ResponseWriter, r *http.Request) {
 					WriteErr(w, 500, "internal", err.Error())
 					return
 				}
+			}
+		case k == "ai_config":
+			// AI 配置：api_key 为空表示「保留原 key 不变」，只更新 base_url/model。
+			in := parseMapConfig(v)
+			cur := parseMapConfig(h.userPrefs.Get(r.Context(), username, "ai_config"))
+			if kk := toString(in["api_key"]); kk != "" {
+				cur["api_key"] = kk
+			}
+			cur["base_url"] = toString(in["base_url"])
+			cur["model"] = toString(in["model"])
+			b, _ := json.Marshal(cur)
+			if err := h.userPrefs.Set(r.Context(), username, "ai_config", string(b)); err != nil {
+				WriteErr(w, 500, "internal", err.Error())
+				return
 			}
 		case userSet[k]:
 			// 用户级：写当前用户的 user_prefs

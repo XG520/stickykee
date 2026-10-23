@@ -190,6 +190,8 @@ export const api = {
   // 偏好
   getPrefs: () => api.get('/prefs'),
   putPrefs: (body) => api.put('/prefs', body),
+  // AI 设计：OpenAI 兼容转发（key 由后端从用户 ai_config 注入）
+  aiChat: (messages) => api.post('/ai/chat', { messages }),
   // 系统显示名称/图标：公开读取；修改需管理员（nameEn 可选，一并修改英文名）
   getSiteName: () => api.get('/site-name'),
   putSiteName: (name, nameEn) => api.put('/site-name', { name, name_en: nameEn }),

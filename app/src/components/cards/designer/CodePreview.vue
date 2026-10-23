@@ -7,27 +7,42 @@
         class="hc-ds-preview-tab"
         :class="{ 'is-on': activeTab === t.key }"
         @click="activeTab = t.key"
-      >{{ t.label }}</button>
+      >
+        {{ t.label }}
+        <em v-if="overridden(t.key)" class="hc-ds-dot" title="已手改：保存时以此为准">●</em>
+      </button>
+      <span class="hc-ds-tabs-spacer"></span>
+      <button
+        v-if="overridden(activeTab)"
+        class="hc-ds-reset"
+        title="放弃手改，回到积木生成物"
+        @click="resetActive"
+      >
+        <span class="material-symbols-outlined">restart_alt</span>重置
+      </button>
     </div>
     <div class="hc-ds-preview-body">
       <MonacoEditor
-        v-if="htmlCode"
+        :key="activeTab"
         :model-value="displayCode"
-        :language="activeTab === 'css' ? 'css' : 'html'"
+        :language="langOf(activeTab)"
         theme="vs-dark"
         :height="'100%'"
-        :read-only="true"
-        :options="{ fontSize: 11, minimap: { enabled: false }, wordWrap: 'on', scrollBeyondLastLine: false }"
+        :options="{ fontSize: 11, minimap: { enabled: false }, wordWrap: 'on', scrollBeyondLastLine: false, automaticLayout: true }"
+        @update:model-value="onEdit"
       />
-      <div v-else class="hc-ds-preview-empty">暂无 schema</div>
     </div>
+    <p class="hc-ds-preview-tip">
+      <template v-if="activeTab === 'js'">JS 由你手写（积木不生成脚本），保存时原样进入卡片。</template>
+      <template v-else-if="overridden(activeTab)">此 {{ activeTab.toUpperCase() }} 已被手改，积木改动不再影响它；点「重置」回到生成物。</template>
+      <template v-else>当前为积木生成物，实时跟随画布；直接编辑即转为手改。</template>
+    </p>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, defineAsyncComponent } from 'vue'
 import { designerStore } from '@/composables/designerStore'
-import { renderSchemaToHtml } from './blockDefs'
 
 const MonacoEditor = defineAsyncComponent(() =>
   import('monaco-editor-vue3').then((m) => m.MonacoEditor || m.default),
@@ -36,37 +51,38 @@ const MonacoEditor = defineAsyncComponent(() =>
 const TABS = [
   { key: 'html', label: 'HTML' },
   { key: 'css', label: 'CSS' },
+  { key: 'js', label: 'JS' },
 ]
 
 const activeTab = ref('html')
 
-const htmlCode = computed(() => {
-  if (!designerStore.state.schema) return ''
-  try {
-    const ctx = { entitySlots: {} }
-    const html = renderSchemaToHtml(designerStore.state.schema, ctx)
-    return html
-  } catch (e) {
-    console.warn('[designer] renderSchemaToHtml error:', e)
-    return ''
-  }
-})
+function langOf(key) {
+  if (key === 'css') return 'css'
+  if (key === 'js') return 'javascript'
+  return 'html'
+}
 
-// Phase 2 CSS：先放骨架，Phase 3 再汇总
-const cssCode = computed(() => `/* Phase 2 骨架——Phase 3 补完整主题变量与组件样式 */
-.hc { /* 卡片根 */ }
-.h-head { /* 顶部标题栏 */ }
-.h-row { /* 底部/行 */ }
-.hc-mq-wrap, .hc-mq-track { /* 跑马灯 */ }
-.hc-binding-entity { /* 实体绑定 */ }
-.hc-design-avatar { /* 头像 */ }
-.h-badge { /* 状态角标 */ }
-`)
-
+// html/css：手改优先，未手改跟随积木生成物；js：纯手改
 const displayCode = computed(() => {
-  if (activeTab.value === 'css') return cssCode.value
-  return htmlCode.value
+  const o = designerStore.state.codeOverride
+  const key = activeTab.value
+  if (key === 'js') return o.js || ''
+  return o[key] ?? designerStore.generated.value[key] ?? ''
 })
+
+function overridden(key) {
+  const o = designerStore.state.codeOverride
+  if (key === 'js') return !!(o.js && o.js.trim())
+  return o[key] !== null
+}
+
+function onEdit(v) {
+  designerStore.setCode(activeTab.value, v ?? '')
+}
+
+function resetActive() {
+  designerStore.resetCode(activeTab.value)
+}
 </script>
 
 <style scoped>
@@ -83,6 +99,7 @@ const displayCode = computed(() => {
   border-bottom: 1px solid rgb(255 255 255 / .08);
   flex-shrink: 0;
   background: #252526;
+  align-items: center;
 }
 .hc-ds-preview-tab {
   padding: 5px 12px;
@@ -94,6 +111,9 @@ const displayCode = computed(() => {
   background: transparent;
   cursor: pointer;
   transition: color .15s, background .15s;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 .hc-ds-preview-tab:hover {
   color: #fff;
@@ -104,17 +124,40 @@ const displayCode = computed(() => {
   background: #1e1e1e;
   border-bottom: 2px solid #007acc;
 }
+.hc-ds-dot {
+  font-style: normal;
+  font-size: 8px;
+  color: var(--hc-color, #f5a623);
+}
+.hc-ds-tabs-spacer { flex: 1; }
+.hc-ds-reset {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: 6px;
+  padding: 3px 8px;
+  font-size: 10px;
+  color: #d4d4d4;
+  background: rgb(255 255 255 / .06);
+  border: 1px solid rgb(255 255 255 / .12);
+  border-radius: 5px;
+  cursor: pointer;
+}
+.hc-ds-reset:hover { background: rgb(255 255 255 / .12); }
+.hc-ds-reset .material-symbols-outlined { font-size: 13px; }
 .hc-ds-preview-body {
   flex: 1;
   min-height: 0;
   overflow: hidden;
 }
-.hc-ds-preview-empty {
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  color: #6b6b6b;
+.hc-ds-preview-tip {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 5px 10px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: #8a8a8a;
+  background: #252526;
+  border-top: 1px solid rgb(255 255 255 / .08);
 }
 </style>

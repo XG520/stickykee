@@ -15,6 +15,7 @@ import android.location.Geocoder;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
+import android.util.Log;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
@@ -90,13 +91,25 @@ public final class NativeSensorReporter {
     private static final String KEY_TRACK_LAT = "sensor_track_lat"; // 上次成功推送的 device_tracker 纬度
     private static final String KEY_TRACK_LNG = "sensor_track_lng"; // 上次成功推送的 device_tracker 经度
     private static final String KEY_TRACK_HAS = "sensor_track_has"; // 是否已有成功推送基线
+    private static final String KEY_TRACK_AT = "sensor_track_at";   // 上次成功推送 device_tracker 的时间
+
+    // 设备追踪诊断日志（logcat 过滤 StickyTrack 即可看取位 provider/精度/推送结果）
+    private static final String TAG_TRACK = "StickyTrack";
 
     // ---- device_tracker 防抖动（修复「后台恢复瞬间旧缓存位置把在家误判为离家、几秒后又跳回」）----
     // device_tracker 的状态只应随真实位置变化（与 geocoded_location 同一尺度），
     // 不能被心跳里几分钟前的缓存 fix / 室内漂移点带着反复横跳。
     private static final long TRACK_CACHE_MAX_AGE_MS = 2 * 60 * 1000L; // 追踪只信 2 分钟内的缓存 fix
-    private static final long TRACK_FRESH_MS = 30 * 1000L;             // fix 时间超过 30s 即视为非实时
+    private static final long TRACK_FRESH_MS = 30 * 1000L;             // 卫星 fix 超过 30s 即视为非实时
     private static final float TRACK_MOVE_M = 50f;                     // 位移超过 50m 才重新推送（约 0.0005°）
+    // 静止时也定期重推一次：HA 重启/集成重载后 device_tracker 可能停在旧状态（如「离家」），
+    // 而坐标没变时此前的去抖逻辑永远不再推送 → 状态永久卡住。定期对齐可自愈。
+    private static final long TRACK_RECONCILE_MS = 10 * 60 * 1000L;
+    // 网络定位兜底（Wi-Fi/基站）：室内卫星常年拿不到 fix，只认卫星就等于「到家永远不更新」。
+    // 官方 App 用融合定位，室内可秒出点；这里补同一条兜底，但用精度闸门限制粗点误判。
+    // 注意：Android 的 NETWORK_PROVIDER 不是「公网 IP 定位」，而是系统定位服务基于
+    // Wi-Fi 接入点/基站算出的点；按 Wi-Fi 级精度（≤100m）才采信，基站粗点直接丢弃。
+    private static final float NET_ACC_MAX_M = 100f;                   // 网络定位精度差于 100m 不采信
 
     // ---- 公网 IP：多源探测 + 5 分钟缓存（避免频繁外网请求）----
     private static final int IP_CACHE_MS = 5 * 60 * 1000;
@@ -157,6 +170,8 @@ public final class NativeSensorReporter {
     private static volatile boolean locTrackingOn = false;
     private static volatile Location latestFix;
     private static volatile long latestFixAt = 0L;
+    private static volatile Location latestNetFix; // 网络/融合定位缓存（卫星无 fix 时兜底）
+    private static volatile long latestNetFixAt = 0L;
 
     /** 手动上报结果回调（在后台线程触发，调用方负责切回 UI 线程派发事件）。 */
     public interface ReportCallback {
@@ -249,18 +264,28 @@ public final class NativeSensorReporter {
             @Override
             public void onLocationChanged(Location loc) {
                 if (loc == null) return;
-                // 只采信卫星 fix：PASSIVE 也可能送来 network/fused 结果，
-                // 本项目位置严禁网络定位顶替（地址/坐标一致性）。
-                if (!LocationManager.GPS_PROVIDER.equals(loc.getProvider())) return;
-                // requestLocationUpdates 注册瞬间系统可能投递几十分钟前的缓存 fix。
-                // 一旦让它进 latestFix，latestFixAt 取的是「接收时刻」，后续 2 分钟
-                // 新鲜度检查全部失效——出门后冷启动时旧的家坐标会被当实时点推给
-                // device_tracker。只接受 fix 自身时间戳 10s 内的新鲜点。
-                if (!isFreshGpsFix(loc)) return;
-                Location prev = latestFix;
-                if (prev == null || loc.getTime() >= prev.getTime()) {
-                    latestFix = loc;
-                    latestFixAt = System.currentTimeMillis();
+                // 高精度点（卫星 / 系统融合）：作为首选；融合定位可在室内出点，
+                // 与 HA 官方 App 的 fused provider 一致（Android 12+ 才存在）。
+                if (LocationManager.GPS_PROVIDER.equals(loc.getProvider())
+                        || isFusedProvider(loc.getProvider())) {
+                    // requestLocationUpdates 注册瞬间系统可能投递几十分钟前的缓存 fix。
+                    // 一旦让它进 latestFix，latestFixAt 取的是「接收时刻」，后续 2 分钟
+                    // 新鲜度检查全部失效——出门后冷启动时旧的家坐标会被当实时点推给
+                    // device_tracker。只接受 fix 自身时间戳 30s 内的新鲜点。
+                    if (!isFreshFix(loc, TRACK_FRESH_MS)) return;
+                    Location prev = latestFix;
+                    if (prev == null || loc.getTime() >= prev.getTime()) {
+                        latestFix = loc;
+                        latestFixAt = System.currentTimeMillis();
+                    }
+                    return;
+                }
+                if (!isFreshFix(loc, TRACK_CACHE_MAX_AGE_MS)) return;
+                if (!accuracyOk(loc)) return;
+                Location prevNet = latestNetFix;
+                if (prevNet == null || loc.getTime() >= prevNet.getTime()) {
+                    latestNetFix = loc;
+                    latestNetFixAt = System.currentTimeMillis();
                 }
             }
 
@@ -285,9 +310,27 @@ public final class NativeSensorReporter {
                 == PackageManager.PERMISSION_GRANTED;
         boolean registered = false;
         try {
-            // 卫星定位：本项目位置严禁网络定位顶替；FINE 才订阅 GPS。
+            // 卫星定位：精度最高，优先。
             if (fine) {
                 lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, interval, 0f, l, looper);
+                registered = true;
+            }
+            // 系统融合定位（Android 12+）：与 HA 官方 App 同一通道，室内也能出点。
+            if (fine || coarse) {
+                try {
+                    if (lm.getAllProviders().contains("fused")) {
+                        lm.requestLocationUpdates("fused", interval, 0f, l, looper);
+                        registered = true;
+                    }
+                } catch (Throwable ignored) {
+                    // 部分机型/无 GMS 环境没有 fused provider，忽略
+                }
+            }
+            // 网络定位（Wi-Fi/基站）：室内卫星没有 fix 时唯一能及时出点的高频通道。
+            // 不是公网 IP 定位；精度由 accuracyOk 闸门限制（>100m 的基站粗点不采信）。
+            if (fine || coarse) {
+                lm.requestLocationUpdates(LocationManager.NETWORK_PROVIDER,
+                        Math.max(60_000L, interval), 0f, l, looper);
                 registered = true;
             }
             // PASSIVE：搭车其他 App/系统的定位结果（近乎零耗电），粗定位权限也可收。
@@ -297,7 +340,7 @@ public final class NativeSensorReporter {
                 registered = true;
             }
         } catch (Exception e) {
-            registered = false;
+            // 单个 provider 注册失败不影响已成功的通道（registered 保持原值）
         }
         if (!registered) {
             t.quit();
@@ -328,6 +371,8 @@ public final class NativeSensorReporter {
         }
         latestFix = null;
         latestFixAt = 0L;
+        latestNetFix = null;
+        latestNetFixAt = 0L;
     }
 
     // ==================== 上报入口 ====================
@@ -883,21 +928,28 @@ public final class NativeSensorReporter {
         }
         if (best != null && age >= 0 && age < 10 * 60 * 1000) return best;
 
-        Location fresh = requestSingleGpsFix(lm, 8000);
+        Location fresh = requestSingleFix(lm, LocationManager.GPS_PROVIDER, 8000, 10_000L, 0f);
         if (fresh != null) return fresh;
         if (best != null && age >= 0 && age < 10 * 60 * 1000) return best;
         return null; // 无有效 fix：不上报（避免上报过期/错位地址）
     }
 
     /**
-     * 设备追踪专用取位：比 {@link #currentGpsLocation} 更保守。
-     * 只接受 2 分钟内的新鲜缓存 fix（持续监听缓存 / getLastKnownLocation），
-     * 否则单次 GPS 冷取（8s）；都失败则返回 null——宁可不报，也不用几分钟前的
-     * 旧位置触发 HA zone「在家→离家」误翻转（旧状态保留，等下个新鲜 fix 再变更）。
+     * 设备追踪取位：卫星优先，室内无卫星 fix 时回退网络定位——这是「到家后 device_tracker
+     * 不更新、打开 App 也不变、只有官方 App 才更新」的根因修复。
+     * 官方 App 用系统融合定位（Wi-Fi/基站参与），室内可秒出点；此前本实现只认
+     * GPS_PROVIDER，室内永远拿不到 fix，等于永远不上报。
+     *
+     * 取位顺序：
+     *  1. 持续监听缓存的高精度点（卫星/融合，2 分钟内，精度最高）
+     *  2. 系统最后已知卫星/融合点（2 分钟内）
+     *  3. 卫星单次冷取（8s，室外有效）
+     *  4. 网络定位缓存 / 最后已知 / 单次取（5s，精度 ≤100m 才采信；基站粗点直接丢弃）
+     * 全部失败返回 null——宁可不报也不拿几分钟前的旧点误翻 zone。
      */
-    private static Location currentTrackGpsLocation(Context app) {
+    private static Location currentTrackLocation(Context app) {
         long now = System.currentTimeMillis();
-        // 持续低频监听缓存的最新卫星 fix
+        // 1) 持续低频监听缓存的最新高精度点
         Location live = latestFix;
         if (live != null && latestFixAt > 0
                 && now - latestFixAt < TRACK_CACHE_MAX_AGE_MS) {
@@ -905,44 +957,100 @@ public final class NativeSensorReporter {
         }
         LocationManager lm = (LocationManager) app.getSystemService(Context.LOCATION_SERVICE);
         if (lm == null) return null;
-        Location best = null;
-        long age = Long.MAX_VALUE;
-        try {
-            best = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER);
-            if (best != null) age = now - best.getTime();
-        } catch (Throwable ignored) {
-        }
-        if (best != null && age >= 0 && age < TRACK_CACHE_MAX_AGE_MS) return best;
 
-        Location fresh = requestSingleGpsFix(lm, 8000);
+        // 2) 系统最后已知卫星 / 融合点
+        Location gps = lastKnownFresh(lm, LocationManager.GPS_PROVIDER, TRACK_CACHE_MAX_AGE_MS, 0f);
+        if (gps != null) return gps;
+        Location fusedKnown = lastKnownFresh(lm, FUSED_PROVIDER, TRACK_CACHE_MAX_AGE_MS, 0f);
+        if (fusedKnown != null) return fusedKnown;
+
+        // 3) 卫星单次冷取
+        Location fresh = requestSingleFix(lm, LocationManager.GPS_PROVIDER,
+                8000, TRACK_FRESH_MS, 0f);
         if (fresh != null) return fresh;
-        return null; // 无新鲜 fix：本次跳过，下一心跳 / 前台 GPS watch（约 2s 一个）会补报
+        if (supportsFused(lm)) {
+            Location fused = requestSingleFix(lm, FUSED_PROVIDER,
+                    6000, TRACK_FRESH_MS, 0f);
+            if (fused != null) return fused;
+        }
+
+        // 4) 网络定位兜底（室内唯一可用的即时通道；Wi-Fi 级精度才采信）
+        Location netLive = latestNetFix;
+        if (netLive != null && latestNetFixAt > 0
+                && now - latestNetFixAt < TRACK_CACHE_MAX_AGE_MS
+                && accuracyOk(netLive)) {
+            return netLive;
+        }
+        Location net = lastKnownFresh(lm, LocationManager.NETWORK_PROVIDER,
+                TRACK_CACHE_MAX_AGE_MS, NET_ACC_MAX_M);
+        if (net != null) return net;
+        return requestSingleFix(lm, LocationManager.NETWORK_PROVIDER,
+                5000, TRACK_CACHE_MAX_AGE_MS, NET_ACC_MAX_M);
     }
 
-    /** fix 是否为 10s 内的新鲜卫星定位（elapsedRealtimeNanos 基准，不受墙钟跳变影响）。 */
-    private static boolean isFreshGpsFix(Location loc) {
+    /** Android 12+ 的系统融合 provider（部分机型/无 GMS 环境不存在）。 */
+    private static final String FUSED_PROVIDER = "fused";
+
+    private static boolean isFusedProvider(String provider) {
+        return FUSED_PROVIDER.equals(provider);
+    }
+
+    private static boolean supportsFused(LocationManager lm) {
+        try {
+            return lm.getAllProviders().contains(FUSED_PROVIDER);
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    /** 精度闸门：无精度字段时放行，有精度则须优于 NET_ACC_MAX_M。 */
+    private static boolean accuracyOk(Location loc) {
+        if (loc == null) return false;
+        return !loc.hasAccuracy() || loc.getAccuracy() <= NET_ACC_MAX_M;
+    }
+
+    /** 取系统最后已知位置，并按「自身时间戳新鲜度 + 精度」过滤。 */
+    private static Location lastKnownFresh(LocationManager lm, String provider,
+                                           long maxAgeMs, float maxAcc) {
+        try {
+            Location l = lm.getLastKnownLocation(provider);
+            if (l == null) return null;
+            long age = System.currentTimeMillis() - l.getTime();
+            if (age < 0 || age >= maxAgeMs) return null;
+            if (maxAcc > 0 && l.hasAccuracy() && l.getAccuracy() > maxAcc) return null;
+            return l;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    /** fix 是否为 maxAgeMs 内的新鲜定位（elapsedRealtimeNanos 基准，不受墙钟跳变影响）。 */
+    private static boolean isFreshFix(Location loc, long maxAgeMs) {
         if (loc == null) return false;
         try {
             long fixNanos = loc.getElapsedRealtimeNanos();
-            if (fixNanos <= 0L) return false;
-            long ageMs = (SystemClock.elapsedRealtimeNanos() - fixNanos) / 1_000_000L;
-            return ageMs >= 0L && ageMs <= 10_000L;
-        } catch (Throwable t) {
-            long ageMs = System.currentTimeMillis() - loc.getTime();
-            return ageMs >= 0L && ageMs <= 10_000L;
+            if (fixNanos > 0L) {
+                long ageMs = (SystemClock.elapsedRealtimeNanos() - fixNanos) / 1_000_000L;
+                return ageMs >= 0L && ageMs <= maxAgeMs;
+            }
+        } catch (Throwable ignored) {
         }
+        long ageMs = System.currentTimeMillis() - loc.getTime();
+        return ageMs >= 0L && ageMs <= maxAgeMs;
     }
 
-    private static Location requestSingleGpsFix(LocationManager lm, long timeoutMs) {
+    /** 单次定位（指定 provider）。只接受 freshMs 内的新鲜 fix，超时返回 null。 */
+    private static Location requestSingleFix(LocationManager lm, String provider,
+                                            long timeoutMs, long freshMs, float maxAcc) {
         final CountDownLatch latch = new CountDownLatch(1);
         final Location[] holder = new Location[1];
         LocationListener l = new LocationListener() {
             @Override
             public void onLocationChanged(Location loc) {
                 // requestSingleUpdate 也可能在注册瞬间投递最后已知缓存 fix（时间戳很旧）。
-                // 追踪链路绝不能把这种点当「新鲜冷取结果」——只接受 10s 内的真新 fix，
-                // 超时仍无新鲜 fix 则返回 null（调用方宁可不报，等下个周期）。
-                if (!isFreshGpsFix(loc)) return;
+                // 追踪链路绝不能把这种点当「新鲜冷取结果」——超时仍无新鲜 fix 则返回 null。
+                if (!isFreshFix(loc, freshMs)) return;
+                if (maxAcc > 0 && loc.hasAccuracy() && loc.getAccuracy() > maxAcc) return;
                 holder[0] = loc;
                 latch.countDown();
             }
@@ -960,7 +1068,7 @@ public final class NativeSensorReporter {
             }
         };
         try {
-            lm.requestSingleUpdate(LocationManager.GPS_PROVIDER, l, Looper.getMainLooper());
+            lm.requestSingleUpdate(provider, l, Looper.getMainLooper());
         } catch (Throwable e) {
             return null;
         }
@@ -1006,7 +1114,7 @@ public final class NativeSensorReporter {
      * 供后台保活心跳调用，不依赖 WebView 存活；失败静默返回 false，绝不抛出。
      *
      * 防抖动：device_tracker 只随「真实位置变化」更新——
-     *  1. 取位只用 2 分钟内的新鲜 fix（{@link #currentTrackGpsLocation}），旧缓存直接跳过；
+     *  1. 取位只用新鲜点位（卫星 2 分钟内，网络 2 分钟内且精度 ≤250m），旧缓存直接跳过；
      *  2. 与上次成功推送坐标位移不足 50m 不重复推送（静止时心跳不再引发任何 zone 变化）；
      *  3. 即便位移超过 50m，若 fix 已超过 30s（非实时点）也先压住，等新鲜 fix 确认，
      *     防止 App 从后台恢复瞬间用过期/漂移点把「在家」打成「离家」后又跳回。
@@ -1020,20 +1128,42 @@ public final class NativeSensorReporter {
                 != PackageManager.PERMISSION_GRANTED) {
             return false;
         }
-        Location loc = currentTrackGpsLocation(ctx);
-        if (loc == null) return false;
+        Location loc = currentTrackLocation(ctx);
+        if (loc == null) {
+            Log.d(TAG_TRACK, "no fresh fix, skip tracker push");
+            return false;
+        }
         final double lat = loc.getLatitude();
         final double lng = loc.getLongitude();
         if (lat == 0 && lng == 0) return false;
 
         SharedPreferences p = prefs(ctx);
+        long now = System.currentTimeMillis();
+        long lastAt = p.getLong(KEY_TRACK_AT, 0L);
         if (p.getBoolean(KEY_TRACK_HAS, false)) {
             float lastLat = p.getFloat(KEY_TRACK_LAT, 0f);
             float lastLng = p.getFloat(KEY_TRACK_LNG, 0f);
             double moved = haversineM(lastLat, lastLng, lat, lng);
-            if (moved < TRACK_MOVE_M) return true; // 静止：跳过推送，HA 保持原状态
+            // 静止时也定期重推（HA 重启/重载后状态可能停在旧值，靠重推自愈）
+            boolean reconcile = now - lastAt >= TRACK_RECONCILE_MS;
+            if (moved < TRACK_MOVE_M && !reconcile) {
+                Log.d(TAG_TRACK, "stationary " + Math.round(moved) + "m, skip");
+                return true;
+            }
+            // 移动了但点位非实时：高精度点要求 30s 内，网络点放宽到 2 分钟（更新频率低）
+            long freshLimit = LocationManager.GPS_PROVIDER.equals(loc.getProvider())
+                    || isFusedProvider(loc.getProvider())
+                    ? TRACK_FRESH_MS : TRACK_CACHE_MAX_AGE_MS;
             long age = System.currentTimeMillis() - loc.getTime();
-            if (age > TRACK_FRESH_MS) return false; // 移动但点位非实时：等下个新鲜 fix 确认
+            if (moved >= TRACK_MOVE_M && age > freshLimit) {
+                Log.d(TAG_TRACK, "stale fix age=" + age + "ms, wait next");
+                return false;
+            }
+            Log.d(TAG_TRACK, "push moved=" + Math.round(moved) + "m reconcile=" + reconcile
+                    + " provider=" + loc.getProvider() + " acc=" + Math.round(loc.getAccuracy()));
+        } else {
+            Log.d(TAG_TRACK, "first push provider=" + loc.getProvider()
+                    + " acc=" + Math.round(loc.getAccuracy()));
         }
 
         HttpURLConnection conn = null;
@@ -1057,18 +1187,23 @@ public final class NativeSensorReporter {
             os.close();
             int code = conn.getResponseCode();
             if (code == 401 || code == 403) {
+                Log.d(TAG_TRACK, "push auth failed code=" + code);
                 clearContext(ctx); // 会话失效：清上下文，等前端重新同步（防止死 token 无限重试）
                 return false;
             }
             if (code >= 200 && code < 300) {
-                // 记录成功推送基线：后续心跳据此做 50m 去抖
+                // 记录成功推送基线与时间：后续心跳据此做 50m 去抖 + 定期重推对齐
                 p.edit().putFloat(KEY_TRACK_LAT, (float) lat)
                         .putFloat(KEY_TRACK_LNG, (float) lng)
-                        .putBoolean(KEY_TRACK_HAS, true).apply();
+                        .putBoolean(KEY_TRACK_HAS, true)
+                        .putLong(KEY_TRACK_AT, System.currentTimeMillis()).apply();
+                Log.d(TAG_TRACK, "push ok code=" + code + " lat=" + lat + " lng=" + lng);
                 return true;
             }
+            Log.d(TAG_TRACK, "push failed code=" + code);
             return false;
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            Log.d(TAG_TRACK, "push error " + e);
             return false;
         } finally {
             if (conn != null) {

@@ -89,8 +89,8 @@ export function nativeGpsOnce(timeoutMs = 15000) {
         }
         finish(reject, new Error(d.provider || 'no_fix'))
       }
-      // 原生最长等待受其内部 60s 钳制，这里再留 5s 余量兜底
-      const timer = setTimeout(() => finish(reject, new Error('timeout')), timeoutMs + 5000)
+      // 原生最长等待：卫星 timeoutMs + 网络兜底 5s，这里再留 8s 余量兜底
+      const timer = setTimeout(() => finish(reject, new Error('timeout')), timeoutMs + 8000);
       window.addEventListener('stickykee-gps', onEvt)
       try { n.gpsOnce(req, timeoutMs) } catch (err) { finish(reject, err) }
     }
@@ -120,8 +120,8 @@ export function locErrorMessage(e) {
   const map = {
     no_permission: '尚未授予定位权限，请点击重试并允许',
     denied: '定位权限被拒绝，请在系统设置中允许',
-    no_fix: '暂无卫星信号，请到窗边或户外重试',
-    timeout: '卫星定位超时，请到空旷处重试',
+    no_fix: '暂无定位信号，请稍后重试',
+    timeout: '定位超时，请稍后重试',
     unavailable: '当前环境不支持卫星定位',
   }
   const msg = e && e.message

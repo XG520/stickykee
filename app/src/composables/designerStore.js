@@ -1,177 +1,170 @@
 // 卡片设计器状态（Composition API 单例，与项目 store/index.js 同级模式）
-// 不使用 Pinia：项目全局 store 用 reactive/ref 实现，Phase 1 延续同一风格。
+// schema v2：PS 式自由画布（扁平元素数组 + 绝对定位），v1 积木树仅由 CodeCard 兜底渲染旧卡。
 import { reactive, computed } from 'vue'
-import { BLOCK_DEFS, DESIGNER_EXTRA_CSS, createBlockInstance, renderSchemaToHtml } from '@/components/cards/designer/blockDefs'
+import { ELEMENT_DEFS, createElement, createEmptySchema, renderElementsToHtml } from '@/components/cards/designer/elementDefs'
+import { DESIGNER_EXTRA_CSS } from '@/components/cards/designer/blockDefs'
 import { SHELL_BASE } from '@/components/cards/templates'
 import { entityStates } from '@/store'
 
 // —— state ——
 const state = reactive({
-  schema: null,        // BlockInstance 树根（slot_root）
-  selectedId: null,    // 当前选中积木 id
-  history: [],         // schema 深拷贝快照（结构变更时 push）
-  historyIdx: -1,      // 当前指向
+  schema: null,        // { version:2, canvas:{w,h}, elements:[ElementInstance] }
+  selectedId: null,    // 当前选中元素 id
+  history: [],         // schema 深拷贝快照（结构/变换变更时 push）
+  historyIdx: -1,
+  // 手改代码（低代码平台的「代码面板」）：画布只生成 html/css；
+  // html/css 为 null 表示未手改（跟随生成物），一旦编辑即为覆盖值；
+  // js 画布不生成，空串即无脚本。保存时 override 优先于生成物。
+  codeOverride: { html: null, css: null, js: '' },
+  // 当前设计来源模板（画廊套用）：{ id,name,icon,grid,roles }；空白/代码卡为 null。
+  // 保存时随卡片存 _roles，供再次编辑与「我的模板」绑定流程使用。
+  tplMeta: null,
 })
 
 // —— history 管理 ——
 function pushHistory() {
-  // 截断 redo 分支
   state.history = state.history.slice(0, state.historyIdx + 1)
   state.history.push(JSON.parse(JSON.stringify(state.schema)))
-  // 上限：最多 50 份，防内存膨胀
-  if (state.history.length > 50) {
-    state.history.shift()
-  }
+  if (state.history.length > 50) state.history.shift()
   state.historyIdx = state.history.length - 1
 }
 
+let _suppressHistory = false
 function maybePushHistory() {
   if (!_suppressHistory) pushHistory()
-}
-let _suppressHistory = false
-
-// —— 树遍历辅助 ——
-function findNode(id, node = state.schema, parent = null) {
-  if (!node) return null
-  if (node.id === id) return { node, parent }
-  const kids = node.children || []
-  for (const c of kids) {
-    const r = findNode(id, c, node)
-    if (r) return r
-  }
-  return null
-}
-
-function isDescendant(ancestorId, targetId) {
-  const r = findNode(targetId)
-  if (!r) return false
-  // 往上找 ancestorId
-  let cur = r.parent
-  while (cur) {
-    if (cur.id === ancestorId) return true
-    const p = findNode(cur.id).parent
-    cur = p
-  }
-  return false
 }
 
 // —— getters ——
 const selected = computed(() => {
   if (!state.selectedId || !state.schema) return null
-  const r = findNode(state.selectedId)
-  return r ? r.node : null
+  return state.schema.elements.find((e) => e.id === state.selectedId) || null
 })
 
-const flattened = computed(() => {
-  const list = []
-  function walk(node) {
-    if (!node) return
-    list.push(node)
-    for (const c of node.children || []) walk(c)
-  }
-  walk(state.schema)
-  return list
-})
+const canUndo = computed(() => state.historyIdx > 0)
+const canRedo = computed(() => state.historyIdx < state.history.length - 1)
 
 // 桥接：从根 store 拿实体 key 列表
 const availableEntityIds = computed(() => Object.keys(entityStates))
 
-// undo / redo 可用性
-const canUndo = computed(() => state.historyIdx > 0)
-const canRedo = computed(() => state.historyIdx < state.history.length - 1)
-
 // —— actions ——
-function newEmpty() {
-  state.schema = {
-    id: createBlockInstance('slot_root').id,
-    defType: 'slot_root',
-    props: { padding: 8, gap: 4 },
-    children: [],
-  }
+function newEmpty(canvas) {
+  state.schema = createEmptySchema(canvas)
   state.selectedId = null
   state.history = [JSON.parse(JSON.stringify(state.schema))]
   state.historyIdx = 0
+  state.codeOverride = { html: null, css: null, js: '' }
+  state.tplMeta = null
 }
 
-function cloneFromPreset(presetSchema) {
-  state.schema = JSON.parse(JSON.stringify(presetSchema))
+// 套用画廊模板：roleMap 把角色槽（props.role）映射到真实实体 id，再载入画布
+function applyTemplate(tpl, roleMap = {}) {
+  const s = JSON.parse(JSON.stringify(tpl.schema))
+  s.version = 2
+  s.canvas = s.canvas || { w: (tpl.grid?.w || 4) * 120, h: (tpl.grid?.h || 2) * 120 }
+  s.elements = Array.isArray(s.elements) ? s.elements : []
+  for (const e of s.elements) {
+    const def = ELEMENT_DEFS[e.type]
+    if (!def) continue
+    e.props = { ...JSON.parse(JSON.stringify(def.defaultProps)), ...(e.props || {}) }
+    if (e.props.role && roleMap[e.props.role]) e.props.entity = roleMap[e.props.role]
+  }
+  loadSchema(s)
+  state.tplMeta = { id: tpl.id, name: tpl.name, icon: tpl.icon, grid: tpl.grid, roles: tpl.roles || [] }
+}
+
+// 恢复既有 schema（v2）；画布尺寸缺省补 480×240
+function loadSchema(schema) {
+  const s = JSON.parse(JSON.stringify(schema))
+  s.version = 2
+  s.canvas = s.canvas || { w: 480, h: 240 }
+  s.elements = Array.isArray(s.elements) ? s.elements : []
+  state.schema = s
   state.selectedId = null
-  state.history = [JSON.parse(JSON.stringify(state.schema))]
+  state.history = [JSON.parse(JSON.stringify(s))]
   state.historyIdx = 0
+  state.codeOverride = { html: null, css: null, js: '' }
+  state.tplMeta = null
 }
 
 function select(id) {
   state.selectedId = id || null
 }
 
-// 向某节点加新积木；defType 可带可选 props 覆盖
-function addBlock(parentId, defType, insertIndex) {
-  const r = findNode(parentId)
-  if (!r) {
-    console.warn('[designer] addBlock: parent not found', parentId)
-    return
-  }
-  const def = BLOCK_DEFS[defType]
-  if (!def) {
-    console.warn('[designer] addBlock: unknown defType', defType)
-    return
-  }
-  // 校验目标父节点是否接受 children
-  if (!def.slots || def.slots.length === 0) {
-    // primitive 块不能当父节点
-    return
-  }
-  // 校验新积木是否接受 children（slot_root/head/bottom/marquee 是容器；primitive 本身也可以加但无 slots 就忽略）
-  const instance = createBlockInstance(defType)
-  const parent = r.node
-  parent.children = parent.children || []
-  const idx = typeof insertIndex === 'number' ? Math.max(0, Math.min(insertIndex, parent.children.length)) : parent.children.length
-  parent.children.splice(idx, 0, instance)
+// 添加元素到画布（at 缺省稍微错开，避免完全重叠）
+function addElement(type, at = {}) {
+  if (!state.schema || !ELEMENT_DEFS[type]) return null
+  const n = state.schema.elements.length
+  const el = createElement(type, {
+    x: at.x ?? (24 + (n % 6) * 14),
+    y: at.y ?? (24 + (n % 6) * 14),
+  })
+  // 不越出画布
+  el.x = Math.max(0, Math.min(el.x, state.schema.canvas.w - el.w))
+  el.y = Math.max(0, Math.min(el.y, state.schema.canvas.h - el.h))
+  state.schema.elements.push(el)
+  state.selectedId = el.id
   maybePushHistory()
+  return el
 }
 
-// vue-draggable-plus 的 onMove / onEnd 会传 from/to；这里提供直接 API
-function moveBlock(id, newParentId, insertIndex) {
-  if (id === newParentId) return // 不能自己当自己的子
-  if (isDescendant(id, newParentId)) {
-    console.warn('[designer] moveBlock: cannot move node into its own descendant')
-    return
-  }
-  const src = findNode(id)
-  const dst = findNode(newParentId)
-  if (!src || !dst) {
-    console.warn('[designer] moveBlock: node not found', id, newParentId)
-    return
-  }
-  if (!src.parent) return // 根节点
-  // 从旧父节点摘除
-  const oldKids = src.parent.children
-  const oldIdx = oldKids.findIndex((c) => c.id === id)
-  if (oldIdx >= 0) oldKids.splice(oldIdx, 1)
-  // 插入新父节点
-  dst.node.children = dst.node.children || []
-  const idx = typeof insertIndex === 'number'
-    ? Math.max(0, Math.min(insertIndex, dst.node.children.length))
-    : dst.node.children.length
-  dst.node.children.splice(idx, 0, src.node)
-  maybePushHistory()
-}
-
-function deleteBlock(id) {
-  const r = findNode(id)
-  if (!r || !r.parent) return // 根节点不删
-  const kids = r.parent.children
-  const idx = kids.findIndex((c) => c.id === id)
-  if (idx >= 0) kids.splice(idx, 1)
+function deleteElement(id) {
+  if (!state.schema) return
+  const i = state.schema.elements.findIndex((e) => e.id === id)
+  if (i < 0) return
+  state.schema.elements.splice(i, 1)
   if (state.selectedId === id) state.selectedId = null
   maybePushHistory()
 }
 
+// moveable 操作结束后回写变换（拖拽/缩放/旋转统一入口）
+// silent：属性面板连续输入时免推 history（拖拽结束、方向键等离散操作才记快照）
+function updateTransform(id, t, silent = false) {
+  const el = state.schema?.elements.find((e) => e.id === id)
+  if (!el) return
+  if (typeof t.x === 'number') el.x = Math.round(t.x)
+  if (typeof t.y === 'number') el.y = Math.round(t.y)
+  if (typeof t.w === 'number') el.w = Math.max(8, Math.round(t.w))
+  if (typeof t.h === 'number') el.h = Math.max(8, Math.round(t.h))
+  if (typeof t.rotate === 'number') el.rotate = Math.round(t.rotate * 10) / 10
+  if (!silent) maybePushHistory()
+}
+
 function updateProps(id, patch) {
-  const r = findNode(id)
-  if (!r) return
-  r.node.props = { ...(r.node.props || {}), ...patch }
-  // props 变更不推进 history（太细碎），但标记脏
+  const el = state.schema?.elements.find((e) => e.id === id)
+  if (!el) return
+  el.props = { ...(el.props || {}), ...patch }
+  // props 变更不推进 history（太细碎），跟随下一次结构变更落快照
+}
+
+// 图层顺序：dir=1 上移一层（数组后移=更靠上），-1 下移一层
+function reorderElement(id, dir) {
+  const list = state.schema?.elements
+  if (!list) return
+  const i = list.findIndex((e) => e.id === id)
+  const j = i + dir
+  if (i < 0 || j < 0 || j >= list.length) return
+  const [el] = list.splice(i, 1)
+  list.splice(j, 0, el)
+  maybePushHistory()
+}
+
+// 画布尺寸变更（随卡片 w/h 档位切换）
+function setCanvas(w, h) {
+  if (!state.schema) return
+  state.schema.canvas = { ...state.schema.canvas, w: Math.max(60, Math.round(w)), h: Math.max(60, Math.round(h)) }
+  maybePushHistory()
+}
+
+// 画布背景：{ type:'color'|'gradient'|'image', color/from,to,angle/image,fit }；null/'none' = 清除
+function setBackground(bg) {
+  if (!state.schema) return
+  if (bg && bg.type && bg.type !== 'none') state.schema.canvas = { ...state.schema.canvas, background: { ...bg } }
+  else {
+    const c = { ...state.schema.canvas }
+    delete c.background
+    state.schema.canvas = c
+  }
+  maybePushHistory()
 }
 
 function undo() {
@@ -188,39 +181,73 @@ function redo() {
   state.selectedId = null
 }
 
-// —— 序列化：供 Designer.save() 调用 ——
+// —— 代码面板：手改覆盖 ——
+// 当前画布生成物（html/css），代码面板在未手改时展示它
+const generated = computed(() => {
+  if (!state.schema) return { html: '', css: '' }
+  const css = SHELL_BASE + DESIGNER_EXTRA_CSS
+  try {
+    return { html: renderElementsToHtml(state.schema, { entitySlots: {} }), css }
+  } catch {
+    return { html: '', css }
+  }
+})
+
+// 手改某语言代码（html/css 传入与生成物相同的内容时视为未手改，回到跟随模式）
+function setCode(lang, code) {
+  if (lang === 'js') { state.codeOverride.js = code || ''; return }
+  if (lang === 'html' || lang === 'css') {
+    state.codeOverride[lang] = code === generated.value[lang] ? null : code
+  }
+}
+
+// 放弃手改，回到生成物（js 为清空）
+function resetCode(lang) {
+  if (lang === 'js') state.codeOverride.js = ''
+  else if (lang === 'html' || lang === 'css') state.codeOverride[lang] = null
+}
+
+// —— 序列化：供 Designer.save() / LivePreview 调用 ——
 function serialize() {
   const ctx = { entitySlots: {} }
-  const compiledHtml = renderSchemaToHtml(state.schema, ctx)
+  const compiledHtml = renderElementsToHtml(state.schema, ctx)
+  const genCss = SHELL_BASE + DESIGNER_EXTRA_CSS
   return {
     schema: JSON.parse(JSON.stringify(state.schema)),
     entitySlotMap: ctx.entitySlots,
     compiledHtml,
-    // 自定义卡片从空白画布起步时没有模板 CSS，需带上积木基础样式；
-    // 预设卡已有完整 CSS，由 CardEditor 判断是否采用
-    css: SHELL_BASE + DESIGNER_EXTRA_CSS,
+    roles: state.tplMeta?.roles || null,
+    // 最终产物：手改优先，未手改跟随生成物
+    html: state.codeOverride.html ?? compiledHtml,
+    css: state.codeOverride.css ?? genCss,
+    js: state.codeOverride.js || '',
     extraCss: DESIGNER_EXTRA_CSS,
   }
 }
 
-// —— 暴露 store 对象（与项目 store/index.js 的 `store` 同级风格） ——
 export const designerStore = {
   state,
   selected,
-  flattened,
-  availableEntityIds,
   canUndo,
   canRedo,
+  generated,
+  availableEntityIds,
   // actions
   newEmpty,
-  cloneFromPreset,
+  applyTemplate,
+  loadSchema,
   select,
-  addBlock,
-  moveBlock,
-  deleteBlock,
+  addElement,
+  deleteElement,
+  updateTransform,
   updateProps,
+  reorderElement,
+  setCanvas,
+  setBackground,
   undo,
   redo,
+  setCode,
+  resetCode,
   serialize,
 }
 

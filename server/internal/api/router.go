@@ -68,6 +68,7 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 	// 账号级生日（存取 + HA 传感器同步）：prefs 写入回调与管理员接口都依赖它
 	birthdays := handler.NewBirthdays(manager, repo, userPrefs, userRepo)
 	prefs := handler.NewPrefs(repo, userPrefs, manager, hb, birthdays)
+	ai := handler.NewAI(userPrefs)
 	users := handler.NewUsers(userRepo, userPrefs, manager)
 	// 语音通话：内存房间 + 事件推送 + 语音帧 WS 中继（8080 媒体中继，不经 P2P）。
 	// push 回调供房间超时清理时向全员推送 ended 事件（如无人接听自动结束）。
@@ -158,6 +159,7 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 			r.Get("/sensors/definitions", sensors.Definitions)
 			r.Get("/prefs", prefs.Get)
 			r.Put("/prefs", prefs.Put)
+			r.Post("/ai/chat", ai.Chat)
 			r.Put("/site-name", prefs.PutSiteName)
 			r.Put("/site-icon", prefs.PutSiteIcon)
 			r.Put("/site-icon/image", prefs.PutSiteIconImage)

@@ -474,6 +474,7 @@
       :cols="cols"
       @close="editorOpen = false"
       @save="onEditorSave"
+      @design="onGoDesigner"
     />
 
     <!-- 导入文件选择 -->
@@ -512,6 +513,7 @@
 
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, onUpdated, onActivated, onDeactivated, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
 import { ui, entityStates, entityList, registryDevices, loadRegistry, haTokenConfigured, haTokenKnown, auth, openDeviceDrawer, dashboardRev } from '@/store'
 import { useEntities } from '@/composables/useLive'
 import { useAutoHide } from '@/composables/useAutoHide'
@@ -675,6 +677,15 @@ function onEditorSave(p) {
     ? JSON.parse(JSON.stringify(p.entitySlotMap))
     : {}
   editorOpen.value = false
+}
+
+// 编辑器「设计」按钮：先把草稿同步进内存并落库（新建卡此刻才入库），
+// 再带 uid 跳积木设计器——设计器从后端布局读卡片，必能读到最新状态。
+const router = useRouter()
+async function onGoDesigner(p) {
+  onEditorSave(p) // 含 editorOpen.value = false
+  await saveLayout()
+  router.push({ path: '/designer', query: { uid: p.uid } })
 }
 
 // ---- 网格：列数随宽度变化，卡片自动换行（测量/缩放逻辑共用 useDashGrid）----
@@ -970,7 +981,7 @@ function addCard(opt) {
     card.entity_id = opts[0].id
     if (['generic', 'person', 'group'].includes(opt.type)) card.entity_ids = [opts[0].id]
   }
-  // 自定义卡 / 用户模板：新建后立即打开编辑弹窗，空卡自动进设计模式
+  // 自定义卡 / 用户模板：新建后立即打开编辑弹窗，空卡自动跳积木设计器
   if (opt.type === 'custom') card._autoDesign = true
   if (isUserTemplate(opt.type)) card._autoDesign = true
   cards.value.push(card)

@@ -30,6 +30,7 @@ import android.media.audiofx.NoiseSuppressor;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.PowerManager;
 import android.os.SystemClock;
 import android.provider.Settings;
@@ -950,17 +951,22 @@ public class NativeBridge {
 
     /** fix 是否为 10s 内的新鲜卫星定位（用 elapsedRealtimeNanos，不受墙钟跳变影响）。 */
     private static boolean isFreshGpsFix(Location loc) {
+        return isFreshFix(loc, 10_000L);
+    }
+
+    /** fix 是否为 maxAgeMs 内的新鲜定位（网络定位更新频率低，闸门放宽到分钟级）。 */
+    private static boolean isFreshFix(Location loc, long maxAgeMs) {
         if (loc == null) return false;
         try {
             long fixNanos = loc.getElapsedRealtimeNanos();
-            if (fixNanos <= 0L) return false;
-            long ageMs = (SystemClock.elapsedRealtimeNanos() - fixNanos) / 1_000_000L;
-            return ageMs >= 0L && ageMs <= 10_000L;
-        } catch (Throwable t) {
-            // 异常回退：fix 墙钟时间判定
-            long ageMs = System.currentTimeMillis() - loc.getTime();
-            return ageMs >= 0L && ageMs <= 10_000L;
+            if (fixNanos > 0L) {
+                long ageMs = (SystemClock.elapsedRealtimeNanos() - fixNanos) / 1_000_000L;
+                return ageMs >= 0L && ageMs <= maxAgeMs;
+            }
+        } catch (Throwable ignored) {
         }
+        long ageMs = System.currentTimeMillis() - loc.getTime();
+        return ageMs >= 0L && ageMs <= maxAgeMs;
     }
 
     /** 原生卫星定位是否可用（有权限且有 GPS 硬件）。 */
@@ -1053,7 +1059,9 @@ public class NativeBridge {
                         dispatchGps(req, true, l.getLatitude(), l.getLongitude(),
                                 l.getAccuracy(), l.getProvider());
                     } else {
-                        dispatchGps(req, false, 0, 0, 0, "no_fix");
+                        // 卫星无 fix（室内常见）→ 网络定位兜底：官方 App 用融合定位，
+                        // 室内可秒出点。此前这里直接回 no_fix，导致「在家打开 App 也不更新」。
+                        networkOnce(req, lm, handler);
                     }
                 };
                 try {
@@ -1067,6 +1075,53 @@ public class NativeBridge {
         } catch (Exception e) {
             dispatchGps(req, false, 0, 0, 0, "error");
         }
+    }
+
+    /**
+     * 网络定位兜底（Wi-Fi/基站）：卫星无 fix 时用，室内可立即出点。
+     * 精度闸门 250m 以内的点才采信，避免粗点把「在家」误判为「离家」。
+     */
+    private void networkOnce(final String req, final LocationManager lm, final Handler handler) {
+        final Location[] best = { null };
+        final boolean[] done = { false };
+        final Runnable[] finishRef = new Runnable[1];
+        final LocationListener nl = new LocationListener() {
+            @Override
+            public void onLocationChanged(Location loc) {
+                if (loc == null || !isFreshFix(loc, 120_000L)) return;
+                if (loc.hasAccuracy() && loc.getAccuracy() > 250f) return;
+                if (best[0] == null || loc.getAccuracy() < best[0].getAccuracy()) best[0] = loc;
+                // 精度已到 Wi-Fi 级（≤100m）可提前结束
+                if (best[0] != null && best[0].getAccuracy() <= 100f && finishRef[0] != null) {
+                    finishRef[0].run();
+                }
+            }
+            @Override public void onStatusChanged(String p, int s, Bundle e) {}
+            @Override public void onProviderEnabled(String p) {}
+            @Override public void onProviderDisabled(String p) {}
+        };
+        finishRef[0] = () -> {
+            if (done[0]) return;
+            done[0] = true;
+            try { lm.removeUpdates(nl); } catch (Exception ignored) {}
+            Location l = best[0];
+            if (l != null) {
+                dispatchGps(req, true, l.getLatitude(), l.getLongitude(),
+                        l.getAccuracy(), "network");
+            } else {
+                dispatchGps(req, false, 0, 0, 0, "no_fix");
+            }
+        };
+        try {
+            lm.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 1000, 0, nl);
+        } catch (SecurityException e) {
+            dispatchGps(req, false, 0, 0, 0, "no_permission");
+            return;
+        } catch (Exception e) {
+            dispatchGps(req, false, 0, 0, 0, "no_fix");
+            return;
+        }
+        handler.postDelayed(finishRef[0], 5000);
     }
 
     /** 启动连续卫星监听：每次定位经 stickykee-gps 事件 {req:'watch',ok,lat,lng,acc,provider}。 */
