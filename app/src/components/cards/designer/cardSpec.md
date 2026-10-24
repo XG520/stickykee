@@ -55,7 +55,7 @@ propsSchema 驱动属性面板表单）：
 | `image` | 图片 | url（http(s)/data:）, fit(cover/contain), radius, opacity |
 | `rect` | 矩形/局部背景 | background, radius, borderColor, borderWidth, opacity |
 | `entity` | 实体实时状态 | entity（实体 id）, showIcon, showName, showState, showUnit, fontSize, color |
-| `button` | 交互按钮 | text 或 glyph, action(none/toggle/link), entity, href, background, color |
+| `button` | 交互按钮 | text 或 glyph, action(none/toggle/link/svc), entity, href, svc, args, background, color |
 
 新增元素类型时：在 `ELEMENT_DEFS` 加定义，在 `renderInner` 的 switch 加渲染分支；
 画布预览与产物共用同一渲染器，无需改他处。

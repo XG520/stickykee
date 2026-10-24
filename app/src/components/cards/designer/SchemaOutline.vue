@@ -6,8 +6,13 @@
         v-for="(el, i) in layers"
         :key="el.id"
         class="hc-layer-row"
-        :class="{ 'is-on': el.id === selectedId }"
-        @click="designerStore.select(el.id)"
+        :class="{ 'is-on': isSel(el.id), 'is-drop': dropIdx === i }"
+        draggable="true"
+        @click="onRowClick(el.id, $event)"
+        @dragstart="onDragStart(el.id, $event)"
+        @dragover.prevent="dropIdx = i"
+        @drop.prevent="onDrop(i)"
+        @dragend="onDragEnd"
       >
         <span class="material-symbols-outlined hc-layer-icon">{{ iconOf(el) }}</span>
         <span class="hc-layer-name">{{ nameOf(el) }}</span>
@@ -32,11 +37,36 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { ELEMENT_DEFS } from './elementDefs'
 import { designerStore } from '@/composables/designerStore'
 
-const selectedId = computed(() => designerStore.state.selectedId)
+// 多选高亮：与画布选中集合一致
+const selectedIds = computed(() => designerStore.state.selectedIds || [])
+const isSel = (id) => selectedIds.value.includes(id)
+function onRowClick(id, e) {
+  if (e.ctrlKey || e.metaKey || e.shiftKey) designerStore.toggleSelect(id)
+  else designerStore.select(id)
+}
+
+// 拖拽排序：拖到某行 = 占据该行层级（该行及其上方顺移）
+const dropIdx = ref(-1)
+let dragId = null
+function onDragStart(id, e) {
+  dragId = id
+  e.dataTransfer.effectAllowed = 'move'
+  e.dataTransfer.setData('text/plain', id)
+}
+function onDrop(i) {
+  const ref = layers.value[i]
+  if (dragId && ref) designerStore.moveElementBefore(dragId, ref.id)
+  dragId = null
+  dropIdx.value = -1
+}
+function onDragEnd() {
+  dragId = null
+  dropIdx.value = -1
+}
 // 数组末尾 = 最上层；列表倒序展示（上面的是顶层）
 const layers = computed(() => [...(designerStore.state.schema?.elements || [])].reverse())
 
@@ -80,11 +110,12 @@ function nameOf(el) {
   padding: 6px 6px;
   border-radius: 7px;
   border: 1px solid transparent;
-  cursor: pointer;
+  cursor: grab;
   font-size: 11px;
   color: rgb(var(--c-on-surface));
   transition: background .12s, border-color .12s;
 }
+.hc-layer-row.is-drop { box-shadow: inset 0 2px 0 0 var(--hc-color, var(--hc-primary)); }
 .hc-layer-row:hover { background: rgb(var(--c-surface)); }
 .hc-layer-row.is-on {
   background: color-mix(in srgb, var(--hc-primary) 14%, rgb(var(--c-surface)));

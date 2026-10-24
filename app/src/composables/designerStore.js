@@ -9,7 +9,8 @@ import { entityStates } from '@/store'
 // —— state ——
 const state = reactive({
   schema: null,        // { version:2, canvas:{w,h}, elements:[ElementInstance] }
-  selectedId: null,    // 当前选中元素 id
+  selectedId: null,    // 主选中元素 id（多选时=最后点选的那个）
+  selectedIds: [],     // 多选集合（含 selectedId；单选时长度 1，无选中为空）
   history: [],         // schema 深拷贝快照（结构/变换变更时 push）
   historyIdx: -1,
   // 手改代码（低代码平台的「代码面板」）：画布只生成 html/css；
@@ -50,6 +51,7 @@ const availableEntityIds = computed(() => Object.keys(entityStates))
 function newEmpty(canvas) {
   state.schema = createEmptySchema(canvas)
   state.selectedId = null
+  state.selectedIds = []
   state.history = [JSON.parse(JSON.stringify(state.schema))]
   state.historyIdx = 0
   state.codeOverride = { html: null, css: null, js: '' }
@@ -80,6 +82,7 @@ function loadSchema(schema) {
   s.elements = Array.isArray(s.elements) ? s.elements : []
   state.schema = s
   state.selectedId = null
+  state.selectedIds = []
   state.history = [JSON.parse(JSON.stringify(s))]
   state.historyIdx = 0
   state.codeOverride = { html: null, css: null, js: '' }
@@ -88,6 +91,30 @@ function loadSchema(schema) {
 
 function select(id) {
   state.selectedId = id || null
+  state.selectedIds = id ? [id] : []
+}
+
+// ctrl/shift 点选：切换某元素的选中状态（多选）
+function toggleSelect(id) {
+  if (!id) return
+  state.selectedIds = state.selectedIds.includes(id)
+    ? state.selectedIds.filter((x) => x !== id)
+    : [...state.selectedIds, id]
+  state.selectedId = state.selectedIds[state.selectedIds.length - 1] || null
+}
+
+// 框选/全选：整体替换选中集合（去重并过滤已删除元素）
+function selectMany(ids) {
+  const list = state.schema?.elements || []
+  const exist = new Set(list.map((e) => e.id))
+  state.selectedIds = [...new Set(ids)].filter((id) => exist.has(id))
+  state.selectedId = state.selectedIds[state.selectedIds.length - 1] || null
+}
+
+// 当前选中的元素对象数组（按选中顺序）
+function selectedElements() {
+  const list = state.schema?.elements || []
+  return state.selectedIds.map((id) => list.find((e) => e.id === id)).filter(Boolean)
 }
 
 // 添加元素到画布（at 缺省稍微错开，避免完全重叠）
@@ -103,6 +130,7 @@ function addElement(type, at = {}) {
   el.y = Math.max(0, Math.min(el.y, state.schema.canvas.h - el.h))
   state.schema.elements.push(el)
   state.selectedId = el.id
+  state.selectedIds = [el.id]
   maybePushHistory()
   return el
 }
@@ -112,7 +140,8 @@ function deleteElement(id) {
   const i = state.schema.elements.findIndex((e) => e.id === id)
   if (i < 0) return
   state.schema.elements.splice(i, 1)
-  if (state.selectedId === id) state.selectedId = null
+  state.selectedIds = state.selectedIds.filter((x) => x !== id)
+  if (state.selectedId === id) state.selectedId = state.selectedIds[state.selectedIds.length - 1] || null
   maybePushHistory()
 }
 
@@ -127,6 +156,80 @@ function updateTransform(id, t, silent = false) {
   if (typeof t.h === 'number') el.h = Math.max(8, Math.round(t.h))
   if (typeof t.rotate === 'number') el.rotate = Math.round(t.rotate * 10) / 10
   if (!silent) maybePushHistory()
+}
+
+// 批量变换（多选拖动/对齐/分布/键盘微调），整批只推一次 history
+function updateTransforms(items) {
+  if (!items?.length || !state.schema) return
+  _suppressHistory = true
+  for (const { id, t } of items) updateTransform(id, t, true)
+  _suppressHistory = false
+  pushHistory()
+}
+
+// 多选整体位移（方向键微调）
+function moveSelectedBy(dx, dy) {
+  const els = selectedElements()
+  if (!els.length) return
+  updateTransforms(els.map((el) => ({ id: el.id, t: { x: el.x + dx, y: el.y + dy } })))
+}
+
+// 删除全部选中元素（一次 history）
+function deleteSelected() {
+  const els = selectedElements()
+  if (!els.length) return
+  _suppressHistory = true
+  for (const el of els) deleteElement(el.id)
+  _suppressHistory = false
+  pushHistory()
+}
+
+// 对齐：单选 = 对齐画布；多选 = 对齐选区包围盒
+function alignElements(mode) {
+  const els = selectedElements()
+  if (!els.length || !state.schema) return
+  let box
+  if (els.length === 1) {
+    box = { x: 0, y: 0, w: state.schema.canvas.w, h: state.schema.canvas.h }
+  } else {
+    const l = Math.min(...els.map((e) => e.x))
+    const t = Math.min(...els.map((e) => e.y))
+    const r = Math.max(...els.map((e) => e.x + e.w))
+    const b = Math.max(...els.map((e) => e.y + e.h))
+    box = { x: l, y: t, w: r - l, h: b - t }
+  }
+  const items = els.map((el) => {
+    const t = {}
+    if (mode === 'left') t.x = box.x
+    else if (mode === 'hcenter') t.x = box.x + (box.w - el.w) / 2
+    else if (mode === 'right') t.x = box.x + box.w - el.w
+    else if (mode === 'top') t.y = box.y
+    else if (mode === 'vcenter') t.y = box.y + (box.h - el.h) / 2
+    else if (mode === 'bottom') t.y = box.y + box.h - el.h
+    return { id: el.id, t }
+  })
+  updateTransforms(items)
+}
+
+// 分布：≥3 个元素，按主轴等间距（首尾不动）
+function distributeElements(axis) {
+  const els = selectedElements()
+  if (els.length < 3) return
+  const key = axis === 'h' ? 'x' : 'y'
+  const sizeKey = axis === 'h' ? 'w' : 'h'
+  const sorted = [...els].sort((a, b) => a[key] - b[key])
+  const first = sorted[0]
+  const last = sorted[sorted.length - 1]
+  const span = last[key] + last[sizeKey] - first[key]
+  const totalSize = sorted.reduce((s, e) => s + e[sizeKey], 0)
+  const gap = (span - totalSize) / (sorted.length - 1)
+  let pos = first[key]
+  const items = sorted.map((el) => {
+    const it = { id: el.id, t: { [key]: pos } }
+    pos += el[sizeKey] + gap
+    return it
+  })
+  updateTransforms(items)
 }
 
 function updateProps(id, patch) {
@@ -145,6 +248,18 @@ function reorderElement(id, dir) {
   if (i < 0 || j < 0 || j >= list.length) return
   const [el] = list.splice(i, 1)
   list.splice(j, 0, el)
+  maybePushHistory()
+}
+
+// 图层拖拽落位：把 id 移到 refId 的数组位置（ref 及其上方顺移一位；数组末=最上层）
+function moveElementBefore(id, refId) {
+  const list = state.schema?.elements
+  if (!list || id === refId) return
+  const from = list.findIndex((e) => e.id === id)
+  if (from < 0 || !list.some((e) => e.id === refId)) return
+  const [el] = list.splice(from, 1)
+  const to = list.findIndex((e) => e.id === refId)
+  list.splice(to, 0, el)
   maybePushHistory()
 }
 
@@ -172,6 +287,7 @@ function undo() {
   state.historyIdx--
   state.schema = JSON.parse(JSON.stringify(state.history[state.historyIdx]))
   state.selectedId = null
+  state.selectedIds = []
 }
 
 function redo() {
@@ -179,6 +295,7 @@ function redo() {
   state.historyIdx++
   state.schema = JSON.parse(JSON.stringify(state.history[state.historyIdx]))
   state.selectedId = null
+  state.selectedIds = []
 }
 
 // —— 代码面板：手改覆盖 ——
@@ -237,9 +354,17 @@ export const designerStore = {
   applyTemplate,
   loadSchema,
   select,
+  toggleSelect,
+  selectMany,
   addElement,
   deleteElement,
   updateTransform,
+  updateTransforms,
+  moveSelectedBy,
+  deleteSelected,
+  alignElements,
+  distributeElements,
+  moveElementBefore,
   updateProps,
   reorderElement,
   setCanvas,

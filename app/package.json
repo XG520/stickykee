@@ -26,7 +26,6 @@
     "material-symbols": "^0.47.2",
     "monaco-editor": "^0.52.2",
     "monaco-editor-vue3": "^1.0.5",
-    "selecto": "^1.26.3",
     "svg.draw.js": "^2.0.4",
     "svg.js": "^2.7.1",
     "three": "^0.186.1",

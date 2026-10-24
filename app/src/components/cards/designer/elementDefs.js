@@ -114,7 +114,7 @@ export const ELEMENT_DEFS = {
     label: '按钮',
     icon: 'smart_button',
     defaultSize: { w: 64, h: 32 },
-    defaultProps: { text: '', glyph: 'power_settings_new', action: 'toggle', entity: '', href: '/', background: '', color: '' },
+    defaultProps: { text: '', glyph: 'power_settings_new', action: 'toggle', entity: '', href: '/', svc: '', args: '', background: '', color: '' },
     propsSchema: {
       text: { type: 'text', label: '文字（与图标二选一）' },
       glyph: { type: 'text', label: '图标名（文字为空时生效）' },
@@ -124,10 +124,13 @@ export const ELEMENT_DEFS = {
           { value: 'none', label: '无' },
           { value: 'toggle', label: '开关实体' },
           { value: 'link', label: '页面跳转' },
+          { value: 'svc', label: '调用服务' },
         ],
       },
       entity: { type: 'entity-select', label: '定向实体（开关动作，可空=卡片主实体）' },
       href: { type: 'text', label: '跳转地址（跳转动作）' },
+      svc: { type: 'text', label: '服务（svc 动作，如 light.turn_on）' },
+      args: { type: 'text', label: '服务参数 JSON（svc 动作，可空）' },
       background: { type: 'text', label: '背景（留空用默认）' },
       color: { type: 'text', label: '颜色（留空用默认）' },
     },
@@ -257,6 +260,7 @@ function renderInner(el, ctx) {
       let hc = ''
       if (p.action === 'toggle') hc = ` data-hc="toggle"`
       else if (p.action === 'link') hc = ` data-hc="link" data-href="${escAttr(p.href || '/')}"`
+      else if (p.action === 'svc' && p.svc) hc = ` data-hc="svc" data-svc="${escAttr(p.svc)}"` + (p.args ? ` data-args="${escAttr(p.args)}"` : '')
       const ent = p.entity ? ` data-entity="${escAttr(p.entity)}"` : ''
       return `<button class="h-btn" style="width:100%;height:100%;border-radius:99px;${bg}${color}"${hc}${ent}>${inner}</button>`
     }
