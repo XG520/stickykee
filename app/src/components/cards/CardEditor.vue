@@ -86,20 +86,24 @@
 
           <!-- ============ 主体 ============ -->
           <div class="ce-body">
-            <!-- 左：预览舞台 -->
+            <!-- 左：预览 / 图形设计舞台 -->
             <section class="ce-preview-col">
               <div class="ce-preview-head">
-                <!-- 卡片设计的唯一入口是积木设计器（/designer） -->
-                <button v-if="canDesign" class="ce-btn ce-primary ce-btn-sm" title="在积木设计器中设计这张卡片" @click="goDesigner">
-                  <span class="material-symbols-outlined">dashboard_customize</span>设计
-                </button>
+                <div class="ce-mode">
+                  <button class="ce-mode-btn" :class="{ on: !designMode }" @click="designMode = false">
+                    <span class="material-symbols-outlined">visibility</span>预览
+                  </button>
+                  <button class="ce-mode-btn" :class="{ on: designMode }" @click="enterDesign">
+                    <span class="material-symbols-outlined">edit_note</span>设计
+                  </button>
+                </div>
                 <span class="ce-preview-meta">{{ draft.w }}×{{ draft.h }} 格 · {{ pxW }}×{{ pxH }}px</span>
                 <span class="ce-spacer"></span>
                 <span class="ce-preview-scale">{{ Math.round(previewScale * 100) }}%</span>
               </div>
               <div ref="stageRef" class="ce-stage">
-                <!-- 预览：1:1 渲染 + 等比缩放 -->
-                <div class="ce-slot" :style="slotStyle">
+                <!-- 预览模式：1:1 渲染 + 等比缩放 -->
+                <div v-if="!designMode" class="ce-slot" :style="slotStyle">
                   <div
                     :id="'preview-' + draft.uid"
                     class="ce-pholder"
@@ -110,6 +114,19 @@
                     </div>
                   </div>
                 </div>
+                <!-- 设计模式：可视化拖拽/改字/换图标/属性调整 -->
+                <VisualStage
+                  v-else
+                  ref="visualStageRef"
+                  :card="draft"
+                  :scale="previewScale"
+                  :cell-size="cellPx()"
+                  :cols="cols"
+                  :panel-el="designPanelRef"
+                  @html="onVisualHtml"
+                  @change-entity="onVisualChangeEntity"
+                  @select="onVisualSelect"
+                />
               </div>
             </section>
 
@@ -428,15 +445,232 @@
                   </div>
                 </div>
               </div>
+
+              <!-- 设计模式：元素属性 / 组件库 / 图层 / 代码编辑 视图切换（属性面板默认占满代码区） -->
+              <div v-if="designMode" class="ce-viewswitch" role="tablist">
+                <button
+                  role="tab"
+                  class="ce-vs-btn"
+                  :class="{ on: rightView === 'props' }"
+                  title="选中元素的样式与层级"
+                  @click="rightView = 'props'"
+                >
+                  <span class="material-symbols-outlined">tune</span>属性
+                </button>
+                <button
+                  role="tab"
+                  class="ce-vs-btn"
+                  :class="{ on: rightView === 'widgets' }"
+                  title="从组件库插入新控件（鼠标可直接拖到画布）"
+                  @click="rightView = 'widgets'"
+                >
+                  <span class="material-symbols-outlined">add_box</span>组件
+                </button>
+                <button
+                  role="tab"
+                  class="ce-vs-btn"
+                  :class="{ on: rightView === 'layers' }"
+                  title="元素树与同容器内的顺序调整"
+                  @click="rightView = 'layers'"
+                >
+                  <span class="material-symbols-outlined">layers</span>图层
+                </button>
+                <button
+                  role="tab"
+                  class="ce-vs-btn"
+                  :class="{ on: rightView === 'code' }"
+                  @click="rightView = 'code'"
+                >
+                  <span class="material-symbols-outlined">code</span>代码
+                </button>
+                <button
+                  role="tab"
+                  class="ce-vs-btn"
+                  :class="{ on: rightView === 'elcode' }"
+                  :disabled="!elVid"
+                  title="只显示并编辑选中元素的 HTML 代码"
+                  @click="openElCodeView"
+                >
+                  <span class="material-symbols-outlined">data_object</span>元素
+                </button>
+              </div>
+
+              <!-- 语言 Tabs（设计模式下仅代码视图可见） -->
+              <div v-show="!designMode || rightView === 'code'" class="ce-tabs" role="tablist">
+                <button
+                  v-for="t in langTabs"
+                  :key="t.key"
+                  role="tab"
+                  class="ce-tab"
+                  :class="{ on: tab === t.key }"
+                  @click="switchTab(t.key)"
+                >
+                  <i class="ce-lang-dot" :class="'dot-' + t.key"></i>
+                  {{ t.label }}
+                  <span class="ce-tab-len">{{ codeOf(t.key).split('\n').length }}</span>
+                </button>
+                <span class="ce-spacer"></span>
+                <span class="ce-tab-hint"><kbd class="ce-kbd">Ctrl</kbd>+<kbd class="ce-kbd">1~3</kbd> 切换</span>
+              </div>
+
+              <!-- 元素属性面板：设计模式下覆盖代码区位置（VisualStage 通过 Teleport 注入选中元素的编辑项） -->
+              <div v-show="designMode && rightView === 'props'" ref="designPanelRef" class="ce-design-panel">
+                <div class="ce-dp-placeholder">
+                  <span class="material-symbols-outlined">ads_click</span>
+                  <p class="ce-dp-title">在左侧预览中点选一个元素</p>
+                  <ul class="ce-dp-guides">
+                    <li><span class="material-symbols-outlined">open_with</span>按住元素拖动，边缘吸附并显示参考线</li>
+                    <li><span class="material-symbols-outlined">aspect_ratio</span>拖选中框上的方块柄改尺寸</li>
+                    <li><span class="material-symbols-outlined">stylus</span>双击文字直接改内容</li>
+                    <li><span class="material-symbols-outlined">progress</span>双击图标即可更换</li>
+                    <li><span class="material-symbols-outlined">tune</span>选中后在此调整颜色、字号、圆角与层级</li>
+                  </ul>
+                </div>
+              </div>
+
+              <!-- 组件库：点按插入（触摸主路径），鼠标可直接拖到左侧画布落点插入 -->
+              <div v-show="designMode && rightView === 'widgets'" class="ce-palette">
+                <p class="ce-pal-tip">
+                  <span class="material-symbols-outlined">info</span>
+                  点按插入到卡片中央；鼠标可按住拖到画布上指定位置（插入后自动选中，可在元素属性里微调）
+                </p>
+                <div v-for="g in WIDGET_GROUPS" :key="g.key" class="ce-pal-group">
+                  <p class="ce-pal-gtitle">{{ g.label }}</p>
+                  <div class="ce-pal-grid">
+                    <button
+                      v-for="w in widgetsOf(g.key)"
+                      :key="w.key"
+                      class="ce-pal-tile"
+                      :title="'插入：' + w.label"
+                      @click="insertWidgetAt(w)"
+                      @pointerdown="onPaletteDown($event, w)"
+                    >
+                      <span class="material-symbols-outlined">{{ w.icon }}</span>
+                      <em>{{ w.label }}</em>
+                    </button>
+                  </div>
+                </div>
+                <p v-if="paletteMsg" class="ce-pal-msg" :class="{ err: paletteMsg.err }">
+                  <span class="material-symbols-outlined">{{ paletteMsg.err ? 'error' : 'check_circle' }}</span>{{ paletteMsg.text }}
+                </p>
+              </div>
+
+              <!-- 图层：元素树（点击选中）+ 同容器内顺序调整 -->
+              <div v-show="designMode && rightView === 'layers'" class="ce-layers">
+                <p class="ce-pal-tip">
+                  <span class="material-symbols-outlined">info</span>
+                  以 DOM 顺序为准；鼠标按住行可拖到同容器其它行之间重排
+                </p>
+                <p v-if="!layerTree.length" class="ce-ly-empty">当前卡片没有可编辑的元素</p>
+                <div
+                  v-for="(row, i) in layerTree"
+                  :key="row.vid"
+                  class="ce-ly-row"
+                  :class="{ on: row.vid === elVid, surf: row.isSurface, drop: dropIndex === i }"
+                  :style="{ paddingLeft: 8 + row.depth * 12 + 'px' }"
+                  @click="selectLayer(row)"
+                  @pointerdown="onLayerDown($event, i, row)"
+                >
+                  <span class="material-symbols-outlined ce-ly-ic">{{ layerIcon(row) }}</span>
+                  <em class="ce-ly-name">{{ row.isSurface ? '卡片根' : row.name }}</em>
+                  <span class="ce-ly-acts" @pointerdown.stop @click.stop>
+                    <button title="置于最上层" :disabled="row.isSurface" @click="doLayerOp(row, 'front')"><span class="material-symbols-outlined">vertical_align_top</span></button>
+                    <button title="上移一层" :disabled="row.isSurface" @click="doLayerOp(row, 'up')"><span class="material-symbols-outlined">arrow_upward</span></button>
+                    <button title="下移一层" :disabled="row.isSurface" @click="doLayerOp(row, 'down')"><span class="material-symbols-outlined">arrow_downward</span></button>
+                    <button title="置于最下层" :disabled="row.isSurface" @click="doLayerOp(row, 'back')"><span class="material-symbols-outlined">vertical_align_bottom</span></button>
+                  </span>
+                </div>
+                <p v-if="layerMsg" class="ce-pal-msg err">
+                  <span class="material-symbols-outlined">error</span>{{ layerMsg }}
+                </p>
+              </div>
+
+              <!-- 代码编辑区：行号 + 高亮层 + 透明 textarea -->
+              <div v-show="!designMode || rightView === 'code'" class="ce-code">
+                <div class="ce-gutter" aria-hidden="true">
+                  <div ref="gutterInnerRef" class="ce-gutter-inner">
+                    <div v-for="n in lineCount" :key="n" class="ce-gutter-line">{{ n }}</div>
+                  </div>
+                </div>
+                <div ref="scrollRef" class="ce-code-scroll">
+                  <pre ref="preRef" class="ce-pre" aria-hidden="true"><code v-html="highlighted[tab]"></code></pre>
+                  <textarea
+                    ref="taRef"
+                    class="ce-ta"
+                    :class="{ 'is-composing': composing }"
+                    :value="draft[tab]"
+                    spellcheck="false"
+                    autocapitalize="off"
+                    autocomplete="off"
+                    wrap="off"
+                    :aria-label="currentTab.label + ' 代码'"
+                    @input="onCodeInput"
+                    @scroll="onScroll"
+                    @keydown="onKeydown"
+                    @compositionstart="composing = true"
+                    @compositionend="composing = false"
+                  ></textarea>
+                </div>
+              </div>
+
+              <!-- 元素代码：只显示并编辑选中元素的 HTML（输入实时应用到卡片） -->
+              <div v-show="designMode && rightView === 'elcode'" class="ce-elcode">
+                <div class="ce-elcode-head">
+                  <span class="material-symbols-outlined">data_object</span>
+                  <span class="ce-elcode-title">元素代码</span>
+                  <code class="ce-elcode-desc">{{ elDesc }}</code>
+                  <span class="ce-spacer"></span>
+                  <button class="ce-btn ce-ghost ce-btn-sm" title="放弃当前修改，重新载入该元素的代码" @click="refreshElCode">
+                    还原
+                  </button>
+                  <button class="ce-btn ce-primary ce-btn-sm" title="将代码应用到卡片（输入时已实时应用）" @click="applyElCode">
+                    应用
+                  </button>
+                </div>
+                <div class="ce-code ce-elcode-editor">
+                  <div class="ce-gutter" aria-hidden="true">
+                    <div ref="elGutterRef" class="ce-gutter-inner">
+                      <div v-for="n in elLineCount" :key="n" class="ce-gutter-line">{{ n }}</div>
+                    </div>
+                  </div>
+                  <div ref="elScrollRef" class="ce-code-scroll">
+                    <pre ref="elPreRef" class="ce-pre" aria-hidden="true"><code v-html="elHighlighted"></code></pre>
+                    <textarea
+                      ref="elTaRef"
+                      class="ce-ta"
+                      :class="{ 'is-composing': elComposing }"
+                      spellcheck="false"
+                      autocapitalize="off"
+                      autocomplete="off"
+                      wrap="off"
+                      :value="elHtml"
+                      :aria-label="'元素 ' + elDesc + ' HTML 代码'"
+                      @input="onElInput"
+                      @scroll="syncElScroll"
+                      @keydown="onElKeydown"
+                      @compositionstart="elComposing = true"
+                      @compositionend="elComposing = false"
+                    ></textarea>
+                  </div>
+                </div>
+                <p v-if="elCodeErr" class="ce-elcode-err">
+                  <span class="material-symbols-outlined">error</span>{{ elCodeErr }}
+                </p>
+              </div>
             </section>
           </div>
 
           <!-- ============ 底部状态栏 ============ -->
           <footer class="ce-status">
+            <span class="ce-status-item">
+              <i class="ce-lang-dot" :class="'dot-' + tab"></i>
+              {{ currentTab.name }} · {{ lineCount }} 行 · {{ charCount }} 字符
+            </span>
             <span class="ce-status-item ce-dirty-state" :class="{ on: dirty }">
               <i class="ce-status-dot"></i>{{ dirty ? '未保存更改' : '所有更改已保存' }}
             </span>
             <span class="ce-spacer"></span>
+            <span v-for="h in currentTab.hints" :key="h" class="ce-hint"><code>{{ h }}</code></span>
           </footer>
         </div>
       </div>
@@ -448,8 +682,10 @@
 import { ref, reactive, computed, watch, nextTick, onBeforeUnmount } from 'vue'
 import { entityStates } from '@/store'
 import { cardDefaults } from './defaults'
-import { saveAsTemplate, isUserTemplate } from '@/composables/useCustomTemplates'
+import { WIDGET_DEFS, WIDGET_GROUPS } from './widgets'
+import { saveAsTemplate } from '@/composables/useCustomTemplates'
 import CodeCard from './CodeCard.vue'
+import VisualStage from './VisualStage.vue'
 const props = defineProps({
   open: { type: Boolean, default: false },
   card: { type: Object, default: null },
@@ -457,7 +693,7 @@ const props = defineProps({
   cellSize: { type: Number, default: 0 },
   cols: { type: Number, default: 8 },
 })
-const emit = defineEmits(['close', 'save', 'design'])
+const emit = defineEmits(['close', 'save'])
 
 const baseCell = 120
 
@@ -488,8 +724,6 @@ function syncPrimaryEntity() { draft.entity_id = draft.entity_ids[0] || '' }
 function metaOf(type) { return cardDefaults[type] || cardDefaults.greeting }
 const meta = computed(() => metaOf(draft.type))
 
-// 打开卡片时从 props 装载草稿。
-// 自定义卡/用户模板仅当 _autoDesign 瞬时标记存在时才自动跳积木设计器（见下方 watch）。
 watch(
   () => props.open,
   (open) => {
@@ -515,24 +749,22 @@ watch(
       draft._designerSchema = props.card._designerSchema || null
       draft.compiledHtml = props.card.compiledHtml || ''
       draft.entitySlotMap = props.card.entitySlotMap || {}
+      tab.value = 'html'
       banner.value = null
       entityQuery.value = ''
       slotMenuKey.value = ''
       slotQuery.value = ''
       hoverCell.value = 0
+      designMode.value = false
       snapshot = JSON.stringify(pickDraft())
       nextTick(() => {
+        syncScroll()
         computePreviewScale()
         if (stageRef.value && !ro) {
           ro = new ResizeObserver(computePreviewScale)
           ro.observe(stageRef.value)
         }
       })
-      // 新建自定义卡/用户模板卡的瞬时标记：草稿就绪后直接进积木设计器
-      if (props.card._autoDesign) {
-        delete props.card._autoDesign
-        nextTick(goDesigner)
-      }
     }
   },
   { immediate: true },
@@ -555,6 +787,7 @@ function resetToDefault() {
   draft.css = d.css
   draft.js = d.js
   banner.value = null
+  nextTick(syncScroll)
 }
 
 function save() {
@@ -778,19 +1011,487 @@ function pickSize(i) {
 }
 watch(() => [draft.w, draft.h], () => nextTick(computePreviewScale))
 
+// ================= 语言 Tabs =================
+const langTabs = [
+  { key: 'html', label: 'HTML', name: 'HTML 模板' },
+  { key: 'css', label: 'CSS', name: 'CSS 样式' },
+  { key: 'js', label: 'JS', name: 'JavaScript 逻辑' },
+]
+const tab = ref('html')
+const currentTab = computed(() => langTabs.find((t) => t.key === tab.value))
+const tabHints = {
+  html: ['{{key}} 绑定数据', 'data-hc="toggle"', 'data-hc="svc"', 'data-hc="range"', 'data-hc="select"', 'data-hc="link"'],
+  css: ['var(--hc-color) 领域色', '样式仅作用于本卡', '@media / @keyframes 可直接使用'],
+  js: ['el 卡片根元素', 'card 卡片信息', 'data 实时数据', '渲染后自动执行'],
+}
+langTabs.forEach((t) => (t.hints = tabHints[t.key]))
+function switchTab(k) {
+  tab.value = k
+  nextTick(syncScroll)
+}
+function codeOf(k) { return draft[k] || '' }
 
-// ================= 卡片设计入口：积木设计器 =================
-// 只有「自定义卡 / 用户模板」开放设计入口；内置卡（天气/开关/时钟…）是纯配置卡。
-// 设计 = 积木设计器（/designer）：低代码画布 + 实时预览 + 代码面板都在设计器里。
-const canDesign = computed(() => draft.type === 'custom' || isUserTemplate(draft.type))
-// 把当前草稿抛给 HomeView：由它先同步内存/落库，再跳设计器——
-// 这样新建卡（尚未落库）和未保存的修改都不会在设计器里丢失。
-function goDesigner() {
-  if (!canDesign.value || !draft.uid) return
-  emit('design', { uid: draft.uid, ...pickDraft() })
+// ================= 代码编辑器：行号 / 高亮 / 缩进 =================
+const taRef = ref(null)
+const preRef = ref(null)
+const scrollRef = ref(null)
+const gutterInnerRef = ref(null)
+const composing = ref(false)
+
+const lineCount = computed(() => (draft[tab.value] || '').split('\n').length)
+const charCount = computed(() => (draft[tab.value] || '').length)
+
+function onCodeInput(e) {
+  draft[tab.value] = e.target.value
+  nextTick(syncScroll)
+}
+function onScroll() {
+  syncScroll()
+}
+function syncScroll() {
+  const ta = taRef.value
+  if (!ta) return
+  if (preRef.value) {
+    preRef.value.scrollTop = ta.scrollTop
+    preRef.value.scrollLeft = ta.scrollLeft
+  }
+  if (gutterInnerRef.value) gutterInnerRef.value.style.transform = `translateY(${-ta.scrollTop}px)`
+}
+
+// Tab / Shift+Tab 缩进，回车自动缩进，括号引号自动闭合
+function onKeydown(e) {
+  const ta = e.target
+  if (e.key === 'Tab') {
+    e.preventDefault()
+    const { selectionStart: s, selectionEnd: en, value } = ta
+    if (s !== en) {
+      // 多行选区：整行加 / 减缩进
+      const lineStart = value.lastIndexOf('\n', s - 1) + 1
+      const block = value.slice(lineStart, en)
+      if (e.shiftKey) {
+        const replaced = block.replace(/^ {1,2}/gm, '')
+        draft[tab.value] = value.slice(0, lineStart) + replaced + value.slice(en)
+        nextTick(() => setSel(ta, s, s + replaced.length - block.length + (en - s)))
+      } else {
+        const replaced = block.replace(/^/gm, '  ')
+        draft[tab.value] = value.slice(0, lineStart) + replaced + value.slice(en)
+        nextTick(() => setSel(ta, lineStart, lineStart + replaced.length))
+      }
+    } else if (!e.shiftKey) {
+      draft[tab.value] = value.slice(0, s) + '  ' + value.slice(en)
+      nextTick(() => setSel(ta, s + 2, s + 2))
+    }
+    nextTick(syncScroll)
+    return
+  }
+  if (e.key === 'Enter' && !e.shiftKey && !composing.value) {
+    const { selectionStart: s, value } = ta
+    const lineStart = value.lastIndexOf('\n', s - 1) + 1
+    const line = value.slice(lineStart, s)
+    const indent = (line.match(/^\s*/) || [''])[0]
+    const extra = /[{\[(]\s*$/.test(line) ? '  ' : ''
+    e.preventDefault()
+    const insert = '\n' + indent + extra
+    draft[tab.value] = value.slice(0, s) + insert + value.slice(ta.selectionEnd)
+    nextTick(() => setSel(ta, s + insert.length, s + insert.length))
+    nextTick(syncScroll)
+    return
+  }
+  // 自动闭合
+  const pairs = { '(': ')', '[': ']', '{': '}', '"': '"', "'": "'", '`': '`' }
+  if (!composing.value && pairs[e.key] && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    const { selectionStart: s, selectionEnd: en, value } = ta
+    const close = pairs[e.key]
+    // 右括号：若紧邻同字符则跳过
+    if ('`"\')]}'.includes(e.key) && value[s] === e.key && s === en) {
+      e.preventDefault()
+      draft[tab.value] = value
+      nextTick(() => setSel(ta, s + 1, s + 1))
+      return
+    }
+    if (s !== en) {
+      e.preventDefault()
+      const selected = value.slice(s, en)
+      draft[tab.value] = value.slice(0, s) + e.key + selected + close + value.slice(en)
+      nextTick(() => setSel(ta, s + 1, en + 1))
+    } else {
+      e.preventDefault()
+      draft[tab.value] = value.slice(0, s) + e.key + close + value.slice(en)
+      nextTick(() => setSel(ta, s + 1, s + 1))
+    }
+    nextTick(syncScroll)
+  }
+}
+function setSel(ta, s, e) {
+  ta.selectionStart = s
+  ta.selectionEnd = e
+}
+
+// ---------------- 轻量语法高亮（先转义，再包 span） ----------------
+function esc(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+function span(cls, text) {
+  return `<span class="tok-${cls}">${esc(text)}</span>`
+}
+// 用主正则扫描，token 着色，间隙文本做二次行内处理
+function tokenize(src, re, onToken, onPlain) {
+  let out = ''
+  let last = 0
+  let m
+  re.lastIndex = 0
+  while ((m = re.exec(src))) {
+    if (m.index > last) out += onPlain(src.slice(last, m.index))
+    out += onToken(m)
+    last = m.index + m[0].length
+    if (m[0].length === 0) re.lastIndex++
+  }
+  if (last < src.length) out += onPlain(src.slice(last))
+  return out
+}
+
+const HTML_RE = /<!--[\s\S]*?-->|\{\{[\w.]+\}\}|<\/?[a-zA-Z][\w-]*|\/?>|&[a-zA-Z#0-9]+;|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[a-zA-Z_:][\w:.-]*(?=\s*=)/g
+function hlHtml(src) {
+  return tokenize(
+    src,
+    HTML_RE,
+    (m) => {
+      const t = m[0]
+      if (t.startsWith('<!--')) return span('comment', t)
+      if (t.startsWith('{{')) return span('ph', t)
+      if (t[0] === '<') return span('tag', t)
+      if (t === '>' || t === '/>') return span('punct', t)
+      if (t[0] === '"' || t[0] === "'") return span('str', t)
+      if (/^[a-zA-Z_:]/.test(t)) return span('attr', t)
+      return esc(t)
+    },
+    esc,
+  )
+}
+
+const CSS_RE = /(\/\*[\s\S]*?\*\/)|(var\(--hc-color\))|(@[\w-]+)|(#[0-9a-fA-F]{3,8}\b)|(\b\d+(?:\.\d+)?(?:px|rem|em|%|s|ms|vh|vw|fr|deg|dvh)?\b)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|([^{}]*?\{)/g
+
+const JS_RE = /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|(`(?:[^`\\]|\\.)*`|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|\b(const|let|var|function|return|if|else|for|while|do|of|in|new|try|catch|finally|throw|await|async|true|false|null|undefined|this|typeof|instanceof|switch|case|break|continue|default)\b|\b(\d+(?:\.\d+)?)\b|\b(el|card|data)\b/g
+function hlJs(src) {
+  return tokenize(
+    src,
+    JS_RE,
+    (m) => {
+      if (m[1]) return span('comment', m[1])
+      if (m[2]) return span('str', m[2])
+      if (m[3]) return span('kw', m[3])
+      if (m[4]) return span('num', m[4])
+      if (m[5]) return span('arg', m[5])
+      return esc(m[0])
+    },
+    esc,
+  )
+}
+
+// 规则体内的属性名着色（在已转义文本上操作，用函数替换避免 $ 反向引用问题）
+function highlightCssPropsSafe(escapedPlain) {
+  return escapedPlain.replace(/([\w-]+)(\s*:)/g, (_, name, colon) => `<span class="tok-prop">${name}</span>${colon}`)
+}
+function hlCss(src) {
+  return tokenize(
+    src,
+    CSS_RE,
+    (m) => {
+      const t = m[0]
+      if (m[1]) return span('comment', t)
+      if (m[2]) return span('hc', t)
+      if (m[3]) return span('kw', t)
+      if (m[4] || m[5]) return span('num', t)
+      if (m[6]) return span('str', t)
+      if (m[7]) return span('sel', t.slice(0, -1)) + '{'
+      return esc(t)
+    },
+    (plain) => highlightCssPropsSafe(esc(plain)),
+  )
+}
+
+const highlighted = computed(() => {
+  const tail = (s) => (s.endsWith('\n') ? s : s + '\n')
+  return {
+    html: hlHtml(tail(draft.html || '')),
+    css: hlCss(tail(draft.css || '')),
+    js: hlJs(tail(draft.js || '')),
+  }
+})
+
+// ================= 图形设计模式 =================
+const designMode = ref(false)
+// 设计模式下右侧视图：props=元素属性面板（默认，覆盖代码区）/ code=代码编辑
+const rightView = ref('props')
+function enterDesign() {
+  designMode.value = true
+  rightView.value = 'props'
+  nextTick(computePreviewScale)
+}
+// 新建的「自定义卡」需要自动进入图形化设计模式，并把右侧视图默认切到组件库，
+// 让用户第一眼就能开始搭积木（_autoDesign 是运行时瞬时标记，不会被持久化）。
+watch(() => props.card, (v) => {
+  if (v && v._autoDesign) {
+    delete v._autoDesign
+    enterDesign()
+    rightView.value = 'widgets'
+  }
+})
+// VisualStage 的所有图形编辑都序列化为 HTML 回写草稿，右侧代码实时同步
+function onVisualHtml(html) {
+  draft.html = html
+}
+// 属性条「换实体」→ 打开右上配置区的实体搜索下拉
+function onVisualChangeEntity() {
+  if (!meta.value.needEntity && !meta.value.entityOptional) return
+  entityMenu.value = true
+  nextTick(() => entityWrapRef.value?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }))
+}
+
+// ================= 组件库（右侧「组件」页） =================
+// 低代码搭建入口：点按插入到卡片中央（触摸主路径），鼠标可按住拖到画布指定位置插入。
+const visualStageRef = ref(null)
+const elVid = ref('')
+const paletteMsg = ref(null)
+let paletteTimer = 0
+// 鼠标拖入结束后紧随的 click 需要忽略，避免重复插入
+let palSuppressUntil = 0
+let palDrag = null
+function widgetsOf(group) {
+  return WIDGET_DEFS.filter((w) => w.group === group)
+}
+function showPaletteMsg(text, err) {
+  paletteMsg.value = { text, err: !!err }
+  clearTimeout(paletteTimer)
+  paletteTimer = setTimeout(() => { paletteMsg.value = null }, 3000)
+}
+function insertWidgetAt(def, at) {
+  if (Date.now() < palSuppressUntil) return
+  const err = visualStageRef.value?.insertWidget(def.key, at || null)
+  if (err === 'no-template') showPaletteMsg('该卡片需要先绑定实体（或模板为空），请在上方配置区选择实体后再设计', true)
+  else if (err) showPaletteMsg('插入失败：' + err, true)
+  else showPaletteMsg(`已插入「${def.label}」，可在左侧拖动或用方向键微调`)
+}
+function onPaletteDown(e, def) {
+  // 触摸端不拦滚动，直接走点按插入
+  if (e.pointerType !== 'mouse') return
+  palDrag = { def, sx: e.clientX, sy: e.clientY, moved: false, inside: false, layer: null }
+  window.addEventListener('pointermove', onPaletteMove)
+  window.addEventListener('pointerup', onPaletteUp)
+  window.addEventListener('pointercancel', onPaletteUp)
+}
+function onPaletteMove(e) {
+  const d = palDrag
+  if (!d) return
+  if (!d.moved) {
+    if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 6) return
+    d.moved = true
+    d.layer = document.createElement('div')
+    d.layer.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;z-index:2147483500;pointer-events:none'
+    d.box = document.createElement('div')
+    d.chip = document.createElement('div')
+    d.chip.textContent = d.def.label
+    d.chip.style.cssText = 'position:absolute;transform:translate(-50%,-50%);padding:3px 9px;border-radius:8px;'
+      + 'background:rgba(245,166,35,.92);color:#12131a;font:700 11px/1.3 system-ui,sans-serif;white-space:nowrap;'
+      + 'box-shadow:0 6px 18px rgba(0,0,0,.45)'
+    d.box.style.cssText = 'display:none'
+    d.layer.append(d.box, d.chip)
+    document.body.appendChild(d.layer)
+  }
+  d.chip.style.left = e.clientX + 'px'
+  d.chip.style.top = e.clientY + 'px'
+  const r = visualStageRef.value?.widgetDropRect(d.def.key, e.clientX, e.clientY)
+  if (r && r.inside) {
+    d.inside = true
+    d.box.style.cssText = `position:absolute;left:${r.rect.left}px;top:${r.rect.top}px;width:${r.rect.width}px;`
+      + `height:${r.rect.height}px;border:1.5px dashed rgba(245,166,35,.95);background:rgba(245,166,35,.12);border-radius:4px;box-sizing:border-box`
+  } else {
+    d.inside = false
+    d.box.style.cssText = 'display:none'
+  }
+}
+function onPaletteUp(e) {
+  window.removeEventListener('pointermove', onPaletteMove)
+  window.removeEventListener('pointercancel', onPaletteUp)
+  const d = palDrag
+  palDrag = null
+  if (!d) return
+  d.layer?.remove()
+  if (!d.moved) return // 未拖动：交给 click 处理（插入到卡片中央）
+  palSuppressUntil = Date.now() + 350
+  if (d.inside) insertWidgetAt(d.def, { clientX: e.clientX, clientY: e.clientY })
+}
+
+// ================= 图层（右侧「图层」页） =================
+const layerTree = ref([])
+const layerMsg = ref('')
+let layerMsgTimer = 0
+let layerDrag = null
+const dropIndex = ref(-1)
+const LAYER_ICON = { div: 'crop_square', span: 'text_fields', button: 'smart_button', p: 'notes', img: 'image', svg: 'shapes', a: 'link', i: 'star' }
+function layerIcon(row) { return LAYER_ICON[row.tag] || 'widgets' }
+function showLayerMsg(text) {
+  layerMsg.value = text
+  clearTimeout(layerMsgTimer)
+  layerMsgTimer = setTimeout(() => { layerMsg.value = '' }, 3000)
+}
+// 元素树从 VisualStage 现取（读模板文档），依赖 draft.html 但需等子组件重渲染完
+function refreshLayers() {
+  if (!designMode.value || rightView.value !== 'layers') { layerTree.value = []; return }
+  layerTree.value = visualStageRef.value?.getLayerTree() || []
+}
+watch([() => draft.html, rightView, designMode], () => nextTick(refreshLayers))
+function selectLayer(row) {
+  if (row.vid === elVid.value) return
+  visualStageRef.value?.selectVid(row.vid)
+}
+function doLayerOp(row, op) {
+  const err = visualStageRef.value?.layerOp(row.vid, op) || ''
+  if (err === 'single') showLayerMsg('该元素在所在容器内没有可调换的邻居')
+  else if (err === 'surface') showLayerMsg('卡片根元素不能调整层级')
+  else if (err === 'edge') showLayerMsg('已经到该方向的边界了')
+  else if (err) showLayerMsg('调整失败：' + err)
+}
+// 鼠标按住行拖到同容器其它行之间重排（跨容器会被拒绝）
+function onLayerDown(e, i, row) {
+  if (e.pointerType !== 'mouse' || row.isSurface) return
+  layerDrag = { vid: row.vid, from: i, sx: e.clientX, sy: e.clientY, moved: false, to: -1 }
+  window.addEventListener('pointermove', onLayerMove)
+  window.addEventListener('pointerup', onLayerUp)
+  window.addEventListener('pointercancel', onLayerUp)
+}
+function onLayerMove(e) {
+  const d = layerDrag
+  if (!d) return
+  if (!d.moved) {
+    if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 6) return
+    d.moved = true
+  }
+  let idx = -1
+  document.querySelectorAll('.ce-ly-row').forEach((el, k) => {
+    const r = el.getBoundingClientRect()
+    if (e.clientY >= r.top && e.clientY <= r.bottom) idx = k
+  })
+  d.to = idx
+  dropIndex.value = idx
+}
+function onLayerUp() {
+  window.removeEventListener('pointermove', onLayerMove)
+  window.removeEventListener('pointercancel', onLayerUp)
+  const d = layerDrag
+  layerDrag = null
+  dropIndex.value = -1
+  if (!d || !d.moved) return
+  const target = layerTree.value[d.to]
+  if (!target || target.vid === d.vid) return
+  if (target.isSurface) { showLayerMsg('卡片根元素不能作为排序目标'); return }
+  const err = visualStageRef.value?.reorderLayer(d.vid, target.vid, d.to > d.from ? 'after' : 'before') || ''
+  if (err === 'cross-parent') showLayerMsg('仅支持同一容器内的元素排序（跨容器请用代码编辑）')
+  else if (err === 'surface') showLayerMsg('卡片根元素不能调整层级')
+  else if (err) showLayerMsg('排序失败：' + err)
+  else visualStageRef.value?.selectVid(d.vid)
+}
+
+// ================= 元素代码编辑（只编辑选中元素的 HTML） =================
+const elDesc = ref('')
+const elHtml = ref('')
+const elCodeErr = ref('')
+const elComposing = ref(false)
+const elTaRef = ref(null)
+const elPreRef = ref(null)
+const elScrollRef = ref(null)
+const elGutterRef = ref(null)
+
+const elLineCount = computed(() => (elHtml.value || '').split('\n').length)
+const elHighlighted = computed(() => {
+  const s = elHtml.value || ''
+  return hlHtml(s.endsWith('\n') ? s : s + '\n')
+})
+
+function onVisualSelect({ vid, desc }) {
+  elVid.value = vid
+  elDesc.value = desc
+  if (!vid) {
+    if (rightView.value === 'elcode') rightView.value = 'props'
+    return
+  }
+  if (rightView.value === 'elcode') refreshElCode()
+}
+function openElCodeView() {
+  rightView.value = 'elcode'
+  refreshElCode()
+}
+function refreshElCode() {
+  elCodeErr.value = ''
+  elHtml.value = visualStageRef.value?.getElementHtml() || ''
+  elDesc.value = visualStageRef.value?.getSelectedDescriptor() || elDesc.value
+  nextTick(() => {
+    syncElScroll()
+    elTaRef.value?.focus()
+  })
+}
+function onElInput(e) {
+  elHtml.value = e.target.value
+  applyElCode()
+  nextTick(syncElScroll)
+}
+function applyElCode() {
+  elCodeErr.value = visualStageRef.value?.applyElementHtml(elHtml.value) || ''
+}
+function syncElScroll() {
+  const ta = elTaRef.value
+  if (!ta) return
+  if (elPreRef.value) {
+    elPreRef.value.scrollTop = ta.scrollTop
+    elPreRef.value.scrollLeft = ta.scrollLeft
+  }
+  if (elGutterRef.value) elGutterRef.value.style.transform = `translateY(${-ta.scrollTop}px)`
+}
+// Tab / 回车缩进（元素代码区）
+function onElKeydown(e) {
+  const ta = e.target
+  if (e.key === 'Tab') {
+    e.preventDefault()
+    const { selectionStart: s, selectionEnd: en, value } = ta
+    let next = null
+    if (s !== en && e.shiftKey) {
+      const lineStart = value.lastIndexOf('\n', s - 1) + 1
+      const replaced = value.slice(lineStart, en).replace(/^ {1,2}/gm, '')
+      next = { v: value.slice(0, lineStart) + replaced + value.slice(en), s, e: s + replaced.length - (en - s) }
+    } else if (s !== en) {
+      const lineStart = value.lastIndexOf('\n', s - 1) + 1
+      const replaced = value.slice(lineStart, en).replace(/^/gm, '  ')
+      next = { v: value.slice(0, lineStart) + replaced + value.slice(en), s: lineStart, e: lineStart + replaced.length }
+    } else {
+      next = { v: value.slice(0, s) + '  ' + value.slice(en), s: s + 2, e: s + 2 }
+    }
+    elHtml.value = next.v
+    applyElCode()
+    nextTick(() => { ta.selectionStart = next.s; ta.selectionEnd = next.e })
+    nextTick(syncElScroll)
+    return
+  }
+  if (e.key === 'Enter' && !e.shiftKey && !elComposing.value) {
+    const { selectionStart: s, value } = ta
+    const lineStart = value.lastIndexOf('\n', s - 1) + 1
+    const line = value.slice(lineStart, s)
+    const indent = (line.match(/^\s*/) || [''])[0]
+    const extra = /[{\[(]\s*$/.test(line) ? '  ' : ''
+    e.preventDefault()
+    const insert = '\n' + indent + extra
+    const v = value.slice(0, s) + insert + value.slice(ta.selectionEnd)
+    elHtml.value = v
+    applyElCode()
+    nextTick(() => { ta.selectionStart = s + insert.length; ta.selectionEnd = s + insert.length })
+    nextTick(syncElScroll)
+    return
+  }
 }
 
 // ================= 预览：1:1 基准渲染 + transform 等比缩放 =================
+const stageRef = ref(null)
+// 设计模式右侧「元素属性」面板的挂载点（VisualStage 用 Teleport 把属性条注入此处）
+const designPanelRef = ref(null)
 const previewScale = ref(1)
 let ro = null
 function cellPx() { return props.cellSize > 0 ? props.cellSize : 240 }
@@ -836,6 +1537,9 @@ function onDocKeydown(e) {
   if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
     e.preventDefault()
     save()
+  } else if ((e.ctrlKey || e.metaKey) && ['1', '2', '3'].includes(e.key)) {
+    e.preventDefault()
+    switchTab(langTabs[Number(e.key) - 1].key)
   } else if (e.key === 'Escape') {
     if (entityMenu.value) { entityMenu.value = false; return }
     if (banner.value) { banner.value = null; return }
@@ -847,6 +1551,17 @@ document.addEventListener('mousedown', onDocMouseDown)
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', onDocKeydown)
   document.removeEventListener('mousedown', onDocMouseDown)
+  window.removeEventListener('pointermove', onPaletteMove)
+  window.removeEventListener('pointerup', onPaletteUp)
+  window.removeEventListener('pointercancel', onPaletteUp)
+  window.removeEventListener('pointermove', onLayerMove)
+  window.removeEventListener('pointerup', onLayerUp)
+  window.removeEventListener('pointercancel', onLayerUp)
+  clearTimeout(paletteTimer)
+  clearTimeout(layerMsgTimer)
+  palDrag?.layer?.remove()
+  palDrag = null
+  layerDrag = null
   if (ro) { ro.disconnect(); ro = null }
 })
 watch(
