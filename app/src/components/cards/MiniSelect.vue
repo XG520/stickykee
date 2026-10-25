@@ -1,5 +1,5 @@
 <template>
-  <!-- 统一样式的小型下拉选择器：替代原生 <select>（原生展开列表无法跟随暗色主题）。
+  <!-- 统一样式的小型下拉选择器：替代原生 <select>（原生展开列表无法跟随主题）。
        用法：<MiniSelect v-model="x" :options="[{value,label}]" class="宽度类" /> -->
   <button type="button" class="ms-btn" :class="[{ empty: isEmpty }, $attrs.class]" :disabled="disabled" @click="toggle">
     <span class="ms-label">{{ currentLabel || placeholder }}</span>
@@ -74,19 +74,19 @@ function pick(o) {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  background: rgba(0, 0, 0, 0.25);
-  border: 1px solid #2e2f33;
-  color: #f2f0eb;
+  background: rgb(var(--c-surface-alt));
+  border: 1px solid rgb(var(--c-border));
+  color: rgb(var(--c-on-background));
   font-size: 11.5px;
   cursor: pointer;
   text-align: left;
   min-width: 0;
 }
-.ms-btn:hover:not(:disabled) { border-color: rgba(245, 166, 35, 0.4); }
+.ms-btn:hover:not(:disabled) { border-color: rgb(var(--c-primary) / 0.4); }
 .ms-btn:disabled { opacity: 0.45; cursor: not-allowed; }
-.ms-btn.empty .ms-label { color: #6f6e6a; }
+.ms-btn.empty .ms-label { color: rgb(var(--c-muted)); }
 .ms-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ms-caret { font-size: 15px; color: #6f6e6a; flex: none; }
+.ms-caret { font-size: 15px; color: rgb(var(--c-muted)); flex: none; }
 
 .ms-mask { position: fixed; inset: 0; z-index: 2147483200; }
 .ms-menu {
@@ -96,8 +96,8 @@ function pick(o) {
   max-height: 240px;
   overflow-y: auto;
   padding: 4px;
-  background: #222327;
-  border: 1px solid #35363b;
+  background: rgb(var(--c-surface-alt));
+  border: 1px solid rgb(var(--c-border));
   border-radius: 8px;
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
   display: flex;
@@ -109,7 +109,7 @@ function pick(o) {
   border: none;
   border-radius: 5px;
   background: transparent;
-  color: #d8d6cf;
+  color: rgb(var(--c-on-surface));
   font-size: 11.5px;
   text-align: left;
   cursor: pointer;
@@ -117,7 +117,7 @@ function pick(o) {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.ms-item:hover { background: rgba(245, 166, 35, 0.12); color: #f2f0eb; }
-.ms-item.on { background: rgba(245, 166, 35, 0.18); color: #f5a623; }
-.ms-empty { margin: 0; padding: 12px; text-align: center; font-size: 11px; color: #6f6e6a; }
+.ms-item:hover { background: rgb(var(--c-primary) / 0.12); color: rgb(var(--c-on-background)); }
+.ms-item.on { background: rgb(var(--c-primary) / 0.18); color: rgb(var(--c-primary)); }
+.ms-empty { margin: 0; padding: 12px; text-align: center; font-size: 11px; color: rgb(var(--c-muted)); }
 </style>
