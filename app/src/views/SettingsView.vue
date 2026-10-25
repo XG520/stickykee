@@ -1,37 +1,71 @@
 <template>
-  <div class="space-y-4 sm:space-y-6 pb-4">
-    <!-- 页面标题只保留给屏读器（可见标题行占的垂直空间已省掉） -->
-    <h1 class="sr-only">个性化设置</h1>
+  <div class="hc-set-shell pb-4" :style="{ '--hc-set-top': stickyTop + 'px' }">
+  <h1 class="sr-only">设置</h1>
 
-    <!-- 顶部导航（重置按钮收纳在「个性化」页底部）：
-         手机端单行横向滚动，避免 7 个标签折成 3 行吃掉首屏空间；桌面端仍自动换行。 -->
-    <div class="flex flex-wrap items-center gap-2">
-      <nav class="hc-nav-scroll flex sm:flex-wrap gap-1.5 p-1.5 w-full sm:w-fit rounded-2xl bg-surface-alt/90 backdrop-blur-xl border border-border shadow-sm">
-        <button v-for="t in tabs.filter((x) => x.key !== 'diag' || auth.isAdmin)" :key="t.key" @click="activeTab = t.key"
-          class="flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap shrink-0 transition-all duration-200 active:scale-95"
-          :class="activeTab === t.key
-            ? 'bg-primary text-on-primary shadow-md shadow-primary/25'
-            : 'text-muted hover:text-on-surface hover:bg-surface'">
-          <span class="material-symbols-outlined text-base leading-none">{{ t.icon }}</span>
-          {{ t.label }}
-        </button>
-      </nav>
+  <!-- ===== 手机端 / APK：大标题 + 四组分段导航（吸顶，分组内再二级切换） =====
+       吸顶偏移按帧跟随顶部导航的实际底边：导航在视口内时紧贴其下，
+       导航滚出视口后偏移归零直接贴顶，避免在页面中间留出一条「悬浮」空档。 -->
+  <div class="lg:hidden sticky z-30 -mx-6 px-6 pt-2.5 pb-2 hc-set-bar" :style="{ top: stickyTop + 'px' }">
+    <div class="flex items-end justify-between gap-3 mb-2">
+      <h2 class="hc-set-title-lg">设置</h2>
+      <span class="hc-set-crumb truncate">{{ curMeta.title }}</span>
     </div>
-
-    <!-- 锚点导航：吸顶横向滚动，点击跳转到对应区块（随当前标签页切换锚点列表） -->
-    <nav v-if="anchors[activeTab]" class="sticky top-14 z-30 py-2 -mx-1 px-1 overflow-x-auto hc-hide-bar">
-      <div class="flex items-center gap-1.5 w-fit">
-        <button v-for="a in anchors[activeTab]" :key="a.id" @click="scrollToSection(a.id)"
-          class="whitespace-nowrap shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border border-border bg-surface-alt/70 text-muted hover:text-on-surface hover:border-primary/40 transition-colors">
-          {{ a.label }}
-        </button>
-      </div>
+    <nav class="hc-nav-scroll flex gap-1" aria-label="设置分组">
+      <button v-for="g in navGroups" :key="g.label" @click="pickGroup(g)"
+        class="hc-set-tab" :class="{ on: curGroup && curGroup.label === g.label }">
+        <span class="material-symbols-outlined text-[15px] leading-none">{{ g.items[0].icon }}</span>
+        {{ g.label }}
+      </button>
     </nav>
+  </div>
+
+  <div class="lg:grid lg:grid-cols-[236px_minmax(0,1fr)] lg:gap-8 lg:items-start">
+    <!-- ===== 桌面端：左侧固定导航（分组 + 当前页区块快捷入口） ===== -->
+    <aside class="hidden lg:block lg:sticky lg:top-4">
+      <div class="hc-set-aside">
+        <div class="hc-set-asidetitle px-3">设置</div>
+        <nav class="mt-3" aria-label="设置导航">
+          <div v-for="g in navGroups" :key="g.label">
+            <button class="hc-set-grouplabel" @click="pickGroup(g)">{{ g.label }}</button>
+            <template v-for="t in g.items" :key="t.key">
+              <button class="hc-set-navitem" :class="{ on: activeTab === t.key }" @click="activeTab = t.key">
+                <span class="hc-set-navrail"></span>
+                <span class="material-symbols-outlined text-lg leading-none">{{ t.icon }}</span>
+                <span class="truncate">{{ t.label }}</span>
+              </button>
+              <div v-if="activeTab === t.key && anchors[t.key] && anchors[t.key].length > 1" class="hc-set-subnav">
+                <button v-for="a in anchors[t.key]" :key="a.id" @click="scrollToSection(a.id)">{{ a.label }}</button>
+              </div>
+            </template>
+          </div>
+        </nav>
+      </div>
+    </aside>
+
+    <!-- ===== 右侧内容区 ===== -->
+    <main class="min-w-0">
+      <header class="hidden lg:block mb-5">
+        <h2 class="hc-set-title">{{ curMeta.title }}</h2>
+        <p class="hc-set-sub">{{ curMeta.desc }}</p>
+      </header>
+
+      <!-- 手机端二级切换：当前分组含多个页面时（如 智能 → AI / AI 诊断 / 日志） -->
+      <div v-if="curGroup && curGroup.items.length > 1" class="lg:hidden hc-set-seg mb-3">
+        <button v-for="t in curGroup.items" :key="t.key" @click="activeTab = t.key"
+          class="hc-set-segbtn" :class="{ on: activeTab === t.key }">{{ t.label }}</button>
+      </div>
+
+      <!-- 手机端区块快捷跳转（跟随页面滚走，不长期占用竖向空间） -->
+      <nav v-if="anchors[activeTab] && anchors[activeTab].length > 1"
+        class="lg:hidden flex gap-1.5 overflow-x-auto hc-hide-bar -mx-1 px-1 pb-3">
+        <button v-for="a in anchors[activeTab]" :key="a.id" @click="scrollToSection(a.id)"
+          class="hc-set-chip shrink-0">{{ a.label }}</button>
+      </nav>
 
     <!-- ===== 连接与设备 ===== -->
     <div v-show="activeTab === 'connect'" class="space-y-4 sm:space-y-6">
     <!-- 我的 HA Token：地址管理员全局配置，密钥属个人（所有用户可见，可自配或管理员代配） -->
-    <section id="sec-ha-token" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
+    <section id="sec-ha-token" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
       <div class="flex items-center gap-2.5 mb-3">
         <div class="w-8 h-8 rounded-xl bg-primary/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-primary text-lg">key</span>
@@ -63,7 +97,7 @@
     </section>
 
     <!-- 服务器地址（APK 壳页地址簿同步显示） -->
-    <section id="sec-server" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
+    <section id="sec-server" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
       <div class="flex items-center gap-2.5 mb-3">
         <div class="w-8 h-8 rounded-xl bg-accent/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-accent text-lg">dns</span>
@@ -91,7 +125,7 @@
     </section>
 
     <!-- 通话铃声（仅 APK）：来电铃声与呼叫彩铃，走系统铃声音量流 -->
-    <section v-if="canPickRing" id="sec-ring" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
+    <section v-if="canPickRing" id="sec-ring" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
       <div class="flex items-center gap-2.5 mb-3">
         <div class="w-8 h-8 rounded-xl bg-accent/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-accent text-lg">ring_volume</span>
@@ -122,7 +156,7 @@
     </section>
 
     <!-- Home Assistant 连接管理（仅管理员可见） -->
-    <section v-if="auth.isAdmin" id="sec-ha-conn" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
+    <section v-if="auth.isAdmin" id="sec-ha-conn" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
       <div class="flex items-center justify-between mb-4">
         <div class="flex items-center gap-2.5">
           <div class="w-8 h-8 rounded-xl bg-primary/20 flex items-center justify-center">
@@ -198,7 +232,7 @@
     </section>
 
     <!-- 高德地图 & 位置同步 -->
-    <section id="sec-map" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
+    <section id="sec-map" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
       <div class="flex items-center gap-2.5 mb-4">
         <div class="w-8 h-8 rounded-xl bg-accent/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-accent text-lg">map</span>
@@ -257,7 +291,7 @@
     </section>
 
     <!-- 设备列表（自动识别、去重、别名） -->
-    <section id="sec-devices" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
+    <section id="sec-devices" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
       <div class="flex items-center justify-between mb-4">
         <div class="flex items-center gap-2.5">
           <div class="w-8 h-8 rounded-xl bg-primary/20 flex items-center justify-center">
@@ -304,7 +338,7 @@
     </section>
 
     <!-- 设备传感器（官方 App 同款：按设备类型提供不同传感器，可开关） -->
-    <section id="sec-sensors" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
+    <section id="sec-sensors" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
       <div class="flex items-center justify-between mb-4">
         <div class="flex items-center gap-2.5">
           <div class="w-8 h-8 rounded-xl bg-info/20 flex items-center justify-center">
@@ -366,7 +400,7 @@
     </section>
 
     <!-- 浏览器命令（Browser_mod 风格）：HA 侧经事件总线向本设备下发命令 -->
-    <section id="sec-browser" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
+    <section id="sec-browser" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
       <div class="flex items-center gap-2.5 mb-3">
         <div class="w-8 h-8 rounded-xl bg-warning/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-warning text-lg">contrast</span>
@@ -438,7 +472,7 @@
     <!-- ===== 个性化 ===== -->
     <div v-show="activeTab === 'personal'" class="space-y-4 sm:space-y-6">
     <!-- 主题风格 -->
-    <section id="sec-theme" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
+    <section id="sec-theme" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
       <div class="flex items-center gap-2.5 mb-4">
         <div class="w-8 h-8 rounded-xl bg-primary/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-primary text-lg">palette</span>
@@ -519,7 +553,7 @@
     </section>
 
     <!-- 字体大小 -->
-    <section id="sec-font" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
+    <section id="sec-font" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
       <div class="flex items-center gap-2.5 mb-4">
         <div class="w-8 h-8 rounded-xl bg-accent/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-accent text-lg">text_fields</span>
@@ -549,7 +583,7 @@
     </section>
 
     <!-- 仪表盘列数 -->
-    <section id="sec-cols" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
+    <section id="sec-cols" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
       <div class="flex items-center gap-2.5 mb-4">
         <div class="w-8 h-8 rounded-xl bg-accent/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-accent text-lg">grid_view</span>
@@ -581,7 +615,7 @@
     </section>
 
     <!-- 图标风格 -->
-    <section id="sec-icon-style" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
+    <section id="sec-icon-style" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
       <div class="flex items-center gap-2.5 mb-4">
         <div class="w-8 h-8 rounded-xl bg-info/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-info text-lg">dashboard</span>
@@ -610,7 +644,7 @@
     </section>
 
     <!-- 户型图风格 -->
-    <section id="sec-floorplan" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
+    <section id="sec-floorplan" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
       <div class="flex items-center gap-2.5 mb-4">
         <div class="w-8 h-8 rounded-xl bg-warning/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-warning text-lg">apartment</span>
@@ -639,7 +673,7 @@
     </section>
 
     <!-- 动画效果 -->
-    <section id="sec-animation" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
+    <section id="sec-animation" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
       <div class="flex items-center gap-2.5 mb-4">
         <div class="w-8 h-8 rounded-xl bg-error/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-error text-lg">animation</span>
@@ -655,7 +689,7 @@
     </section>
 
     <!-- 语音助手 -->
-    <section id="sec-voice" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
+    <section id="sec-voice" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
       <div class="flex items-center gap-2.5 mb-4">
         <div class="w-8 h-8 rounded-xl bg-success/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-success text-lg">mic</span>
@@ -724,7 +758,7 @@
 
     <!-- ===== AI ===== -->
     <div v-show="activeTab === 'ai'" class="space-y-4 sm:space-y-6">
-      <section id="sec-ai" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
+      <section id="sec-ai" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
         <div class="flex items-center gap-2.5 mb-4">
           <div class="w-8 h-8 rounded-xl bg-accent/20 flex items-center justify-center">
             <span class="material-symbols-outlined text-accent text-lg">auto_awesome</span>
@@ -804,7 +838,7 @@
 
     <!-- ===== AI 诊断 ===== -->
     <div v-show="activeTab === 'diag'" class="space-y-4 sm:space-y-6">
-      <section id="sec-diag" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
+      <section id="sec-diag" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
         <div class="flex items-center gap-2.5 mb-4">
           <div class="w-8 h-8 rounded-xl bg-accent/20 flex items-center justify-center">
             <span class="material-symbols-outlined text-accent text-lg">monitor_heart</span>
@@ -918,7 +952,7 @@
 
     <!-- ===== 运行日志 ===== -->
     <div v-show="activeTab === 'logs'" class="space-y-4 sm:space-y-6">
-      <section id="sec-logs" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
+      <section id="sec-logs" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
         <div class="flex items-center gap-2.5 mb-4">
           <div class="w-8 h-8 rounded-xl bg-info/20 flex items-center justify-center">
             <span class="material-symbols-outlined text-info text-lg">receipt_long</span>
@@ -1040,7 +1074,7 @@
     <!-- ===== 账户 ===== -->
     <div v-show="activeTab === 'account'" class="space-y-4 sm:space-y-6">
     <!-- 账号与安全 -->
-    <section id="sec-account" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
+    <section id="sec-account" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
       <div class="flex items-center gap-2.5 mb-4">
         <div class="w-8 h-8 rounded-xl bg-primary/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-primary text-lg">shield_person</span>
@@ -1070,7 +1104,7 @@
     </section>
 
     <!-- 系统信息：前后端版本号，用于确认部署是否已更新 -->
-    <section id="sec-sysinfo" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
+    <section id="sec-sysinfo" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
       <div class="flex items-center gap-2.5 mb-3">
         <div class="w-8 h-8 rounded-xl bg-primary/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-primary text-lg">info</span>
@@ -1174,7 +1208,7 @@
     <!-- ===== 用户管理（仅管理员） ===== -->
     <div v-if="auth.isAdmin" v-show="activeTab === 'users'" class="space-y-4 sm:space-y-6">
     <!-- 系统名称（全局）：改后所有用户的顶栏/登录页/浏览器标题同步更新 -->
-    <section id="sec-sysname" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
+    <section id="sec-sysname" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
       <div class="flex items-center gap-2.5 mb-3">
         <div class="w-8 h-8 rounded-xl bg-primary/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-primary text-lg">badge</span>
@@ -1206,7 +1240,7 @@
       <p v-if="siteNameMsg" class="mt-2 text-xs font-body" :class="siteNameErr ? 'text-error' : 'text-success'">{{ siteNameMsg }}</p>
     </section>
     <!-- 系统图标（全局）：Material Symbol 名，改后顶栏/登录页同步更新 -->
-    <section id="sec-sysicon" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28 mt-4">
+    <section id="sec-sysicon" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24 mt-4">
       <div class="flex items-center gap-2.5 mb-3">
         <div class="w-8 h-8 rounded-xl bg-accent/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-accent text-lg">palette</span>
@@ -1254,7 +1288,7 @@
       </div>
       <p v-if="siteIconMsg" class="mt-2 text-xs font-body" :class="siteIconErr ? 'text-error' : 'text-success'">{{ siteIconMsg }}</p>
     </section>
-    <section id="sec-users" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
+    <section id="sec-users" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
       <div class="flex items-center gap-2.5 mb-4">
         <div class="w-8 h-8 rounded-xl bg-info/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-info text-lg">group</span>
@@ -1403,7 +1437,9 @@
       </div>
     </Teleport>
     </div>
+    </main>
   </div>
+</div>
 </template>
 
 <script setup>
@@ -2069,6 +2105,79 @@ const tabs = [
   ...(auth.isAdmin ? [{ key: 'users', icon: 'group', label: '用户管理' }] : []),
 ]
 const activeTab = ref('connect')
+const visibleTabs = computed(() => tabs.filter((t) => t.key !== 'diag' || auth.isAdmin))
+// 侧栏按使用场景归并分组：连接 → 外观 → 智能 → 账户，降低一次性认知负担
+const NAV_GROUPS = [
+  { label: '连接', keys: ['connect'] },
+  { label: '外观', keys: ['personal'] },
+  { label: '智能', keys: ['ai', 'diag', 'logs'] },
+  { label: '账户', keys: ['account', 'users'] },
+]
+const navGroups = computed(() =>
+  NAV_GROUPS.map((g) => ({
+    label: g.label,
+    items: visibleTabs.value.filter((t) => g.keys.includes(t.key)),
+  })).filter((g) => g.items.length > 0)
+)
+// 每个分组的页面抬头（桌面端标题 + 副标题；手机端仅显示标题）
+const tabMeta = {
+  connect: { title: '连接与设备', desc: 'Home Assistant 接入、个人密钥与设备能力配置' },
+  personal: { title: '个性化', desc: '主题、字体、布局密度与图标风格' },
+  ai: { title: 'AI 助手', desc: '配置兼容 OpenAI 协议的模型，用于生成卡片' },
+  diag: { title: 'AI 诊断', desc: '采集运行日志并交由模型定位故障' },
+  logs: { title: '运行日志', desc: '服务器与前端运行事件，可筛选与导出' },
+  account: { title: '账户', desc: '账号安全、系统信息与版本更新' },
+  users: { title: '用户与设备', desc: '系统名称、成员账号与授权管理' },
+}
+const curMeta = computed(() => tabMeta[activeTab.value] || { title: '设置', desc: '' })
+// 手机端两级导航：先选 4 个分组，再在分组内切页面（首屏只需 4 个等宽目标，避免横向滚 7 个标签）
+const mobileGroup = ref('连接')
+const curGroup = computed(() => navGroups.value.find((g) => g.label === mobileGroup.value) || navGroups.value[0])
+watch(
+  activeTab,
+  (k) => {
+    const g = navGroups.value.find((x) => x.items.some((t) => t.key === k))
+    if (g) mobileGroup.value = g.label
+  },
+  { immediate: true }
+)
+function pickGroup(g) {
+  mobileGroup.value = g.label
+  if (!g.items.some((t) => t.key === activeTab.value)) activeTab.value = g.items[0].key
+}
+// 吸顶偏移：按帧跟随顶部导航（TheHeader）的实际底边。
+// 顶部导航的 sticky 作用域受其外层容器高度限制，页面下滑后会随容器一起滚出视口；
+// 若把偏移写死成导航高度（top-14 / 64px），导航离开后设置页导航仍停在 64px，
+// 上方就会露出 64px 内容，看起来像「悬浮」在页面中间。
+// 改为读取导航底边：导航在视口内时紧贴其下；滚出视口后自动贴顶（0），全程无缝。
+const stickyTop = ref(0)
+let headerEl = null
+let headerRO = null
+let rafId = 0
+function measureStickyTop() {
+  if (!headerEl) headerEl = document.querySelector('header')
+  const bottom = headerEl ? Math.round(headerEl.getBoundingClientRect().bottom) : 0
+  stickyTop.value = bottom > 0 ? Math.min(bottom, 120) : 0
+}
+function scheduleMeasure() {
+  if (rafId) return
+  rafId = requestAnimationFrame(() => { rafId = 0; measureStickyTop() })
+}
+onMounted(() => {
+  measureStickyTop()
+  window.addEventListener('scroll', scheduleMeasure, { passive: true })
+  window.addEventListener('resize', scheduleMeasure)
+  if (headerEl && typeof ResizeObserver !== 'undefined') {
+    headerRO = new ResizeObserver(scheduleMeasure)
+    headerRO.observe(headerEl)
+  }
+})
+onUnmounted(() => {
+  window.removeEventListener('scroll', scheduleMeasure)
+  window.removeEventListener('resize', scheduleMeasure)
+  if (rafId) { cancelAnimationFrame(rafId); rafId = 0 }
+  if (headerRO) { headerRO.disconnect(); headerRO = null }
+})
 // 锚点导航：每个标签页的区块快捷跳转列表
 const anchors = {
   connect: [
@@ -2915,6 +3024,230 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+/* ===================== 设置页外壳（控制台双栏） ===================== */
+.hc-set-shell { color: rgb(var(--c-on-background)); }
+
+/* 手机端吸顶分组条：让内容滚过时不与标签文字重叠 */
+.hc-set-bar {
+  background: rgb(var(--c-background) / 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+/* 侧栏标题：与页面标题同层级、足够大，避免被误读成「折行的小标签」 */
+.hc-set-asidetitle {
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: rgb(var(--c-on-background));
+}
+.hc-set-title {
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: rgb(var(--c-on-background));
+}
+.hc-set-sub {
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: rgb(var(--c-muted));
+}
+
+/* 手机端大标题：作为页面锚点，滚动时始终明确「我在设置里」 */
+.hc-set-title-lg {
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: rgb(var(--c-on-background));
+}
+.hc-set-crumb {
+  font-size: 11px;
+  color: rgb(var(--c-faint));
+}
+
+/* 手机端二级切换：分组内多页面（AI / AI 诊断 / 日志）的分段控件 */
+.hc-set-seg {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 12px;
+  background: rgb(var(--c-surface-alt));
+  border: 1px solid rgb(var(--c-border) / 0.8);
+}
+.hc-set-segbtn {
+  flex: 1;
+  padding: 6px 8px;
+  border-radius: 9px;
+  font-size: 12px;
+  font-weight: 500;
+  color: rgb(var(--c-muted));
+  transition: color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+.hc-set-segbtn.on {
+  color: rgb(var(--c-on-surface));
+  background: rgb(var(--c-surface));
+  box-shadow: 0 1px 3px rgb(var(--c-on-background) / 0.12);
+  font-weight: 600;
+}
+
+/* 手机端分组标签：单个胶囊，横向滚动不换行 */
+.hc-set-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-radius: 10px;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+  color: rgb(var(--c-muted));
+  transition: color 0.16s ease, background 0.16s ease, transform 0.12s ease;
+}
+.hc-set-tab:active { transform: scale(0.97); }
+.hc-set-tab:hover { color: rgb(var(--c-on-surface)); background: rgb(var(--c-surface) / 0.9); }
+.hc-set-tab.on {
+  color: rgb(var(--c-on-primary));
+  background: rgb(var(--c-primary));
+  box-shadow: 0 3px 12px rgb(var(--c-primary) / 0.3);
+}
+
+/* 手机端区块跳转胶囊 */
+.hc-set-chip {
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--c-border));
+  background: rgb(var(--c-surface-alt));
+  font-size: 11.5px;
+  color: rgb(var(--c-muted));
+  white-space: nowrap;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.hc-set-chip:hover { color: rgb(var(--c-on-surface)); border-color: rgb(var(--c-primary) / 0.45); }
+
+/* 桌面端侧栏：玻璃质感卡片 + 分组标签 + 选中项左侧指示条 */
+.hc-set-aside {
+  border: 1px solid rgb(var(--c-border));
+  border-radius: 20px;
+  padding: 14px 10px;
+  background: rgb(var(--c-surface-alt) / 0.72);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 1px 2px rgb(var(--c-on-background) / 0.04);
+}
+/* 分组标签：可点击（切到该组第一个页面），hover 给出可操作反馈 */
+.hc-set-grouplabel {
+  display: block;
+  width: 100%;
+  margin: 14px 0 5px;
+  padding: 2px 12px;
+  border-radius: 6px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: rgb(var(--c-faint));
+  transition: color 0.15s ease;
+  cursor: pointer;
+}
+.hc-set-grouplabel:hover { color: rgb(var(--c-on-surface)); }
+.hc-set-grouplabel:first-child { margin-top: 4px; }
+
+.hc-set-navitem {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  text-align: left;
+  color: rgb(var(--c-muted));
+  transition: background 0.16s ease, color 0.16s ease;
+}
+.hc-set-navitem:hover { color: rgb(var(--c-on-surface)); background: rgb(var(--c-surface) / 0.85); }
+.hc-set-navitem.on {
+  color: rgb(var(--c-on-surface));
+  background: rgb(var(--c-surface));
+  font-weight: 600;
+}
+.hc-set-navrail {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 3px;
+  height: 16px;
+  border-radius: 999px;
+  background: rgb(var(--c-primary));
+  transform: translateY(-50%) scaleY(0);
+  transition: transform 0.18s ease;
+}
+.hc-set-navitem.on .hc-set-navrail { transform: translateY(-50%) scaleY(1); }
+
+.hc-set-subnav {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 2px 0 6px 33px;
+  padding-left: 9px;
+  border-left: 1px dashed rgb(var(--c-border));
+}
+.hc-set-subnav button {
+  padding: 5px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  text-align: left;
+  color: rgb(var(--c-faint));
+  transition: color 0.14s ease, background 0.14s ease;
+}
+.hc-set-subnav button:hover {
+  color: rgb(var(--c-on-surface));
+  background: rgb(var(--c-surface) / 0.85);
+}
+
+/* 内容卡片：统一发丝边框，聚焦时边缘透出主题色 */
+.hc-set-card {
+  background: rgb(var(--c-surface-alt));
+  border: 1px solid rgb(var(--c-border));
+  transition: border-color 0.2s ease;
+}
+.hc-set-card:focus-within { border-color: rgb(var(--c-primary) / 0.35); }
+.hc-set-card h2 { letter-spacing: -0.005em; }
+
+/* ===================== 手机端 / APK（<1024px）：移动原生设置页范式 =====================
+   桌面端卡片偏「面板」，手机上改为「分组卡」：底色更实、边框更淡、加极浅投影，
+   并在底部让出全面屏手势条的安全区。 */
+@media (max-width: 1023px) {
+  .hc-set-shell { padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
+
+  /* 老车机 WebView（Chrome < 56）只认带前缀的 sticky，补一份回退 */
+  .hc-set-bar { position: -webkit-sticky; position: sticky; }
+
+  .hc-set-card {
+    border-radius: 16px;
+    background: rgb(var(--c-surface));
+    border-color: rgb(var(--c-border) / 0.65);
+    box-shadow: 0 1px 2px rgb(var(--c-on-background) / 0.05);
+    /* 锚点跳转要让开「顶部导航 + 吸顶分组条」的实际占位 */
+    scroll-margin-top: calc(var(--hc-set-top, 0px) + 96px);
+  }
+  /* 卡片标题在手机上降一档，避免与页面大标题抢层级 */
+  .hc-set-card h2 { font-size: 14px; font-weight: 600; }
+  /* 标题行与内容之间加发丝分隔，形成「分组卡 + 卡内分区」的移动端结构 */
+  .hc-set-card > div:first-child {
+    padding-bottom: 10px;
+    margin-bottom: 12px;
+    border-bottom: 1px solid rgb(var(--c-border) / 0.55);
+  }
+
+  /* 触控目标：输入类控件最小 40px（车机屏幕误触率高） */
+  .hc-set-card input:not([type='checkbox']):not([type='radio']):not([type='file']),
+  .hc-set-card select,
+  .hc-set-card textarea { min-height: 40px; }
+  .hc-set-card textarea { min-height: 84px; }
+}
+
 /* 手机端标签栏 / 锚点栏：横向滚动但隐藏滚动条（避免占位导致高度抖动） */
 .hc-nav-scroll,
 .hc-hide-bar {
