@@ -1193,6 +1193,15 @@
           <span class="material-symbols-outlined text-base">save</span> 保存
         </button>
       </div>
+      <div class="flex gap-2 mt-2">
+        <input v-model="serverDeviceNameDraft" maxlength="40" placeholder="HA 设备名（留空 = 英文名 + Server）"
+          class="flex-1 min-w-0 bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
+        <button @click="saveServerDeviceName" :disabled="serverDeviceNameSaving"
+          class="px-4 py-2 rounded-xl bg-surface border border-border hover:border-primary text-on-surface text-sm font-semibold transition-all disabled:opacity-50 flex items-center gap-1.5">
+          <span class="material-symbols-outlined text-base">dns</span> 同步到 HA
+        </button>
+      </div>
+      <p class="text-faint text-xs mt-2">服务器注册到 Home Assistant 的虚拟设备显示名（生日传感器等实体挂在其下），保存后立即同步</p>
       <p v-if="siteNameMsg" class="mt-2 text-xs font-body" :class="siteNameErr ? 'text-error' : 'text-success'">{{ siteNameMsg }}</p>
     </section>
     <!-- 系统图标（全局）：Material Symbol 名，改后顶栏/登录页同步更新 -->
@@ -2452,6 +2461,24 @@ async function saveSiteName() {
   }
 }
 
+// ---- HA 设备名（管理员）：服务器注册到 HA 的虚拟设备显示名（生日传感器等实体挂在其下）----
+const serverDeviceNameDraft = ref('')
+const serverDeviceNameSaving = ref(false)
+async function saveServerDeviceName() {
+  serverDeviceNameSaving.value = true
+  siteNameMsg.value = ''
+  try {
+    await api.putPrefs({ server_device_name: serverDeviceNameDraft.value.trim() })
+    siteNameMsg.value = serverDeviceNameDraft.value.trim() ? `HA 设备名已保存为「${serverDeviceNameDraft.value.trim()}」并同步` : '已恢复默认设备名并同步'
+    siteNameErr.value = false
+  } catch (e) {
+    siteNameMsg.value = e?.response?.data?.error || e.message || '保存失败'
+    siteNameErr.value = true
+  } finally {
+    serverDeviceNameSaving.value = false
+  }
+}
+
 // ---- 系统图标（管理员）----
 const SITE_ICON_SUGGESTIONS = ['bolt', 'home', 'smart_toy', 'cloud', 'leaf', 'star', 'favorite', 'memory', 'devices', 'widgets', 'auto_awesome', 'rocket_launch']
 const siteIconDraft = ref(siteIcon.value)
@@ -2859,6 +2886,7 @@ onMounted(() => {
   if (isApk) window.addEventListener('stickykee-apk', onApkEvent) // 应用内更新进度
   if (canInAppUpdate) { refreshNotif(); document.addEventListener('visibilitychange', onVisNotif) } // 通知权限状态（从详情页回来刷新）
   loadSiteName().then(() => { siteNameDraft.value = siteName.value; siteNameEnDraft.value = siteNameEn.value }) // 同步后端权威值
+  getPrefs({ force: true }).then(({ data }) => { serverDeviceNameDraft.value = data?.server_device_name || '' }).catch(() => {})
   loadSiteIcon().then(() => { siteIconDraft.value = siteIcon.value })
   stopLightWatch = watchAmbientLight() // 面板打开期间持续读环境光，用于「实时值」显示
   initDiag() // 恢复可能仍在进行的诊断会话（默认关闭时不会产生采集）

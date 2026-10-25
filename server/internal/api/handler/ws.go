@@ -83,22 +83,26 @@ func (h *WS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer conn.Close()
 
 	// 确保该用户的实例实时连接在运行，然后注册到 Hub。
-	store, err := h.manager.Live(ctx, instanceID)
-	if err != nil {
-		_ = writeJSON(conn, map[string]any{"type": "error", "message": err.Error()})
-		return
-	}
+	// 未配置个人 HA token 时 Live 返回 ErrNoHAToken：连接不关闭，降级为「仅控制通道」
+	// （注册到 Hub 但不推送实体快照）——该端仍需在线接收 reload/instances 等广播，
+	// 以便其它端配置好 token 后本端能被通知并重建数据通道（否则只能杀进程重进）。
+	store, liveErr := h.manager.Live(ctx, instanceID)
 	client := h.manager.Hub().Register(instanceID, ident.Username, r.URL.Query().Get("device"))
 	defer h.manager.Hub().Unregister(instanceID, ident.Username, client)
+	if liveErr != nil {
+		h.log.Info("frontend ws degraded (no live)", "instance", instanceID, "err", liveErr)
+	}
 
 	// 首次连接即推送当前全量快照（统一为 DisplayEntity 富结构，与 REST /entities 一致）。
 	// seq 为增量流当前序号：客户端据此判断之后的推送是否漏帧（漏则回退一次 REST 全量）。
-	if snap := model.ParseDisplays(store.Snapshot()); len(snap) > 0 {
-		if b, merr := json.Marshal(map[string]any{"type": "state", "seq": h.manager.Seq(ctx, instanceID), "data": snap}); merr == nil {
-			_ = conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
-			if werr := conn.WriteMessage(websocket.TextMessage, b); werr != nil {
-				conn.Close()
-				return
+	if store != nil {
+		if snap := model.ParseDisplays(store.Snapshot()); len(snap) > 0 {
+			if b, merr := json.Marshal(map[string]any{"type": "state", "seq": h.manager.Seq(ctx, instanceID), "data": snap}); merr == nil {
+				_ = conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
+				if werr := conn.WriteMessage(websocket.TextMessage, b); werr != nil {
+					conn.Close()
+					return
+				}
 			}
 		}
 	}

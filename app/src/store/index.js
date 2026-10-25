@@ -495,8 +495,9 @@ function probeLivenessThen() {
 
 function connectWS() {
   if (!store.ready || store.activeID <= 0) return
-  // 未配置个人 HA token：不建立实时连接（后端不会为无 token 用户开连接）。
-  if (!haTokenConfigured.value) return
+  // 未配置个人 HA token 也保持连接：后端会降级为「仅控制通道」（无实体快照），
+  // 本端仍能接收 reload/instances 等广播——其它端配好 token 后可被通知并立即重建，
+  // 避免「必须杀进程重进」的鸡生蛋问题。
   if (ws) { stopHeartbeat(); try { ws.close() } catch {} }
   lastSeq = 0 // 新连接会收到带 seq 的全量快照，水位从头开始
   mark('ws:connect')
@@ -578,6 +579,19 @@ function connectWS() {
       // 后端广播全部在线端即时热刷新，无需杀 APP 重进。siteName ref 变化
       // 会联动顶栏/浏览器标签标题（router 里 watch siteName 更新 document.title）。
       else if (m.type === 'brand') { loadSiteName(); loadSiteIcon() }
+      // 配置级变更（HA token 写入/更新）：本用户任一端修改后，其余端立即重连 WS——
+      // 后端已按新 token 重建 HA 连接，重连即获得全量快照，无需杀进程重进。
+      else if (m.type === 'reload') {
+        refreshHATokenStatus()
+        if (ws) { try { ws.close() } catch {} }
+        ws = null
+        retry = 1
+        connectWS()
+      }
+      // 实例增删改/切换：重拉实例列表与 active，并按新 active 重建数据通道。
+      else if (m.type === 'instances') {
+        loadInstances()
+      }
       // 通话信令：动态 import 避免 store ↔ call 模块循环依赖
       else if (m.type === 'call') import('@/utils/call').then((c) => c.handleCallEvent(m))
     } catch { /* 忽略坏帧 */ }
@@ -601,7 +615,7 @@ function connectWS() {
 if (typeof document !== 'undefined') {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible') return
-    if (!store.ready || store.activeID <= 0 || !haTokenConfigured.value) return
+    if (!store.ready || store.activeID <= 0) return
     if (ws && ws.readyState === WebSocket.OPEN) {
       probeLivenessThen()
       return
@@ -622,7 +636,7 @@ if (typeof document !== 'undefined') {
 //     避免旧连接延迟 onclose 把新连接的 ws 变量置空的竞态。
 if (typeof window !== 'undefined') {
   window.__hcWsKeepalive = function () {
-    if (!store.ready || store.activeID <= 0 || !haTokenConfigured.value) return
+    if (!store.ready || store.activeID <= 0) return
     if (ws && ws.readyState === WebSocket.OPEN) {
       try { ws.send(JSON.stringify({ type: 'ping' })) } catch { /* 忽略 */ }
       return

@@ -402,7 +402,8 @@
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import api from '@/api'
 import { auth, imOpen, imRefresher, imConversations, closeIm, bumpIm, store, entityStates, requestEntityRefresh, refreshIm, dashboardRev } from '@/store'
-import { dashboardCardCount, layoutKey } from '@/utils/dashboard'
+import { dashboardCardCount, layoutKey, layoutKeyFor } from '@/utils/dashboard'
+import { getDeviceId } from '@/utils/device'
 import { getPrefs, putPrefs, invalidate } from '@/utils/prefs'
 import { isApk } from '@/utils/serverConfig'
 import { VoiceRecorder, WavRecorder, NativeWavRecorder } from '@/utils/recorder'
@@ -1308,8 +1309,12 @@ async function share() {
   showPlus.value = false
   try {
     const { data } = await getPrefs()
-    // 本端布局为空时回退旧共享键（升级后手机端尚未保存过自身排版）
-    const dash = data?.[myDashKey] || (isApk ? data?.dashboard : '') || ''
+    // 手机端实际排版存于本机键 dashboard_apk_<deviceId>（ApkDashPane 保存路径），
+    // 分享取值必须与显示回退链一致：本机键 → 全局回退键 → Web 端键。
+    // 否则手机端有独立排版时（本机键非空、全局键为空）会错拿 Web 端布局去分享。
+    const dash = (isApk
+      ? data?.[layoutKeyFor(getDeviceId())] || data?.dashboard_apk || data?.dashboard
+      : data?.[myDashKey]) || ''
     const n = dashboardCardCount(dash)
     if (!dash || n === 0) {
       toast(`当前${isApk ? '手机' : 'Web'}端仪表盘为空，请先在首页编辑并保存`, true)

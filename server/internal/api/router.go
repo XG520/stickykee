@@ -66,7 +66,7 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 
 	// 资源 handlers
 	authHandler := handler.NewAuth(userRepo)
-	instances := handler.NewInstances(repo, manager)
+	instances := handler.NewInstances(repo, manager, hb)
 	entities := handler.NewEntities(manager)
 	services := handler.NewServices(manager)
 	// 账号级生日（存取 + HA 传感器同步）：prefs 写入回调与管理员接口都依赖它
@@ -79,7 +79,7 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 	// 运行日志：30 天保留，支持按级别/来源/时间段筛选并交给 AI 分析。
 	logsHandler := handler.NewLogs(logRepo, ai, userRepo)
 	logsHandler.StartRetention(context.Background())
-	users := handler.NewUsers(userRepo, userPrefs, manager)
+	users := handler.NewUsers(userRepo, userPrefs, manager, hb)
 	// 语音通话：内存房间 + 事件推送 + 语音帧 WS 中继（8080 媒体中继，不经 P2P）。
 	// push 回调供房间超时清理时向全员推送 ended 事件（如无人接听自动结束）。
 	callManager := call.NewManager(func(user string, ev map[string]any) {

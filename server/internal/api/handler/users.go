@@ -10,6 +10,7 @@ import (
 
 	"stickynuo/server/internal/auth"
 	"stickynuo/server/internal/ha"
+	"stickynuo/server/internal/hub"
 	"stickynuo/server/internal/store"
 
 	"github.com/go-chi/chi/v5"
@@ -20,11 +21,12 @@ type Users struct {
 	repo      *store.UserRepo
 	userPrefs *store.UserPrefs
 	manager   *ha.Manager
+	hb        *hub.Hub
 }
 
 // NewUsers 构造 handler。
-func NewUsers(repo *store.UserRepo, userPrefs *store.UserPrefs, manager *ha.Manager) *Users {
-	return &Users{repo: repo, userPrefs: userPrefs, manager: manager}
+func NewUsers(repo *store.UserRepo, userPrefs *store.UserPrefs, manager *ha.Manager, hb *hub.Hub) *Users {
+	return &Users{repo: repo, userPrefs: userPrefs, manager: manager, hb: hb}
 }
 
 func (h *Users) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
@@ -204,11 +206,19 @@ func (h *Users) SetHAToken(w http.ResponseWriter, r *http.Request) {
 		WriteErr(w, 400, "bad_request", "bad payload")
 		return
 	}
+	// 粘贴板常带入首尾空格/换行：统一清理，避免 HA 401 难排查
+	p.Token = strings.TrimSpace(p.Token)
 	if err := h.userPrefs.Set(r.Context(), username, "ha_token", p.Token); err != nil {
 		WriteErr(w, 500, "internal", err.Error())
 		return
 	}
 	h.manager.InvalidateActive(r.Context(), username)
+	// 通知该用户全部在线端（含降级连接的 APK）立即重连重建数据通道
+	if h.hb != nil {
+		if b, err := json.Marshal(map[string]any{"type": "reload", "reason": "ha_token"}); err == nil {
+			h.hb.BroadcastUser(username, b)
+		}
+	}
 	slog.Info("admin set ha token", "user", username, "configured", p.Token != "")
 	WriteJSON(w, 200, map[string]any{
 		"username":     username,

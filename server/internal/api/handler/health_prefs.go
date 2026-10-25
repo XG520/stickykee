@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -298,6 +299,10 @@ func (h *Prefs) PutSiteName(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	h.broadcastBrand()
+	// 系统英文名是 HA 虚拟设备默认名的来源：改名后异步同步一次（设备名随之下发更新）。
+	if h.bd != nil {
+		go h.bd.SyncAll(context.Background())
+	}
 	WriteJSON(w, 200, map[string]string{"name": name, "name_en": nameEn})
 }
 
@@ -429,11 +434,19 @@ func (h *Prefs) Put(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case k == "ha_token":
 			// 个人 HA token：写当前用户，并即时重建其 HA 连接（不需重启服务器）。
+			// 粘贴板常带入首尾空格/换行：统一清理，避免 HA 401 难排查。
+			v = strings.TrimSpace(v)
 			if err := h.userPrefs.Set(r.Context(), username, "ha_token", v); err != nil {
 				WriteErr(w, 500, "internal", err.Error())
 				return
 			}
 			h.manager.InvalidateActive(r.Context(), username)
+			// 通知该用户全部在线端（含降级连接的 APK）立即重连重建数据通道
+			if h.hb != nil {
+				if b, err := json.Marshal(map[string]any{"type": "reload", "reason": "ha_token"}); err == nil {
+					h.hb.BroadcastUser(username, b)
+				}
+			}
 		case k == "map_config":
 			if isAdmin {
 				// 管理员写全局 key（合并 amap_key / location_name）
@@ -513,10 +526,25 @@ func (h *Prefs) Put(w http.ResponseWriter, r *http.Request) {
 				WriteErr(w, 403, "forbidden", "系统名称与图标仅管理员可修改")
 				return
 			}
+			// server_device_name（HA 侧虚拟设备显示名）：仅管理员可改；保存后异步同步到 HA。
+			if k == serverDeviceNameKey {
+				if !auth.IsAdmin(r.Context()) {
+					WriteErr(w, 403, "forbidden", "HA 设备名仅管理员可修改")
+					return
+				}
+				v = strings.TrimSpace(v)
+				if utf8.RuneCountInString(v) > 40 {
+					WriteErr(w, 400, "bad_request", "HA 设备名最多 40 个字符")
+					return
+				}
+			}
 			// 全局（系统级）：写全局 prefs
 			if err := h.repo.SetPref(r.Context(), k, v); err != nil {
 				WriteErr(w, 500, "internal", err.Error())
 				return
+			}
+			if k == serverDeviceNameKey && h.bd != nil {
+				go h.bd.SyncAll(context.Background()) // 改名经 ensureReg→syncDeviceName 下发 HA
 			}
 		}
 	}

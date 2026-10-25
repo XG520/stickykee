@@ -2,11 +2,13 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strconv"
 
 	"stickynuo/server/internal/auth"
 	"stickynuo/server/internal/ha"
+	"stickynuo/server/internal/hub"
 	"stickynuo/server/internal/store"
 
 	"github.com/go-chi/chi/v5"
@@ -16,11 +18,22 @@ import (
 type Instances struct {
 	repo    *store.InstanceRepo
 	manager *ha.Manager
+	hb      *hub.Hub
 }
 
 // NewInstances 构造 handler。
-func NewInstances(repo *store.InstanceRepo, manager *ha.Manager) *Instances {
-	return &Instances{repo: repo, manager: manager}
+func NewInstances(repo *store.InstanceRepo, manager *ha.Manager, hb *hub.Hub) *Instances {
+	return &Instances{repo: repo, manager: manager, hb: hb}
+}
+
+// notifyChanged 实例增删改/切换后广播全体在线端：各端重拉实例列表与 active 并重连数据通道。
+func (h *Instances) notifyChanged() {
+	if h.hb == nil {
+		return
+	}
+	if b, err := json.Marshal(map[string]any{"type": "instances"}); err == nil {
+		h.hb.BroadcastAll(b)
+	}
 }
 
 type instancePayload struct {
@@ -68,6 +81,7 @@ func (h *Instances) Create(w http.ResponseWriter, r *http.Request) {
 		WriteErr(w, 500, "internal", err.Error())
 		return
 	}
+	h.notifyChanged()
 	active, _ := h.manager.ActiveID(r.Context())
 	WriteMeta(w, 201, i, active)
 }
@@ -110,6 +124,7 @@ func (h *Instances) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.manager.Invalidate(id)
+	h.notifyChanged()
 	i, _ := h.repo.Get(r.Context(), id)
 	active, _ := h.manager.ActiveID(r.Context())
 	WriteMeta(w, 200, i, active)
@@ -130,6 +145,7 @@ func (h *Instances) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.manager.Invalidate(id)
+	h.notifyChanged()
 	active, _ := h.manager.ActiveID(r.Context())
 	WriteMeta(w, 200, true, active)
 }
@@ -147,6 +163,7 @@ func (h *Instances) Switch(w http.ResponseWriter, r *http.Request) {
 		WriteErr(w, 500, "internal", err.Error())
 		return
 	}
+	h.notifyChanged()
 	WriteMeta(w, 200, id, id)
 }
 

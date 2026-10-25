@@ -18,6 +18,7 @@ import (
 
 	"stickynuo/server/internal/ha"
 	"stickynuo/server/internal/ha/client"
+	"stickynuo/server/internal/ha/model"
 	"stickynuo/server/internal/store"
 )
 
@@ -41,9 +42,12 @@ type Birthdays struct {
 	userPrefs *store.UserPrefs
 	users     *store.UserRepo
 
-	// lastPush 记录每个 (instance_id, username) 上次推送的 (days,next_date)，
+	// lastPush 记录每个 (instance_id, username) 上次推送的 (days,next_date,at)，
 	// 倒计时不变化时跳过推送，避免每小时重复写 HA 状态刷 last_updated。
 	lastPush sync.Map
+
+	// lastName 记录每个实例上次同步到 HA 的设备名（变化时才发 update_registration）。
+	lastName sync.Map
 
 	// reqSync 用户触发同步的限频状态（username → *bdSyncReq）。
 	reqSync sync.Map
@@ -64,7 +68,12 @@ type bdSyncReq struct {
 type bdLastPush struct {
 	Days int
 	Date string
+	At   time.Time // 上次实际推送时间；超过 bdStaleAfter 未推则强制重推（自愈兜底）
 }
+
+// bdStaleAfter 距上次实际推送超过该时长后，即使数值未变也强制重推一次：
+// HA 重启 / 实体重建后状态回到 unknown，靠它兜底自愈。
+const bdStaleAfter = 6 * time.Hour
 
 // NewBirthdays 构造 handler。
 func NewBirthdays(manager *ha.Manager, repo *store.InstanceRepo, userPrefs *store.UserPrefs, users *store.UserRepo) *Birthdays {
@@ -255,27 +264,38 @@ func (h *Birthdays) saveReg(ctx context.Context, instanceID int64, r bdReg) {
 	_ = h.userPrefs.Set(ctx, bdRegBackendUser, bdRegKeyForInstance(instanceID), string(b))
 }
 
-// ensureReg 为某 HA 实例确保后端虚拟设备与生日传感器命名空间已注册。
-// 使用传入用户 token（需要有 HA 管理员权限）；webhook 失效（HA 侧删除设备）时自动重注册。
-// device_name 取自全局 site_name_en 首选项（管理员可改系统名），防止多台测试服务器同名冲突。
-func (h *Birthdays) ensureReg(ctx context.Context, instanceID int64, rest *client.Rest) (*bdReg, error) {
-	reg := h.readReg(ctx, instanceID)
-	if reg.WebhookID != "" && probeWebhookAlive(ctx, rest, reg.WebhookID) {
-		return &reg, nil
+// serverDeviceNameKey 全局 pref：HA 侧虚拟设备显示名（管理员可自定义；空则回退系统英文名 + " Server"）。
+const serverDeviceNameKey = "server_device_name"
+
+// deviceName 解析 HA 虚拟设备名：server_device_name 自定义值优先，空则用 site_name_en + " Server"。
+func (h *Birthdays) deviceName(ctx context.Context) string {
+	if v, _ := h.repo.GetPref(ctx, serverDeviceNameKey); strings.TrimSpace(v) != "" {
+		return strings.TrimSpace(v)
 	}
-	// 设备名：取系统英文名称 + " Server"；管理员在设置页改一次系统名，HA 侧注册的虚拟设备名就随之变化，
-	// 多台测试服务器（每个后端自己的 site_name_en）即可天然规避命名冲突。
 	devName, _ := h.repo.GetPref(ctx, "site_name_en")
 	if devName == "" {
 		devName = "Sticky Kee"
 	}
-	devName = strings.TrimSpace(devName) + " Server"
+	return strings.TrimSpace(devName) + " Server"
+}
+
+// ensureReg 为某 HA 实例确保后端虚拟设备与生日传感器命名空间已注册。
+// 使用传入用户 token（需要有 HA 管理员权限）；webhook 失效（HA 侧删除设备）时自动重注册。
+// HA 的 mobile_app 注册对同一 device_id 幂等（返回同一 webhook_id），删库重部署不会重复建设备。
+// device_name 取自 server_device_name（可自定义）或全局 site_name_en（防多台测试服务器同名冲突）。
+func (h *Birthdays) ensureReg(ctx context.Context, instanceID int64, rest *client.Rest) (*bdReg, error) {
+	reg := h.readReg(ctx, instanceID)
+	want := h.deviceName(ctx)
+	if reg.WebhookID != "" && probeWebhookAlive(ctx, rest, reg.WebhookID) {
+		h.syncDeviceName(ctx, rest, &reg, instanceID, want)
+		return &reg, nil
+	}
 	payload := map[string]any{
 		"app_id":              "stickynuo",
 		"app_name":            "stickynuo",
 		"app_version":         Version,
 		"device_id":           fmt.Sprintf("stickynuo_server_%d", instanceID),
-		"device_name":         devName,
+		"device_name":         want,
 		"manufacturer":        "stickynuo",
 		"model":               "server",
 		"os_name":             "stickynuo",
@@ -293,8 +313,39 @@ func (h *Birthdays) ensureReg(ctx context.Context, instanceID int64, rest *clien
 	}
 	reg = bdReg{WebhookID: resp.WebhookID, Registered: true}
 	h.saveReg(ctx, instanceID, reg)
+	h.lastName.Store(instanceID, want)
+	// webhook 新建/重建（HA 侧删过设备）：清本实例推送缓存，强制全量重推状态——
+	// 否则「倒计时未变跳过」会让重建后的实体永远停在 unknown。
+	h.clearInstancePush(instanceID)
 	slog.Info("birthday server device registered", "instance", instanceID, "webhook_id", resp.WebhookID)
 	return &reg, nil
+}
+
+// syncDeviceName 设备名与期望值不一致时，经 update_registration 改名（已注册设备支持自定义名）。
+func (h *Birthdays) syncDeviceName(ctx context.Context, rest *client.Rest, reg *bdReg, instanceID int64, want string) {
+	if prev, ok := h.lastName.Load(instanceID); ok && prev == want {
+		return
+	}
+	if err := rest.PostJSON(ctx, "/api/webhook/"+reg.WebhookID, map[string]any{
+		"type": "update_registration",
+		"data": map[string]any{"device_name": want},
+	}, nil); err != nil {
+		slog.Warn("birthday sync: rename device failed", "instance", instanceID, "err", err.Error())
+		return
+	}
+	h.lastName.Store(instanceID, want)
+	slog.Info("birthday server device renamed", "instance", instanceID, "name", want)
+}
+
+// clearInstancePush 清除某实例全部账号的推送缓存（webhook 重建后强制重推）。
+func (h *Birthdays) clearInstancePush(instanceID int64) {
+	prefix := fmt.Sprintf("%d:", instanceID)
+	h.lastPush.Range(func(k, _ any) bool {
+		if ks, ok := k.(string); ok && strings.HasPrefix(ks, prefix) {
+			h.lastPush.Delete(k)
+		}
+		return true
+	})
 }
 
 // birthdayUniqueID 某账号的生日传感器在 server 设备上的 unique_id；
@@ -308,6 +359,34 @@ func birthdayDateUniqueID(username string) string {
 	return birthdayUniqueID(username) + "_date"
 }
 
+// entityHealthy 在 HA 全量状态里按 friendly_name 找实体并判断其状态是否有值。
+// 找不到（实体被删/未重建）或状态为 unknown/unavailable/空 → false（需要重推）。
+func entityHealthy(states []model.EntityState, friendly string) bool {
+	for _, s := range states {
+		var attrs struct {
+			FriendlyName string `json:"friendly_name"`
+		}
+		if json.Unmarshal(s.Attributes, &attrs) != nil || attrs.FriendlyName != friendly {
+			continue
+		}
+		st := strings.ToLower(strings.TrimSpace(s.State))
+		return st != "" && st != "unknown" && st != "unavailable"
+	}
+	return false
+}
+
+// instanceStates 拉取实例全量状态快照（用于实体自愈检测）；失败返回 nil（跳过检测，按原节奏推送）。
+func (h *Birthdays) instanceStates(ctx context.Context, instanceID int64, rest *client.Rest) []model.EntityState {
+	if rest == nil {
+		return nil
+	}
+	st, err := rest.GetStates(ctx)
+	if err != nil {
+		return nil
+	}
+	return st
+}
+
 // SyncUser 把某账号的生日同步到**所有已启用**的 HA 实例（幂等；无实例 / 无可用管理员 token 时静默跳过）。
 func (h *Birthdays) SyncUser(ctx context.Context, username string) {
 	instances, err := h.repo.List(ctx)
@@ -318,7 +397,7 @@ func (h *Birthdays) SyncUser(ctx context.Context, username string) {
 		if !inst.Enabled {
 			continue
 		}
-		h.syncOne(ctx, inst.ID, username)
+		h.syncOne(ctx, inst.ID, username, h.instanceStates(ctx, inst.ID, h.adminRest(ctx, inst.ID)))
 	}
 }
 
@@ -376,7 +455,9 @@ func (h *Birthdays) adminRest(ctx context.Context, instanceID int64) *client.Res
 }
 
 // syncOne 单实例同步：确保 server 虚拟设备注册、登记 birthday_<username> 传感器、推送状态。
-func (h *Birthdays) syncOne(ctx context.Context, instanceID int64, username string) {
+// states 为该实例的 HA 全量状态快照（nil=不可用，跳过实体健康检测）：
+// 实体缺失或状态 unknown/unavailable 时无视「数值未变跳过」立即重推（自愈）。
+func (h *Birthdays) syncOne(ctx context.Context, instanceID int64, username string, states []model.EntityState) {
 	rest := h.adminRest(ctx, instanceID)
 	if rest == nil {
 		return // 无可用管理员 token → 跳过（与目标用户是否配 token 无关）
@@ -424,13 +505,18 @@ func (h *Birthdays) syncOne(ctx context.Context, instanceID int64, username stri
 			dateState = a["next_date"]
 		}
 	}
-	// 倒计时未变化时跳过推送（HA 不必每小时收到一次相同状态）
+	// 倒计时未变化时默认跳过推送（HA 不必每小时收到一次相同状态）；
+	// 但满足任一条件立即重推：①距上次实际推送超 bdStaleAfter（HA 重启/实体重建后兜底自愈）
+	// ②HA 侧实体缺失或状态 unknown/unavailable（实体无值自动更新）。
 	pushKey := fmt.Sprintf("%d:%s", instanceID, username)
 	if s, ok := state.(int); ok {
-		cur := bdLastPush{Days: s, Date: fmt.Sprint(attrs["next_date"])}
+		cur := bdLastPush{Days: s, Date: fmt.Sprint(attrs["next_date"]), At: time.Now()}
 		if prev, loaded := h.lastPush.Load(pushKey); loaded {
-			if p, ok := prev.(bdLastPush); ok && p == cur {
-				return
+			if p, ok := prev.(bdLastPush); ok && p.Days == cur.Days && p.Date == cur.Date {
+				fresh := time.Since(p.At) < bdStaleAfter
+				if fresh && (states == nil || entityHealthy(states, username+"生日倒计时")) {
+					return
+				}
 			}
 		}
 		h.lastPush.Store(pushKey, cur)
@@ -477,18 +563,37 @@ func (h *Birthdays) StartTicker(ctx context.Context) {
 }
 
 // SyncAll 同步全部账号（仅处理存有 birthdays 键的用户）。
+// 按实例分组：每实例只拉一次全量状态快照（自愈检测用），该实例下所有账号共享。
 func (h *Birthdays) SyncAll(ctx context.Context) {
 	users, err := h.users.List(ctx)
 	if err != nil {
 		return
 	}
+	usernames := make([]string, 0, len(users))
 	for _, u := range users {
 		if h.userPrefs.Get(ctx, u.Username, "birthdays") == "" {
 			continue
 		}
-		c, cancel := context.WithTimeout(ctx, 15*time.Second)
-		h.SyncUser(c, u.Username)
-		cancel()
+		usernames = append(usernames, u.Username)
+	}
+	if len(usernames) == 0 {
+		return
+	}
+	instances, err := h.repo.List(ctx)
+	if err != nil {
+		return
+	}
+	for _, inst := range instances {
+		if !inst.Enabled {
+			continue
+		}
+		rest := h.adminRest(ctx, inst.ID)
+		states := h.instanceStates(ctx, inst.ID, rest)
+		for _, username := range usernames {
+			c, cancel := context.WithTimeout(ctx, 15*time.Second)
+			h.syncOne(c, inst.ID, username, states)
+			cancel()
+		}
 	}
 }
 
