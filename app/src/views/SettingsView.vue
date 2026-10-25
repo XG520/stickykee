@@ -1,13 +1,14 @@
 <template>
-  <div class="space-y-6 pb-4">
+  <div class="space-y-4 sm:space-y-6 pb-4">
     <!-- 页面标题只保留给屏读器（可见标题行占的垂直空间已省掉） -->
     <h1 class="sr-only">个性化设置</h1>
 
-    <!-- 顶部导航（重置按钮收纳在「个性化」页底部） -->
+    <!-- 顶部导航（重置按钮收纳在「个性化」页底部）：
+         手机端单行横向滚动，避免 7 个标签折成 3 行吃掉首屏空间；桌面端仍自动换行。 -->
     <div class="flex flex-wrap items-center gap-2">
-      <nav class="flex flex-wrap gap-1.5 p-1.5 w-fit rounded-2xl bg-surface-alt/90 backdrop-blur-xl border border-border shadow-sm">
+      <nav class="hc-nav-scroll flex sm:flex-wrap gap-1.5 p-1.5 w-full sm:w-fit rounded-2xl bg-surface-alt/90 backdrop-blur-xl border border-border shadow-sm">
         <button v-for="t in tabs.filter((x) => x.key !== 'diag' || auth.isAdmin)" :key="t.key" @click="activeTab = t.key"
-          class="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 active:scale-95"
+          class="flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap shrink-0 transition-all duration-200 active:scale-95"
           :class="activeTab === t.key
             ? 'bg-primary text-on-primary shadow-md shadow-primary/25'
             : 'text-muted hover:text-on-surface hover:bg-surface'">
@@ -18,19 +19,19 @@
     </div>
 
     <!-- 锚点导航：吸顶横向滚动，点击跳转到对应区块（随当前标签页切换锚点列表） -->
-    <nav v-if="anchors[activeTab]" class="sticky top-14 z-30 py-2 overflow-x-auto hc-hide-bar">
+    <nav v-if="anchors[activeTab]" class="sticky top-14 z-30 py-2 -mx-1 px-1 overflow-x-auto hc-hide-bar">
       <div class="flex items-center gap-1.5 w-fit">
         <button v-for="a in anchors[activeTab]" :key="a.id" @click="scrollToSection(a.id)"
-          class="whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium border border-border text-muted hover:text-on-surface hover:border-primary/40 transition-colors">
+          class="whitespace-nowrap shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border border-border bg-surface-alt/70 text-muted hover:text-on-surface hover:border-primary/40 transition-colors">
           {{ a.label }}
         </button>
       </div>
     </nav>
 
     <!-- ===== 连接与设备 ===== -->
-    <div v-show="activeTab === 'connect'" class="space-y-6">
+    <div v-show="activeTab === 'connect'" class="space-y-4 sm:space-y-6">
     <!-- 我的 HA Token：地址管理员全局配置，密钥属个人（所有用户可见，可自配或管理员代配） -->
-    <section id="sec-ha-token" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
+    <section id="sec-ha-token" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
       <div class="flex items-center gap-2.5 mb-3">
         <div class="w-8 h-8 rounded-xl bg-primary/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-primary text-lg">key</span>
@@ -53,7 +54,7 @@
         <input v-model="myToken" type="password" autocomplete="new-password" placeholder="粘贴你的 Long-Lived Token（配置后即可访问实体）"
           class="flex-1 bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
         <button @click="saveMyToken" :disabled="savingToken"
-          class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-on-primary text-sm font-semibold transition-all disabled:opacity-70 flex items-center gap-1.5">
+          class="w-full sm:w-auto justify-center px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-on-primary text-sm font-semibold transition-all disabled:opacity-70 flex items-center gap-1.5">
           <span v-if="savingToken" class="hc-spinner"></span>
           {{ savingToken ? '保存中…' : '保存' }}
         </button>
@@ -62,7 +63,7 @@
     </section>
 
     <!-- 服务器地址（APK 壳页地址簿同步显示） -->
-    <section id="sec-server" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
+    <section id="sec-server" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
       <div class="flex items-center gap-2.5 mb-3">
         <div class="w-8 h-8 rounded-xl bg-accent/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-accent text-lg">dns</span>
@@ -90,7 +91,7 @@
     </section>
 
     <!-- 通话铃声（仅 APK）：来电铃声与呼叫彩铃，走系统铃声音量流 -->
-    <section v-if="canPickRing" id="sec-ring" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
+    <section v-if="canPickRing" id="sec-ring" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
       <div class="flex items-center gap-2.5 mb-3">
         <div class="w-8 h-8 rounded-xl bg-accent/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-accent text-lg">ring_volume</span>
@@ -121,7 +122,7 @@
     </section>
 
     <!-- Home Assistant 连接管理（仅管理员可见） -->
-    <section v-if="auth.isAdmin" id="sec-ha-conn" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
+    <section v-if="auth.isAdmin" id="sec-ha-conn" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
       <div class="flex items-center justify-between mb-4">
         <div class="flex items-center gap-2.5">
           <div class="w-8 h-8 rounded-xl bg-primary/20 flex items-center justify-center">
@@ -197,7 +198,7 @@
     </section>
 
     <!-- 高德地图 & 位置同步 -->
-    <section id="sec-map" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
+    <section id="sec-map" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
       <div class="flex items-center gap-2.5 mb-4">
         <div class="w-8 h-8 rounded-xl bg-accent/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-accent text-lg">map</span>
@@ -256,7 +257,7 @@
     </section>
 
     <!-- 设备列表（自动识别、去重、别名） -->
-    <section id="sec-devices" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
+    <section id="sec-devices" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
       <div class="flex items-center justify-between mb-4">
         <div class="flex items-center gap-2.5">
           <div class="w-8 h-8 rounded-xl bg-primary/20 flex items-center justify-center">
@@ -303,7 +304,7 @@
     </section>
 
     <!-- 设备传感器（官方 App 同款：按设备类型提供不同传感器，可开关） -->
-    <section id="sec-sensors" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
+    <section id="sec-sensors" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
       <div class="flex items-center justify-between mb-4">
         <div class="flex items-center gap-2.5">
           <div class="w-8 h-8 rounded-xl bg-info/20 flex items-center justify-center">
@@ -365,7 +366,7 @@
     </section>
 
     <!-- 浏览器命令（Browser_mod 风格）：HA 侧经事件总线向本设备下发命令 -->
-    <section id="sec-browser" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
+    <section id="sec-browser" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
       <div class="flex items-center gap-2.5 mb-3">
         <div class="w-8 h-8 rounded-xl bg-warning/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-warning text-lg">contrast</span>
@@ -435,9 +436,9 @@
     </div>
 
     <!-- ===== 个性化 ===== -->
-    <div v-show="activeTab === 'personal'" class="space-y-6">
+    <div v-show="activeTab === 'personal'" class="space-y-4 sm:space-y-6">
     <!-- 主题风格 -->
-    <section id="sec-theme" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
+    <section id="sec-theme" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
       <div class="flex items-center gap-2.5 mb-4">
         <div class="w-8 h-8 rounded-xl bg-primary/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-primary text-lg">palette</span>
@@ -518,7 +519,7 @@
     </section>
 
     <!-- 字体大小 -->
-    <section id="sec-font" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
+    <section id="sec-font" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
       <div class="flex items-center gap-2.5 mb-4">
         <div class="w-8 h-8 rounded-xl bg-accent/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-accent text-lg">text_fields</span>
@@ -548,7 +549,7 @@
     </section>
 
     <!-- 仪表盘列数 -->
-    <section id="sec-cols" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
+    <section id="sec-cols" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
       <div class="flex items-center gap-2.5 mb-4">
         <div class="w-8 h-8 rounded-xl bg-accent/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-accent text-lg">grid_view</span>
@@ -580,7 +581,7 @@
     </section>
 
     <!-- 图标风格 -->
-    <section id="sec-icon-style" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
+    <section id="sec-icon-style" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
       <div class="flex items-center gap-2.5 mb-4">
         <div class="w-8 h-8 rounded-xl bg-info/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-info text-lg">dashboard</span>
@@ -609,7 +610,7 @@
     </section>
 
     <!-- 户型图风格 -->
-    <section id="sec-floorplan" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
+    <section id="sec-floorplan" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
       <div class="flex items-center gap-2.5 mb-4">
         <div class="w-8 h-8 rounded-xl bg-warning/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-warning text-lg">apartment</span>
@@ -638,7 +639,7 @@
     </section>
 
     <!-- 动画效果 -->
-    <section id="sec-animation" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
+    <section id="sec-animation" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
       <div class="flex items-center gap-2.5 mb-4">
         <div class="w-8 h-8 rounded-xl bg-error/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-error text-lg">animation</span>
@@ -654,7 +655,7 @@
     </section>
 
     <!-- 语音助手 -->
-    <section id="sec-voice" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
+    <section id="sec-voice" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
       <div class="flex items-center gap-2.5 mb-4">
         <div class="w-8 h-8 rounded-xl bg-success/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-success text-lg">mic</span>
@@ -722,8 +723,8 @@
     </div>
 
     <!-- ===== AI ===== -->
-    <div v-show="activeTab === 'ai'" class="space-y-6">
-      <section id="sec-ai" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
+    <div v-show="activeTab === 'ai'" class="space-y-4 sm:space-y-6">
+      <section id="sec-ai" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
         <div class="flex items-center gap-2.5 mb-4">
           <div class="w-8 h-8 rounded-xl bg-accent/20 flex items-center justify-center">
             <span class="material-symbols-outlined text-accent text-lg">auto_awesome</span>
@@ -802,8 +803,8 @@
     </div>
 
     <!-- ===== AI 诊断 ===== -->
-    <div v-show="activeTab === 'diag'" class="space-y-6">
-      <section id="sec-diag" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
+    <div v-show="activeTab === 'diag'" class="space-y-4 sm:space-y-6">
+      <section id="sec-diag" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
         <div class="flex items-center gap-2.5 mb-4">
           <div class="w-8 h-8 rounded-xl bg-accent/20 flex items-center justify-center">
             <span class="material-symbols-outlined text-accent text-lg">monitor_heart</span>
@@ -916,8 +917,8 @@
     </div>
 
     <!-- ===== 运行日志 ===== -->
-    <div v-show="activeTab === 'logs'" class="space-y-6">
-      <section id="sec-logs" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
+    <div v-show="activeTab === 'logs'" class="space-y-4 sm:space-y-6">
+      <section id="sec-logs" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
         <div class="flex items-center gap-2.5 mb-4">
           <div class="w-8 h-8 rounded-xl bg-info/20 flex items-center justify-center">
             <span class="material-symbols-outlined text-info text-lg">receipt_long</span>
@@ -1037,9 +1038,9 @@
     </div>
 
     <!-- ===== 账户 ===== -->
-    <div v-show="activeTab === 'account'" class="space-y-6">
+    <div v-show="activeTab === 'account'" class="space-y-4 sm:space-y-6">
     <!-- 账号与安全 -->
-    <section id="sec-account" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
+    <section id="sec-account" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
       <div class="flex items-center gap-2.5 mb-4">
         <div class="w-8 h-8 rounded-xl bg-primary/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-primary text-lg">shield_person</span>
@@ -1069,7 +1070,7 @@
     </section>
 
     <!-- 系统信息：前后端版本号，用于确认部署是否已更新 -->
-    <section id="sec-sysinfo" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
+    <section id="sec-sysinfo" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
       <div class="flex items-center gap-2.5 mb-3">
         <div class="w-8 h-8 rounded-xl bg-primary/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-primary text-lg">info</span>
@@ -1171,9 +1172,9 @@
     </div>
 
     <!-- ===== 用户管理（仅管理员） ===== -->
-    <div v-if="auth.isAdmin" v-show="activeTab === 'users'" class="space-y-6">
+    <div v-if="auth.isAdmin" v-show="activeTab === 'users'" class="space-y-4 sm:space-y-6">
     <!-- 系统名称（全局）：改后所有用户的顶栏/登录页/浏览器标题同步更新 -->
-    <section id="sec-sysname" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
+    <section id="sec-sysname" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
       <div class="flex items-center gap-2.5 mb-3">
         <div class="w-8 h-8 rounded-xl bg-primary/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-primary text-lg">badge</span>
@@ -1189,7 +1190,7 @@
         <input v-model="siteNameEnDraft" maxlength="40" placeholder="英文名称，例如：Sticky Kee"
           class="flex-1 min-w-0 bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
         <button @click="saveSiteName" :disabled="siteNameSaving"
-          class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-on-primary text-sm font-semibold transition-all disabled:opacity-50 flex items-center gap-1.5">
+          class="w-full sm:w-auto justify-center px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-on-primary text-sm font-semibold transition-all disabled:opacity-50 flex items-center gap-1.5">
           <span class="material-symbols-outlined text-base">save</span> 保存
         </button>
       </div>
@@ -1197,7 +1198,7 @@
         <input v-model="serverDeviceNameDraft" maxlength="40" placeholder="HA 设备名（留空 = 英文名 + Server）"
           class="flex-1 min-w-0 bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
         <button @click="saveServerDeviceName" :disabled="serverDeviceNameSaving"
-          class="px-4 py-2 rounded-xl bg-surface border border-border hover:border-primary text-on-surface text-sm font-semibold transition-all disabled:opacity-50 flex items-center gap-1.5">
+          class="w-full sm:w-auto justify-center px-4 py-2 rounded-xl bg-surface border border-border hover:border-primary text-on-surface text-sm font-semibold transition-all disabled:opacity-50 flex items-center gap-1.5">
           <span class="material-symbols-outlined text-base">dns</span> 同步到 HA
         </button>
       </div>
@@ -1205,7 +1206,7 @@
       <p v-if="siteNameMsg" class="mt-2 text-xs font-body" :class="siteNameErr ? 'text-error' : 'text-success'">{{ siteNameMsg }}</p>
     </section>
     <!-- 系统图标（全局）：Material Symbol 名，改后顶栏/登录页同步更新 -->
-    <section id="sec-sysicon" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28 mt-4">
+    <section id="sec-sysicon" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28 mt-4">
       <div class="flex items-center gap-2.5 mb-3">
         <div class="w-8 h-8 rounded-xl bg-accent/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-accent text-lg">palette</span>
@@ -1215,35 +1216,37 @@
           <p class="text-muted text-xs mt-0.5">顶栏、登录页显示的图标（Material Symbol 名称）</p>
         </div>
       </div>
-      <div class="flex gap-3 items-center">
-        <div class="flex-1 min-w-0 flex gap-2">
-          <input v-model="siteIconDraft" maxlength="40" placeholder="例如：bolt" @input="siteIconDraft = siteIconDraft.toLowerCase()"
-            class="flex-1 min-w-0 bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors font-mono">
-          <button @click="saveSiteIcon" :disabled="siteIconSaving"
-            class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-on-primary text-sm font-semibold transition-all disabled:opacity-50 flex items-center gap-1.5">
-            <span class="material-symbols-outlined text-base">save</span> 保存
-          </button>
+      <!-- 手机端：预览 + 输入框 + 保存（图标钮）压在同一行；桌面端恢复完整「保存」按钮 -->
+      <div class="flex gap-2 sm:gap-3 items-center">
+        <div class="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-primary flex items-center justify-center shadow shrink-0" title="预览">
+          <SiteIcon :span-class="'text-on-primary text-lg sm:text-xl'" :img-class="'w-6 h-6 object-contain'" v-if="siteIconImg" />
+          <span v-else class="material-symbols-outlined text-on-primary text-lg sm:text-xl">{{ siteIconDraft || 'bolt' }}</span>
         </div>
-        <div class="w-11 h-11 rounded-xl bg-primary flex items-center justify-center shadow shrink-0" title="预览">
-          <SiteIcon :span-class="'text-on-primary text-xl'" :img-class="'w-6 h-6 object-contain'" v-if="siteIconImg" />
-          <span v-else class="material-symbols-outlined text-on-primary text-xl">{{ siteIconDraft || 'bolt' }}</span>
-        </div>
+        <input v-model="siteIconDraft" maxlength="40" placeholder="例如：bolt" @input="siteIconDraft = siteIconDraft.toLowerCase()"
+          class="flex-1 min-w-0 bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors font-mono">
+        <button @click="saveSiteIcon" :disabled="siteIconSaving"
+          class="shrink-0 w-10 h-10 sm:w-auto sm:h-auto sm:px-4 sm:py-2 rounded-xl bg-primary hover:bg-primary-hover text-on-primary text-sm font-semibold transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
+          :title="`保存图标 ${siteIconDraft || ''}`">
+          <span class="material-symbols-outlined text-base">save</span>
+          <span class="hidden sm:inline">保存</span>
+        </button>
       </div>
-      <!-- 自定义图标：上传图片（与 Material 图标互斥，上传后立即生效；选 Material 保存自动恢复） -->
-      <div class="mt-3 flex items-center gap-2.5">
+      <!-- 自定义图标：上传图片（与 Material 图标互斥，上传后立即生效；选 Material 保存自动恢复）。
+           手机端按钮与说明竖排，避免长说明挤压按钮导致换行错位。 -->
+      <div class="mt-3 flex flex-col items-start gap-1.5 sm:flex-row sm:items-center sm:gap-2.5">
         <button @click="iconFileEl?.click()" :disabled="siteIconSaving"
           class="px-3.5 py-2 rounded-xl bg-background border border-border text-on-surface text-sm hover:border-primary transition-colors disabled:opacity-50 flex items-center gap-1.5">
           <span class="material-symbols-outlined text-base">upload</span> 上传自定义图标
         </button>
-        <span class="text-muted text-xs">PNG/SVG/WebP ≤256KB{{ siteIconImg ? '；当前为自定义图片，选择 Material 图标保存后恢复' : '' }}</span>
+        <span class="text-muted text-xs leading-relaxed">PNG/SVG/WebP ≤256KB{{ siteIconImg ? '；当前为自定义图片，选择 Material 图标保存后恢复' : '' }}</span>
         <input ref="iconFileEl" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" class="hidden" @change="onIconFile">
       </div>
-      <!-- 常用图标快捷按钮 -->
+      <!-- 常用图标快捷按钮：手机端 40px 触控目标（8 列排布），桌面端紧凑 36px -->
       <div class="mt-3">
         <div class="text-muted text-xs mb-1.5">常用图标</div>
-        <div class="flex flex-wrap gap-2">
+        <div class="grid grid-cols-8 gap-2 sm:flex sm:flex-wrap">
           <button v-for="s in SITE_ICON_SUGGESTIONS" :key="s" @click="siteIconDraft = s"
-            class="w-9 h-9 rounded-lg bg-background border border-border flex items-center justify-center hover:border-primary hover:bg-primary/10 transition-colors"
+            class="w-full aspect-square sm:w-9 sm:h-9 rounded-lg bg-background border border-border flex items-center justify-center hover:border-primary hover:bg-primary/10 transition-colors"
             :title="s">
             <span class="material-symbols-outlined text-on-surface text-base">{{ s }}</span>
           </button>
@@ -1251,7 +1254,7 @@
       </div>
       <p v-if="siteIconMsg" class="mt-2 text-xs font-body" :class="siteIconErr ? 'text-error' : 'text-success'">{{ siteIconMsg }}</p>
     </section>
-    <section id="sec-users" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
+    <section id="sec-users" class="bg-surface-alt border border-border rounded-2xl p-4 sm:p-5 scroll-mt-28">
       <div class="flex items-center gap-2.5 mb-4">
         <div class="w-8 h-8 rounded-xl bg-info/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-info text-lg">group</span>
@@ -2912,6 +2915,16 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+/* 手机端标签栏 / 锚点栏：横向滚动但隐藏滚动条（避免占位导致高度抖动） */
+.hc-nav-scroll,
+.hc-hide-bar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.hc-nav-scroll { overflow-x: auto; }
+.hc-nav-scroll::-webkit-scrollbar,
+.hc-hide-bar::-webkit-scrollbar { display: none; }
+
 /* 保存中旋转指示器（主题色前景） */
 @keyframes hc-spin {
   to { transform: rotate(360deg); }
