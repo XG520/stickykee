@@ -9,7 +9,7 @@ const GROUP = '我的模板'
 const MAX_TEMPLATES = 40
 
 // 模板字段（持久化）；其他字段（needEntity/entityDomains/group）在注入时由我们统一补齐
-export const TEMPLATE_FIELDS = ['name', 'icon', 'w', 'h', 'html', 'css', 'js', 'needEntity', 'entityDomains', '_designerSchema', 'compiledHtml', 'entitySlotMap', '_roles']
+export const TEMPLATE_FIELDS = ['name', 'icon', 'w', 'h', 'html', 'css', 'js', 'needEntity', 'entityDomains', '_designerSchema', 'compiledHtml', 'entitySlotMap', '_roles', 'rules']
 
 // 生成唯一 type key（运行时注册用）；ID 自带时间便于排序 / 查重
 function makeId() {
@@ -40,6 +40,7 @@ function injectTemplate(t) {
     _designerSchema: t._designerSchema || null,
     compiledHtml: t.compiledHtml || '',
     entitySlotMap: t.entitySlotMap || {},
+    rules: Array.isArray(t.rules) ? t.rules : [],
     _roles: t._roles || null,
     __template: true, // 标记是用户模板（删除时用到）
   }
@@ -91,6 +92,7 @@ export async function saveAsTemplate(card, { name, icon, needEntity, entityDomai
     _designerSchema: card._designerSchema || null,
     compiledHtml: card.compiledHtml || '',
     entitySlotMap: card.entitySlotMap || {},
+    rules: Array.isArray(card.rules) ? JSON.parse(JSON.stringify(card.rules)) : [],
     _roles: card._roles || null,
     createdAt: exist?.createdAt || Date.now(),
     updatedAt: Date.now(),

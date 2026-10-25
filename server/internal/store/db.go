@@ -78,6 +78,24 @@ func migrate(db *sql.DB) error {
 			created_at TEXT NOT NULL DEFAULT (datetime('now'))
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_messages_users ON messages(from_user, to_user);`,
+		// 运行日志：级别 / 来源分类持久化，30 天后由后台任务清理
+		`CREATE TABLE IF NOT EXISTS app_logs (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			ts_ms INTEGER NOT NULL,
+			level TEXT NOT NULL,
+			source TEXT NOT NULL,
+			msg TEXT NOT NULL
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_app_logs_ts ON app_logs(ts_ms);`,
+		`CREATE INDEX IF NOT EXISTS idx_app_logs_level ON app_logs(level, ts_ms);`,
+		`CREATE INDEX IF NOT EXISTS idx_app_logs_source ON app_logs(source, ts_ms);`,
+		// 实体图标覆盖：本系统内的自定义图标（不写回 HA），空行即恢复默认
+		`CREATE TABLE IF NOT EXISTS entity_icons (
+			instance_id INTEGER NOT NULL,
+			entity_id TEXT NOT NULL,
+			icon TEXT NOT NULL,
+			PRIMARY KEY (instance_id, entity_id)
+		);`,
 	}
 	for _, s := range schemas {
 		if _, err := db.Exec(s); err != nil {

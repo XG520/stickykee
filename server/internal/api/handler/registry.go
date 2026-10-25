@@ -10,8 +10,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+
 	"stickynuo/server/internal/ha"
 	"stickynuo/server/internal/ha/model"
+	"stickynuo/server/internal/icons"
+	"stickynuo/server/internal/store"
 )
 
 // 注册表刷新策略：按请求方用户按需刷新。个人 HA token 由每用户独立配置，
@@ -40,9 +44,11 @@ type registrySnapshot struct {
 // RegisteredEntities 提供官方「设备管理」页所需数据：
 // 后台定时拉取 HA 的设备/实体/区域注册表（WS config_*_registry/list）并缓存，
 // 再合并每个实体的实时状态与友善名称，按「一台物理设备聚合其下实体」返回。
+// 实体图标应用本系统的自定义覆盖（entity_icons 表，只存本地不写回 HA）。
 type RegisteredEntities struct {
-	manager *ha.Manager
-	log     *slog.Logger
+	manager  *ha.Manager
+	iconRepo *store.IconRepo
+	log      *slog.Logger
 
 	mu       sync.Mutex
 	caches   map[int64]*registrySnapshot
@@ -51,10 +57,11 @@ type RegisteredEntities struct {
 
 // NewRegisteredEntities 构造 handler。注册表不再后台自动刷新：个人 token 无法用
 // 无用户身份拉取，改由 List 请求按请求方身份按需刷新（配合缓存 TTL 复用）。
-func NewRegisteredEntities(manager *ha.Manager) *RegisteredEntities {
+func NewRegisteredEntities(manager *ha.Manager, iconRepo *store.IconRepo) *RegisteredEntities {
 	log := slog.Default()
 	return &RegisteredEntities{
 		manager:  manager,
+		iconRepo: iconRepo,
 		log:      log,
 		caches:   map[int64]*registrySnapshot{},
 		fetching: map[int64]chan struct{}{},
@@ -163,6 +170,14 @@ func (h *RegisteredEntities) fetch(ctx context.Context, id int64) (*regData, int
 		}
 	}
 
+	// 本系统的实体图标覆盖（优先级最高：本地覆盖 > 注册表 icon > 状态 attributes.icon）。
+	iconOverrides := map[string]string{}
+	if h.iconRepo != nil {
+		if m, err := h.iconRepo.Map(ctx, id); err == nil {
+			iconOverrides = m
+		}
+	}
+
 	areaName := map[string]string{}
 	areaIcon := map[string]string{}
 	for _, a := range areas {
@@ -193,6 +208,9 @@ func (h *RegisteredEntities) fetch(ctx context.Context, id int64) (*regData, int
 			continue
 		}
 		ge := buildGraphEntity(e, states[e.EntityID])
+		if icon, ok := iconOverrides[e.EntityID]; ok && icon != "" {
+			ge.Icon = "mdi:" + icon // 保持 HA 图标值语义（mdi:xxx），前端按此前缀走 SVG 渲染
+		}
 		if e.DeviceID != "" {
 			if g, ok := devByID[e.DeviceID]; ok {
 				g.Entities = append(g.Entities, ge)
@@ -211,6 +229,43 @@ func (h *RegisteredEntities) fetch(ctx context.Context, id int64) (*regData, int
 
 	active, _ := h.manager.ActiveID(ctx)
 	return &regData{Areas: areas, Devices: order, Unassigned: unassigned}, active, nil
+}
+
+// UpdateIcon PUT /instances/{id}/registry/entities/{entityID}/icon
+// 设置/清除某实体的本地图标覆盖（body {"icon": "robot-vacuum"}；空串恢复默认）。
+// 只写本系统 SQLite，不写回 HA；写入后立即使该实例注册表缓存失效以实时生效。
+func (h *RegisteredEntities) UpdateIcon(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(r)
+	if !ok {
+		WriteErr(w, 404, "not_found", "instance not found")
+		return
+	}
+	entityID := chi.URLParam(r, "entityID")
+	if entityID == "" {
+		WriteErr(w, 400, "bad_request", "entity id required")
+		return
+	}
+	var body struct {
+		Icon string `json:"icon"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		WriteErr(w, 400, "bad_request", "invalid json body")
+		return
+	}
+	icon := icons.Normalize(body.Icon)
+	if icon != "" && !icons.Has(icon) {
+		WriteErr(w, 400, "unknown_icon", "icon not found: "+icon)
+		return
+	}
+	if err := h.iconRepo.Set(r.Context(), id, entityID, icon); err != nil {
+		WriteErr(w, 500, "db_error", err.Error())
+		return
+	}
+	// 缓存失效：下次 List 重新拉取并应用新覆盖。
+	h.mu.Lock()
+	delete(h.caches, id)
+	h.mu.Unlock()
+	WriteMeta(w, 200, json.RawMessage(`{"entity_id":"`+entityID+`","icon":"`+icon+`"}`), id)
 }
 
 // isOnGraph 判断实体状态是否视为"开启"（与前端 utils/entities isOn 对齐）。

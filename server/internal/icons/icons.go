@@ -27,50 +27,93 @@ var FS = func() fs.FS {
 	return sub
 }()
 
-// iconName 把用户输入规范化：只允许小写字母、数字、下划线。
+// iconName 把用户输入规范化：只允许小写字母、数字、下划线、连字符。
+// 连字符是 MDI（HA 原生图标）命名风格，下划线是 Material Symbols 风格。
 func iconName(s string) string {
+	s = strings.TrimPrefix(s, "mdi:")
 	var b strings.Builder
 	for _, r := range s {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' || r == '-' {
 			b.WriteRune(r)
 		}
 	}
 	return b.String()
 }
 
-// Has 报告图标是否存在。
+// Normalize 导出 iconName 供 handler 校验/规范化用户输入（去 mdi: 前缀、过滤非法字符）。
+func Normalize(s string) string { return iconName(s) }
+
+// mdiSVG 用 mdiPaths 中的 path 数据动态拼出完整 SVG（MDI 图标统一 24x24 viewBox）。
+func mdiSVG(path string) []byte {
+	const prefix = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="`
+	const suffix = `"/></svg>`
+	b := make([]byte, 0, len(prefix)+len(path)+len(suffix))
+	b = append(b, prefix...)
+	b = append(b, path...)
+	b = append(b, suffix...)
+	return b
+}
+
+// Has 报告图标是否存在（内嵌 Material 子集 + 内嵌 MDI 全集）。
 func Has(name string) bool {
 	name = iconName(name)
 	if name == "" {
 		return false
 	}
-	_, err := fs.Stat(FS, name+".svg")
-	return err == nil
+	if _, err := fs.Stat(FS, name+".svg"); err == nil {
+		return true
+	}
+	if _, ok := mdiPaths[name]; ok {
+		return true
+	}
+	// mdi 官方命名为连字符风格：下划线输入转连字符再试一次（本地优先，避免走网络）
+	if dash := strings.ReplaceAll(name, "_", "-"); dash != name {
+		_, ok := mdiPaths[dash]
+		return ok
+	}
+	return false
 }
 
 // Get 返回图标 SVG 内容；不存在时 ok 为 false。
+// 查找顺序：内嵌 Material svg → 内嵌 MDI path 数据（动态拼 SVG）。
+// 远程下载兜底不在此函数内，由 Handler 在 Get 失败后调用 fetchRemote。
 func Get(name string) (data []byte, ok bool) {
 	name = iconName(name)
 	if name == "" {
 		return nil, false
 	}
-	b, err := fs.ReadFile(FS, name+".svg")
-	if err != nil {
-		return nil, false
+	if b, err := fs.ReadFile(FS, name+".svg"); err == nil {
+		return b, true
 	}
-	return b, true
+	if p, hit := mdiPaths[name]; hit {
+		return mdiSVG(p), true
+	}
+	// mdi 官方命名为连字符风格：下划线输入转连字符再试一次（本地优先，避免走网络）
+	if dash := strings.ReplaceAll(name, "_", "-"); dash != name {
+		if p, hit := mdiPaths[dash]; hit {
+			return mdiSVG(p), true
+		}
+	}
+	return nil, false
 }
 
-// List 返回全部图标名（去掉 .svg 后缀、排序）。
+// List 返回全部图标名（内嵌 Material 子集 + MDI 全集，去掉 .svg 后缀、排序）。
 func List() []string {
 	entries, err := fs.ReadDir(FS, ".")
 	if err != nil {
 		return nil
 	}
-	out := make([]string, 0, len(entries))
+	seen := make(map[string]struct{}, len(entries)+len(mdiPaths))
+	out := make([]string, 0, len(entries)+len(mdiPaths))
 	for _, e := range entries {
 		n := strings.TrimSuffix(e.Name(), ".svg")
 		if n != "" && n != e.Name() {
+			seen[n] = struct{}{}
+			out = append(out, n)
+		}
+	}
+	for n := range mdiPaths {
+		if _, dup := seen[n]; !dup {
 			out = append(out, n)
 		}
 	}

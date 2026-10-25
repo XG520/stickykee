@@ -2,13 +2,14 @@
   <div
     ref="wrapRef"
     class="ve-wrap"
+    :data-layer="designLayer"
     tabindex="-1"
     @pointerdown.capture="onPointerDown"
     @pointermove.capture="onHoverMove"
     @dblclick="onDblClick"
     @keydown.capture="onKey"
   >
-    <!-- 顶部工具：撤销/重做/帮助 -->
+    <!-- 顶部工具：撤销/重做/选中元素操作（层级+删除）/帮助 -->
     <div class="ve-tools">
       <button class="ve-tbtn" :disabled="!undoStack.length" title="撤销（Ctrl+Z）" @click="undo">
         <span class="material-symbols-outlined">undo</span>
@@ -16,24 +17,72 @@
       <button class="ve-tbtn" :disabled="!redoStack.length" title="重做（Ctrl+Shift+Z）" @click="redo">
         <span class="material-symbols-outlined">redo</span>
       </button>
+      <template v-if="selectedVid && !selIsSurface">
+        <span class="ve-tools-divider"></span>
+        <button class="ve-tbtn" title="置于最上层" @click="layerOp(selectedVid, 'front')">
+          <span class="material-symbols-outlined">vertical_align_top</span>
+        </button>
+        <button class="ve-tbtn" title="上移一层" @click="layerOp(selectedVid, 'up')">
+          <span class="material-symbols-outlined">arrow_upward</span>
+        </button>
+        <button class="ve-tbtn" title="下移一层" @click="layerOp(selectedVid, 'down')">
+          <span class="material-symbols-outlined">arrow_downward</span>
+        </button>
+        <button class="ve-tbtn" title="置于最下层" @click="layerOp(selectedVid, 'back')">
+          <span class="material-symbols-outlined">vertical_align_bottom</span>
+        </button>
+        <button class="ve-tbtn ve-tbtn-del" title="删除该模型（Delete 键同效）" @click="deleteElement">
+          <span class="material-symbols-outlined">delete</span>
+        </button>
+      </template>
       <span class="ve-tools-divider"></span>
+      <button class="ve-tbtn" :class="{ on: designLayer === 'pop' }" :title="designLayer === 'pop' ? '返回卡片层设计' : '设计弹窗层（先插入「弹窗层」模型）'" @click="toggleDesignLayer">
+        <span class="material-symbols-outlined">{{ designLayer === 'pop' ? 'flip_to_front' : 'web_asset' }}</span>
+      </button>
+      <button class="ve-tbtn ve-tbtn-add" title="添加模型" @click.stop="toggleAddPop">
+        <span class="material-symbols-outlined">add_box</span>
+      </button>
       <button class="ve-tbtn" title="使用帮助" @click="showHint = !showHint">
         <span class="material-symbols-outlined">help</span>
       </button>
     </div>
 
+    <!-- 添加模型弹层：模型库（点按插入到卡片中央，可连续添加） -->
+    <Teleport to="body">
+      <div v-if="addPop" class="ve-addpop-mask" @pointerdown="addPop = false">
+        <div class="ve-addpop" :style="addPopStyle" @pointerdown.stop>
+          <div v-for="g in WIDGET_GROUPS" :key="g.key" class="ve-addpop-group">
+            <p class="ve-addpop-gtitle">{{ g.label }}</p>
+            <div class="ve-addpop-grid">
+              <button
+                v-for="w in defsOf(g.key)"
+                :key="w.key"
+                class="ve-addpop-item"
+                :title="'添加：' + w.label"
+                @click="insertFromPop(w)"
+              >
+                <span class="material-symbols-outlined">{{ w.icon }}</span>
+                <em>{{ w.label }}</em>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
     <Transition name="ve-hint">
       <div v-if="showHint" class="ve-hint-card">
         <p><b>图形设计模式</b>（不会调用任何真实设备操作）</p>
         <ul>
-          <li><span class="material-symbols-outlined">add_box</span>右侧「组件」页可从组件库插入文字/图标/形状/数据控件（鼠标可直接拖入画布）</li>
-          <li><span class="material-symbols-outlined">ads_click</span>点击元素选中，再次点击内层元素可精确选择</li>
-          <li><span class="material-symbols-outlined">open_with</span>按住元素直接拖动，边缘会出参考线并自动吸附（按住 Alt 临时关闭吸附）</li>
+          <li><span class="material-symbols-outlined">add_box</span>顶部「添加模型」按钮或右侧「模型库」页可插入文字/图标/图片/背景/数据模型（右侧支持鼠标拖入画布）</li>
+          <li><span class="material-symbols-outlined">web_asset</span>「弹窗层」模型运行时默认隐藏，用「弹窗按钮」打开；工具条 web_asset 图标切换卡片层/弹窗层设计</li>
+          <li><span class="material-symbols-outlined">ads_click</span>点击模型选中，再次点击内层模型可精确选择</li>
+          <li><span class="material-symbols-outlined">open_with</span>按住模型直接拖动，边缘会出参考线并自动吸附（按住 Alt 临时关闭吸附）</li>
           <li><span class="material-symbols-outlined">keyboard</span>选中后方向键微调 1px，Shift+方向键 10px</li>
           <li><span class="material-symbols-outlined">aspect_ratio</span>拖动选中框上的 8 个方块柄可改尺寸（Shift 等比）</li>
           <li><span class="material-symbols-outlined">stylus</span>双击文字直接改内容；双击图标换图标</li>
-          <li><span class="material-symbols-outlined">tune</span>选中后用下方属性条调色/字号/圆角，以及上下移动层级</li>
-          <li><span class="material-symbols-outlined">layers</span>右侧「图层」页可查看元素树、点击选中、拖动行调整同一容器内的顺序</li>
+          <li><span class="material-symbols-outlined">tune</span>选中后用右侧属性条调色/字号/圆角；顶部工具条可添加模型、调层级与删除模型</li>
+          <li><span class="material-symbols-outlined">layers</span>右侧「图层」页可查看模型树、点击选中、拖动行调整同一容器内的顺序</li>
           <li><span class="material-symbols-outlined">code</span>所有改动会同步写入右侧 HTML 代码，可随时切回代码微调</li>
         </ul>
         <button class="ve-hint-close" @click="showHint = false">我知道了</button>
@@ -62,7 +111,7 @@
       <div v-if="!hasTemplate" class="ve-needentity">
         <span class="material-symbols-outlined ve-ne-icon">link_off</span>
         <p v-if="needEntity">这张卡需要先绑定一个 Home Assistant 实体才能设计布局</p>
-        <p v-else>当前卡片没有可编辑的元素</p>
+        <p v-else>当前卡片没有可编辑的模型</p>
         <button v-if="needEntity" class="ve-ne-btn" @click="$emit('change-entity')">
           <span class="material-symbols-outlined">add_link</span>选择实体
         </button>
@@ -136,6 +185,20 @@
           <button v-if="selIsIcon" class="ve-chip ve-chip-accent" @click="openIconFromBar">
             <span class="material-symbols-outlined">progress</span>换图标
           </button>
+          <!-- 图片地址：输入即预览，回车/失焦提交 -->
+          <label v-if="selIsImg" class="ve-text-row" title="图片地址（URL 或 data URI）">
+            <span class="material-symbols-outlined">image</span>
+            <input
+              type="text"
+              :value="barImgVal"
+              placeholder="输入图片地址…"
+              spellcheck="false"
+              @input="applyBarImg($event.target.value)"
+              @keydown.enter.prevent="commitBarImg"
+              @keydown.esc.prevent="refreshBarImg()"
+              @blur="commitBarImg"
+            />
+          </label>
 
           <span v-if="selIsText" class="ve-sep"></span>
           <!-- 文字颜色 -->
@@ -183,31 +246,14 @@
 
           <span class="ve-sep"></span>
           <!-- 位置复位 -->
-          <button class="ve-chip" :disabled="!selVals.hasPos" title="恢复元素在布局中的原始位置与尺寸" @click="resetPosition">
+          <button class="ve-chip" :disabled="!selVals.hasPos" title="恢复模型在布局中的原始位置与尺寸" @click="resetPosition">
             <span class="material-symbols-outlined">center_focus_strong</span>复位位置/尺寸
           </button>
-          <span class="ve-sep"></span>
-          <!-- 层级顺序（同父容器内，以 DOM 顺序为准） -->
-          <button class="ve-chip ve-chip-mini" :disabled="selIsSurface" title="置于最上层" @click="layerOp(selectedVid, 'front')">
-            <span class="material-symbols-outlined">vertical_align_top</span>
-          </button>
-          <button class="ve-chip ve-chip-mini" :disabled="selIsSurface" title="上移一层" @click="layerOp(selectedVid, 'up')">
-            <span class="material-symbols-outlined">arrow_upward</span>
-          </button>
-          <button class="ve-chip ve-chip-mini" :disabled="selIsSurface" title="下移一层" @click="layerOp(selectedVid, 'down')">
-            <span class="material-symbols-outlined">arrow_downward</span>
-          </button>
-          <button class="ve-chip ve-chip-mini" :disabled="selIsSurface" title="置于最下层" @click="layerOp(selectedVid, 'back')">
-            <span class="material-symbols-outlined">vertical_align_bottom</span>
-          </button>
-          <!-- 删除 -->
-          <button v-if="!selIsSurface" class="ve-chip ve-chip-danger" title="删除该元素" @click="deleteElement">
-            <span class="material-symbols-outlined">delete</span>删除
-          </button>
+          <!-- 层级调整与删除在顶部工具条（选中模型时出现） -->
         </div>
         <p class="ve-bar-hint">
           <span class="material-symbols-outlined">tips_and_updates</span>
-          拖动元素可自动吸附对齐（按住 Alt 临时关闭）；方向键微调 1px，Shift+方向键 10px；拖动选中框上的方块柄改尺寸
+          拖动模型可自动吸附对齐（按住 Alt 临时关闭）；方向键微调 1px，Shift+方向键 10px；拖动选中框上的方块柄改尺寸
         </p>
       </div>
     </Transition>
@@ -293,7 +339,7 @@
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import CodeCard from './CodeCard.vue'
 import { cardDefaults, computeData, renderTemplate } from './defaults'
-import { widgetDef, widgetHtml } from './widgets'
+import { widgetDef, widgetHtml, WIDGET_DEFS, WIDGET_GROUPS } from './widgets'
 import { useEntities } from '@/composables/useLive'
 import { entityStates } from '@/store'
 import { iconUrl } from '@/utils/hcIcons'
@@ -981,6 +1027,32 @@ function revertBarText() {
   barTextRef.value?.blur()
 }
 
+// ---- 图片元素：地址编辑（与文字输入一致：input 改运行时预览，回车/失焦提交落 doc 层） ----
+const barImgVal = ref('')
+const selIsImg = computed(() => {
+  if (!selectedVid.value) return false
+  const el = docEl(selectedVid.value)
+  return !!el && el.tagName === 'IMG'
+})
+function refreshBarImg() {
+  const dEl = selectedVid.value ? docEl(selectedVid.value) : null
+  barImgVal.value = dEl && dEl.tagName === 'IMG' ? (dEl.getAttribute('src') || '') : ''
+}
+function applyBarImg(v) {
+  barImgVal.value = v
+  const el = selRuntime()
+  if (el && el.tagName === 'IMG') el.src = v
+}
+function commitBarImg() {
+  const dEl = selectedVid.value ? docEl(selectedVid.value) : null
+  if (!dEl || dEl.tagName !== 'IMG') return
+  const v = barImgVal.value.trim()
+  if (v === (dEl.getAttribute('src') || '')) return
+  pushHistory()
+  dEl.setAttribute('src', v)
+  emitHtml()
+}
+
 // ---- 图标 ----
 const iconPop = reactive({ open: false, vid: '' })
 const iconQuery = ref('')
@@ -1083,6 +1155,7 @@ function rgbToHex(v) {
 }
 function readSelVals() {
   refreshBarText()
+  refreshBarImg()
   const el = selRuntime()
   if (!el) return
   const cs = getComputedStyle(el)
@@ -1132,6 +1205,8 @@ function deleteElement() {
   dEl.remove()
   selectedVid.value = ''
   emitHtml()
+  // 删掉了弹窗层本身时退回卡片层，避免停在空弹窗层视图
+  if (designLayer.value === 'pop' && !docBox()?.querySelector?.('.hc-pop')) designLayer.value = 'card'
 }
 function openIconFromBar() {
   const el = selRuntime()
@@ -1262,7 +1337,8 @@ function onKey(e) {
   }
 }
 
-const showHint = ref(true)
+// 使用帮助默认隐藏（不再每次自动弹出）；用户点 ? 可随时打开
+const showHint = ref(false)
 
 // ================= 元素代码编辑（暴露给 CardEditor 的「元素代码」视图） =================
 // 只读：返回当前选中元素的 outerHTML
@@ -1292,6 +1368,26 @@ function applyElementHtml(html) {
   const newEl = roots[0]
   newEl.setAttribute('data-vid', selectedVid.value)
   tel.replaceWith(newEl)
+  emitHtml()
+  return ''
+}
+// ================= 元素内联样式（CSS）编辑 =================
+// 读取选中元素的 style 属性文本（无则空串）
+function getElementCss() {
+  const tel = docEl(selectedVid.value)
+  return tel ? (tel.getAttribute('style') || '') : ''
+}
+// 应用 CSS 文本到选中元素的内联 style。css 为 "k:v; k:v" 形式；非法规则忽略。返回错误信息或空串
+function applyElementCss(css) {
+  const tel = docEl(selectedVid.value)
+  if (!tel) return '未选中可编辑的元素'
+  pushHistory()
+  const s = String(css || '').trim()
+  if (!s) { tel.removeAttribute('style'); emitHtml(); return '' }
+  // 用临时元素解析 style 文本，合法化后写回（浏览器自动丢弃非法声明）
+  const tmp = document.createElement('div')
+  tmp.setAttribute('style', s)
+  tel.setAttribute('style', tmp.getAttribute('style') || '')
   emitHtml()
   return ''
 }
@@ -1329,6 +1425,31 @@ function designPoint(clientX, clientY, w, h) {
     y: Math.max(0, Math.min((clientY - cb.top) / k, maxY)),
   }
 }
+// ---- 添加模型弹层（顶部工具条 add_box 按钮）：点按插入卡片中央，可连续添加 ----
+const addPop = ref(false)
+// ---- 卡片层 / 弹窗层设计切换：弹窗层（.hc-pop）运行时默认隐藏，切层后由 CSS 强制显示以编辑内容 ----
+const designLayer = ref('card')
+function toggleDesignLayer() {
+  designLayer.value = designLayer.value === 'pop' ? 'card' : 'pop'
+  selectedVid.value = '' // 切层清空选中，避免误编辑另一层的隐藏模型
+}
+const addPopPos = reactive({ left: 8, top: 40 })
+const addPopStyle = computed(() => ({ left: addPopPos.left + 'px', top: addPopPos.top + 'px' }))
+function defsOf(group) { return WIDGET_DEFS.filter((w) => w.group === group) }
+function toggleAddPop(e) {
+  addPop.value = !addPop.value
+  if (addPop.value) {
+    const r = e?.currentTarget?.getBoundingClientRect?.()
+    if (r) {
+      addPopPos.left = Math.max(4, Math.min(r.left, window.innerWidth - 260))
+      addPopPos.top = r.bottom + 6
+    }
+  }
+}
+function insertFromPop(def) {
+  insertWidget(def.key, null) // 弹层保持打开，便于连续添加
+}
+
 // 插入控件；at 为空时落到卡片中央（触摸端点按的主路径），连续插入按 8px 级联错开
 function insertWidget(key, at) {
   if (!hasTemplate.value || !docBox().firstElementChild) return 'no-template'
@@ -1352,11 +1473,50 @@ function insertWidget(key, at) {
       y: Math.max(0, (effH.value * baseCell - def.h) / 2 + off),
     }
   }
-  const host = docBox().firstElementChild
+  const surface = docBox().firstElementChild
+  let host = surface
+  // 弹窗层设计模式下，普通模型插入到弹窗内容容器里（弹窗层/背景层除外）
+  if (designLayer.value === 'pop' && !def.bg && !def.pop) {
+    host = surface.querySelector('.hc-pop .hc-pop-inner') || surface.querySelector('.hc-pop') || surface
+  }
   node.setAttribute('data-vid', newVid())
   rawSet(node, 'position', 'absolute')
-  rawSet(node, 'left', round2(p.x) + 'px')
-  rawSet(node, 'top', round2(p.y) + 'px')
+  // 背景层模型：铺满整卡、置于最底层（DOM 最前 + z-index 0）
+  if (def.bg) {
+    rawSet(node, 'left', '0')
+    rawSet(node, 'top', '0')
+    rawSet(node, 'width', '100%')
+    rawSet(node, 'height', '100%')
+    rawSet(node, 'z-index', '0')
+    pushHistory()
+    host.prepend(node)
+    selectedVid.value = node.getAttribute('data-vid')
+    emitHtml()
+    return ''
+  }
+  // 弹窗层模型：铺满整卡（自身 inset:0 已铺满）、置于最上层（DOM 最后），插入后直接切到弹窗层继续设计
+  if (def.pop) {
+    pushHistory()
+    surface.append(node)
+    selectedVid.value = node.getAttribute('data-vid')
+    emitHtml()
+    designLayer.value = 'pop'
+    return ''
+  }
+  // 插入宿主不是卡片根时（弹窗层内），落点坐标扣除宿主相对卡片包含块的偏移
+  let ox = 0
+  let oy = 0
+  if (host !== surface) {
+    const cb = cbOrigin()
+    const k = K()
+    if (cb) {
+      const r = host.getBoundingClientRect()
+      ox = (r.left - cb.left) / k
+      oy = (r.top - cb.top) / k
+    }
+  }
+  rawSet(node, 'left', round2(Math.max(0, p.x - ox)) + 'px')
+  rawSet(node, 'top', round2(Math.max(0, p.y - oy)) + 'px')
   rawSet(node, 'width', def.w + 'px')
   rawSet(node, 'height', def.h + 'px')
   // 容器里已有内联 z-index（历史拖拽会写 6）时取最大值 +1，确保新控件落在最上层
@@ -1379,6 +1539,10 @@ function widgetDropRect(key, clientX, clientY) {
   if (!def || !cb || !hasTemplate.value) return { inside: false }
   const k = K()
   const inside = clientX >= cb.left && clientX <= cb.right && clientY >= cb.top && clientY <= cb.bottom
+  // 背景层/弹窗层预览框 = 整卡矩形
+  if (def.bg || def.pop) {
+    return { inside, rect: { left: cb.left, top: cb.top, width: effW.value * baseCell * k, height: effH.value * baseCell * k } }
+  }
   const p = designPoint(clientX, clientY, def.w, def.h)
   return {
     inside,
@@ -1531,7 +1695,7 @@ function getLayerTree() {
   const walk = (el, depth) => {
     if (out.length >= 160) return
     const vid = el.getAttribute('data-vid')
-    if (vid) out.push({ vid, depth, tag: el.tagName.toLowerCase(), name: layerName(el), isSurface: el === host })
+    if (vid) out.push({ vid, depth, tag: el.tagName.toLowerCase(), name: layerName(el), isSurface: el === host, isPop: el.classList.contains('hc-pop') })
     ;[...el.children].forEach((c) => walk(c, depth + 1))
   }
   walk(host, 0)
@@ -1581,12 +1745,15 @@ defineExpose({
   getElementHtml,
   getSelectedDescriptor,
   applyElementHtml,
+  getElementCss,
+  applyElementCss,
   insertWidget,
   widgetDropRect,
   getLayerTree,
   layerOp,
   reorderLayer,
   selectVid,
+  deleteElement,
 })
 
 onBeforeUnmount(() => {
@@ -1627,12 +1794,11 @@ onBeforeUnmount(() => {
   top: 0;
   left: 0;
   transform-origin: top left;
-  background: rgb(var(--c-surface));
-  border-radius: 12px;
-  overflow: hidden;
+  /* 与真实 .hc-card-holder 一致：不自带背景/圆角/阴影，视觉完全交给卡片壳
+     （.hc{overflow:hidden; border-radius}）。否则容器底色会在卡片圆角外透出一圈浅色边 */
+  border-radius: 14px;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.07);
 }
 .ve-wrap :deep(.hc-code-card) { position: relative; }
 .ve-wrap :deep(.hc-code-card [data-vid]) { cursor: move; }
@@ -1644,8 +1810,8 @@ onBeforeUnmount(() => {
 }
 .ve-wrap :deep(.ve-on) {
   outline: 2px solid #f5a623 !important;
-  outline-offset: -1px;
-  box-shadow: 0 0 0 4px rgba(245, 166, 35, 0.16) !important;
+  outline-offset: -2px;
+  box-shadow: inset 0 0 0 1px rgba(245, 166, 35, 0.35) !important;
 }
 .ve-tag {
   position: absolute;
@@ -1690,7 +1856,45 @@ onBeforeUnmount(() => {
   transition: background 0.15s, color 0.15s;
 }
 .ve-tbtn:hover:not(:disabled) { background: rgba(245, 166, 35, 0.14); color: #f5a623; }
+.ve-tbtn.on { background: rgba(245, 166, 35, 0.18); color: #f5a623; }
+
+/* 弹窗层设计模式：强制显示弹窗（运行时由 CodeCard 的 .hc-pop 规则隐藏），背板之下透出卡片本体 */
+.ve-wrap[data-layer='pop'] :deep(.hc-pop) { display: flex !important; }
+.ve-tbtn-del:hover:not(:disabled) { background: rgba(232, 93, 76, 0.16); color: #f09185; }
 .ve-tbtn:disabled { opacity: 0.32; cursor: default; }
+
+/* 添加模型弹层 */
+.ve-addpop-mask { position: fixed; inset: 0; z-index: 2147483000; }
+.ve-addpop {
+  position: fixed;
+  width: 252px;
+  max-height: 60vh;
+  overflow-y: auto;
+  background: #222327;
+  border: 1px solid #35363b;
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  padding: 8px 10px 10px;
+}
+.ve-addpop-gtitle { margin: 6px 0 4px; font-size: 10px; font-weight: 700; color: #8a8986; letter-spacing: 0.06em; }
+.ve-addpop-group:first-child .ve-addpop-gtitle { margin-top: 0; }
+.ve-addpop-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.ve-addpop-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 7px 2px 6px;
+  border: 1px solid #2e2f33;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  color: #d8d6cf;
+  cursor: pointer;
+}
+.ve-addpop-item .material-symbols-outlined { font-size: 18px; color: #8a8986; }
+.ve-addpop-item em { font-style: normal; font-size: 10px; white-space: nowrap; }
+.ve-addpop-item:hover { border-color: rgba(245, 166, 35, 0.45); background: rgba(245, 166, 35, 0.1); }
+.ve-addpop-item:hover .material-symbols-outlined { color: #f5a623; }
 .ve-tbtn .material-symbols-outlined { font-size: 17px; }
 .ve-tools-divider { width: 1px; height: 18px; background: #2e2f33; margin: 0 2px; }
 

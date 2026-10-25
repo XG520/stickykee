@@ -17,6 +17,7 @@ import (
 	"stickynuo/server/internal/api"
 	"stickynuo/server/internal/auth"
 	"stickynuo/server/internal/config"
+	"stickynuo/server/internal/diag"
 	"stickynuo/server/internal/ha"
 	"stickynuo/server/internal/hub"
 	"stickynuo/server/internal/icons"
@@ -38,6 +39,10 @@ func main() {
 	urepo := store.NewUserRepo(db.DB())
 	uprefs := store.NewUserPrefs(db.DB())
 	mrepo := store.NewMessageRepo(db.DB())
+	iconRepo := store.NewIconRepo(db.DB())
+	// 运行日志持久化：注册 slog 写入器（保留 30 天由 API 层定时清理）
+	logRepo := store.NewLogRepo(db.DB())
+	diag.SetSink(logRepo.Append)
 	hb := hub.New(slog.Default())
 
 	// 可选：注入种子实例
@@ -54,7 +59,7 @@ func main() {
 	manager := ha.NewManager(repo, uprefs, hb, slog.Default(), cfg.TLSInsecure)
 	// 聊天图片与数据库同级存放：<data>/uploads/im/
 	uploadDir := filepath.Join(filepath.Dir(cfg.DBPath), "uploads")
-	handler := api.Router(repo, urepo, uprefs, mrepo, hb, manager, auth.Option{
+	handler := api.Router(repo, urepo, uprefs, mrepo, logRepo, iconRepo, hb, manager, auth.Option{
 		Authenticate: func(token string) (auth.Identity, bool) {
 			u, isAdmin, ok := urepo.IdentityByToken(context.Background(), token)
 			return auth.Identity{Username: u, IsAdmin: isAdmin}, ok
@@ -106,7 +111,9 @@ func setupLogger(level string) {
 	default:
 		l = slog.LevelInfo
 	}
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: l})))
+	// 原样输出到 stdout，同时在 AI 诊断会话开启时把日志送入诊断收集器。
+	base := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: l})
+	slog.SetDefault(slog.New(diag.NewCaptureHandler(base)))
 }
 
 // withSPA 把前端静态目录挂到 API 路由之外：请求命中真实文件则直接返回

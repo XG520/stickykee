@@ -472,9 +472,8 @@
       :card="editingCard"
       :cell-size="cellSize"
       :cols="cols"
-      @close="editorOpen = false"
+      @close="onEditorClose"
       @save="onEditorSave"
-      @design="onGoDesigner"
     />
 
     <!-- 导入文件选择 -->
@@ -513,7 +512,6 @@
 
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, onUpdated, onActivated, onDeactivated, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
 import { ui, entityStates, entityList, registryDevices, loadRegistry, haTokenConfigured, haTokenKnown, auth, openDeviceDrawer, dashboardRev } from '@/store'
 import { useEntities } from '@/composables/useLive'
 import { useAutoHide } from '@/composables/useAutoHide'
@@ -634,9 +632,18 @@ const tabsEl = ref(null)
 // ---- 卡片工作室（独立组件：实时预览 + 代码编辑，内部维护草稿） ----
 const editorOpen = ref(false)
 const editingCard = ref(null)
+// 设计态新建的自定义卡：尚未入库，保存时才落到仪表盘；取消则丢弃
+const designingNewCard = ref(null)
 function openEditor(card) {
   editingCard.value = card
   editorOpen.value = true
+}
+// 「自定义卡」= 卡片设计功能：不往仪表盘塞占位卡，直接开设计界面（自动进图形设计模式）
+function openCustomDesigner() {
+  const card = newCard('custom', { entity_id: '' })
+  card._autoDesign = true
+  designingNewCard.value = card
+  openEditor(card)
 }
 // 新增卡片时预选实体用：按卡片类型的 entityDomains 过滤（null 表示任意域）
 function entityOptionsFor(type) {
@@ -647,6 +654,13 @@ function entityOptionsFor(type) {
     .sort((a, b) => a.label.localeCompare(b.label, 'zh'))
 }
 function onEditorSave(p) {
+  // 设计态新建的自定义卡：首次保存时才落到仪表盘
+  if (designingNewCard.value && designingNewCard.value.uid === p.uid) {
+    const fresh = { ...designingNewCard.value }
+    delete fresh._autoDesign
+    cards.value.push(fresh)
+    designingNewCard.value = null
+  }
   const c = cards.value.find((x) => x.uid === p.uid)
   if (!c) return
   c.w = p.w
@@ -658,8 +672,9 @@ function onEditorSave(p) {
     // 多实体卡（通用卡/人员位置卡/实体组卡）：保存完整列表，entity_id 同步为首项
     c.entity_ids = Array.isArray(p.entity_ids) ? [...p.entity_ids] : []
     c.entity_id = c.entity_ids[0] || ''
-  } else if (meta(c.type).needEntity) {
-    c.entity_id = p.entity_id
+  } else if (meta(c.type).needEntity || meta(c.type).entityOptional) {
+    // 可选实体（自定义 / 天气 / 开关等）同样需要持久化绑定，否则保存后 AI 卡又变回「不绑定实体」
+    c.entity_id = p.entity_id || ''
   }
   // 人员信息卡：扩展绑定槽位（顶部状态跑马灯 / 中部循环翻动 / 底部滚动轮播）
   if (c.type === 'personInfo') {
@@ -676,16 +691,17 @@ function onEditorSave(p) {
   c.entitySlotMap = p.entitySlotMap && Object.keys(p.entitySlotMap).length
     ? JSON.parse(JSON.stringify(p.entitySlotMap))
     : {}
+  // 逻辑规则列表（低代码交互：如果…就…否则…，作用于卡内 [data-vid] 元素）
+  c.rules = Array.isArray(p.rules) ? JSON.parse(JSON.stringify(p.rules)) : []
   editorOpen.value = false
 }
 
-// 编辑器「设计」按钮：先把草稿同步进内存并落库（新建卡此刻才入库），
-// 再带 uid 跳积木设计器——设计器从后端布局读卡片，必能读到最新状态。
-const router = useRouter()
-async function onGoDesigner(p) {
-  onEditorSave(p) // 含 editorOpen.value = false
-  await saveLayout()
-  router.push({ path: '/designer', query: { uid: p.uid } })
+// 关闭编辑器（取消/Esc）：设计态的新自定义卡直接丢弃，不入库
+function onEditorClose() {
+  if (designingNewCard.value && editingCard.value && designingNewCard.value.uid === editingCard.value.uid) {
+    designingNewCard.value = null
+  }
+  editorOpen.value = false
 }
 
 // ---- 网格：列数随宽度变化，卡片自动换行（测量/缩放逻辑共用 useDashGrid）----
@@ -974,6 +990,8 @@ const addGroups = computed(() => {
   return Object.entries(map).map(([name, items]) => ({ name, items }))
 })
 function addCard(opt) {
+  // 自定义卡 = 卡片设计功能：直接开设计界面，不往仪表盘塞占位卡
+  if (opt.type === 'custom') { addPanel.value = false; openCustomDesigner(); return }
   const card = newCard(opt.type, { entity_id: '' })
   // 自动预选该组第一个可用实体，用户可在编辑弹窗里更换（通用卡可继续添加任意数量）
   const opts = entityOptionsFor(opt.type)
@@ -981,8 +999,7 @@ function addCard(opt) {
     card.entity_id = opts[0].id
     if (['generic', 'person', 'group'].includes(opt.type)) card.entity_ids = [opts[0].id]
   }
-  // 自定义卡 / 用户模板：新建后立即打开编辑弹窗，空卡自动跳积木设计器
-  if (opt.type === 'custom') card._autoDesign = true
+  // 用户模板：新建后立即打开编辑弹窗，空卡自动进入图形设计模式
   if (isUserTemplate(opt.type)) card._autoDesign = true
   cards.value.push(card)
   openEditor(card)

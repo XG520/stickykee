@@ -3,11 +3,13 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
 	"stickynuo/server/internal/auth"
 	"stickynuo/server/internal/call"
+	"stickynuo/server/internal/diag"
 	"stickynuo/server/internal/ha"
 	"stickynuo/server/internal/hub"
 	"stickynuo/server/internal/secure"
@@ -21,12 +23,14 @@ import (
 )
 
 // Router 组装全部 HTTP 路由。uploadDir 为聊天图片存储根目录（空串禁用图片功能）。
-func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store.UserPrefs, msgRepo *store.MessageRepo, hb *hub.Hub, manager *ha.Manager, authOpt auth.Option, uploadDir string) http.Handler {
+func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store.UserPrefs, msgRepo *store.MessageRepo, logRepo *store.LogRepo, iconRepo *store.IconRepo, hb *hub.Hub, manager *ha.Manager, authOpt auth.Option, uploadDir string) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	// 诊断开关：无会话时仅为一次原子判断，不做任何日志记录。
+	r.Use(diagRecorder)
 	r.Use(middleware.Timeout(60 * time.Second))
 
 	// 传输压缩：实体全量 JSON 体积最大，gzip 后通常只剩两三成，首屏收益最明显。
@@ -68,7 +72,13 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 	// 账号级生日（存取 + HA 传感器同步）：prefs 写入回调与管理员接口都依赖它
 	birthdays := handler.NewBirthdays(manager, repo, userPrefs, userRepo)
 	prefs := handler.NewPrefs(repo, userPrefs, manager, hb, birthdays)
-	ai := handler.NewAI(userPrefs)
+	ai := handler.NewAI(userPrefs, repo)
+	// AI 诊断：默认关闭；开启后收集日志，到期后台自动生成报告。
+	diagnostics := handler.NewDiagnostics(diag.Default(), ai, userRepo)
+	diagnostics.StartTicker(context.Background())
+	// 运行日志：30 天保留，支持按级别/来源/时间段筛选并交给 AI 分析。
+	logsHandler := handler.NewLogs(logRepo, ai, userRepo)
+	logsHandler.StartRetention(context.Background())
 	users := handler.NewUsers(userRepo, userPrefs, manager)
 	// 语音通话：内存房间 + 事件推送 + 语音帧 WS 中继（8080 媒体中继，不经 P2P）。
 	// push 回调供房间超时清理时向全员推送 ended 事件（如无人接听自动结束）。
@@ -81,7 +91,7 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 	agg := handler.NewAggregate(manager)
 	automation := handler.NewAutomation(manager)
 	devices := handler.NewDevices(repo, userPrefs, manager)
-	registrations := handler.NewRegisteredEntities(manager)
+	registrations := handler.NewRegisteredEntities(manager, iconRepo)
 	sensors := handler.NewSensors(manager, repo, userPrefs)
 	// Location 复用 sensors 的 mobile_app 注册与 webhook 探测能力，使
 	// device_tracker 实体经官方 update_location 命令自动绑定到注册设备。
@@ -154,12 +164,25 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 					r.Get("/logs", agg.Logs)
 					r.Post("/sensors/report", sensors.Report)
 					r.Get("/registry/devices", registrations.List)
+					r.Put("/registry/entities/{entityID}/icon", registrations.UpdateIcon)
 				})
 			})
 			r.Get("/sensors/definitions", sensors.Definitions)
 			r.Get("/prefs", prefs.Get)
 			r.Put("/prefs", prefs.Put)
 			r.Post("/ai/chat", ai.Chat)
+			r.Post("/ai/test", ai.Test)
+			// AI 诊断（handler 内部校验管理员）
+			r.Post("/diagnostics/start", diagnostics.Start)
+			r.Post("/diagnostics/stop", diagnostics.Stop)
+			r.Get("/diagnostics/status", diagnostics.Status)
+			r.Get("/diagnostics/logs", diagnostics.Logs)
+			r.Post("/diagnostics/logs", diagnostics.ClientLogs)
+			r.Get("/diagnostics/report", diagnostics.Report)
+			// 运行日志（handler 内部校验管理员）
+			r.Get("/logs", logsHandler.List)
+			r.Get("/logs/analysis", logsHandler.AnalysisStatus)
+			r.Post("/logs/analysis", logsHandler.AnalysisStart)
 			r.Put("/site-name", prefs.PutSiteName)
 			r.Put("/site-icon", prefs.PutSiteIcon)
 			r.Put("/site-icon/image", prefs.PutSiteIconImage)
@@ -218,4 +241,31 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 	go birthdays.StartTicker(context.Background())
 
 	return r
+}
+
+// diagRecorder 记录 4xx/5xx 与慢请求到运行日志，避免正常请求产生噪声。
+func diagRecorder(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+		start := time.Now()
+		next.ServeHTTP(ww, r)
+		dur := time.Since(start)
+		status := ww.Status()
+		// 只记录失败与慢请求，正常请求不进入日志，避免噪声与无谓写库。
+		if status < 400 && dur <= 1500*time.Millisecond {
+			return
+		}
+		level := "INFO"
+		if status >= 500 {
+			level = "ERROR"
+		} else if status >= 400 {
+			level = "WARN"
+		}
+		msg := fmt.Sprintf("%s %s -> %d (%dms)", r.Method, r.URL.Path, status, dur.Milliseconds())
+		// 持久化日志始终写入；诊断会话开启时再叠加实时日志。
+		diag.Record("http", level, msg)
+		if diag.Default().Active() {
+			diag.Default().AppendServer("http", level, msg)
+		}
+	})
 }

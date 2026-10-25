@@ -59,12 +59,12 @@
               <template v-else-if="banner === 'save-as-tpl'">
                 <span class="material-symbols-outlined ce-banner-icon">bookmark_add</span>
                 <span class="flex items-center gap-2 flex-wrap">
-                  <label class="text-on-surface/85">模板名</label>
+                  <label class="ce-banner-label">模板名</label>
                   <input v-model="tplName" class="ce-input ce-input-sm w-40" maxlength="20" placeholder="我的模板" @keydown.enter="confirmSaveAsTpl" />
-                  <label class="text-on-surface/85">图标</label>
+                  <label class="ce-banner-label">图标</label>
                   <input v-model="tplIcon" class="ce-input ce-input-sm w-28" maxlength="32" placeholder="construction" @keydown.enter="confirmSaveAsTpl" />
-                  <label class="inline-flex items-center gap-1 text-on-surface/85 ml-1">
-                    <input type="checkbox" v-model="tplNeedEntity" class="accent-primary" />
+                  <label class="ce-banner-check ml-1">
+                    <input type="checkbox" v-model="tplNeedEntity" />
                     需要绑定实体
                   </label>
                 </span>
@@ -84,9 +84,28 @@
             </div>
           </Transition>
 
-          <!-- ============ 主体 ============ -->
+          <!-- ============ 主体：左功能栏 / 中画布 / 右面板 ============ -->
           <div class="ce-body">
-            <!-- 左：预览 / 图形设计舞台 -->
+            <!-- 左：功能图标栏（可折叠为纯图标） -->
+            <aside class="ce-funcbar" :class="{ folded: funcFolded }">
+              <button
+                v-for="f in FUNC_ITEMS"
+                :key="f.key"
+                class="ce-func-btn"
+                :class="{ on: !funcFolded && funcKey === f.key }"
+                :title="f.label"
+                @click="selectFunc(f.key)"
+              >
+                <span class="material-symbols-outlined">{{ f.icon }}</span>
+                <span v-if="!funcFolded" class="ce-func-label">{{ f.label }}</span>
+              </button>
+              <span class="ce-spacer"></span>
+              <button class="ce-func-btn ce-func-fold" :title="funcFolded ? '展开功能栏' : '折叠功能栏'" @click="funcFolded = !funcFolded">
+                <span class="material-symbols-outlined">{{ funcFolded ? 'chevron_right' : 'chevron_left' }}</span>
+              </button>
+            </aside>
+
+            <!-- 中：预览 / 图形设计舞台 -->
             <section class="ce-preview-col">
               <div class="ce-preview-head">
                 <div class="ce-mode">
@@ -130,10 +149,11 @@
               </div>
             </section>
 
-            <!-- 右：配置 + 代码 -->
-            <section class="ce-edit-col">
-              <!-- 配置区 -->
-              <div class="ce-config">
+            <!-- 右：功能面板（随左栏选择切换） -->
+            <aside class="ce-panel-col">
+              <!-- 卡片设置：实体 / 标题 / 尺寸 / 图标 / 头像 -->
+              <div v-show="funcKey === 'settings'" class="ce-panel-page ce-panel-scroll">
+                <div class="ce-config">
                 <div v-if="meta.needEntity || meta.entityOptional" class="ce-field ce-field-entity" ref="entityWrapRef">
                   <label class="ce-label">
                     绑定实体
@@ -444,97 +464,81 @@
                     </div>
                   </div>
                 </div>
-              </div>
-
-              <!-- 设计模式：元素属性 / 组件库 / 图层 / 代码编辑 视图切换（属性面板默认占满代码区） -->
-              <div v-if="designMode" class="ce-viewswitch" role="tablist">
-                <button
-                  role="tab"
-                  class="ce-vs-btn"
-                  :class="{ on: rightView === 'props' }"
-                  title="选中元素的样式与层级"
-                  @click="rightView = 'props'"
-                >
-                  <span class="material-symbols-outlined">tune</span>属性
-                </button>
-                <button
-                  role="tab"
-                  class="ce-vs-btn"
-                  :class="{ on: rightView === 'widgets' }"
-                  title="从组件库插入新控件（鼠标可直接拖到画布）"
-                  @click="rightView = 'widgets'"
-                >
-                  <span class="material-symbols-outlined">add_box</span>组件
-                </button>
-                <button
-                  role="tab"
-                  class="ce-vs-btn"
-                  :class="{ on: rightView === 'layers' }"
-                  title="元素树与同容器内的顺序调整"
-                  @click="rightView = 'layers'"
-                >
-                  <span class="material-symbols-outlined">layers</span>图层
-                </button>
-                <button
-                  role="tab"
-                  class="ce-vs-btn"
-                  :class="{ on: rightView === 'code' }"
-                  @click="rightView = 'code'"
-                >
-                  <span class="material-symbols-outlined">code</span>代码
-                </button>
-                <button
-                  role="tab"
-                  class="ce-vs-btn"
-                  :class="{ on: rightView === 'elcode' }"
-                  :disabled="!elVid"
-                  title="只显示并编辑选中元素的 HTML 代码"
-                  @click="openElCodeView"
-                >
-                  <span class="material-symbols-outlined">data_object</span>元素
-                </button>
-              </div>
-
-              <!-- 语言 Tabs（设计模式下仅代码视图可见） -->
-              <div v-show="!designMode || rightView === 'code'" class="ce-tabs" role="tablist">
-                <button
-                  v-for="t in langTabs"
-                  :key="t.key"
-                  role="tab"
-                  class="ce-tab"
-                  :class="{ on: tab === t.key }"
-                  @click="switchTab(t.key)"
-                >
-                  <i class="ce-lang-dot" :class="'dot-' + t.key"></i>
-                  {{ t.label }}
-                  <span class="ce-tab-len">{{ codeOf(t.key).split('\n').length }}</span>
-                </button>
-                <span class="ce-spacer"></span>
-                <span class="ce-tab-hint"><kbd class="ce-kbd">Ctrl</kbd>+<kbd class="ce-kbd">1~3</kbd> 切换</span>
-              </div>
-
-              <!-- 元素属性面板：设计模式下覆盖代码区位置（VisualStage 通过 Teleport 注入选中元素的编辑项） -->
-              <div v-show="designMode && rightView === 'props'" ref="designPanelRef" class="ce-design-panel">
-                <div class="ce-dp-placeholder">
-                  <span class="material-symbols-outlined">ads_click</span>
-                  <p class="ce-dp-title">在左侧预览中点选一个元素</p>
-                  <ul class="ce-dp-guides">
-                    <li><span class="material-symbols-outlined">open_with</span>按住元素拖动，边缘吸附并显示参考线</li>
-                    <li><span class="material-symbols-outlined">aspect_ratio</span>拖选中框上的方块柄改尺寸</li>
-                    <li><span class="material-symbols-outlined">stylus</span>双击文字直接改内容</li>
-                    <li><span class="material-symbols-outlined">progress</span>双击图标即可更换</li>
-                    <li><span class="material-symbols-outlined">tune</span>选中后在此调整颜色、字号、圆角与层级</li>
-                  </ul>
                 </div>
               </div>
 
-              <!-- 组件库：点按插入（触摸主路径），鼠标可直接拖到左侧画布落点插入 -->
-              <div v-show="designMode && rightView === 'widgets'" class="ce-palette">
-                <p class="ce-pal-tip">
+              <!-- 元素：选中元素的属性面板（VisualStage 注入） + 元素代码 -->
+              <div v-show="funcKey === 'element'" class="ce-panel-page ce-panel-col-flex">
+                <div v-if="!designMode" class="ce-panel-tipbox">
                   <span class="material-symbols-outlined">info</span>
-                  点按插入到卡片中央；鼠标可按住拖到画布上指定位置（插入后自动选中，可在元素属性里微调）
-                </p>
-                <div v-for="g in WIDGET_GROUPS" :key="g.key" class="ce-pal-group">
+                  <p>「模型」在图形设计模式下可用。请切换到中间画布的「设计」模式后点选模型。</p>
+                  <button class="ce-btn ce-primary ce-btn-sm" @click="enterDesign">进入设计模式</button>
+                </div>
+                <template v-else>
+                  <!-- 卡片所有元素列表：点击选中并联动画布/属性面板 -->
+                  <div class="ce-elems">
+                    <p v-if="!layerTree.length" class="ce-ly-empty">当前卡片没有可编辑的模型</p>
+                    <div
+                      v-for="row in layerTree"
+                      :key="row.vid"
+                      class="ce-ly-row"
+                      :class="{ on: row.vid === elVid, surf: row.isSurface }"
+                      :style="{ paddingLeft: 8 + row.depth * 12 + 'px' }"
+                      @click="selectLayer(row)"
+                    >
+                      <span class="material-symbols-outlined ce-ly-ic">{{ layerIcon(row) }}</span>
+                      <em class="ce-ly-name">{{ layerName(row) }}</em>
+                      <i v-if="row.isPop" class="ce-ly-badge">弹窗</i>
+                    </div>
+                  </div>
+                  <!-- 元素属性面板挂载点 -->
+                  <div v-show="rightView === 'props'" ref="designPanelRef" class="ce-design-panel">
+                    <div class="ce-dp-placeholder">
+                      <span class="material-symbols-outlined">ads_click</span>
+                      <p class="ce-dp-title">在上方列表或画布点选一个模型</p>
+                    </div>
+                  </div>
+                  <!-- 选中元素：CSS 样式编辑（内联 style） + HTML 代码 -->
+                  <template v-if="elVid">
+                    <div class="ce-elcss">
+                      <div class="ce-elcss-head">
+                        <span class="material-symbols-outlined">palette</span>
+                        <span class="ce-elcss-title">CSS 样式</span>
+                        <span class="ce-spacer"></span>
+                        <button class="ce-elcss-codebtn" :class="{ on: rightView === 'elcode' }" title="查看/编辑该模型完整 HTML" @click="rightView === 'elcode' ? (rightView = 'props') : openElCodeView()">
+                          <span class="material-symbols-outlined">data_object</span>{{ rightView === 'elcode' ? '收起代码' : '模型代码' }}
+                        </button>
+                        <button class="ce-elcss-codebtn ce-elcss-del" :disabled="elIsSurface" title="删除该模型（画布上按 Delete 键同效）" @click="deleteSelectedEl">
+                          <span class="material-symbols-outlined">delete</span>
+                        </button>
+                      </div>
+                      <textarea
+                        v-show="rightView !== 'elcode'"
+                        class="ce-elcss-ta"
+                        :value="elCss"
+                        placeholder="color:#fff; font-size:14px; border-radius:8px;"
+                        spellcheck="false"
+                        autocomplete="off"
+                        @input="onElCssInput"
+                      ></textarea>
+                    </div>
+                  </template>
+                </template>
+              </div>
+
+              <!-- 组件库（插入元素）：点按插入到卡片中央，鼠标可拖到画布落点 -->
+              <div v-show="funcKey === 'widgets'" class="ce-panel-page ce-panel-col-flex">
+                <div v-if="!designMode" class="ce-panel-tipbox">
+                  <span class="material-symbols-outlined">info</span>
+                  <p>「模型库」在图形设计模式下可用。请切换到中间画布的「设计」模式。</p>
+                  <button class="ce-btn ce-primary ce-btn-sm" @click="enterDesign">进入设计模式</button>
+                </div>
+                <div v-else class="ce-palette">
+                  <p class="ce-pal-tip">
+                    <span class="material-symbols-outlined">info</span>
+                    点按插入到卡片中央；鼠标可按住拖到画布上指定位置（插入后自动选中，可在模型属性里微调）
+                  </p>
+                  <div v-for="g in WIDGET_GROUPS" :key="g.key" class="ce-pal-group">
                   <p class="ce-pal-gtitle">{{ g.label }}</p>
                   <div class="ce-pal-grid">
                     <button
@@ -553,15 +557,22 @@
                 <p v-if="paletteMsg" class="ce-pal-msg" :class="{ err: paletteMsg.err }">
                   <span class="material-symbols-outlined">{{ paletteMsg.err ? 'error' : 'check_circle' }}</span>{{ paletteMsg.text }}
                 </p>
+                </div>
               </div>
 
               <!-- 图层：元素树（点击选中）+ 同容器内顺序调整 -->
-              <div v-show="designMode && rightView === 'layers'" class="ce-layers">
+              <div v-show="funcKey === 'layers'" class="ce-panel-page ce-panel-col-flex">
+                <div v-if="!designMode" class="ce-panel-tipbox">
+                  <span class="material-symbols-outlined">info</span>
+                  <p>「图层」在图形设计模式下可用。请切换到中间画布的「设计」模式。</p>
+                  <button class="ce-btn ce-primary ce-btn-sm" @click="enterDesign">进入设计模式</button>
+                </div>
+                <div v-else class="ce-layers">
                 <p class="ce-pal-tip">
                   <span class="material-symbols-outlined">info</span>
                   以 DOM 顺序为准；鼠标按住行可拖到同容器其它行之间重排
                 </p>
-                <p v-if="!layerTree.length" class="ce-ly-empty">当前卡片没有可编辑的元素</p>
+                <p v-if="!layerTree.length" class="ce-ly-empty">当前卡片没有可编辑的模型</p>
                 <div
                   v-for="(row, i) in layerTree"
                   :key="row.vid"
@@ -572,7 +583,8 @@
                   @pointerdown="onLayerDown($event, i, row)"
                 >
                   <span class="material-symbols-outlined ce-ly-ic">{{ layerIcon(row) }}</span>
-                  <em class="ce-ly-name">{{ row.isSurface ? '卡片根' : row.name }}</em>
+                  <em class="ce-ly-name">{{ layerName(row) }}</em>
+                  <i v-if="row.isPop" class="ce-ly-badge">弹窗</i>
                   <span class="ce-ly-acts" @pointerdown.stop @click.stop>
                     <button title="置于最上层" :disabled="row.isSurface" @click="doLayerOp(row, 'front')"><span class="material-symbols-outlined">vertical_align_top</span></button>
                     <button title="上移一层" :disabled="row.isSurface" @click="doLayerOp(row, 'up')"><span class="material-symbols-outlined">arrow_upward</span></button>
@@ -583,44 +595,134 @@
                 <p v-if="layerMsg" class="ce-pal-msg err">
                   <span class="material-symbols-outlined">error</span>{{ layerMsg }}
                 </p>
+                </div>
               </div>
 
-              <!-- 代码编辑区：行号 + 高亮层 + 透明 textarea -->
-              <div v-show="!designMode || rightView === 'code'" class="ce-code">
-                <div class="ce-gutter" aria-hidden="true">
-                  <div ref="gutterInnerRef" class="ce-gutter-inner">
-                    <div v-for="n in lineCount" :key="n" class="ce-gutter-line">{{ n }}</div>
+              <!-- AI：自然语言生成整卡 HTML / CSS -->
+              <div v-show="funcKey === 'ai'" class="ce-panel-page ce-panel-scroll">
+                <div class="ce-ai">
+                  <p class="ce-pal-tip">
+                    <span class="material-symbols-outlined">info</span>
+                    用自然语言描述想要的卡片，AI 会生成 HTML / CSS 并直接应用到当前卡片，可一键恢复生成前的内容。
+                  </p>
+                  <div class="ce-ai-field">
+                    <label class="ce-label">
+                      使用实体
+                      <span v-if="aiPicked.length" class="ce-label-sub">已选 {{ aiPicked.length }}</span>
+                    </label>
+                    <input v-model="aiEntityFilter" class="ce-ai-input" placeholder="搜索实体名称或 entity_id…" />
+                    <div class="ce-ai-entities">
+                      <label
+                        v-for="e in aiEntityRows"
+                        :key="e.id"
+                        class="ce-ai-entity"
+                        :class="{ on: aiPicked.includes(e.id) }"
+                      >
+                        <input v-model="aiPicked" type="checkbox" :value="e.id" />
+                        <span class="ce-ai-en-name">{{ e.name }}</span>
+                        <span class="ce-ai-en-id">{{ e.id }}</span>
+                      </label>
+                      <p v-if="!aiEntityRows.length" class="ce-ai-empty">
+                        {{ aiEntityFilter ? '没有匹配的实体' : '暂无可用实体（需先连接 Home Assistant）' }}
+                      </p>
+                    </div>
+                    <p class="ce-ai-hint">勾选后生成会自动绑定第 1 个实体，AI 可用的实时占位符也会随之变化。</p>
                   </div>
+                  <div class="ce-ai-field">
+                    <label class="ce-label">描述</label>
+                    <textarea
+                      v-model="aiPrompt"
+                      class="ce-ai-ta"
+                      rows="5"
+                      placeholder="例如：客厅温湿度卡片，大号温度数字，底部显示湿度和更新时间"
+                    ></textarea>
+                  </div>
+                  <div class="ce-ai-sugs">
+                    <button v-for="s in AI_SUGGESTIONS" :key="s" class="ce-ai-sug" @click="aiPrompt = s">{{ s }}</button>
+                  </div>
+                  <label class="ce-ai-check">
+                    <input v-model="aiKeep" type="checkbox" />
+                    以当前卡片为基础修改
+                  </label>
+                  <div class="ce-ai-actions">
+                    <button class="ce-btn ce-primary" :disabled="aiBusy || !aiPrompt.trim()" @click="runAiGenerate">
+                      <span class="material-symbols-outlined" :class="{ 'ce-ai-spin': aiBusy }">{{ aiBusy ? 'progress_activity' : 'auto_awesome' }}</span>
+                      {{ aiBusy ? '生成中…' : '生成卡片' }}
+                    </button>
+                    <button v-if="aiBackup" class="ce-btn ce-ghost" :disabled="aiBusy" @click="restoreAi">恢复生成前</button>
+                  </div>
+                  <p v-if="aiErr" class="ce-pal-msg err">
+                    <span class="material-symbols-outlined">error</span>{{ aiErr }}
+                  </p>
+                  <p v-else-if="aiMsg" class="ce-pal-msg">
+                    <span class="material-symbols-outlined">check_circle</span>{{ aiMsg }}
+                  </p>
+                  <p class="ce-ai-hint">
+                    使用「设置 → AI」中配置的模型（我的配置优先，其次管理员全局配置）。生成会覆盖 HTML / CSS，JS 与规则保持不变。
+                  </p>
                 </div>
-                <div ref="scrollRef" class="ce-code-scroll">
-                  <pre ref="preRef" class="ce-pre" aria-hidden="true"><code v-html="highlighted[tab]"></code></pre>
-                  <textarea
-                    ref="taRef"
-                    class="ce-ta"
-                    :class="{ 'is-composing': composing }"
-                    :value="draft[tab]"
-                    spellcheck="false"
-                    autocapitalize="off"
-                    autocomplete="off"
-                    wrap="off"
-                    :aria-label="currentTab.label + ' 代码'"
-                    @input="onCodeInput"
-                    @scroll="onScroll"
-                    @keydown="onKeydown"
-                    @compositionstart="composing = true"
-                    @compositionend="composing = false"
-                  ></textarea>
+              </div>
+
+              <!-- 逻辑：ESPHome 式规则列表（如果…就…否则…），绑定画布 [data-vid] 元素 -->
+              <div v-show="funcKey === 'logic'" class="ce-panel-page ce-panel-scroll">
+                <LogicPanel :rules="draft.rules" :html="draft.html" />
+              </div>
+
+              <!-- 代码：卡片 HTML / CSS / JS 编辑 -->
+              <div v-show="funcKey === 'code'" class="ce-panel-page ce-panel-col-flex">
+                <div class="ce-tabs" role="tablist">
+                  <button
+                    v-for="t in langTabs"
+                    :key="t.key"
+                    role="tab"
+                    class="ce-tab"
+                    :class="{ on: tab === t.key }"
+                    @click="switchTab(t.key)"
+                  >
+                    <i class="ce-lang-dot" :class="'dot-' + t.key"></i>
+                    {{ t.label }}
+                    <span class="ce-tab-len">{{ codeOf(t.key).split('\n').length }}</span>
+                  </button>
+                  <span class="ce-spacer"></span>
+                  <span class="ce-tab-hint"><kbd class="ce-kbd">Ctrl</kbd>+<kbd class="ce-kbd">1~3</kbd> 切换</span>
+                </div>
+                <!-- 代码编辑区：行号 + 高亮层 + 透明 textarea -->
+                <div class="ce-code">
+                  <div class="ce-gutter" aria-hidden="true">
+                    <div ref="gutterInnerRef" class="ce-gutter-inner">
+                      <div v-for="n in lineCount" :key="n" class="ce-gutter-line">{{ n }}</div>
+                    </div>
+                  </div>
+                  <div ref="scrollRef" class="ce-code-scroll">
+                    <pre ref="preRef" class="ce-pre" aria-hidden="true"><code v-html="highlighted[tab]"></code></pre>
+                    <textarea
+                      ref="taRef"
+                      class="ce-ta"
+                      :class="{ 'is-composing': composing }"
+                      :value="draft[tab]"
+                      spellcheck="false"
+                      autocapitalize="off"
+                      autocomplete="off"
+                      wrap="off"
+                      :aria-label="currentTab.label + ' 代码'"
+                      @input="onCodeInput"
+                      @scroll="onScroll"
+                      @keydown="onKeydown"
+                      @compositionstart="composing = true"
+                      @compositionend="composing = false"
+                    ></textarea>
+                  </div>
                 </div>
               </div>
 
               <!-- 元素代码：只显示并编辑选中元素的 HTML（输入实时应用到卡片） -->
-              <div v-show="designMode && rightView === 'elcode'" class="ce-elcode">
+              <div v-show="funcKey === 'element' && designMode && rightView === 'elcode'" class="ce-elcode">
                 <div class="ce-elcode-head">
                   <span class="material-symbols-outlined">data_object</span>
-                  <span class="ce-elcode-title">元素代码</span>
+                  <span class="ce-elcode-title">模型代码</span>
                   <code class="ce-elcode-desc">{{ elDesc }}</code>
                   <span class="ce-spacer"></span>
-                  <button class="ce-btn ce-ghost ce-btn-sm" title="放弃当前修改，重新载入该元素的代码" @click="refreshElCode">
+                  <button class="ce-btn ce-ghost ce-btn-sm" title="放弃当前修改，重新载入该模型的代码" @click="refreshElCode">
                     还原
                   </button>
                   <button class="ce-btn ce-primary ce-btn-sm" title="将代码应用到卡片（输入时已实时应用）" @click="applyElCode">
@@ -644,7 +746,7 @@
                       autocomplete="off"
                       wrap="off"
                       :value="elHtml"
-                      :aria-label="'元素 ' + elDesc + ' HTML 代码'"
+                      :aria-label="'模型 ' + elDesc + ' HTML 代码'"
                       @input="onElInput"
                       @scroll="syncElScroll"
                       @keydown="onElKeydown"
@@ -657,7 +759,7 @@
                   <span class="material-symbols-outlined">error</span>{{ elCodeErr }}
                 </p>
               </div>
-            </section>
+            </aside>
           </div>
 
           <!-- ============ 底部状态栏 ============ -->
@@ -681,11 +783,14 @@
 <script setup>
 import { ref, reactive, computed, watch, nextTick, onBeforeUnmount } from 'vue'
 import { entityStates } from '@/store'
+import api from '@/api'
+import { computeData } from './data'
 import { cardDefaults } from './defaults'
 import { WIDGET_DEFS, WIDGET_GROUPS } from './widgets'
 import { saveAsTemplate } from '@/composables/useCustomTemplates'
 import CodeCard from './CodeCard.vue'
 import VisualStage from './VisualStage.vue'
+import LogicPanel from './LogicPanel.vue'
 const props = defineProps({
   open: { type: Boolean, default: false },
   card: { type: Object, default: null },
@@ -698,7 +803,7 @@ const emit = defineEmits(['close', 'save'])
 const baseCell = 120
 
 // ================= 草稿与脏状态 =================
-const draft = reactive({ type: '', uid: '', entity_id: '', entity_ids: [], entity_ids2: [], entity_ids3: [], entity_ids_status: [], w: 1, h: 1, html: '', css: '', js: '', icon: '', avatar: '', title: '', _designerSchema: null, compiledHtml: '', entitySlotMap: {} })
+const draft = reactive({ type: '', uid: '', entity_id: '', entity_ids: [], entity_ids2: [], entity_ids3: [], entity_ids_status: [], w: 1, h: 1, html: '', css: '', js: '', icon: '', avatar: '', title: '', _designerSchema: null, compiledHtml: '', entitySlotMap: {}, rules: [] })
 let snapshot = ''
 const dirty = computed(() => JSON.stringify(pickDraft()) !== snapshot)
 
@@ -716,6 +821,8 @@ function pickDraft() {
     _designerSchema: draft._designerSchema,
     compiledHtml: draft.compiledHtml,
     entitySlotMap: draft.entitySlotMap,
+    // 规则列表（如果…就…否则…）：深拷贝去响应式，空数组也保存以允许用户清空
+    rules: JSON.parse(JSON.stringify(draft.rules || [])),
   }
 }
 // 通用卡与人员位置卡为多实体卡（不限数量）；其余卡仍为单实体
@@ -749,6 +856,8 @@ watch(
       draft._designerSchema = props.card._designerSchema || null
       draft.compiledHtml = props.card.compiledHtml || ''
       draft.entitySlotMap = props.card.entitySlotMap || {}
+      // 规则列表深拷贝入草稿：编辑只改草稿，保存时才写回卡片
+      draft.rules = Array.isArray(props.card.rules) ? JSON.parse(JSON.stringify(props.card.rules)) : []
       tab.value = 'html'
       banner.value = null
       entityQuery.value = ''
@@ -1221,20 +1330,44 @@ const highlighted = computed(() => {
 
 // ================= 图形设计模式 =================
 const designMode = ref(false)
-// 设计模式下右侧视图：props=元素属性面板（默认，覆盖代码区）/ code=代码编辑
+// 设计模式下右侧面板内部视图：props=元素属性（默认）/ elcode=元素代码
 const rightView = ref('props')
+
+// ================= 左功能栏（窄图标栏 + 可折叠） =================
+// 点击某项在右侧面板展开对应功能；「模型/模型库/图层」仅设计模式可用，非设计模式时显示引导提示
+const FUNC_ITEMS = [
+  { key: 'settings', label: '设置', icon: 'tune' },
+  { key: 'element', label: '模型', icon: 'select' },
+  { key: 'widgets', label: '模型库', icon: 'add_box' },
+  { key: 'layers', label: '图层', icon: 'layers' },
+  { key: 'ai', label: 'AI', icon: 'auto_awesome' },
+  { key: 'logic', label: '逻辑', icon: 'account_tree' },
+  { key: 'code', label: '代码', icon: 'code' },
+]
+const funcKey = ref('settings')
+const funcFolded = ref(false)
+function selectFunc(key) {
+  if (funcFolded.value) { funcFolded.value = false }
+  funcKey.value = key
+  // 元素面板：选中态显示属性，需编辑元素代码时进入 elcode
+  if (key === 'element' && rightView.value === 'elcode' && !elVid.value) rightView.value = 'props'
+  // 切到设计相关功能时自动进设计模式，减少一步手动切换
+  if (['element', 'widgets', 'layers'].includes(key) && !designMode.value) enterDesign()
+}
+
 function enterDesign() {
   designMode.value = true
   rightView.value = 'props'
   nextTick(computePreviewScale)
 }
-// 新建的「自定义卡」需要自动进入图形化设计模式，并把右侧视图默认切到组件库，
+// 新建的「自定义卡」需要自动进入图形化设计模式，并把功能面板切到组件库，
 // 让用户第一眼就能开始搭积木（_autoDesign 是运行时瞬时标记，不会被持久化）。
 watch(() => props.card, (v) => {
   if (v && v._autoDesign) {
     delete v._autoDesign
     enterDesign()
-    rightView.value = 'widgets'
+    funcKey.value = 'widgets'
+    rightView.value = 'props'
   }
 })
 // VisualStage 的所有图形编辑都序列化为 HTML 回写草稿，右侧代码实时同步
@@ -1246,6 +1379,204 @@ function onVisualChangeEntity() {
   if (!meta.value.needEntity && !meta.value.entityOptional) return
   entityMenu.value = true
   nextTick(() => entityWrapRef.value?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }))
+}
+
+// ================= AI 生成卡片（右侧「AI」页） =================
+// 由后端代理 OpenAI 兼容接口；前端只发提示词，不接触 API Key。
+const AI_SUGGESTIONS = [
+  '客厅温湿度卡片，大号温度数字，底部显示湿度',
+  '灯光控制卡：大图标 + 开关按钮，显示亮度',
+  '能耗概览卡片：今天用电、本月用电、费用',
+]
+const AI_FALLBACK_TOKENS = ['name', 'state', 'sub', 'glyph', 'rowsHtml', 'bigHtml', 'onColor']
+const aiPrompt = ref('')
+const aiKeep = ref(true)
+const aiBusy = ref(false)
+const aiErr = ref('')
+const aiMsg = ref('')
+const aiBackup = ref(null)
+
+const aiPicked = ref([])
+const aiEntityFilter = ref('')
+// 可选实体清单：直接读实时实体表，供 AI 生成时注入上下文并自动绑定
+const aiAllEntities = computed(() =>
+  Object.values(entityStates)
+    .map((e) => ({
+      id: e.entity_id,
+      name: e.friendly_name || e.entity_id,
+      domain: e.domain || String(e.entity_id).split('.')[0],
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'zh')),
+)
+const aiEntityRows = computed(() => {
+  const q = aiEntityFilter.value.trim().toLowerCase()
+  const list = q
+    ? aiAllEntities.value.filter((e) => e.name.toLowerCase().includes(q) || e.id.toLowerCase().includes(q))
+    : aiAllEntities.value
+  return list.slice(0, 60)
+})
+// 打开卡片 / 切换卡片时默认勾选已绑定的实体，避免生成时丢失既有绑定
+watch(
+  () => draft.uid,
+  () => {
+    const bound = draft.entity_ids.length ? draft.entity_ids : (draft.entity_id ? [draft.entity_id] : [])
+    aiPicked.value = bound.filter((id) => entityStates[id])
+    aiEntityFilter.value = ''
+  },
+  { immediate: true },
+)
+
+const aiEntity = computed(() => {
+  const id = aiPicked.value[0] || draft.entity_id
+  return id ? entityStates[id] || null : null
+})
+// 当前卡片真正可用的数据占位符：交给模型，避免生成 {{不存在的字段}} 导致空白
+const aiTokenList = computed(() => {
+  try {
+    const entity = aiEntity.value
+    const entities = (aiPicked.value.length ? aiPicked.value : draft.entity_ids || [])
+      .map((id) => entityStates[id])
+      .filter(Boolean)
+    // 没选实体时没有任何实时占位符可用，避免模型编造
+    if (!entity && !entities.length) return []
+    const d = computeData(draft.type, {
+      all: Object.values(entityStates),
+      hasData: !!entity,
+      entity,
+      entities,
+      entityId: entity ? entity.entity_id : '',
+      now: new Date(),
+      card: draft,
+    })
+    const keys = Object.keys(d || {}).filter((k) => /^[A-Za-z_]\w*$/.test(k) && d[k] != null && typeof d[k] !== 'object')
+    return keys.length ? keys.slice(0, 32) : AI_FALLBACK_TOKENS
+  } catch {
+    return AI_FALLBACK_TOKENS
+  }
+})
+function aiEntityLine(e, idx) {
+  const attrs = e.attributes || {}
+  const wanted = ['unit_of_measurement', 'device_class', 'current_temperature', 'temperature', 'humidity', 'battery_level', 'target_temp_step']
+  const attrText = wanted.filter((k) => attrs[k] != null).map((k) => `${k}=${attrs[k]}`).join(', ')
+  const unit = attrs.unit_of_measurement ? ' ' + attrs.unit_of_measurement : ''
+  return `${idx}. ${e.entity_id}（${e.friendly_name || e.entity_id}，领域 ${String(e.entity_id).split('.')[0]}）；当前状态：${e.state}${unit}${attrText ? '；属性：' + attrText : ''}`
+}
+const aiEntityBrief = computed(() => {
+  const picked = aiPicked.value.map((id) => entityStates[id]).filter(Boolean)
+  if (picked.length) {
+    return `可用实体（按勾选顺序，只有第 1 个可使用实时占位符；其余实体可用当前状态做静态展示）：\n${picked.map((e, i) => aiEntityLine(e, i + 1)).join('\n')}\n交互按钮 data-hc="toggle" 作用于第 1 个实体。`
+  }
+  const e = aiEntity.value
+  if (!e) return '当前卡片未绑定实体，生成内容不要依赖实时数据占位符。'
+  return `当前实体：${aiEntityLine(e, 1).replace(/^1\.\s*/, '')}`
+})
+
+function aiSystemPrompt() {
+  const tokens = aiTokenList.value.join('、') || '（无）'
+  const current = aiKeep.value && draft.html.trim()
+    ? `\n\n当前卡片（在此基础上按需求修改，未要求改动的内容保持不变）：\nHTML:\n${draft.html}\nCSS:\n${draft.css}`
+    : ''
+  return `你是 HomeCanvas 智能家居仪表盘的卡片设计器。请根据用户描述${aiKeep.value ? '修改' : '生成'}一张卡片。
+
+只输出一个严格 JSON 对象，不要 Markdown 代码围栏，不要解释：
+{"title":"卡片名称","icon":"material_symbols图标名","w":1,"h":1,"html":"...","css":"..."}
+
+硬性要求：
+1. html 必须只有一个根元素；根元素建议使用 class="hc"（卡片外壳的内边距、圆角、边框、背景由宿主提供）。
+2. w/h 为卡片尺寸格数，1 格约 120px，取 1~4 的整数。
+3. 字号 8~20px，内边距 4~10px，整体紧凑，适合深色主题。
+4. 颜色只能使用 CSS 变量：var(--hc-text)、var(--hc-sub)、var(--hc-bg)、var(--hc-bg2)、var(--hc-border)、var(--hc-primary)、var(--hc-success)、var(--hc-warn)、var(--hc-color)。不要写死颜色。
+5. 图标用 <span class="material-symbols-outlined">图标名</span>，字号 14~20px。
+6. 数据占位符只能放在文本节点或 HTML 片段中，可用：${tokens}。不要放进 style 属性，不要编造占位符。
+7. 交互：按钮可加 data-hc="toggle" 切换卡片实体；data-hc="svc" data-svc="domain.service" 调服务；data-hc="link" data-href="/path" 跳转。
+8. CSS 只写卡片内部类；禁止 body/html/:root、@import、外部字体和外部图片。
+9. 不要输出 JS。
+${aiKeep.value ? '10. 保留用户没有要求修改的结构与样式。\n' : ''}
+${aiEntityBrief.value}${current}`
+}
+
+function aiParseJson(text) {
+  let s = String(text || '').trim()
+  const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  if (fence) s = fence[1]
+  const a = s.indexOf('{')
+  const b = s.lastIndexOf('}')
+  if (a < 0 || b <= a) throw new Error('AI 未返回有效 JSON')
+  return JSON.parse(s.slice(a, b + 1))
+}
+
+async function runAiGenerate() {
+  const prompt = aiPrompt.value.trim()
+  if (!prompt || aiBusy.value) return
+  aiBusy.value = true
+  aiErr.value = ''
+  aiMsg.value = ''
+  try {
+    const { data } = await api.aiChat([
+      { role: 'system', content: aiSystemPrompt() },
+      { role: 'user', content: prompt },
+    ])
+    const raw = data?.choices?.[0]?.message?.content
+    const text = Array.isArray(raw) ? raw.map((p) => p?.text || '').join('') : raw
+    if (!text) throw new Error('AI 返回为空')
+    const out = aiParseJson(text)
+    if (!out.html || typeof out.html !== 'string') throw new Error('AI 结果缺少 html')
+
+    aiBackup.value = {
+      html: draft.html, css: draft.css, js: draft.js,
+      w: draft.w, h: draft.h, title: draft.title, icon: draft.icon,
+      entity_id: draft.entity_id, entity_ids: [...draft.entity_ids],
+    }
+    draft.html = out.html.trim()
+    draft.css = typeof out.css === 'string' ? out.css : ''
+    if (out.title) draft.title = String(out.title)
+    if (out.icon) { draft.icon = String(out.icon); iconInput.value = draft.icon }
+    if (Number.isFinite(Number(out.w))) draft.w = Math.min(4, Math.max(1, Math.round(Number(out.w))))
+    if (Number.isFinite(Number(out.h))) draft.h = Math.min(4, Math.max(1, Math.round(Number(out.h))))
+    // 勾选的实体自动绑定到卡片：否则占位符、data-hc="toggle" 与保存后的卡片都没有数据源
+    const pickedIds = aiPicked.value.filter((id) => entityStates[id])
+    if (pickedIds.length) {
+      if (['generic', 'person', 'group'].includes(draft.type)) {
+        draft.entity_ids = [...pickedIds]
+        draft.entity_id = pickedIds[0]
+      } else if (metaOf(draft.type).needEntity || metaOf(draft.type).entityOptional) {
+        draft.entity_id = pickedIds[0]
+      }
+    }
+    // 回到预览，直接看生成结果；需要继续搭积木再切「设计」
+    designMode.value = false
+    nextTick(() => {
+      syncScroll()
+      computePreviewScale()
+    })
+    aiMsg.value = `已应用 AI 生成的卡片${pickedIds.length ? `，并绑定 ${pickedIds.length} 个实体` : ''}，可继续手动调整或恢复生成前`
+  } catch (e) {
+    aiErr.value = e?.message || 'AI 生成失败'
+  } finally {
+    aiBusy.value = false
+  }
+}
+
+function restoreAi() {
+  const b = aiBackup.value
+  if (!b) return
+  draft.html = b.html
+  draft.css = b.css
+  draft.js = b.js
+  draft.w = b.w
+  draft.h = b.h
+  draft.title = b.title
+  draft.icon = b.icon
+  draft.entity_id = b.entity_id || ''
+  draft.entity_ids = Array.isArray(b.entity_ids) ? [...b.entity_ids] : []
+  iconInput.value = draft.icon
+  aiBackup.value = null
+  aiErr.value = ''
+  aiMsg.value = '已恢复生成前的内容'
+  nextTick(() => {
+    syncScroll()
+    computePreviewScale()
+  })
 }
 
 // ================= 组件库（右侧「组件」页） =================
@@ -1329,7 +1660,13 @@ let layerMsgTimer = 0
 let layerDrag = null
 const dropIndex = ref(-1)
 const LAYER_ICON = { div: 'crop_square', span: 'text_fields', button: 'smart_button', p: 'notes', img: 'image', svg: 'shapes', a: 'link', i: 'star' }
-function layerIcon(row) { return LAYER_ICON[row.tag] || 'widgets' }
+// 弹窗层模型（.hc-pop）固定 web_asset 图标，在模型/图层列表里一眼可辨
+function layerIcon(row) { return row.isPop ? 'web_asset' : LAYER_ICON[row.tag] || 'widgets' }
+function layerName(row) {
+  if (row.isSurface) return '卡片根'
+  if (row.isPop) return '弹窗层'
+  return row.name
+}
 function showLayerMsg(text) {
   layerMsg.value = text
   clearTimeout(layerMsgTimer)
@@ -1337,18 +1674,18 @@ function showLayerMsg(text) {
 }
 // 元素树从 VisualStage 现取（读模板文档），依赖 draft.html 但需等子组件重渲染完
 function refreshLayers() {
-  if (!designMode.value || rightView.value !== 'layers') { layerTree.value = []; return }
+  if (!designMode.value || !['layers', 'element'].includes(funcKey.value)) { layerTree.value = []; return }
   layerTree.value = visualStageRef.value?.getLayerTree() || []
 }
-watch([() => draft.html, rightView, designMode], () => nextTick(refreshLayers))
+watch([() => draft.html, funcKey, designMode], () => nextTick(refreshLayers))
 function selectLayer(row) {
   if (row.vid === elVid.value) return
   visualStageRef.value?.selectVid(row.vid)
 }
 function doLayerOp(row, op) {
   const err = visualStageRef.value?.layerOp(row.vid, op) || ''
-  if (err === 'single') showLayerMsg('该元素在所在容器内没有可调换的邻居')
-  else if (err === 'surface') showLayerMsg('卡片根元素不能调整层级')
+  if (err === 'single') showLayerMsg('该模型在所在容器内没有可调换的邻居')
+  else if (err === 'surface') showLayerMsg('卡片根模型不能调整层级')
   else if (err === 'edge') showLayerMsg('已经到该方向的边界了')
   else if (err) showLayerMsg('调整失败：' + err)
 }
@@ -1384,10 +1721,10 @@ function onLayerUp() {
   if (!d || !d.moved) return
   const target = layerTree.value[d.to]
   if (!target || target.vid === d.vid) return
-  if (target.isSurface) { showLayerMsg('卡片根元素不能作为排序目标'); return }
+  if (target.isSurface) { showLayerMsg('卡片根模型不能作为排序目标'); return }
   const err = visualStageRef.value?.reorderLayer(d.vid, target.vid, d.to > d.from ? 'after' : 'before') || ''
-  if (err === 'cross-parent') showLayerMsg('仅支持同一容器内的元素排序（跨容器请用代码编辑）')
-  else if (err === 'surface') showLayerMsg('卡片根元素不能调整层级')
+  if (err === 'cross-parent') showLayerMsg('仅支持同一容器内的模型排序（跨容器请用代码编辑）')
+  else if (err === 'surface') showLayerMsg('卡片根模型不能调整层级')
   else if (err) showLayerMsg('排序失败：' + err)
   else visualStageRef.value?.selectVid(d.vid)
 }
@@ -1415,7 +1752,22 @@ function onVisualSelect({ vid, desc }) {
     if (rightView.value === 'elcode') rightView.value = 'props'
     return
   }
+  // 画布点选到元素：自动把功能面板切到「元素」，让用户立即看到属性
+  if (funcKey.value !== 'element') funcKey.value = 'element'
   if (rightView.value === 'elcode') refreshElCode()
+  refreshElCss()
+}
+// ================= 元素 CSS 编辑（内联 style） =================
+const elCss = ref('')
+function refreshElCss() {
+  elCss.value = elVid.value ? (visualStageRef.value?.getElementCss() || '') : ''
+}
+function applyElCss() {
+  visualStageRef.value?.applyElementCss(elCss.value)
+}
+function onElCssInput(e) {
+  elCss.value = e.target.value
+  applyElCss()
 }
 function openElCodeView() {
   rightView.value = 'elcode'
@@ -1437,6 +1789,12 @@ function onElInput(e) {
 }
 function applyElCode() {
   elCodeErr.value = visualStageRef.value?.applyElementHtml(elHtml.value) || ''
+}
+// 元素页删除选中元素（与画布属性条删除按钮 / Delete 键同效）；卡片根元素不可删
+const elIsSurface = computed(() => !!layerTree.value.find((r) => r.vid === elVid.value)?.isSurface)
+function deleteSelectedEl() {
+  if (!elVid.value || elIsSurface.value) return
+  visualStageRef.value?.deleteElement()
 }
 function syncElScroll() {
   const ta = elTaRef.value
@@ -1716,6 +2074,38 @@ watch(
   border-bottom: 1px solid rgba(245, 166, 35, 0.22);
 }
 .ce-banner-icon { font-size: 17px; color: #f5a623; }
+.ce-banner-label { font-size: 12px; color: #cfc6b4; white-space: nowrap; }
+.ce-banner-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: #cfc6b4;
+  white-space: nowrap;
+}
+.ce-banner-check input {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: #f5a623;
+  color-scheme: dark;
+}
+/* 设计器输入框统一样式：与右侧面板输入框（.ce-ai-input 等）一致的深色底 + 细边框 */
+.ce-input {
+  box-sizing: border-box;
+  border: 1px solid #303138;
+  border-radius: 7px;
+  background: #1b1c20;
+  color: #e8e6e0;
+  font-family: inherit;
+  font-size: 11.5px;
+  color-scheme: dark;
+  transition: border-color 0.15s ease;
+}
+.ce-input-sm { padding: 4px 8px; }
+.ce-input::placeholder { color: #5c5b58; }
+.ce-input:focus { outline: none; border-color: rgba(245, 166, 35, 0.55); }
 .ce-spacer { flex: 1; }
 .ce-banner-enter-active, .ce-banner-leave-active { transition: all 0.22s ease; }
 .ce-banner-enter-from, .ce-banner-leave-to { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; }
@@ -1824,16 +2214,96 @@ watch(
   top: 0;
   left: 0;
   transform-origin: top left;
-  border-radius: 12px;
-  overflow: hidden;
-  background: #1a1b1e;
+  /* 与真实 .hc-card-holder 一致：不自带背景/阴影，视觉交给卡片壳自身，
+     避免容器底色在卡片圆角外透出一圈浅色边 */
+  border-radius: 14px;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.07);
 }
 .hc-card-zoom { position: relative; flex: none; transform-origin: top left; }
 
-/* ---------- 右栏 ---------- */
+/* ---------- 左：功能图标栏（可折叠） ---------- */
+.ce-funcbar {
+  flex: none;
+  width: 116px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  background: #141518;
+  border: 1px solid #2a2b2f;
+  border-radius: 12px;
+  transition: width 0.2s ease;
+}
+.ce-funcbar.folded { width: 52px; padding: 8px 6px; }
+.ce-func-btn {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: #8a8986;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.ce-funcbar.folded .ce-func-btn { justify-content: center; padding: 0; }
+.ce-func-btn .material-symbols-outlined { font-size: 20px; flex: none; }
+.ce-func-btn:hover { background: rgba(255, 255, 255, 0.05); color: #d8d6cf; }
+.ce-func-btn.on {
+  background: rgba(245, 166, 35, 0.14);
+  color: #f5a623;
+  border-color: rgba(245, 166, 35, 0.3);
+}
+.ce-func-label { overflow: hidden; text-overflow: ellipsis; }
+.ce-func-fold { margin-top: auto; }
+.ce-funcbar .ce-spacer { display: none; }
+
+/* ---------- 右：功能面板 ---------- */
+.ce-panel-col {
+  flex: 6 1 0;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.ce-panel-page {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.ce-panel-scroll { overflow-y: auto; }
+.ce-panel-col-flex { display: flex; flex-direction: column; }
+.ce-panel-tipbox {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 20px;
+  text-align: center;
+  color: #8a8986;
+  font-size: 12px;
+  border: 1px dashed #2a2b2f;
+  border-radius: 12px;
+  background: #141518;
+}
+.ce-panel-tipbox .material-symbols-outlined { font-size: 26px; color: #f5a623; }
+.ce-panel-tipbox p { margin: 0; line-height: 1.6; }
+
+/* ---------- 右栏（旧 .ce-edit-col 已由 .ce-panel-col 取代，保留兼容） ---------- */
 .ce-edit-col {
   flex: 6 1 0;
   min-width: 0;
@@ -1977,6 +2447,79 @@ watch(
 .ce-pal-msg.err { background: rgba(240, 110, 110, 0.12); color: #f08a8a; }
 .ce-pal-msg .material-symbols-outlined { font-size: 14px; flex: none; margin-top: 1px; }
 
+/* ================= AI 页 ================= */
+.ce-ai { display: flex; flex-direction: column; gap: 10px; }
+.ce-ai-field { display: flex; flex-direction: column; gap: 6px; }
+.ce-ai-ta {
+  width: 100%;
+  min-height: 86px;
+  resize: vertical;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid #303138;
+  border-radius: 8px;
+  background: #1b1c20;
+  color: #e8e6e0;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.ce-ai-ta:focus { outline: none; border-color: rgba(245, 166, 35, 0.55); }
+.ce-ai-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 9px;
+  border: 1px solid #303138;
+  border-radius: 7px;
+  background: #1b1c20;
+  color: #e8e6e0;
+  font-family: inherit;
+  font-size: 11.5px;
+}
+.ce-ai-input:focus { outline: none; border-color: rgba(245, 166, 35, 0.55); }
+.ce-ai-entities {
+  max-height: 156px;
+  overflow-y: auto;
+  border: 1px solid #2b2c32;
+  border-radius: 7px;
+  background: #17181c;
+}
+.ce-ai-entity {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  font-size: 11.5px;
+  color: #b9b6ae;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+.ce-ai-entity:last-child { border-bottom: none; }
+.ce-ai-entity:hover { background: rgba(255, 255, 255, 0.04); }
+.ce-ai-entity.on { background: rgba(245, 166, 35, 0.1); color: #f5a623; }
+.ce-ai-entity input { accent-color: #f5a623; flex: none; }
+.ce-ai-en-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ce-ai-en-id { flex: none; max-width: 46%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #6f6e6a; font-size: 10px; }
+.ce-ai-empty { margin: 0; padding: 8px; color: #7d7a73; font-size: 11px; text-align: center; }
+.ce-ai-sugs { display: flex; flex-wrap: wrap; gap: 6px; }
+.ce-ai-sug {
+  padding: 4px 7px;
+  border: 1px solid #303138;
+  border-radius: 999px;
+  background: #22232a;
+  color: #9a9791;
+  font-size: 10.5px;
+  line-height: 1.3;
+  cursor: pointer;
+}
+.ce-ai-sug:hover { border-color: rgba(245, 166, 35, 0.45); color: #f5a623; }
+.ce-ai-check { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #9a9791; cursor: pointer; }
+.ce-ai-check input { accent-color: #f5a623; }
+.ce-ai-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.ce-ai-spin { animation: ce-ai-rotate 1s linear infinite; }
+@keyframes ce-ai-rotate { to { transform: rotate(360deg); } }
+.ce-ai-hint { margin: 0; color: #7d7a73; font-size: 10.5px; line-height: 1.5; }
+
 /* ================= 图层页 ================= */
 .ce-ly-empty { margin: 0; font-size: 12px; color: #7d7a73; }
 .ce-ly-row {
@@ -2012,6 +2555,18 @@ watch(
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* 弹窗层徽标：紧随名称的小胶囊，琥珀描边 */
+.ce-ly-badge {
+  flex: none;
+  font-style: normal;
+  font-size: 9px;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 99px;
+  color: #f5a623;
+  border: 1px solid rgba(245, 166, 35, 0.45);
+  background: rgba(245, 166, 35, 0.1);
 }
 .ce-ly-acts { flex: none; display: flex; gap: 2px; }
 .ce-ly-acts button {
@@ -2081,6 +2636,73 @@ watch(
   border-radius: 10px;
 }
 .ce-elcode-err .material-symbols-outlined { font-size: 13px; flex: none; }
+
+/* 元素页：CSS 样式编辑区 */
+.ce-elcss {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #2a2b2f;
+  border-radius: 10px;
+  background: #141518;
+  overflow: hidden;
+  margin-top: 10px;
+}
+.ce-elcss-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #d8d6cf;
+  border-bottom: 1px solid #232428;
+}
+.ce-elcss-head .material-symbols-outlined { font-size: 16px; color: #f5a623; }
+.ce-elcss-codebtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid #2a2b2f;
+  border-radius: 7px;
+  background: transparent;
+  color: #8a8986;
+  font-size: 11px;  font-weight: 600;
+  cursor: pointer;
+}
+.ce-elcss-codebtn .material-symbols-outlined { font-size: 14px; }
+.ce-elcss-codebtn:hover { color: #d8d6cf; border-color: #3a3b3f; }
+.ce-elcss-del { padding: 0 6px; }
+.ce-elcss-del:hover:not(:disabled) { color: #f09185; border-color: rgba(232, 93, 76, 0.4); background: rgba(232, 93, 76, 0.12); }
+.ce-elcss-del:disabled { opacity: 0.35; cursor: not-allowed; }
+.ce-elcss-codebtn.on { background: rgba(245, 166, 35, 0.14); color: #f5a623; border-color: rgba(245, 166, 35, 0.3); }
+.ce-elcss-ta {
+  height: 90px;
+  padding: 8px 10px;
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: vertical;
+  color: #e8e6e1;
+  font: 12px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+/* 元素页：所有元素列表（上半） + 选中元素属性面板（下半占满） */
+.ce-elems {
+  flex: none;
+  max-height: 38%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid #2a2b2f;
+  border-radius: 10px;
+  background: #141518;
+  margin-bottom: 10px;
+}
 
 /* 元素属性面板：设计模式下占满原代码编辑区（属性条由 VisualStage 注入） */
 .ce-design-panel {
@@ -2659,8 +3281,14 @@ watch(
   .ce-overlay { padding: 0; }
   .ce-panel { border-radius: 0; border-left: none; border-right: none; }
   .ce-body { flex-direction: column; padding: 10px; gap: 10px; }
+  /* 左功能栏在窄屏变为顶部横排图标条 */
+  .ce-funcbar { width: 100%; flex-direction: row; flex-wrap: nowrap; overflow-x: auto; }
+  .ce-funcbar.folded { width: 100%; }
+  .ce-funcbar .ce-func-label { display: none; }
+  .ce-funcbar.folded .ce-func-btn, .ce-func-btn { justify-content: center; padding: 0 10px; }
+  .ce-func-fold { margin-top: 0; margin-left: auto; }
   .ce-preview-col { flex: none; height: 34vh; }
-  .ce-edit-col { flex: 1; }
+  .ce-panel-col { flex: 1; }
   .ce-btn-text { display: none; }
   .ce-kbd { display: none; }
   .ce-config { flex-direction: column; }

@@ -15,6 +15,7 @@ import { count as perfCount } from '@/utils/perf'
 import { renderTemplate, scopeCss, computeData, cardDefaults } from './defaults'
 import { bindingSlotTokens } from './data'
 import { renderSchemaToHtml } from './designer/blockDefs'
+import { applyRules, collectRuleEntities } from './rules'
 import { domainColorCls } from '@/utils/entities'
 import { loadIconList, replaceIconsIn } from '@/utils/hcIcons'
 import api from '@/api'
@@ -141,6 +142,24 @@ watch(() => [props.card.entity_id, entityIds.value.join(), slotIds2.value.join()
 watch(() => props.card.type, refreshFrozen)
 watch(hasData, (v) => { if (v && props.freeze && !frozenData.value) refreshFrozen() })
 const data = computed(() => (props.freeze ? frozenData.value || liveData.value : liveData.value))
+
+// ---- 规则（如果…就…否则…）：按条件实体状态对 [data-vid] 元素执行动作 ----
+// 冻结态（图形设计模式）不求值：设计交互只编辑，不触发规则效果。
+const cardRules = computed(() => (Array.isArray(props.card.rules) ? props.card.rules : []))
+const ruleEntityIds = computed(() => collectRuleEntities(cardRules.value))
+function runRules() {
+  if (props.freeze || !root.value || !cardRules.value.length) return
+  applyRules(root.value, cardRules.value, (id) => entityStates[id] || null)
+}
+// 条件实体状态变化 → 重新求值；规则本身被编辑（保存后）也立即生效
+const ruleTick = computed(() =>
+  ruleEntityIds.value.map((id) => {
+    const e = entityStates[id]
+    return id + '=' + (e ? e.state + JSON.stringify(e.attributes) : '')
+  }).join('|'),
+)
+watch(ruleTick, () => { if (!props.freeze) nextTick(runRules) })
+watch(cardRules, () => { if (!props.freeze) nextTick(runRules) }, { deep: true })
 
 // Phase 3：有 schema / compiledHtml 时优先使用；否则走原有 card.html 路径
 // 双路渲染的占位符替换沿用 {{xxx}} → data.value 注入，保持向后兼容
@@ -353,8 +372,32 @@ function doSvc(el) {
     .then(() => requestEntityRefresh(300))
     .catch(() => { if (patched) clearOptimistic(targetId) })
 }
+// ---- 弹窗层（.hc-pop，设计器「弹窗层」模型）：运行时默认隐藏，data-hc="pop" 打开 ----
+// 打开状态记在 openPops（data-vid 集合）：实体推送重建 v-html 后由 restorePops 恢复，避免弹窗被刷新关掉
+const openPops = new Set()
+function restorePops() {
+  if (!root.value || !openPops.size) return
+  for (const vid of openPops) root.value.querySelector(`.hc-pop[data-vid="${vid}"]`)?.classList.add('on')
+}
+function openPop(el) {
+  const v = el.dataset.pop || ''
+  const pop = (v && root.value?.querySelector(`.hc-pop[data-vid="${v}"]`)) || root.value?.querySelector('.hc-pop')
+  if (!pop) return
+  pop.classList.add('on')
+  const vid = pop.getAttribute('data-vid')
+  if (vid) openPops.add(vid)
+}
+function closePop(pop) {
+  if (!pop) return
+  pop.classList.remove('on')
+  const vid = pop.getAttribute('data-vid')
+  if (vid) openPops.delete(vid)
+}
+
 function onClick(e) {
   if (!props.interactive) return
+  // 点弹窗背板（遮罩本体）关闭弹窗
+  if (e.target.classList?.contains('hc-pop')) { closePop(e.target); return }
   const el = e.target.closest('[data-hc]')
   if (!el) {
     // 点击卡面（未命中任何交互控件）按内容弹详情：
@@ -368,6 +411,8 @@ function onClick(e) {
     return
   }
   const hc = el.dataset.hc
+  if (hc === 'pop') { openPop(el); return }
+  if (hc === 'popclose') { closePop(el.closest('.hc-pop')); return }
   if (hc === 'toggle') {
     const targetId = el.dataset.entity || props.card.entity_id
     if (targetId) {
@@ -554,6 +599,8 @@ function runPostRender() {
   applyIcons()
   applyMarquee()
   initCycle()
+  runRules()
+  restorePops()
 }
 function schedulePostRender() {
   if (!rootVisible.value) { postPending = true; return }
@@ -642,8 +689,14 @@ onBeforeUnmount(() => {
   width: 100%;
   display: flex;
   flex-direction: column;
+  /* 自带圆角 + 裁剪：卡片壳（.hc/.hc-almanac 等）的圆角依赖这层裁剪才生效；
+     与 holder 的 14px 圆角对齐，真卡与设计器预览一致，不再露出直角 */
+  border-radius: 14px;
   overflow: hidden;
 }
+/* 弹窗层：默认隐藏；.on（点击 data-hc="pop" 打开）时 flex 居中。设计器「弹窗层」模式由 VisualStage 强制显示 */
+.hc-code-card :deep(.hc-pop) { display: none; }
+.hc-code-card :deep(.hc-pop.on) { display: flex; }
 .hc-code-card :deep(.hc-empty) {
   flex: 1;
   min-height: 0;

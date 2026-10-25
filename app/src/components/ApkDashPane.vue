@@ -737,7 +737,13 @@ watch(cols, () => nextTick(measure))
 <style scoped>
 .hc-apk-tabs { scrollbar-width: none; }
 .hc-apk-tabs::-webkit-scrollbar { display: none; }
-.hc-apk-scroll { scrollbar-width: thin; scrollbar-color: rgb(var(--c-border) / .5) transparent; }
+.hc-apk-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--c-border) / .5) transparent;
+  /* 始终预留滚动条槽位：否则内容高度在临界值附近时滚动条出现/消失会改变手机框宽度，
+     而卡片行高=列宽又反过来改变内容高度，形成页面来回跳的测量振荡 */
+  scrollbar-gutter: stable;
+}
 .hc-apk-scroll::-webkit-scrollbar { width: 4px; }
 .hc-apk-scroll::-webkit-scrollbar-thumb { border-radius: 2px; background: rgb(var(--c-border) / .4); }
 .hc-apk-grid {

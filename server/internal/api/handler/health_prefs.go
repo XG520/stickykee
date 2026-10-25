@@ -165,13 +165,35 @@ func (h *Prefs) Get(w http.ResponseWriter, r *http.Request) {
 	}
 	all["ha_token_configured"] = strconv.FormatBool(hasToken)
 
-	// ai_config：api_key 不明文回传，替换为 has_key 布尔（前端据此显示「已配置」）。
-	if raw, ok := all["ai_config"]; ok {
-		cfg := parseMapConfig(raw)
+	// ai_config：api_key 永不明文回传，只回传 base_url/model 与 has_key 状态。
+	// 生效顺序与 /ai/chat 一致：用户自配的 key 优先，否则回退管理员全局配置。
+	if username != "" {
+		own := parseMapConfig(h.userPrefs.Get(r.Context(), username, "ai_config"))
+		globalRaw, _ := h.repo.GetPref(r.Context(), "ai_config")
+		global := parseMapConfig(globalRaw)
+		effective := own
+		source := "user"
+		if toString(own["api_key"]) == "" {
+			effective = global
+			source = "global"
+			if toString(global["api_key"]) == "" {
+				source = "none"
+			}
+		}
 		out := map[string]any{
-			"base_url": toString(cfg["base_url"]),
-			"model":    toString(cfg["model"]),
-			"has_key":  toString(cfg["api_key"]) != "",
+			"base_url":       toString(effective["base_url"]),
+			"model":          toString(effective["model"]),
+			"has_key":        toString(effective["api_key"]) != "",
+			"source":         source,
+			"own_base_url":   toString(own["base_url"]),
+			"own_model":      toString(own["model"]),
+			"own_has_key":    toString(own["api_key"]) != "",
+			"global_has_key": toString(global["api_key"]) != "",
+		}
+		// 管理员额外拿到全局配置值（不含 key），用于设置页编辑。
+		if auth.IsAdmin(r.Context()) {
+			out["global_base_url"] = toString(global["base_url"])
+			out["global_model"] = toString(global["model"])
 		}
 		b, _ := json.Marshal(out)
 		all["ai_config"] = string(b)
@@ -436,16 +458,31 @@ func (h *Prefs) Put(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		case k == "ai_config":
-			// AI 配置：api_key 为空表示「保留原 key 不变」，只更新 base_url/model。
+			// AI 配置：api_key 为空表示「保留原 key 不变」，clear_key 明确清除。
+			// scope=global：管理员写全局默认（所有未自配用户共用）；否则写当前用户自己的配置。
 			in := parseMapConfig(v)
-			cur := parseMapConfig(h.userPrefs.Get(r.Context(), username, "ai_config"))
-			if kk := toString(in["api_key"]); kk != "" {
+			global := isAdmin && toString(in["scope"]) != "user"
+			cur := map[string]any{}
+			if global {
+				raw, _ := h.repo.GetPref(r.Context(), "ai_config")
+				cur = parseMapConfig(raw)
+			} else {
+				cur = parseMapConfig(h.userPrefs.Get(r.Context(), username, "ai_config"))
+			}
+			if boolVal(in["clear_key"]) {
+				delete(cur, "api_key")
+			} else if kk := toString(in["api_key"]); kk != "" {
 				cur["api_key"] = kk
 			}
-			cur["base_url"] = toString(in["base_url"])
-			cur["model"] = toString(in["model"])
+			cur["base_url"] = strings.TrimRight(strings.TrimSpace(toString(in["base_url"])), "/")
+			cur["model"] = strings.TrimSpace(toString(in["model"]))
 			b, _ := json.Marshal(cur)
-			if err := h.userPrefs.Set(r.Context(), username, "ai_config", string(b)); err != nil {
+			if global {
+				if err := h.repo.SetPref(r.Context(), "ai_config", string(b)); err != nil {
+					WriteErr(w, 500, "internal", err.Error())
+					return
+				}
+			} else if err := h.userPrefs.Set(r.Context(), username, "ai_config", string(b)); err != nil {
 				WriteErr(w, 500, "internal", err.Error())
 				return
 			}
@@ -541,7 +578,7 @@ func PublicCORS(next http.HandlerFunc) http.HandlerFunc {
 
 // Version 后端版本号：随发布递增，经 healthz 暴露，供前端设置页与 APK 壳页
 // 确认当前连接的服务端版本（排查「更新没生效」类问题）。
-const Version = "1.6.4"
+const Version = "1.6.5"
 
 // Healthz 存活探针（公开：附带后端版本号）。
 func (Health) Healthz(w http.ResponseWriter, r *http.Request) {

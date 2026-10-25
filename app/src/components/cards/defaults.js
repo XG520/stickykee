@@ -115,7 +115,7 @@ export const cardDefaults = {
   // 实体组：一个组（如「卧室」）装该组全部设备，卡面即设备列表，点开弹窗集中控制
   group: mk({ label: '实体组', icon: 'group_work', colorCls: 'text-primary', w: 2, h: 2, needEntity: true, entityDomains: null, group: '通用' }, tplGroup),
 
-  // ---- 自定义卡：用户自己从空白搭起；needEntity=false，没有绑定实体时也能正常渲染
+  // ---- 自定义卡：用户自己从空白搭起；不强制绑定实体，但可选绑定以启用实时数据与交互
   custom: {
     label: '自定义',
     icon: 'construction',
@@ -123,6 +123,7 @@ export const cardDefaults = {
     w: 1,
     h: 1,
     needEntity: false,
+    entityOptional: true,
     entityDomains: null,
     group: '自定义',
     // 模板只有一个居中占位提示；用户一进设计模式就能在里面自由搭积木（组件库 / 代码都可以）

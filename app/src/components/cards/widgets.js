@@ -9,9 +9,10 @@
 
 export const WIDGET_GROUPS = [
   { key: 'basic', label: '文字与图标' },
+  { key: 'media', label: '图片与背景' },
   { key: 'state', label: '状态与胶囊' },
   { key: 'shape', label: '容器与形状' },
-  { key: 'data', label: '数据绑定' },
+  { key: 'data', label: '实体与数据' },
 ]
 
 // 数据绑定占位符标记：widgetHtml 会用实际 token（或 fallback）整体替换它
@@ -34,6 +35,17 @@ export const WIDGET_DEFS = [
   {
     key: 'icon', label: '图标', icon: 'emoji_symbols', group: 'basic', w: 26, h: 26,
     html: '<span class="material-symbols-outlined" style="font-size:22px;color:var(--hc-color,var(--hc-primary))">widgets</span>',
+  },
+  // ---- 图片与背景 ----
+  {
+    // 图片模型：插入后选中它，在右侧属性条「图片地址」里换成自己的图
+    key: 'image', label: '图片', icon: 'image', group: 'media', w: 56, h: 56,
+    html: '<img style="display:block;object-fit:cover;border-radius:8px;width:100%;height:100%" alt="" src="data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'56\' height=\'56\'%3E%3Crect width=\'56\' height=\'56\' rx=\'8\' fill=\'%232a2b2f\'/%3E%3Cpath d=\'M16 38l8-9 6 6 9-11 7 14z\' fill=\'%2355565c\'/%3E%3Ccircle cx=\'21\' cy=\'19\' r=\'3\' fill=\'%2355565c\'/%3E%3C/svg%3E" />',
+  },
+  {
+    // 背景模型：铺满整卡的底层装饰（插入器特判 def.bg：落 0,0、100% 尺寸、置于最底层）
+    key: 'bg', label: '背景层', icon: 'wallpaper', group: 'media', w: 0, h: 0, bg: true,
+    html: '<div style="background:linear-gradient(135deg,rgba(245,166,35,.12),rgba(107,163,217,.1));border-radius:inherit"></div>',
   },
   // ---- 状态与胶囊 ----
   {
@@ -66,6 +78,17 @@ export const WIDGET_DEFS = [
     key: 'btn', label: '图标按钮', icon: 'radio_button_unchecked', group: 'shape', w: 26, h: 26,
     html: '<button class="h-btn"><span class="material-symbols-outlined" style="font-size:14px">power_settings_new</span></button>',
   },
+  {
+    // 弹窗层：铺满整卡、运行时默认隐藏（CodeCard 的 .hc-pop 规则），
+    // 由 data-hc="pop" 打开 / data-hc="popclose" 与点背板关闭；设计器切到「弹窗层」后强制显示以编辑内容
+    key: 'pop', label: '弹窗层', icon: 'web_asset', group: 'shape', pop: true, w: 0, h: 0,
+    html: '<div class="hc-pop" style="position:absolute;inset:0;z-index:60;align-items:center;justify-content:center;background:rgba(0,0,0,.45);border-radius:14px"><div class="hc-pop-inner" style="position:relative;display:flex;flex-direction:column;align-items:center;gap:6px;min-width:70px;min-height:36px;padding:10px 12px;border-radius:12px;background:var(--hc-bg2);border:1px solid var(--hc-border)"><span style="font-size:10px;color:var(--hc-text)">弹窗内容</span><button data-hc="popclose" style="border:none;border-radius:99px;padding:2px 10px;background:var(--hc-color,var(--hc-primary));color:#fff;font-size:9px;cursor:pointer">关闭</button></div></div>',
+  },
+  {
+    // 弹窗按钮：点击打开卡片里的弹窗层（data-pop 可填目标弹窗 data-vid，留空取第一个 .hc-pop）
+    key: 'popbtn', label: '弹窗按钮', icon: 'smart_button', group: 'shape', w: 62, h: 16,
+    html: '<button data-hc="pop" style="border:none;border-radius:99px;padding:3px 10px;background:var(--hc-color,var(--hc-primary));color:#fff;font-size:9px;cursor:pointer;white-space:nowrap">打开弹窗</button>',
+  },
   // ---- 数据绑定（token 化，运行时跟随实体数据刷新） ----
   {
     key: 'dname', label: '实体名称', icon: 'badge', group: 'data', w: 70, h: 14,
@@ -81,6 +104,12 @@ export const WIDGET_DEFS = [
     key: 'dstate', label: '状态文案', icon: 'toggle_on', group: 'data', w: 44, h: 14,
     tokens: ['stateLabel', 'badge'], fallback: '状态',
     html: '<span class="h-badge b-on">' + V + '</span>',
+  },
+  {
+    // 实体开关按钮：绑定卡片实体，运行时点击切换开关（data-hc="toggle" 由 CodeCard 事件委托处理；
+    // 需定向到其他实体时在元素代码里加 data-entity="xxx.yyy"）
+    key: 'etoggle', label: '开关按钮', icon: 'power_settings_new', group: 'data', w: 26, h: 26,
+    html: '<button data-hc="toggle" class="h-btn"><span class="material-symbols-outlined" style="font-size:14px">power_settings_new</span></button>',
   },
 ]
 

@@ -86,7 +86,7 @@
               <div class="flex items-start gap-3">
                 <div class="relative w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
                   :class="d.active_count > 0 ? iconBox(d) : 'bg-faint/15 border border-border'">
-                  <span class="material-symbols-outlined text-xl" :class="d.active_count > 0 ? iconColor(d) : 'text-faint'">{{ deviceGlyph(d) }}</span>
+                  <EntityIcon class="text-xl" :class="d.active_count > 0 ? iconColor(d) : 'text-faint'" :icon="d.main_icon" :domain="d.domain" />
                   <span
                     class="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full ring-2 ring-background"
                     :class="deviceOnline(d) ? 'bg-success' : 'bg-faint'"
@@ -120,7 +120,7 @@
           <div v-show="showUnassigned" class="bg-surface-alt border rounded-xl divide-y divide-border/60 overflow-hidden">
             <div v-for="e in visibleUnassigned" :key="e.entity_id" class="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-surface transition-colors" @click="openEntityQuick(e)">
               <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-faint/15 border border-border">
-                <span class="material-symbols-outlined text-base text-faint">{{ glyph(e.domain) }}</span>
+                <EntityIcon class="text-base text-faint" :icon="e.icon" :domain="e.domain" />
               </div>
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2">
@@ -153,7 +153,7 @@
             <div class="flex items-center gap-2.5 flex-1 min-w-0">
               <div class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
                 :class="detail.active_count > 0 ? iconBox(detail) : 'bg-faint/15 border border-border'">
-                <span class="material-symbols-outlined text-xl" :class="detail.active_count > 0 ? iconColor(detail) : 'text-faint'">{{ deviceGlyph(detail) }}</span>
+                <EntityIcon class="text-xl" :class="detail.active_count > 0 ? iconColor(detail) : 'text-faint'" :icon="detail.main_icon" :domain="detail.domain" />
               </div>
               <div class="min-w-0">
                 <div class="flex items-center gap-2 min-w-0">
@@ -196,9 +196,11 @@
                 :class="isOn(e) ? 'border-primary/40' : 'border-border'"
                 @click="openMore(e)"
               >
-                <div class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
-                  :class="isOn(e) ? iconBox(detail) : 'bg-faint/15 border border-border'">
-                  <span class="material-symbols-outlined text-xl" :class="isOn(e) ? iconColor(detail) : 'text-faint'">{{ glyph(e.domain) || 'widgets' }}</span>
+                <div class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 cursor-pointer transition-shadow hover:ring-2 hover:ring-primary/50"
+                  :class="isOn(e) ? iconBox(detail) : 'bg-faint/15 border border-border'"
+                  title="点击自定义图标"
+                  @click.stop="openIconEdit(e)">
+                  <EntityIcon class="text-xl" :class="isOn(e) ? iconColor(detail) : 'text-faint'" :icon="e.icon" :domain="e.domain" />
                 </div>
                 <div class="flex-1 min-w-0">
                   <div class="flex items-center gap-1.5 min-w-0">
@@ -246,6 +248,61 @@
 
     <!-- 实体「更多信息」面板（HA more-info 形态）：按实体能力渲染控件 -->
     <EntityMoreInfo v-if="moreEntity" :entity="moreEntity" @close="moreEntityId = ''" />
+
+    <!-- 实体图标自定义弹层：只写本系统，不写回 HA；mdi 原生图标本地渲染 -->
+    <div v-if="iconEdit" class="fixed inset-0 z-[70] flex items-center justify-center p-4">
+      <div class="absolute inset-0 bg-black/40" @click="iconEdit = null"></div>
+      <div class="relative w-full max-w-sm rounded-2xl border border-border bg-background p-4 shadow-2xl">
+        <div class="flex items-center gap-2 mb-3">
+          <h3 class="font-headline font-bold text-base text-on-background flex-1 truncate">自定义图标</h3>
+          <button class="w-8 h-8 rounded-lg flex items-center justify-center text-muted hover:text-on-surface hover:bg-faint/40 transition-colors" @click="iconEdit = null" aria-label="关闭">
+            <span class="material-symbols-outlined text-xl">close</span>
+          </button>
+        </div>
+        <p class="font-body text-xs text-muted truncate mb-3">{{ iconEdit.friendly_name || iconEdit.entity_id }}<span class="text-faint"> · {{ iconEdit.entity_id }}</span></p>
+        <div class="flex items-center gap-3 mb-3">
+          <div class="w-12 h-12 rounded-xl flex items-center justify-center shrink-0 bg-faint/15 border border-border">
+            <EntityIcon class="text-2xl text-on-surface" :icon="iconPreview" :domain="iconEdit.domain" />
+          </div>
+          <input
+            v-model="iconInput"
+            type="text"
+            placeholder="mdi 图标名，如 robot-vacuum"
+            class="flex-1 min-w-0 font-body text-sm bg-surface-alt border border-border rounded-xl px-3 py-2 text-on-surface placeholder:text-faint focus:outline-none focus:border-primary/60"
+            @keydown.enter="saveIconEdit(false)"
+          />
+        </div>
+        <div class="flex flex-wrap gap-1.5 mb-4">
+          <button
+            v-for="sug in ICON_SUGS" :key="sug"
+            class="w-9 h-9 rounded-lg flex items-center justify-center border transition-colors"
+            :class="iconInput === sug ? 'border-primary bg-primary/15 text-primary' : 'border-border bg-surface-alt text-muted hover:text-on-surface hover:border-primary/40'"
+            @click="iconInput = sug"
+          >
+            <EntityIcon class="text-lg" :icon="'mdi:' + sug" :domain="iconEdit.domain" />
+          </button>
+        </div>
+        <p v-if="iconErr" class="font-body text-xs text-danger mb-3">{{ iconErr }}</p>
+        <div class="flex items-center gap-2">
+          <button
+            class="font-body text-xs px-3 py-2 rounded-xl border border-border text-muted hover:text-on-surface hover:border-primary/40 transition-colors disabled:opacity-50"
+            :disabled="iconSaving"
+            @click="saveIconEdit(true)"
+          >恢复默认</button>
+          <div class="flex-1"></div>
+          <button
+            class="font-body text-xs px-3 py-2 rounded-xl border border-border text-muted hover:text-on-surface transition-colors disabled:opacity-50"
+            :disabled="iconSaving"
+            @click="iconEdit = null"
+          >取消</button>
+          <button
+            class="font-body text-xs px-4 py-2 rounded-xl bg-primary text-on-primary font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+            :disabled="iconSaving"
+            @click="saveIconEdit(false)"
+          >{{ iconSaving ? '保存中…' : '保存' }}</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -253,10 +310,11 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import api from '@/api'
 import { store, backendOnline, onEntityChange, refreshEntities, entityStates } from '@/store'
-import { isOn, isAvailable, iconFor, domainGlyph } from '@/utils/entities'
+import { isOn, isAvailable } from '@/utils/entities'
 import { buildControls, buildServiceCall } from '@/utils/entityControls'
 import { setOptimistic, clearOptimistic, effectiveOn, applyOptimistic, setServiceOptimistic } from '@/composables/useOptimistic'
 import EntityMoreInfo from '@/components/EntityMoreInfo.vue'
+import EntityIcon from '@/components/EntityIcon.vue'
 import EmptyState from '@/components/EmptyState.vue'
 
 const filter = ref('all')
@@ -322,10 +380,50 @@ function domainLabel(domain) {
   const map = { light: '灯光', climate: '空调', switch: '开关', input_boolean: '布尔开关', media_player: '影音', cover: '窗帘', lock: '门锁', camera: '摄像头', sensor: '传感器', binary_sensor: '传感器', fan: '风扇', humidifier: '加湿器', vacuum: '扫地机器人', siren: '警报器', device_tracker: '设备追踪', number: '数值', select: '下拉选项', automation: '自动化', scene: '场景', script: '脚本', button: '按钮' }
   return map[domain] || domain
 }
-function glyph(domain) { return domainGlyph[domain] || 'widgets' }
-// 设备卡片/详情图标：优先取主实体的 HA 图标（mdi:xxx → Material 图标名，后端按名取 SVG），
-// 没有图标时回退到按主域取图标。原先绑定的是 mainIconGlyph，后端并无该字段，图标恒为空。
-function deviceGlyph(d) { return iconFor({ icon: d && d.main_icon }, glyph(d && d.domain)) }
+// ---- 实体图标自定义（本系统覆盖，不写回 HA） ----
+const iconEdit = ref(null)   // 正在编辑图标的实体行
+const iconInput = ref('')
+const iconSaving = ref(false)
+const iconErr = ref('')
+// 常用 mdi 建议（本系统后端已内嵌 MDI 全集，任意合法名均可用，这里只是快捷入口）
+const ICON_SUGS = ['lightbulb', 'power', 'television', 'fan', 'thermostat', 'lock', 'camera', 'robot-vacuum', 'window-open', 'door', 'motion-sensor', 'water-drop']
+// 预览值：输入优先，未输入显示实体当前图标
+const iconPreview = computed(() => {
+  const v = iconInput.value.trim()
+  return v || (iconEdit.value?.icon || '')
+})
+function openIconEdit(e) {
+  iconErr.value = ''
+  iconInput.value = (e.icon || '').replace(/^mdi:/i, '')
+  iconEdit.value = e
+}
+async function saveIconEdit(reset) {
+  if (!iconEdit.value || iconSaving.value) return
+  iconSaving.value = true
+  iconErr.value = ''
+  try {
+    const icon = reset ? '' : iconInput.value.trim().replace(/^mdi:/i, '').toLowerCase()
+    await api.setEntityIcon(store.activeID, iconEdit.value.entity_id, icon)
+    const targetId = iconEdit.value.entity_id
+    iconEdit.value = null
+    // 后端已使注册表缓存失效；重新拉取并同步详情抽屉引用
+    await load()
+    if (detail.value) {
+      const devId = detail.value.device && detail.value.device.id
+      if (devId) {
+        const nd = devices.value.find((g) => g.device.id === devId)
+        if (nd) detail.value = nd
+      } else {
+        const ne = (unassigned.value || []).find((x) => x.entity_id === targetId)
+        if (ne) detail.value = { ...detail.value, entities: [ne] }
+      }
+    }
+  } catch (err) {
+    iconErr.value = (err && err.message) || '保存失败'
+  } finally {
+    iconSaving.value = false
+  }
+}
 // 设备在线：至少一个实体可用（不是 unavailable/unknown），与 HA 的可用性语义一致。
 // 不能用 active_count（"开启"的实体数）——传感器等领域永远不会是 on，全关的灯其实也在线。
 // liveEntityOf 使在线计数随 WS 实时状态联动（toggle 后设备绿点/房间计数即时更新）。

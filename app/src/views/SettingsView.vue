@@ -6,7 +6,7 @@
     <!-- 顶部导航（重置按钮收纳在「个性化」页底部） -->
     <div class="flex flex-wrap items-center gap-2">
       <nav class="flex flex-wrap gap-1.5 p-1.5 w-fit rounded-2xl bg-surface-alt/90 backdrop-blur-xl border border-border shadow-sm">
-        <button v-for="t in tabs" :key="t.key" @click="activeTab = t.key"
+        <button v-for="t in tabs.filter((x) => x.key !== 'diag' || auth.isAdmin)" :key="t.key" @click="activeTab = t.key"
           class="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 active:scale-95"
           :class="activeTab === t.key
             ? 'bg-primary text-on-primary shadow-md shadow-primary/25'
@@ -653,23 +653,6 @@
       </div>
     </section>
 
-    <!-- 卡片设计器：独立功能入口（积木式设计，产物保存为「我的模板」） -->
-    <section id="sec-designer" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
-      <div class="flex items-center gap-2.5 mb-4">
-        <div class="w-8 h-8 rounded-xl bg-primary/20 flex items-center justify-center">
-          <span class="material-symbols-outlined text-primary text-lg">auto_awesome</span>
-        </div>
-        <div>
-          <h2 class="font-headline text-on-background text-base font-semibold">卡片设计器</h2>
-          <p class="text-muted text-xs mt-0.5">用积木搭出一张完整的卡片，保存后添加到仪表盘</p>
-        </div>
-      </div>
-      <button class="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-on-primary text-sm font-medium shadow-md shadow-primary/25 active:scale-95 transition-transform" @click="router.push('/designer')">
-        <span class="material-symbols-outlined text-base">dashboard_customize</span>
-        进入设计器
-      </button>
-    </section>
-
     <!-- 语音助手 -->
     <section id="sec-voice" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
       <div class="flex items-center gap-2.5 mb-4">
@@ -736,6 +719,321 @@
       class="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border border-border text-muted hover:text-error hover:border-error/40 hover:bg-error/5 text-sm transition-colors">
       <span class="material-symbols-outlined text-base">restart_alt</span> 重置为默认
     </button>
+    </div>
+
+    <!-- ===== AI ===== -->
+    <div v-show="activeTab === 'ai'" class="space-y-6">
+      <section id="sec-ai" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
+        <div class="flex items-center gap-2.5 mb-4">
+          <div class="w-8 h-8 rounded-xl bg-accent/20 flex items-center justify-center">
+            <span class="material-symbols-outlined text-accent text-lg">auto_awesome</span>
+          </div>
+          <div class="min-w-0">
+            <h2 class="font-headline text-on-background text-base font-semibold">AI 设置</h2>
+            <p class="text-muted text-xs mt-0.5">OpenAI 兼容协议 · 用于卡片工作室 AI 生成</p>
+          </div>
+          <span class="ml-auto flex-shrink-0 px-2 py-0.5 rounded-full text-xs font-medium" :class="aiBadge.cls">{{ aiBadge.text }}</span>
+        </div>
+
+        <!-- 管理员可在「我的配置」与「全局默认」之间切换；普通用户只有本人配置 -->
+        <div v-if="auth.isAdmin" class="flex gap-1 p-1 rounded-xl bg-surface border border-border mb-4 w-fit">
+          <button
+            class="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+            :class="aiScope === 'user' ? 'bg-primary text-on-primary' : 'text-muted hover:text-on-surface'"
+            @click="aiScope = 'user'"
+          >我的配置</button>
+          <button
+            class="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+            :class="aiScope === 'global' ? 'bg-primary text-on-primary' : 'text-muted hover:text-on-surface'"
+            @click="aiScope = 'global'"
+          >全局默认</button>
+        </div>
+
+        <p class="text-muted text-xs mb-4 leading-relaxed">
+          <template v-if="aiScope === 'global'">全局配置作为所有未单独配置用户的兜底；每个用户仍可在「设置 → AI」填写自己的 URL / Key 并优先使用。</template>
+          <template v-else>不填写 Key 时会自动使用管理员配置的全局 AI。API Key 只保存在服务端，不会回传浏览器。</template>
+        </p>
+
+        <div class="space-y-3">
+          <div>
+            <label class="text-on-surface text-sm font-medium mb-2 block">API 地址（Base URL）</label>
+            <input v-model="aiFields.base_url" type="text" class="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-on-surface text-sm focus:border-primary focus:outline-none transition-colors" placeholder="https://api.openai.com/v1">
+            <p class="text-muted text-xs mt-1">兼容 OpenAI 协议的地址，例如 https://api.openai.com/v1、https://api.deepseek.com/v1</p>
+          </div>
+          <div>
+            <label class="text-on-surface text-sm font-medium mb-2 block">模型</label>
+            <input v-model="aiFields.model" type="text" class="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-on-surface text-sm focus:border-primary focus:outline-none transition-colors" placeholder="gpt-4o-mini">
+          </div>
+          <div>
+            <label class="text-on-surface text-sm font-medium mb-2 block">API Key</label>
+            <input v-model="aiFields.api_key" type="password" autocomplete="new-password" class="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-on-surface text-sm focus:border-primary focus:outline-none transition-colors" :placeholder="aiFields.has_key ? '已配置，留空表示不修改' : 'sk-...'">
+          </div>
+          <label v-if="aiFields.has_key" class="flex items-center gap-2 text-xs text-muted">
+            <input type="checkbox" v-model="aiFields.clear_key" class="accent-primary" />
+            清除已保存的 Key
+          </label>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2 mt-4">
+          <button
+            class="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-on-primary text-sm font-medium transition-all active:scale-95 disabled:opacity-50"
+            :disabled="aiSaving"
+            @click="saveAi"
+          >
+            <span class="material-symbols-outlined text-base">{{ aiSaving ? 'progress_activity' : 'save' }}</span>{{ aiSaving ? '保存中…' : '保存' }}
+          </button>
+          <button
+            class="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-surface border border-border text-on-surface text-sm font-medium hover:bg-surface-hover transition-colors disabled:opacity-50"
+            :disabled="aiTesting || !aiEffective.has_key"
+            @click="testAi"
+          >
+            <span class="material-symbols-outlined text-base">{{ aiTesting ? 'progress_activity' : 'network_check' }}</span>{{ aiTesting ? '测试中…' : '测试连接' }}
+          </button>
+          <span v-if="aiMsg" class="text-xs" :class="aiMsgErr ? 'text-error' : 'text-success'">{{ aiMsg }}</span>
+        </div>
+
+        <p class="text-muted text-xs mt-3 leading-relaxed">
+          当前生效：
+          <span class="text-on-surface">{{ aiSourceText }}</span>
+          <template v-if="aiEffective.model"> · {{ aiEffective.model }}</template>
+          <template v-if="aiEffective.base_url"> · {{ aiEffective.base_url }}</template>
+        </p>
+      </section>
+    </div>
+
+    <!-- ===== AI 诊断 ===== -->
+    <div v-show="activeTab === 'diag'" class="space-y-6">
+      <section id="sec-diag" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
+        <div class="flex items-center gap-2.5 mb-4">
+          <div class="w-8 h-8 rounded-xl bg-accent/20 flex items-center justify-center">
+            <span class="material-symbols-outlined text-accent text-lg">monitor_heart</span>
+          </div>
+          <div class="min-w-0">
+            <h2 class="font-headline text-on-background text-base font-semibold">AI 诊断</h2>
+            <p class="text-muted text-xs mt-0.5">收集前后端日志，由 AI 生成可下载的诊断报告</p>
+          </div>
+          <span class="ml-auto flex-shrink-0 px-2 py-0.5 rounded-full text-xs font-medium" :class="diagBadge.cls">{{ diagBadge.text }}</span>
+        </div>
+
+        <p class="text-muted text-xs mb-4 leading-relaxed">
+          功能默认关闭。开启后服务器与当前浏览器会收集日志，到达时长后自动调用「设置 → AI」配置的模型生成报告。
+          诊断期间保持本页面打开可采集到更完整的前端日志；仅管理员可用。
+        </p>
+        <p class="text-muted text-xs mb-4 leading-relaxed">
+          隐私保护：提交给 AI 前会自动屏蔽账号、用户名、邮箱、电话、IP/MAC、Token、密码与 Key（显示为 ***），
+          完整设备信息仅保留浏览器/系统类型。
+        </p>
+
+        <!-- 未开启：选择时长后开始 -->
+        <template v-if="!diagActive">
+          <label class="text-on-surface text-sm font-medium mb-2 block">诊断时长</label>
+          <div class="flex flex-wrap gap-2 mb-4">
+            <button
+              v-for="m in DIAG_DURATIONS"
+              :key="m"
+              class="px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors"
+              :class="diagDuration === m ? 'bg-primary text-on-primary border-primary' : 'bg-surface border-border text-muted hover:text-on-surface'"
+              @click="diagDuration = m"
+            >{{ m }} 分钟</button>
+          </div>
+          <button
+            class="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-on-primary text-sm font-medium transition-all active:scale-95 disabled:opacity-50"
+            :disabled="diagBusy || !aiEffective.has_key"
+            @click="startDiag"
+          >
+            <span class="material-symbols-outlined text-base">{{ diagBusy ? 'progress_activity' : 'play_arrow' }}</span>
+            {{ diagBusy ? '启动中…' : '开始诊断' }}
+          </button>
+          <p v-if="!aiEffective.has_key" class="mt-2 text-xs text-warning leading-relaxed">请先在「AI」页配置 API Key，否则诊断结束后无法生成报告。</p>
+          <p v-if="diagMsg" class="mt-3 text-xs" :class="diagMsgErr ? 'text-error' : 'text-success'">{{ diagMsg }}</p>
+        </template>
+
+        <!-- 进行中 / 已完成：进度、实时日志、报告 -->
+        <template v-else>
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="text-sm text-on-surface font-medium">{{ diagPhaseText }}</p>
+              <p class="text-xs text-muted mt-0.5">{{ diagCountdown }}</p>
+            </div>
+            <p class="text-xs text-muted text-right leading-relaxed">
+              已收集 {{ diagStatus.collected }} 条<br />浏览器 {{ diagStatus.client_count }} 条
+            </p>
+          </div>
+          <div class="h-2 rounded-full bg-surface overflow-hidden mt-3">
+            <div class="h-full bg-primary transition-all duration-500" :style="{ width: diagStatus.progress + '%' }"></div>
+          </div>
+
+          <div class="flex flex-wrap gap-2 mt-3">
+            <button
+              v-if="diagStatus.status === 'collecting'"
+              class="px-3 py-1.5 rounded-xl bg-surface border border-border text-on-surface text-xs font-medium hover:bg-surface-hover transition-colors"
+              @click="stopDiag"
+            >停止并生成报告</button>
+            <button
+              v-if="diagReportText"
+              class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary text-on-primary text-xs font-medium transition-colors"
+              @click="downloadDiagReport"
+            >
+              <span class="material-symbols-outlined text-sm">download</span>下载报告
+            </button>
+            <button
+              v-if="diagStatus.status === 'done' || diagStatus.status === 'failed'"
+              class="px-3 py-1.5 rounded-xl bg-surface border border-border text-on-surface text-xs font-medium hover:bg-surface-hover transition-colors"
+              @click="resetDiag"
+            >重新诊断</button>
+          </div>
+          <p v-if="diagMsg" class="mt-2 text-xs" :class="diagMsgErr ? 'text-error' : 'text-success'">{{ diagMsg }}</p>
+          <p v-if="diagStatus.error" class="mt-2 text-xs text-error leading-relaxed">{{ diagStatus.error }}</p>
+
+          <!-- 实时日志：让诊断过程可见 -->
+          <div class="mt-4">
+            <div class="flex items-center justify-between mb-1.5">
+              <label class="text-on-surface text-xs font-medium">诊断日志（实时）</label>
+              <span class="text-muted text-xs">{{ diagLogs.length }} 条</span>
+            </div>
+            <div ref="diagLogEl" class="diag-logs">
+              <div v-for="e in diagLogs" :key="e.seq" class="diag-row">
+                <span class="diag-time">{{ e.time }}</span>
+                <span class="diag-lvl" :class="'lv-' + e.level.toLowerCase()">{{ e.level }}</span>
+                <span class="diag-src">{{ e.source }}</span>
+                <span class="diag-msg">{{ e.msg }}</span>
+              </div>
+              <p v-if="!diagLogs.length" class="diag-empty">等待日志…</p>
+            </div>
+          </div>
+
+          <div v-if="diagStatus.status === 'analyzing'" class="flex items-center gap-2 mt-4 text-xs text-accent">
+            <span class="hc-spinner hc-spinner-accent"></span>
+            AI 正在分析日志并生成诊断报告，通常需要几十秒…
+          </div>
+
+          <div v-if="diagReportText" class="mt-4">
+            <label class="text-on-surface text-xs font-medium mb-1.5 block">诊断报告预览</label>
+            <pre class="diag-report-pre">{{ diagReportText }}</pre>
+          </div>
+        </template>
+      </section>
+    </div>
+
+    <!-- ===== 运行日志 ===== -->
+    <div v-show="activeTab === 'logs'" class="space-y-6">
+      <section id="sec-logs" class="bg-surface-alt border border-border rounded-2xl p-5 scroll-mt-28">
+        <div class="flex items-center gap-2.5 mb-4">
+          <div class="w-8 h-8 rounded-xl bg-info/20 flex items-center justify-center">
+            <span class="material-symbols-outlined text-info text-lg">receipt_long</span>
+          </div>
+          <div class="min-w-0">
+            <h2 class="font-headline text-on-background text-base font-semibold">运行日志</h2>
+            <p class="text-muted text-xs mt-0.5">按级别与来源分类，保留 {{ logRetentionDays }} 天，可筛选后交给 AI 分析</p>
+          </div>
+          <span class="ml-auto flex-shrink-0 px-2 py-0.5 rounded-full text-xs font-medium bg-surface text-muted">保留 {{ logRetentionDays }} 天</span>
+        </div>
+
+        <p class="text-muted text-xs mb-4 leading-relaxed">
+          服务端日志、HTTP 失败/慢请求与浏览器日志统一入库。超过 {{ logRetentionDays }} 天的日志由后台每小时自动清理。
+          提交 AI 前会自动屏蔽账号、邮箱、电话、IP/MAC、Token、密码等信息（显示为 ***）。
+        </p>
+
+        <!-- 级别筛选 -->
+        <label class="text-on-surface text-xs font-medium mb-2 block">日志级别 <span class="text-muted font-normal">（不选=全部）</span></label>
+        <div class="flex flex-wrap gap-2 mb-3">
+          <button
+            v-for="lv in LOG_LEVELS"
+            :key="lv"
+            class="px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors"
+            :class="logLevels.includes(lv) ? 'bg-primary text-on-primary border-primary' : 'bg-surface border-border text-muted hover:text-on-surface'"
+            @click="toggleLogLevel(lv)"
+          >{{ lv }}</button>
+        </div>
+
+        <!-- 来源筛选 -->
+        <label class="text-on-surface text-xs font-medium mb-2 block">日志来源 <span class="text-muted font-normal">（不选=全部）</span></label>
+        <div class="flex flex-wrap gap-2 mb-3">
+          <button
+            v-for="s in LOG_SOURCES"
+            :key="s.key"
+            class="px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors"
+            :class="logSources.includes(s.key) ? 'bg-primary text-on-primary border-primary' : 'bg-surface border-border text-muted hover:text-on-surface'"
+            @click="toggleLogSource(s.key)"
+          >{{ s.label }}</button>
+        </div>
+
+        <!-- 时间段 -->
+        <label class="text-on-surface text-xs font-medium mb-2 block">时间段</label>
+        <div class="flex flex-wrap gap-2 mb-3">
+          <button
+            v-for="r in LOG_RANGES"
+            :key="r.key"
+            class="px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors"
+            :class="logRange === r.key ? 'bg-primary text-on-primary border-primary' : 'bg-surface border-border text-muted hover:text-on-surface'"
+            @click="logRange = r.key"
+          >{{ r.label }}</button>
+        </div>
+        <div v-if="logRange === 'custom'" class="flex flex-wrap items-center gap-2 mb-3">
+          <input v-model="logFrom" type="datetime-local"
+            class="bg-background border border-border rounded-xl px-3 py-1.5 text-xs text-on-surface focus:border-primary focus:outline-none" />
+          <span class="text-muted text-xs">至</span>
+          <input v-model="logTo" type="datetime-local"
+            class="bg-background border border-border rounded-xl px-3 py-1.5 text-xs text-on-surface focus:border-primary focus:outline-none" />
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+          <button
+            class="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-surface border border-border text-on-surface text-sm font-medium transition-colors hover:bg-surface-hover disabled:opacity-50"
+            :disabled="logLoading"
+            @click="loadLogs"
+          >
+            <span class="material-symbols-outlined text-base">{{ logLoading ? 'progress_activity' : 'search' }}</span>
+            {{ logLoading ? '查询中…' : '查询' }}
+          </button>
+          <button
+            class="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-on-primary text-sm font-medium transition-all active:scale-95 disabled:opacity-50"
+            :disabled="logAnalysis.status === 'running' || !aiEffective.has_key"
+            @click="analyzeLogs"
+          >
+            <span class="material-symbols-outlined text-base">{{ logAnalysis.status === 'running' ? 'progress_activity' : 'auto_awesome' }}</span>
+            {{ logAnalysis.status === 'running' ? '分析中…' : 'AI 分析所选日志' }}
+          </button>
+        </div>
+        <p v-if="!aiEffective.has_key" class="mt-2 text-xs text-warning leading-relaxed">请先在「AI」页配置 API Key，否则无法进行日志分析。</p>
+        <p v-if="logMsg" class="mt-2 text-xs" :class="logMsgErr ? 'text-error' : 'text-success'">{{ logMsg }}</p>
+
+        <!-- AI 分析结果 -->
+        <div v-if="logAnalysis.status === 'running'" class="flex items-center gap-2 mt-4 text-xs text-accent">
+          <span class="hc-spinner hc-spinner-accent"></span>
+          正在分析 {{ logAnalysis.collected }} 条日志，通常需要几十秒…
+        </div>
+        <p v-if="logAnalysis.error" class="mt-3 text-xs text-error leading-relaxed">{{ logAnalysis.error }}</p>
+        <div v-if="logReport" class="mt-4">
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="text-on-surface text-xs font-medium">分析报告</label>
+            <button
+              class="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary text-on-primary text-xs font-medium"
+              @click="downloadLogReport"
+            >
+              <span class="material-symbols-outlined text-sm">download</span>下载
+            </button>
+          </div>
+          <pre class="diag-report-pre">{{ logReport }}</pre>
+        </div>
+
+        <!-- 日志列表 -->
+        <div class="mt-5">
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="text-on-surface text-xs font-medium">日志列表</label>
+            <span class="text-muted text-xs">共 {{ logTotal }} 条 · 显示最近 {{ logRows.length }} 条</span>
+          </div>
+          <div class="diag-logs log-list">
+            <div v-for="e in logRows" :key="e.id" class="diag-row">
+              <span class="diag-time">{{ e.time }}</span>
+              <span class="diag-lvl" :class="'lv-' + e.level.toLowerCase()">{{ e.level }}</span>
+              <span class="diag-src">{{ e.source }}</span>
+              <span class="diag-msg">{{ e.msg }}</span>
+            </div>
+            <p v-if="!logRows.length" class="diag-empty">该条件下暂无日志</p>
+          </div>
+        </div>
+      </section>
     </div>
 
     <!-- ===== 账户 ===== -->
@@ -1097,8 +1395,8 @@
 </template>
 
 <script setup>
-import { ref, reactive, watch, onMounted, onUnmounted, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, reactive, watch, onMounted, onUnmounted, computed, nextTick } from 'vue'
+import { startDiagCapture, stopDiagCapture, drainDiagLogs, diagClientMeta } from '@/utils/diagnostics'
 import ToggleRow from '@/components/ToggleRow.vue'
 import SiteIcon from '@/components/SiteIcon.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
@@ -1108,7 +1406,7 @@ import { availableSensors, unavailableReason, startSensorMonitor, buildReportPay
 import { showNotify, setBlackout, setScreenBrightness, setScreenWake, blackout, saveBlackoutDismiss, watchAmbientLight } from '@/utils/browserCommands'
 import { loadInstances, switchInstance, changePassword, authLogout, auth, store, backendOnline, haTokenConfigured, haTokenKnown, saveHAToken, siteName, siteNameEn, siteIcon, siteIconImg, loadSiteName, loadSiteIcon, saveSiteName as persistSiteName, saveSiteIcon as persistSiteIcon, saveSiteIconImage as persistSiteIconImage } from '@/store'
 import { applyTheme, resolveTheme, THEMES, CUSTOM_COLOR_KEYS, DEFAULT_CUSTOM_COLORS } from '@/themes'
-import { getPrefs, putPrefs } from '@/utils/prefs'
+import { getPrefs, putPrefs, invalidate } from '@/utils/prefs'
 import { colsKeyFor } from '@/utils/dashboard'
 import { isApk, openServerSheet } from '@/utils/serverConfig'
 import { trackingEnabled, setTrackingEnabled } from '@/utils/location'
@@ -1253,6 +1551,489 @@ async function doLogout() {
 const map = reactive({ amap_key: '' })
 // 地图 Key 使用策略（普通用户）：use_admin=true 用管理员 Key；false 用本人 Key
 const mapConfig = reactive({ use_admin: false, has_own_key: false })
+
+// ---- AI 设置：本人配置 + 管理员全局默认（本人有 Key 时优先） ----
+const aiScope = ref(auth.isAdmin ? 'global' : 'user')
+const aiOwn = reactive({ base_url: '', model: '', api_key: '', has_key: false, clear_key: false })
+const aiGlobal = reactive({ base_url: '', model: '', api_key: '', has_key: false, clear_key: false })
+const aiEffective = reactive({ base_url: '', model: '', has_key: false, source: 'none' })
+const aiSaving = ref(false)
+const aiTesting = ref(false)
+const aiMsg = ref('')
+const aiMsgErr = ref(false)
+const aiFields = computed(() => (aiScope.value === 'global' ? aiGlobal : aiOwn))
+const aiSourceText = computed(() => {
+  if (aiEffective.source === 'user') return '我的配置'
+  if (aiEffective.source === 'global') return '管理员全局配置'
+  return '未配置'
+})
+const aiBadge = computed(() => {
+  if (aiEffective.source === 'user') return { cls: 'bg-success/15 text-success', text: '我的配置已生效' }
+  if (aiEffective.source === 'global') return { cls: 'bg-info/15 text-info', text: '使用全局配置' }
+  return { cls: 'bg-surface text-muted', text: '未配置' }
+})
+let aiMsgTimer = 0
+function aiFlash(text, err = false) {
+  aiMsg.value = text
+  aiMsgErr.value = err
+  clearTimeout(aiMsgTimer)
+  aiMsgTimer = setTimeout(() => { aiMsg.value = '' }, 4500)
+}
+function applyAiPrefs(raw) {
+  let cfg = {}
+  try { cfg = JSON.parse(raw || '{}') } catch { /* 忽略坏配置 */ }
+  aiOwn.base_url = cfg.own_base_url || ''
+  aiOwn.model = cfg.own_model || ''
+  aiOwn.has_key = !!cfg.own_has_key
+  aiGlobal.base_url = cfg.global_base_url || ''
+  aiGlobal.model = cfg.global_model || ''
+  aiGlobal.has_key = !!cfg.global_has_key
+  aiEffective.base_url = cfg.base_url || ''
+  aiEffective.model = cfg.model || ''
+  aiEffective.has_key = !!cfg.has_key
+  aiEffective.source = cfg.source || 'none'
+}
+async function loadAiConfig(force = false) {
+  try {
+    const { data } = await getPrefs({ force })
+    if (data && data.ai_config) applyAiPrefs(data.ai_config)
+  } catch { /* 后端离线时静默 */ }
+}
+async function saveAi() {
+  const scope = auth.isAdmin && aiScope.value === 'global' ? 'global' : 'user'
+  const f = scope === 'global' ? aiGlobal : aiOwn
+  aiSaving.value = true
+  try {
+    // 直接走 api 写入：AI Key 不进入 localStorage 快照（putPrefs 会持久化请求体）
+    await api.putPrefs({
+      ai_config: JSON.stringify({
+        scope,
+        base_url: (f.base_url || '').trim(),
+        model: (f.model || '').trim(),
+        api_key: f.api_key || '',
+        clear_key: !!f.clear_key,
+      }),
+    })
+    invalidate()
+    f.api_key = ''
+    f.clear_key = false
+    await loadAiConfig(true)
+    aiFlash(scope === 'global' ? '全局 AI 配置已保存' : 'AI 配置已保存')
+    return true
+  } catch (e) {
+    aiFlash(e.message || '保存失败', true)
+    return false
+  } finally {
+    aiSaving.value = false
+  }
+}
+async function testAi() {
+  // 先保存当前编辑，确保测试使用输入框里的 URL / Key / 模型
+  const saved = await saveAi()
+  if (!saved) return
+  aiTesting.value = true
+  try {
+    const { data } = await api.aiTest()
+    const extra = data?.latency_ms != null ? ` · ${data.latency_ms}ms` : ''
+    aiFlash(`连接成功 · ${data?.model || aiEffective.model}${extra}`)
+  } catch (e) {
+    aiFlash(e.message || '连接失败', true)
+  } finally {
+    aiTesting.value = false
+  }
+}
+
+// ================= AI 诊断（管理员） =================
+const DIAG_DURATIONS = [1, 5, 10, 30]
+const diagDuration = ref(5)
+const diagBusy = ref(false)
+const diagMsg = ref('')
+const diagMsgErr = ref(false)
+const diagNow = ref(Date.now())
+const diagStatus = reactive({
+  status: 'idle',
+  progress: 0,
+  started_at: '',
+  ends_at: '',
+  duration_min: 0,
+  collected: 0,
+  client_count: 0,
+  report_ready: false,
+  error: '',
+})
+const diagLogs = ref([])
+const diagReportText = ref('')
+const diagLogEl = ref(null)
+let diagTimer = null
+let diagTickTimer = null
+let diagSeq = 0
+let diagPollBusy = false
+let diagReportLoaded = false
+
+const diagActive = computed(() => diagStatus.status !== 'idle')
+const diagPhaseText = computed(() => {
+  switch (diagStatus.status) {
+    case 'collecting': return '正在收集前后端日志'
+    case 'analyzing': return 'AI 正在生成诊断报告'
+    case 'done': return '诊断完成'
+    case 'failed': return '诊断失败'
+    default: return '未开启'
+  }
+})
+const diagBadge = computed(() => {
+  switch (diagStatus.status) {
+    case 'collecting': return { cls: 'bg-primary/15 text-primary', text: '采集中' }
+    case 'analyzing': return { cls: 'bg-accent/15 text-accent', text: '分析中' }
+    case 'done': return { cls: 'bg-success/15 text-success', text: '已完成' }
+    case 'failed': return { cls: 'bg-error/15 text-error', text: '失败' }
+    default: return { cls: 'bg-surface text-muted', text: '默认关闭' }
+  }
+})
+const diagCountdown = computed(() => {
+  if (diagStatus.status === 'collecting' && diagStatus.ends_at) {
+    const left = Math.max(0, Math.floor((new Date(diagStatus.ends_at).getTime() - diagNow.value) / 1000))
+    const mm = String(Math.floor(left / 60)).padStart(2, '0')
+    const ss = String(left % 60).padStart(2, '0')
+    return `剩余 ${mm}:${ss} · 本次 ${diagStatus.duration_min} 分钟`
+  }
+  if (diagStatus.status === 'analyzing') return `采集已结束 · 本次 ${diagStatus.duration_min} 分钟`
+  if (diagStatus.status === 'done') {
+    const t = diagStatus.ends_at ? new Date(diagStatus.ends_at) : null
+    return t ? `采集于 ${t.toLocaleString('zh-CN', { hour12: false })} 结束` : '报告已生成'
+  }
+  if (diagStatus.status === 'failed') return '报告生成失败，可重新诊断'
+  return ''
+})
+
+function applyDiagStatus(data) {
+  if (!data) return
+  diagStatus.status = data.status || 'idle'
+  diagStatus.progress = data.progress || 0
+  diagStatus.started_at = data.started_at || ''
+  diagStatus.ends_at = data.ends_at || ''
+  diagStatus.duration_min = data.duration_min || 0
+  diagStatus.collected = data.collected || 0
+  diagStatus.client_count = data.client_count || 0
+  diagStatus.report_ready = !!data.report_ready
+  diagStatus.error = data.error || ''
+}
+
+function appendDiagLogs(entries) {
+  if (!entries || !entries.length) return
+  const mapped = entries.map((e) => ({
+    seq: e.seq,
+    time: e.ts ? new Date(e.ts).toLocaleTimeString('zh-CN', { hour12: false }) : '',
+    level: String(e.level || 'INFO').toUpperCase(),
+    source: e.source || 'server',
+    msg: e.msg || '',
+  }))
+  diagLogs.value = diagLogs.value.concat(mapped)
+  if (diagLogs.value.length > 400) diagLogs.value = diagLogs.value.slice(-400)
+  diagSeq = mapped[mapped.length - 1].seq || diagSeq
+  nextTick(() => {
+    const el = diagLogEl.value
+    if (el) el.scrollTop = el.scrollHeight
+  })
+}
+
+function startDiagPolling() {
+  if (!diagTimer) {
+    diagTimer = setInterval(pollDiag, 1500)
+    pollDiag()
+  }
+  if (!diagTickTimer) {
+    diagTickTimer = setInterval(() => { diagNow.value = Date.now() }, 1000)
+  }
+}
+
+function stopDiagPolling() {
+  if (diagTimer) { clearInterval(diagTimer); diagTimer = null }
+  if (diagTickTimer) { clearInterval(diagTickTimer); diagTickTimer = null }
+  diagPollBusy = false
+}
+
+async function loadDiagReport() {
+  try {
+    const { data } = await api.diagReport()
+    diagReportText.value = data?.report || ''
+    diagReportLoaded = !!diagReportText.value
+  } catch (e) {
+    diagMsg.value = e.message || '报告读取失败'
+    diagMsgErr.value = true
+  }
+}
+
+async function pollDiag() {
+  if (diagPollBusy) return
+  diagPollBusy = true
+  try {
+    // 先上传浏览器日志，保证被采集进后端会话
+    if (diagStatus.status === 'collecting') {
+      const pending = drainDiagLogs()
+      if (pending.length) {
+        try { await api.diagClientLogs(pending) } catch { /* 单次失败忽略，下轮继续 */ }
+      }
+    }
+    const { data } = await api.diagStatus()
+    applyDiagStatus(data)
+    if (data.status !== 'idle') {
+      const res = await api.diagLogs(diagSeq)
+      appendDiagLogs(res.data?.entries || [])
+    }
+    if (data.status === 'done' && !diagReportLoaded) await loadDiagReport()
+    if (data.status === 'done' || data.status === 'failed') {
+      stopDiagPolling()
+      stopDiagCapture()
+    }
+  } catch (e) {
+    // 网络异常时保持轮询，避免诊断过程卡死
+    diagMsg.value = e.message || '诊断状态读取失败'
+    diagMsgErr.value = true
+  } finally {
+    diagPollBusy = false
+  }
+}
+
+async function initDiag() {
+  if (!auth.isAdmin) return
+  try {
+    const { data } = await api.diagStatus()
+    applyDiagStatus(data)
+    if (data.status === 'collecting') {
+      startDiagCapture()
+      startDiagPolling()
+    } else if (data.status === 'analyzing') {
+      startDiagPolling()
+    } else if (data.status === 'done') {
+      await loadDiagReport()
+    }
+  } catch { /* 后端离线时静默 */ }
+}
+
+async function startDiag() {
+  if (diagBusy.value) return
+  diagBusy.value = true
+  diagMsg.value = ''
+  diagMsgErr.value = false
+  diagLogs.value = []
+  diagSeq = 0
+  diagReportText.value = ''
+  diagReportLoaded = false
+  try {
+    const { data } = await api.diagStart(diagDuration.value, diagClientMeta())
+    applyDiagStatus(data)
+    startDiagCapture()
+    startDiagPolling()
+    diagMsg.value = '诊断已开始，保持本页面打开可获得更完整的前端日志'
+  } catch (e) {
+    diagMsg.value = e.message || '启动失败'
+    diagMsgErr.value = true
+    await initDiag()
+  } finally {
+    diagBusy.value = false
+  }
+}
+
+async function stopDiag() {
+  if (diagBusy.value) return
+  diagBusy.value = true
+  diagMsg.value = ''
+  diagMsgErr.value = false
+  try {
+    const { data } = await api.diagStop()
+    applyDiagStatus(data)
+    diagMsg.value = '已停止采集，正在生成诊断报告…'
+    startDiagPolling()
+  } catch (e) {
+    diagMsg.value = e.message || '停止失败'
+    diagMsgErr.value = true
+  } finally {
+    diagBusy.value = false
+  }
+}
+
+function resetDiag() {
+  stopDiagPolling()
+  stopDiagCapture()
+  applyDiagStatus({ status: 'idle' })
+  diagLogs.value = []
+  diagSeq = 0
+  diagReportText.value = ''
+  diagReportLoaded = false
+  diagMsg.value = ''
+  diagMsgErr.value = false
+}
+
+function downloadDiagReport() {
+  if (!diagReportText.value) return
+  const d = new Date()
+  const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}-${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}`
+  const blob = new Blob([diagReportText.value], { type: 'text/markdown;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `homecanvas-diagnosis-${stamp}.md`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+// ---- 运行日志（管理员）：级别/来源/时间段筛选 + AI 分析 ----
+const logRetentionDays = 30
+const LOG_LEVELS = ['DEBUG', 'INFO', 'WARN', 'ERROR']
+const LOG_SOURCES = [
+  { key: 'server', label: '服务端' },
+  { key: 'http', label: 'HTTP' },
+  { key: 'client', label: '浏览器' },
+]
+const LOG_RANGES = [
+  { key: '1h', label: '最近 1 小时', hours: 1 },
+  { key: '24h', label: '最近 24 小时', hours: 24 },
+  { key: '7d', label: '最近 7 天', hours: 168 },
+  { key: '30d', label: '最近 30 天', hours: 720 },
+  { key: 'custom', label: '自定义', hours: 0 },
+]
+const logLevels = ref(['INFO', 'WARN', 'ERROR'])
+const logSources = ref(['server', 'http', 'client'])
+const logRange = ref('24h')
+const logFrom = ref('')
+const logTo = ref('')
+const logEntries = ref([])
+const logTotal = ref(0)
+const logLoading = ref(false)
+const logMsg = ref('')
+const logMsgErr = ref(false)
+const logReport = ref('')
+const logAnalysis = reactive({ status: 'idle', collected: 0, error: '' })
+let logPollTimer = null
+
+const logRows = computed(() => logEntries.value.map((e) => ({
+  ...e,
+  time: e.ts ? new Date(e.ts).toLocaleString('zh-CN', { hour12: false }) : '',
+})))
+
+function toggleLogLevel(lv) {
+  const i = logLevels.value.indexOf(lv)
+  if (i >= 0) logLevels.value.splice(i, 1)
+  else logLevels.value.push(lv)
+}
+function toggleLogSource(key) {
+  const i = logSources.value.indexOf(key)
+  if (i >= 0) logSources.value.splice(i, 1)
+  else logSources.value.push(key)
+}
+
+// 时间段 → {from, to}（ISO 字符串）；预设按当前时间回溯，自定义取输入值
+function logRangePayload() {
+  const preset = LOG_RANGES.find((r) => r.key === logRange.value)
+  if (preset && preset.hours > 0) {
+    const to = new Date()
+    return { from: new Date(to.getTime() - preset.hours * 3600e3).toISOString(), to: to.toISOString() }
+  }
+  const to = logTo.value ? new Date(logTo.value) : new Date()
+  const from = logFrom.value ? new Date(logFrom.value) : new Date(to.getTime() - 24 * 3600e3)
+  return { from: from.toISOString(), to: to.toISOString() }
+}
+function logFilterPayload() {
+  const { from, to } = logRangePayload()
+  return { levels: [...logLevels.value], sources: [...logSources.value], from, to }
+}
+
+async function loadLogs() {
+  if (!auth.isAdmin || logLoading.value) return
+  logLoading.value = true
+  logMsg.value = ''
+  logMsgErr.value = false
+  try {
+    const f = logFilterPayload()
+    const { data } = await api.sysLogs({
+      levels: f.levels.join(','),
+      sources: f.sources.join(','),
+      from: f.from,
+      to: f.to,
+      limit: 300,
+    })
+    logEntries.value = data?.entries || []
+    logTotal.value = data?.total || 0
+  } catch (e) {
+    logMsg.value = e.message || '日志查询失败'
+    logMsgErr.value = true
+  } finally {
+    logLoading.value = false
+  }
+}
+
+function applyLogAnalysis(d) {
+  if (!d) return
+  logAnalysis.status = d.status || 'idle'
+  logAnalysis.collected = d.collected || 0
+  logAnalysis.error = d.error || ''
+}
+
+async function analyzeLogs() {
+  if (logAnalysis.status === 'running') return
+  logReport.value = ''
+  logMsg.value = ''
+  logMsgErr.value = false
+  try {
+    const { data } = await api.sysLogAnalyze(logFilterPayload())
+    applyLogAnalysis(data)
+    logMsg.value = `已提交 ${logAnalysis.collected} 条日志，正在分析…`
+    startLogPoll()
+  } catch (e) {
+    logMsg.value = e.message || '提交分析失败'
+    logMsgErr.value = true
+  }
+}
+
+async function pollLogAnalysis() {
+  try {
+    const { data } = await api.sysLogAnalysis()
+    applyLogAnalysis(data)
+    if (data?.status === 'done') {
+      logReport.value = data.report || ''
+      stopLogPoll()
+    } else if (data?.status !== 'running') {
+      stopLogPoll()
+    }
+  } catch { /* 网络异常时保持轮询 */ }
+}
+
+function startLogPoll() {
+  if (logPollTimer) return
+  logPollTimer = setInterval(pollLogAnalysis, 1500)
+  pollLogAnalysis()
+}
+function stopLogPoll() {
+  if (logPollTimer) { clearInterval(logPollTimer); logPollTimer = null }
+}
+
+async function initLogView() {
+  if (!auth.isAdmin) return
+  loadLogs()
+  try {
+    const { data } = await api.sysLogAnalysis()
+    applyLogAnalysis(data)
+    if (data?.status === 'running') startLogPoll()
+    else if (data?.status === 'done') logReport.value = data.report || ''
+  } catch { /* 后端离线时静默 */ }
+}
+
+function downloadLogReport() {
+  if (!logReport.value) return
+  const d = new Date()
+  const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}-${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}`
+  const blob = new Blob([logReport.value], { type: 'text/markdown;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `homecanvas-logs-analysis-${stamp}.md`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
 const themeKey = ref('default')
 const customColor = ref('')
 // 自定义主题调色板（11 个可调色项，实时预览）
@@ -1269,11 +2050,13 @@ function resetCustomPalette() {
 const tabs = [
   { key: 'connect', icon: 'link', label: '连接与设备' },
   { key: 'personal', icon: 'palette', label: '个性化' },
+  { key: 'ai', icon: 'auto_awesome', label: 'AI' },
+  ...(auth.isAdmin ? [{ key: 'diag', icon: 'monitor_heart', label: 'AI 诊断' }] : []),
+  ...(auth.isAdmin ? [{ key: 'logs', icon: 'receipt_long', label: '日志' }] : []),
   { key: 'account', icon: 'shield_person', label: '账户' },
   ...(auth.isAdmin ? [{ key: 'users', icon: 'group', label: '用户管理' }] : []),
 ]
 const activeTab = ref('connect')
-const router = useRouter()
 // 锚点导航：每个标签页的区块快捷跳转列表
 const anchors = {
   connect: [
@@ -1293,8 +2076,16 @@ const anchors = {
     { id: 'sec-icon-style', label: '图标' },
     { id: 'sec-floorplan', label: '户型图' },
     { id: 'sec-animation', label: '动画' },
-    { id: 'sec-designer', label: '设计器' },
     { id: 'sec-voice', label: '语音' },
+  ],
+  ai: [
+    { id: 'sec-ai', label: 'AI 设置' },
+  ],
+  diag: [
+    { id: 'sec-diag', label: 'AI 诊断' },
+  ],
+  logs: [
+    { id: 'sec-logs', label: '运行日志' },
   ],
   account: [
     { id: 'sec-account', label: '账号' },
@@ -1834,6 +2625,7 @@ async function loadPrefs() {
         if (auth.isAdmin || !mapConfig.use_admin) map.amap_key = mc.amap_key
       } catch { /* 忽略坏配置 */ }
     }
+    if (data.ai_config) applyAiPrefs(data.ai_config)
   } catch { /* 后端离线时静默 */ }
 }
 
@@ -2069,8 +2861,13 @@ onMounted(() => {
   loadSiteName().then(() => { siteNameDraft.value = siteName.value; siteNameEnDraft.value = siteNameEn.value }) // 同步后端权威值
   loadSiteIcon().then(() => { siteIconDraft.value = siteIcon.value })
   stopLightWatch = watchAmbientLight() // 面板打开期间持续读环境光，用于「实时值」显示
+  initDiag() // 恢复可能仍在进行的诊断会话（默认关闭时不会产生采集）
+  initLogView() // 初始加载运行日志并恢复可能仍在进行中的 AI 分析
 })
 onUnmounted(() => {
+  stopDiagPolling()
+  stopDiagCapture()
+  stopLogPoll()
   if (stopMonitor) { stopMonitor(); stopMonitor = null }
   if (stopLightWatch) { stopLightWatch(); stopLightWatch = null }
   if (canPickRing) window.removeEventListener('stickykee-ring', onRingPicked)
@@ -2092,5 +2889,65 @@ onUnmounted(() => {
   border-top-color: rgb(var(--c-on-primary));
   animation: hc-spin 0.7s linear infinite;
   flex-shrink: 0;
+}
+.hc-spinner-accent {
+  width: 14px;
+  height: 14px;
+  border-width: 2px;
+  border-color: rgb(var(--c-accent) / 0.3);
+  border-top-color: rgb(var(--c-accent));
+}
+
+/* AI 诊断：实时日志与报告预览 */
+.diag-logs {
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 6px 8px;
+  border: 1px solid rgb(var(--c-border));
+  border-radius: 12px;
+  background: rgb(var(--c-background));
+}
+.log-list { max-height: 420px; }
+.diag-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 3px 0;
+  border-bottom: 1px solid rgb(var(--c-border) / 0.35);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+.diag-row:last-child { border-bottom: none; }
+.diag-time { flex: none; color: rgb(var(--c-faint)); }
+.diag-lvl {
+  flex: none;
+  padding: 0 4px;
+  border-radius: 4px;
+  font-size: 9px;
+  line-height: 16px;
+  font-weight: 600;
+}
+.diag-lvl.lv-error { color: rgb(var(--c-error)); background: rgb(var(--c-error) / 0.12); }
+.diag-lvl.lv-warn { color: rgb(var(--c-warning)); background: rgb(var(--c-warning) / 0.12); }
+.diag-lvl.lv-info { color: rgb(var(--c-info)); background: rgb(var(--c-info) / 0.12); }
+.diag-lvl.lv-debug { color: rgb(var(--c-muted)); background: rgb(var(--c-muted) / 0.12); }
+.diag-src { flex: none; color: rgb(var(--c-accent)); }
+.diag-msg { color: rgb(var(--c-on-surface)); white-space: pre-wrap; word-break: break-all; }
+.diag-empty { padding: 8px 0; text-align: center; color: rgb(var(--c-muted)); font-size: 11px; }
+.diag-report-pre {
+  margin: 0;
+  max-height: 420px;
+  overflow: auto;
+  padding: 12px 14px;
+  border: 1px solid rgb(var(--c-border));
+  border-radius: 12px;
+  background: rgb(var(--c-background));
+  color: rgb(var(--c-on-surface));
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 </style>

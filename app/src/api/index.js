@@ -161,6 +161,9 @@ export const api = {
   },
   // 设备注册表（官方设备管理页：以设备为单位聚合其下实体 + 实时状态）
   registryDevices: (id = 0) => api.get(insPath(id) + '/registry/devices'),
+  // 实体图标覆盖（本系统生效，不写回 HA）；icon 空串恢复默认
+  setEntityIcon: (id, entityId, icon) =>
+    api.put(insPath(id) + `/registry/entities/${encodeURIComponent(entityId)}/icon`, { icon }),
   entity: (id, entityId) => api.get(insPath(id) + `/entities/${encodeURIComponent(entityId)}`),
   toggle: (id, entityId) => api.post(insPath(id) + `/entities/${encodeURIComponent(entityId)}/toggle`),
 
@@ -190,8 +193,20 @@ export const api = {
   // 偏好
   getPrefs: () => api.get('/prefs'),
   putPrefs: (body) => api.put('/prefs', body),
-  // AI 设计：OpenAI 兼容转发（key 由后端从用户 ai_config 注入）
+  // AI：OpenAI 兼容转发（key 由后端从用户 ai_config / 管理员全局配置注入）
   aiChat: (messages) => api.post('/ai/chat', { messages }),
+  aiTest: () => api.post('/ai/test'),
+  // AI 诊断（管理员）
+  diagStart: (duration_min, client_meta) => api.post('/diagnostics/start', { duration_min, client_meta }),
+  diagStop: () => api.post('/diagnostics/stop'),
+  diagStatus: () => api.get('/diagnostics/status'),
+  diagLogs: (after = 0) => api.get(`/diagnostics/logs?after=${after}`),
+  diagClientLogs: (entries) => api.post('/diagnostics/logs', { entries }),
+  diagReport: () => api.get('/diagnostics/report'),
+  // 运行日志（管理员）：按级别/来源/时间段筛选，可提交 AI 分析
+  sysLogs: (q = {}) => api.get(`/logs?${new URLSearchParams(q)}`),
+  sysLogAnalysis: () => api.get('/logs/analysis'),
+  sysLogAnalyze: (body) => api.post('/logs/analysis', body),
   // 系统显示名称/图标：公开读取；修改需管理员（nameEn 可选，一并修改英文名）
   getSiteName: () => api.get('/site-name'),
   putSiteName: (name, nameEn) => api.put('/site-name', { name, name_en: nameEn }),

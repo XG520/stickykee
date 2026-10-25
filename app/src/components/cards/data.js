@@ -1276,7 +1276,9 @@ export function computeData(type, ctx) {
     case 'almanac': d = almanacData(entity); break
     // 生日 / 生日倒计时：数据全部由 BirthdayCard 组件自行读取 prefs（birthdays）
     case 'birthday': case 'birthdayCountdown': d = {}; break
-    case 'custom': d = {}; break
+    // 自定义卡：可选绑定实体。绑定时复用通用卡数据（名称/状态/图标/行），
+    // 让 AI 生成或手动搭建的卡片也能显示实时数据并支持 data-hc 交互。
+    case 'custom': d = genericData(entities && entities.length ? entities : (entity ? [entity] : []), hasData, ctx.card); break;
     default: d = genericData(entities && entities.length ? entities : (entity ? [entity] : []), hasData, ctx.card); break
   }
   // 基础卡头部图标默认值（领域卡的 base() 已自带 glyph，不会被覆盖）
