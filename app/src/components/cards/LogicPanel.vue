@@ -268,48 +268,48 @@ function pickEntity(id) {
 </script>
 
 <style scoped>
-/* ================= 逻辑面板（对齐 CardEditor 暗色系） ================= */
-.lp-root { display: flex; flex-direction: column; gap: 10px; padding: 12px; font-size: 12px; color: #b6b4ad; }
+/* ================= 逻辑面板（配色统一走主题变量，随主题切换） ================= */
+.lp-root { display: flex; flex-direction: column; gap: 10px; padding: 12px; font-size: 12px; color: rgb(var(--c-muted)); }
 .lp-tip {
   display: flex; gap: 6px; align-items: flex-start;
   margin: 0; padding: 8px 10px; border-radius: 8px;
-  background: rgba(107, 163, 217, 0.08); border: 1px solid rgba(107, 163, 217, 0.2);
-  font-size: 11px; line-height: 1.5; color: #9ab8d6;
+  background: rgb(var(--c-info) / 0.08); border: 1px solid rgb(var(--c-info) / 0.2);
+  font-size: 11px; line-height: 1.5; color: rgb(var(--c-info));
 }
 .lp-tip .material-symbols-outlined { font-size: 14px; flex: none; margin-top: 1px; }
 
 /* 规则卡片 */
-.lp-rule { border: 1px solid #2a2b2f; border-radius: 10px; background: rgba(255, 255, 255, 0.02); overflow: hidden; }
+.lp-rule { border: 1px solid rgb(var(--c-border)); border-radius: 10px; background: rgb(var(--c-on-surface) / 0.02); overflow: hidden; }
 .lp-rule-head { display: flex; align-items: center; gap: 6px; padding: 7px 9px; cursor: pointer; user-select: none; }
-.lp-rule-head:hover { background: rgba(255, 255, 255, 0.03); }
-.lp-fold { font-size: 18px; color: #6f6e6a; flex: none; }
+.lp-rule-head:hover { background: rgb(var(--c-on-surface) / 0.03); }
+.lp-fold { font-size: 18px; color: rgb(var(--c-muted)); flex: none; }
 .lp-name {
   flex: 1; min-width: 0; height: 26px; padding: 0 8px; border-radius: 6px;
   background: transparent; border: 1px solid transparent;
-  color: #f2f0eb; font-size: 12px; font-weight: 600; outline: none;
+  color: rgb(var(--c-on-background)); font-size: 12px; font-weight: 600; outline: none;
 }
-.lp-name:hover, .lp-name:focus { border-color: #2e2f33; background: rgba(0, 0, 0, 0.2); }
+.lp-name:hover, .lp-name:focus { border-color: rgb(var(--c-border)); background: rgba(0, 0, 0, 0.2); }
 .lp-met {
   flex: none; padding: 1px 7px; border-radius: 99px; font-size: 10px;
-  background: rgba(138, 137, 134, 0.14); color: #8a8986; border: 1px solid rgba(138, 137, 134, 0.25);
+  background: rgb(var(--c-muted) / 0.14); color: rgb(var(--c-muted)); border: 1px solid rgb(var(--c-muted) / 0.25);
 }
-.lp-met.on { background: rgba(94, 196, 176, 0.14); color: #5ec4b0; border-color: rgba(94, 196, 176, 0.35); }
+.lp-met.on { background: rgb(var(--c-accent) / 0.14); color: rgb(var(--c-accent)); border-color: rgb(var(--c-accent) / 0.35); }
 .lp-spacer { flex: 1; }
 .lp-rule-body { padding: 4px 9px 10px; display: flex; flex-direction: column; gap: 10px; }
 
 /* 分区：如果 / 就 / 否则 */
 .lp-sec { display: flex; flex-direction: column; gap: 6px; }
 .lp-sec-head { display: flex; align-items: center; gap: 8px; }
-.lp-sec-title { font-size: 11px; font-weight: 700; color: #f5a623; letter-spacing: 0.06em; }
+.lp-sec-title { font-size: 11px; font-weight: 700; color: rgb(var(--c-primary)); letter-spacing: 0.06em; }
 
 /* 行：条件行 / 动作行 */
 .lp-row { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
 .lp-input {
   height: 28px; padding: 0 7px; border-radius: 6px; font-size: 11.5px;
-  background: rgba(0, 0, 0, 0.25); border: 1px solid #2e2f33; color: #f2f0eb; outline: none;
+  background: rgba(0, 0, 0, 0.25); border: 1px solid rgb(var(--c-border)); color: rgb(var(--c-on-background)); outline: none;
   min-width: 0;
 }
-.lp-input:focus { border-color: rgba(245, 166, 35, 0.5); }
+.lp-input:focus { border-color: rgb(var(--c-primary) / 0.5); }
 /* 下拉统一走 MiniSelect（暗色样式），宽度由下面几个类控制 */
 .lp-mode { width: 118px; }
 .lp-attr { width: 96px; }
@@ -324,62 +324,62 @@ function pickEntity(id) {
 .lp-entity-btn {
   width: 100%; height: 28px; padding: 0 7px; border-radius: 6px;
   display: flex; align-items: center; gap: 5px;
-  background: rgba(0, 0, 0, 0.25); border: 1px solid #2e2f33; color: #f2f0eb;
+  background: rgba(0, 0, 0, 0.25); border: 1px solid rgb(var(--c-border)); color: rgb(var(--c-on-background));
   font-size: 11.5px; cursor: pointer; text-align: left;
 }
-.lp-entity-btn:hover { border-color: rgba(245, 166, 35, 0.4); }
+.lp-entity-btn:hover { border-color: rgb(var(--c-primary) / 0.4); }
 .lp-entity-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lp-entity-empty { flex: 1; color: #6f6e6a; }
-.lp-caret { font-size: 16px; color: #6f6e6a; flex: none; }
-.lp-cur { flex: none; max-width: 74px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; color: #5ec4b0; }
+.lp-entity-empty { flex: 1; color: rgb(var(--c-muted)); }
+.lp-caret { font-size: 16px; color: rgb(var(--c-muted)); flex: none; }
+.lp-cur { flex: none; max-width: 74px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; color: rgb(var(--c-accent)); }
 
 /* 小图标按钮 / 非 开关 */
 .lp-icon-btn {
   flex: none; width: 24px; height: 24px; border-radius: 6px;
   display: inline-flex; align-items: center; justify-content: center;
-  background: transparent; border: 1px solid transparent; color: #8a8986; cursor: pointer;
+  background: transparent; border: 1px solid transparent; color: rgb(var(--c-muted)); cursor: pointer;
   font-size: 11px; font-weight: 700;
 }
 .lp-icon-btn .material-symbols-outlined { font-size: 15px; }
-.lp-icon-btn:hover { background: rgba(255, 255, 255, 0.07); color: #f2f0eb; }
-.lp-not.on { background: rgba(245, 166, 35, 0.2); border-color: rgba(245, 166, 35, 0.4); color: #f5a623; }
-.lp-danger:hover { background: rgba(232, 93, 76, 0.18); color: #f09185; }
+.lp-icon-btn:hover { background: rgb(var(--c-on-surface) / 0.07); color: rgb(var(--c-on-background)); }
+.lp-not.on { background: rgb(var(--c-primary) / 0.2); border-color: rgb(var(--c-primary) / 0.4); color: rgb(var(--c-primary)); }
+.lp-danger:hover { background: rgb(var(--c-error) / 0.18); color: rgb(var(--c-error)); }
 
 /* 添加行 / 添加规则 */
 .lp-add {
   align-self: flex-start; height: 26px; padding: 0 9px; border-radius: 6px;
   display: inline-flex; align-items: center; gap: 4px;
-  background: transparent; border: 1px dashed #2e2f33; color: #8a8986;
+  background: transparent; border: 1px dashed rgb(var(--c-border)); color: rgb(var(--c-muted));
   font-size: 11px; cursor: pointer;
 }
 .lp-add .material-symbols-outlined { font-size: 14px; }
-.lp-add:hover:not(:disabled) { border-color: rgba(245, 166, 35, 0.45); color: #f5a623; }
+.lp-add:hover:not(:disabled) { border-color: rgb(var(--c-primary) / 0.45); color: rgb(var(--c-primary)); }
 .lp-add:disabled { opacity: 0.4; cursor: not-allowed; }
 .lp-add-else { margin-left: auto; }
 .lp-add-rule {
   height: 32px; border-radius: 8px;
   display: flex; align-items: center; justify-content: center; gap: 5px;
-  background: rgba(245, 166, 35, 0.1); border: 1px dashed rgba(245, 166, 35, 0.35); color: #f5a623;
+  background: rgb(var(--c-primary) / 0.1); border: 1px dashed rgb(var(--c-primary) / 0.35); color: rgb(var(--c-primary));
   font-size: 12px; font-weight: 600; cursor: pointer;
 }
-.lp-add-rule:hover { background: rgba(245, 166, 35, 0.18); }
-.lp-warn { margin: 0; font-size: 10.5px; color: #e8a84c; }
+.lp-add-rule:hover { background: rgb(var(--c-primary) / 0.18); }
+.lp-warn { margin: 0; font-size: 10.5px; color: rgb(var(--c-warning)); }
 
 /* 实体搜索下拉菜单 */
 .lp-menu-mask { position: fixed; inset: 0; z-index: 100; }
 .lp-menu {
   position: fixed; width: 288px; max-height: 320px;
   display: flex; flex-direction: column;
-  background: #222327; border: 1px solid #35363b; border-radius: 10px;
+  background: rgb(var(--c-surface-alt)); border: 1px solid rgb(var(--c-border)); border-radius: 10px;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5); overflow: hidden;
 }
-.lp-menu-search { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid #2e2f33; }
-.lp-menu-search .material-symbols-outlined { font-size: 16px; color: #6f6e6a; }
-.lp-menu-search input { flex: 1; background: transparent; border: none; outline: none; color: #f2f0eb; font-size: 12px; }
+.lp-menu-search { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid rgb(var(--c-border)); }
+.lp-menu-search .material-symbols-outlined { font-size: 16px; color: rgb(var(--c-muted)); }
+.lp-menu-search input { flex: 1; background: transparent; border: none; outline: none; color: rgb(var(--c-on-background)); font-size: 12px; }
 .lp-menu-list { flex: 1; overflow-y: auto; margin: 0; padding: 4px; list-style: none; }
 .lp-menu-list li { display: flex; flex-direction: column; gap: 1px; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
-.lp-menu-list li:hover { background: rgba(245, 166, 35, 0.12); }
-.lp-menu-name { font-size: 12px; color: #f2f0eb; }
-.lp-menu-id { font-size: 10px; color: #6f6e6a; font-family: ui-monospace, monospace; }
-.lp-menu-empty { padding: 14px; text-align: center; color: #6f6e6a; font-size: 11px; cursor: default; }
+.lp-menu-list li:hover { background: rgb(var(--c-primary) / 0.12); }
+.lp-menu-name { font-size: 12px; color: rgb(var(--c-on-background)); }
+.lp-menu-id { font-size: 10px; color: rgb(var(--c-muted)); font-family: ui-monospace, monospace; }
+.lp-menu-empty { padding: 14px; text-align: center; color: rgb(var(--c-muted)); font-size: 11px; cursor: default; }
 </style>
