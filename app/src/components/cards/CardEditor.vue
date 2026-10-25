@@ -1623,7 +1623,7 @@ function onPaletteMove(e) {
     d.chip = document.createElement('div')
     d.chip.textContent = d.def.label
     d.chip.style.cssText = 'position:absolute;transform:translate(-50%,-50%);padding:3px 9px;border-radius:8px;'
-      + 'background:rgba(245,166,35,.92);color:#12131a;font:700 11px/1.3 system-ui,sans-serif;white-space:nowrap;'
+      + 'background:rgb(var(--c-primary) / .92);color:rgb(var(--c-on-primary));font:700 11px/1.3 system-ui,sans-serif;white-space:nowrap;'
       + 'box-shadow:0 6px 18px rgba(0,0,0,.45)'
     d.box.style.cssText = 'display:none'
     d.layer.append(d.box, d.chip)
