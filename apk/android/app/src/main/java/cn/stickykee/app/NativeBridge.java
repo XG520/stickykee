@@ -1348,7 +1348,7 @@ public class NativeBridge {
                     PendingIntent pi = PendingIntent.getActivity(ctx, 0, intent,
                         PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
                     NotificationCompat.Builder b = new NotificationCompat.Builder(ctx, chId)
-                        .setSmallIcon(android.R.drawable.ic_dialog_alert)
+                        .setSmallIcon(R.mipmap.ic_launcher)
                         .setContentTitle(title == null ? "新消息" : title)
                         .setContentText(body == null ? "" : body)
                         .setAutoCancel(true)

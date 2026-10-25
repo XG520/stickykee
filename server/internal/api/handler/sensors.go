@@ -16,7 +16,7 @@ import (
 // SensorDef 传感器注册表项。
 type SensorDef struct {
 	Key         string `json:"key"`
-	Name        string `json:"name"` // HA 实体显示名（英文，避免编码问题）
+	Name        string `json:"name"` // HA 实体显示名（中文；webhook JSON 为 UTF-8，HA 原生支持中文实体名）
 	Icon        string `json:"icon"`
 	Unit        string `json:"unit,omitempty"`
 	DeviceClass string `json:"device_class,omitempty"`
@@ -26,32 +26,40 @@ type SensorDef struct {
 	Desc        string `json:"desc"`  // 设置页说明
 }
 
-// SENSOR_DEFS 官方 App 同款传感器注册表。
+// SENSOR_DEFS 官方 App 同款传感器注册表（HA 侧实体显示名统一用中文）。
 var SENSOR_DEFS = []SensorDef{
-	{Key: "battery_level", Name: "Battery Level", Icon: "mdi:battery", Unit: "%", DeviceClass: "battery", StateClass: "measurement", Category: "diagnostic", Label: "电池电量", Desc: "当前电池剩余电量百分比"},
+	{Key: "battery_level", Name: "电池电量", Icon: "mdi:battery", Unit: "%", DeviceClass: "battery", StateClass: "measurement", Category: "diagnostic", Label: "电池电量", Desc: "当前电池剩余电量百分比"},
 	// 注意：battery_state / connection_type / network_quality / wifi_ssid 的值是字符串
 	// （discharging / wifi / SSID 名），绝不能标 device_class(battery) 或 state_class(measurement)——
 	// 新版 HA 会因此按数值传感器校验并对每条上报抛 ValueError 刷屏，且状态写入失败。
-	{Key: "battery_state", Name: "Battery State", Icon: "mdi:battery-charging", Category: "diagnostic", Label: "充电状态", Desc: "充电中 / 未充电 / 已充满 / 放电中"},
-	{Key: "connection_type", Name: "Connection Type", Icon: "mdi:wifi", Category: "diagnostic", Label: "网络类型", Desc: "Wi-Fi / 蜂窝网络 / 有线 / 不可用"},
-	{Key: "network_quality", Name: "Network Quality", Icon: "mdi:signal", Category: "diagnostic", Label: "网络质量", Desc: "网络连接有效类型（4g / 3g / 2g / slow-2g）"},
-	{Key: "wifi_ssid", Name: "WiFi SSID", Icon: "mdi:wifi", Category: "diagnostic", Label: "Wi-Fi 名称", Desc: "当前连接的 Wi-Fi 名称（SSID）"},
-	{Key: "screen_state", Name: "Screen State", Icon: "mdi:monitor", Category: "diagnostic", Label: "屏幕状态", Desc: "页面可见性（在前台 / 后台）"},
-	{Key: "light_sensor", Name: "Light Sensor", Icon: "mdi:white-balance-sunny", Unit: "lx", DeviceClass: "illuminance", StateClass: "measurement", Category: "diagnostic", Label: "环境光强度", Desc: "当前环境光照强度（勒克斯）"},
-	{Key: "proximity", Name: "Proximity", Icon: "mdi:face-recognition", Category: "diagnostic", Label: "接近感应", Desc: "检测是否有人靠近（靠近时屏幕自动点亮）"},
-	{Key: "public_ip", Name: "Public IP", Icon: "mdi:ip-network", Category: "diagnostic", Label: "公网 IP", Desc: "设备的公网 IP 地址"},
-	{Key: "current_time_zone", Name: "Current Time Zone", Icon: "mdi:clock-outline", Category: "diagnostic", Label: "时区", Desc: "设备当前时区"},
-	{Key: "last_update_trigger", Name: "Last Update Trigger", Icon: "mdi:update", Category: "diagnostic", Label: "更新触发原因", Desc: "本次传感器上报的触发原因（手动 / 事件 / 周期）"},
-	{Key: "app_version", Name: "App Version", Icon: "mdi:cellphone-information", Category: "diagnostic", Label: "应用版本", Desc: "Sticky Kee 应用版本"},
-	{Key: "bssid", Name: "BSSID", Icon: "mdi:access-point", Category: "diagnostic", Label: "Wi-Fi 接入点 MAC", Desc: "当前连接的无线接入点 MAC 地址"},
-	{Key: "geocoded_location", Name: "Geocoded Location", Icon: "mdi:map-marker", Category: "diagnostic", Label: "所在位置", Desc: "基于定位解析的地址（需浏览器授权定位）"},
+	{Key: "battery_state", Name: "充电状态", Icon: "mdi:battery-charging", Category: "diagnostic", Label: "充电状态", Desc: "充电中 / 未充电 / 已充满 / 放电中"},
+	{Key: "connection_type", Name: "网络类型", Icon: "mdi:wifi", Category: "diagnostic", Label: "网络类型", Desc: "Wi-Fi / 蜂窝网络 / 有线 / 不可用"},
+	{Key: "network_quality", Name: "网络质量", Icon: "mdi:signal", Category: "diagnostic", Label: "网络质量", Desc: "网络连接有效类型（4g / 3g / 2g / slow-2g）"},
+	{Key: "wifi_ssid", Name: "Wi-Fi 名称", Icon: "mdi:wifi", Category: "diagnostic", Label: "Wi-Fi 名称", Desc: "当前连接的 Wi-Fi 名称（SSID）"},
+	{Key: "screen_state", Name: "屏幕状态", Icon: "mdi:monitor", Category: "diagnostic", Label: "屏幕状态", Desc: "页面可见性（在前台 / 后台）"},
+	{Key: "light_sensor", Name: "环境光强度", Icon: "mdi:white-balance-sunny", Unit: "lx", DeviceClass: "illuminance", StateClass: "measurement", Category: "diagnostic", Label: "环境光强度", Desc: "当前环境光照强度（勒克斯）"},
+	{Key: "proximity", Name: "接近感应", Icon: "mdi:face-recognition", Category: "diagnostic", Label: "接近感应", Desc: "检测是否有人靠近（靠近时屏幕自动点亮）"},
+	{Key: "public_ip", Name: "公网 IP", Icon: "mdi:ip-network", Category: "diagnostic", Label: "公网 IP", Desc: "设备的公网 IP 地址"},
+	{Key: "current_time_zone", Name: "时区", Icon: "mdi:clock-outline", Category: "diagnostic", Label: "时区", Desc: "设备当前时区"},
+	{Key: "last_update_trigger", Name: "更新触发原因", Icon: "mdi:update", Category: "diagnostic", Label: "更新触发原因", Desc: "本次传感器上报的触发原因（手动 / 事件 / 周期）"},
+	{Key: "app_version", Name: "应用版本", Icon: "mdi:cellphone-information", Category: "diagnostic", Label: "应用版本", Desc: "Sticky Kee 应用版本"},
+	{Key: "bssid", Name: "Wi-Fi 接入点 MAC", Icon: "mdi:access-point", Category: "diagnostic", Label: "Wi-Fi 接入点 MAC", Desc: "当前连接的无线接入点 MAC 地址"},
+	{Key: "geocoded_location", Name: "所在位置", Icon: "mdi:map-marker", Category: "diagnostic", Label: "所在位置", Desc: "基于定位解析的地址（需浏览器授权定位）"},
+	// 汽车相关（安卓车机）：全部来自 GPS fix，停车/无 fix 时按滞回与新鲜度规则上报。
+	{Key: "car_speed", Name: "车速", Icon: "mdi:speedometer", Unit: "km/h", DeviceClass: "speed", StateClass: "measurement", Label: "车速", Desc: "GPS 推算的当前车速（车机场景，需定位权限）"},
+	{Key: "car_heading", Name: "行驶方向", Icon: "mdi:compass-outline", Unit: "°", StateClass: "measurement", Label: "行驶方向", Desc: "GPS 推算的行驶方位角（0-360°，含中文方位属性）"},
+	{Key: "driving", Name: "行驶中", Icon: "mdi:steering", Label: "行驶中", Desc: "按车速推断的行驶状态（≥5km/h 判行驶，<2km/h 判停车）"},
+	{Key: "trip_today", Name: "今日行驶里程", Icon: "mdi:map-marker-distance", Unit: "km", DeviceClass: "distance", StateClass: "measurement", Label: "今日行驶里程", Desc: "按 GPS 位移累计的当天行驶公里数，每日零点自动清零"},
+	{Key: "altitude", Name: "海拔高度", Icon: "mdi:image-filter-hdr", Unit: "m", StateClass: "measurement", Label: "海拔高度", Desc: "GPS 推算的当前海拔（米）"},
+	{Key: "gps_accuracy", Name: "GPS 精度", Icon: "mdi:crosshairs-gps", Unit: "m", StateClass: "measurement", Category: "diagnostic", Label: "GPS 精度", Desc: "当前定位的水平精度半径（米，越小越准）"},
+	{Key: "gps_satellites", Name: "GPS 卫星数", Icon: "mdi:satellite-variant", StateClass: "measurement", Category: "diagnostic", Label: "GPS 卫星数", Desc: "当前参与定位的在搜卫星数量"},
 }
 
 // sensorDefVersion 传感器定义版本：每次修改 SENSOR_DEFS 的元数据（device_class/state_class/unit）
 // 就 +1。HA 侧实体注册信息只在首次注册时落库，后续不会再校验；版本升级后由 registerSensors
 // 对已登记项重发一次 register_sensor，让 HA 按「更新」覆盖为新定义（含显式 null 清理旧字段），
 // 否则历史误标 state_class 的字符串传感器会持续在 HA 日志刷 ValueError。
-const sensorDefVersion = 2
+const sensorDefVersion = 5
 
 // sensorDefByKey 按 key 查传感器注册表项；未命中返回空项（icon 默认 mdi:cellphone）。
 func sensorDefByKey(key string) SensorDef {

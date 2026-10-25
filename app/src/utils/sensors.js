@@ -60,6 +60,10 @@ export function availableSensors() {
   keys.add('last_update_trigger')
   keys.add('app_version')
   if (cap.geolocation) keys.add('geocoded_location')
+  // 汽车相关（车速/行驶方向/行驶中/今日里程/海拔/GPS 状态）：依赖持续 GPS fix，仅原生模式可用（车机场景）
+  if (cap.native && cap.geolocation) {
+    for (const k of ['car_speed', 'car_heading', 'driving', 'trip_today', 'altitude', 'gps_accuracy', 'gps_satellites']) keys.add(k)
+  }
   return keys
 }
 
@@ -85,6 +89,15 @@ export function unavailableReason(key) {
       return cap.wakeLock ? '' : '当前浏览器不支持接近自动亮屏（需屏幕唤醒锁）'
     case 'geocoded_location':
       return cap.geolocation ? '' : '当前浏览器不支持定位'
+    case 'car_speed':
+    case 'car_heading':
+    case 'driving':
+    case 'trip_today':
+    case 'altitude':
+    case 'gps_accuracy':
+    case 'gps_satellites':
+      if (!cap.native) return '汽车传感器仅安卓 App（车机）可用'
+      return cap.geolocation ? '' : '当前设备不支持定位'
     case 'screen_state':
     case 'public_ip':
     case 'current_time_zone':

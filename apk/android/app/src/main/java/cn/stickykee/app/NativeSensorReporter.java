@@ -92,6 +92,30 @@ public final class NativeSensorReporter {
     private static final String KEY_TRACK_LNG = "sensor_track_lng"; // 上次成功推送的 device_tracker 经度
     private static final String KEY_TRACK_HAS = "sensor_track_has"; // 是否已有成功推送基线
     private static final String KEY_TRACK_AT = "sensor_track_at";   // 上次成功推送 device_tracker 的时间
+    private static final String KEY_DRIVING = "sensor_driving";     // 行驶中滞回状态（上次判定结果）
+
+    // ---- 今日行驶里程（trip_today）：GPS 位移累计，按日持久化，跨天清零 ----
+    private static final String KEY_TRIP_KM = "trip_km";   // 当日累计公里
+    private static final String KEY_TRIP_DAY = "trip_day"; // 累计所属日（yyyyMMdd，本地时区）
+    private static final String KEY_TRIP_LAT = "trip_lat"; // 上次计入的基准点
+    private static final String KEY_TRIP_LNG = "trip_lng";
+    private static final String KEY_TRIP_AT = "trip_at";   // 上次计入的 fix 时间
+
+    /** 汽车组传感器判定：启用任一项即启动 GPS 持续监听（车机高频档位）。 */
+    private static boolean hasCarKeys(Set<String> keys) {
+        return keys.contains("car_speed") || keys.contains("car_heading")
+                || keys.contains("driving") || keys.contains("trip_today")
+                || keys.contains("altitude") || keys.contains("gps_accuracy")
+                || keys.contains("gps_satellites");
+    }
+
+    // ---- 汽车传感器（车机场景）：车速/行驶方向/行驶中，全部取自 GPS fix ----
+    // 启用汽车传感器时定位监听提速到 10s（车机常供电，行车中需要及时刷新车速）；
+    // 未启用时沿用全局上报间隔（60-300s）。fix 超过 2 分钟视为失效（停车熄火后不再上报）。
+    private static final long CAR_LOC_INTERVAL_MS = 10_000L;
+    private static final long CAR_FIX_MAX_AGE_MS = 2 * 60 * 1000L;
+    private static final float DRIVING_ON_KMH = 5f;   // ≥5km/h 判行驶
+    private static final float DRIVING_OFF_KMH = 2f;  // <2km/h 判停车（滞回防抖）
 
     // 设备追踪诊断日志（logcat 过滤 StickyTrack 即可看取位 provider/精度/推送结果）
     private static final String TAG_TRACK = "StickyTrack";
@@ -172,6 +196,7 @@ public final class NativeSensorReporter {
     private static volatile long latestFixAt = 0L;
     private static volatile Location latestNetFix; // 网络/融合定位缓存（卫星无 fix 时兜底）
     private static volatile long latestNetFixAt = 0L;
+    private static volatile boolean locCarMode = false; // 当前监听的定位档位（汽车高频/常规）
 
     /** 手动上报结果回调（在后台线程触发，调用方负责切回 UI 线程派发事件）。 */
     public interface ReportCallback {
@@ -235,12 +260,16 @@ public final class NativeSensorReporter {
         try {
             SharedPreferences p = prefs(ctx);
             boolean track = p.getInt(KEY_TRACK, 0) == 1;
-            boolean needGeo = parseKeys(p.getString(KEY_KEYS, "")).contains("geocoded_location");
+            Set<String> keys = parseKeys(p.getString(KEY_KEYS, ""));
+            boolean needGeo = keys.contains("geocoded_location");
+            boolean needCar = hasCarKeys(keys);
             boolean perm = ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION)
                     == PackageManager.PERMISSION_GRANTED
                     || ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_COARSE_LOCATION)
                     == PackageManager.PERMISSION_GRANTED;
-            if ((track || needGeo) && perm) {
+            // 汽车档位变化（10s 高频 ↔ 常规间隔）：重启监听让新 interval 生效
+            if (locTrackingOn && needCar != locCarMode) stopLocationTracking();
+            if ((track || needGeo || needCar) && perm) {
                 if (!locTrackingOn) startLocationTracking(ctx, p);
             } else if (locTrackingOn) {
                 stopLocationTracking();
@@ -253,12 +282,18 @@ public final class NativeSensorReporter {
         if (locTrackingOn) return;
         LocationManager lm = (LocationManager) ctx.getSystemService(Context.LOCATION_SERVICE);
         if (lm == null) return;
+        Set<String> keys = parseKeys(p.getString(KEY_KEYS, ""));
+        boolean carMode = hasCarKeys(keys);
         long interval;
-        try {
-            interval = Math.max(LOC_MIN_INTERVAL_MS, Math.min(LOC_MAX_INTERVAL_MS,
-                    p.getInt("sensor_interval", 60) * 1000L));
-        } catch (Exception e) {
-            interval = LOC_MIN_INTERVAL_MS;
+        if (carMode) {
+            interval = CAR_LOC_INTERVAL_MS; // 车机场景常供电，行车中按 10s 刷新车速
+        } else {
+            try {
+                interval = Math.max(LOC_MIN_INTERVAL_MS, Math.min(LOC_MAX_INTERVAL_MS,
+                        p.getInt("sensor_interval", 60) * 1000L));
+            } catch (Exception e) {
+                interval = LOC_MIN_INTERVAL_MS;
+            }
         }
         LocationListener l = new LocationListener() {
             @Override
@@ -350,6 +385,7 @@ public final class NativeSensorReporter {
         locHandler = new Handler(looper);
         locManager = lm;
         locListener = l;
+        locCarMode = carMode;
         locTrackingOn = true;
     }
 
@@ -373,6 +409,7 @@ public final class NativeSensorReporter {
         latestFixAt = 0L;
         latestNetFix = null;
         latestNetFixAt = 0L;
+        locCarMode = false;
     }
 
     // ==================== 上报入口 ====================
@@ -727,7 +764,100 @@ public final class NativeSensorReporter {
             }
         }
 
+        // 汽车传感器（车机）：车速 / 行驶方向 / 行驶中，取自持续监听的最新 GPS/融合 fix。
+        // fix 超过 2 分钟（熄火停车后 GPS 停发）视为失效，本轮整组跳过。
+        boolean needCar = hasCarKeys(keys);
+        if (needCar) {
+            try {
+                Location fix = latestFix;
+                if (fix == null || System.currentTimeMillis() - fix.getTime() > CAR_FIX_MAX_AGE_MS) {
+                    fix = null;
+                }
+                if (fix != null) {
+                    float speedKmh = fix.hasSpeed() ? fix.getSpeed() * 3.6f : 0f;
+                    if (speedKmh < 0f) speedKmh = 0f;
+
+                    if (keys.contains("car_speed")) {
+                        JSONObject attrs = new JSONObject();
+                        if (fix.hasAccuracy()) attrs.put("accuracy", Math.round(fix.getAccuracy()));
+                        s.put("car_speed", new JSONObject()
+                                .put("state", round1(speedKmh))
+                                .put("attributes", attrs));
+                    }
+
+                    if (keys.contains("car_heading") && fix.hasBearing()) {
+                        float b = fix.getBearing();
+                        s.put("car_heading", new JSONObject()
+                                .put("state", Math.round(b))
+                                .put("attributes", new JSONObject().put("direction", headingName(b))));
+                    }
+
+                    if (keys.contains("driving")) {
+                        // 滞回防抖：≥5km/h 判行驶，<2km/h 判停车，区间保持上次状态
+                        boolean prev = p.getBoolean(KEY_DRIVING, false);
+                        boolean on = speedKmh >= DRIVING_ON_KMH || (speedKmh >= DRIVING_OFF_KMH && prev);
+                        if (on != prev) p.edit().putBoolean(KEY_DRIVING, on).apply();
+                        s.put("driving", new JSONObject()
+                                .put("state", on ? "on" : "off")
+                                .put("attributes", new JSONObject().put("speed_kmh", round1(speedKmh))));
+                    }
+
+                    // 今日行驶里程：相邻 fix 位移累计，跨天清零；仅采纳精度≤50m 且间隔≤30s 的点，
+                    // 单次跳变 >2km（GPS 漂移/重启）不计入，基准点持久化防重启丢里程。
+                    if (keys.contains("trip_today")) {
+                        String today = new java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US)
+                                .format(new java.util.Date());
+                        float km = p.getFloat(KEY_TRIP_KM, 0f);
+                        if (!today.equals(p.getString(KEY_TRIP_DAY, ""))) km = 0f; // 跨天清零
+                        long lastAt = p.getLong(KEY_TRIP_AT, 0L);
+                        float lastLat = p.getFloat(KEY_TRIP_LAT, 999f);
+                        float lastLng = p.getFloat(KEY_TRIP_LNG, 999f);
+                        boolean accOk = fix.hasAccuracy() && fix.getAccuracy() <= 50f;
+                        if (accOk) {
+                            if (lastAt > 0 && lastLat != 999f
+                                    && fix.getTime() - lastAt > 0 && fix.getTime() - lastAt <= 30_000L) {
+                                float[] d = new float[1];
+                                Location.distanceBetween(lastLat, lastLng,
+                                        fix.getLatitude(), fix.getLongitude(), d);
+                                if (d[0] > 2f && d[0] < 2000f) km += d[0] / 1000f;
+                            }
+                            p.edit().putFloat(KEY_TRIP_KM, km).putString(KEY_TRIP_DAY, today)
+                                    .putFloat(KEY_TRIP_LAT, (float) fix.getLatitude())
+                                    .putFloat(KEY_TRIP_LNG, (float) fix.getLongitude())
+                                    .putLong(KEY_TRIP_AT, fix.getTime()).apply();
+                        }
+                        s.put("trip_today", new JSONObject()
+                                .put("state", round2(km))
+                                .put("attributes", new JSONObject().put("date", today)));
+                    }
+
+                    if (keys.contains("altitude") && fix.hasAltitude()) {
+                        s.put("altitude", new JSONObject().put("state", Math.round(fix.getAltitude())));
+                    }
+
+                    if (keys.contains("gps_accuracy") && fix.hasAccuracy()) {
+                        s.put("gps_accuracy", new JSONObject().put("state", round1(fix.getAccuracy())));
+                    }
+
+                    if (keys.contains("gps_satellites")) {
+                        int sat = -1;
+                        if (fix.getExtras() != null) sat = fix.getExtras().getInt("satellites", -1);
+                        if (sat >= 0) s.put("gps_satellites", new JSONObject().put("state", sat));
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
         return s;
+    }
+
+    /** 方位角 → 中文八方位（北/东北/东/…），供 car_heading 属性。 */
+    private static String headingName(float bearing) {
+        String[] names = {"北", "东北", "东", "东南", "南", "西南", "西", "西北"};
+        int idx = (int) Math.floor(((bearing % 360f) + 22.5f) / 45f) % 8;
+        if (idx < 0) idx = 0;
+        return names[idx];
     }
 
     // ---- 环境光 / 接近：懒注册（只在启用时才注册，禁用时注销）----
@@ -1260,5 +1390,9 @@ public final class NativeSensorReporter {
 
     private static double round1(double v) {
         return Math.round(v * 10.0) / 10.0;
+    }
+
+    private static double round2(double v) {
+        return Math.round(v * 100.0) / 100.0;
     }
 }

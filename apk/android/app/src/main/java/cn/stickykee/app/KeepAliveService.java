@@ -99,6 +99,9 @@ public class KeepAliveService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+        // NotificationChannel 是 API 26+ 的类：老车机（Android 6.0/API 23 等）上直接引用
+        // 会 NoClassDefFoundError，onCreate 即崩溃。低版本无渠道概念，跳过即可。
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
         NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         NotificationChannel ch = new NotificationChannel(CHANNEL_ID, "后台保持连接",
                 NotificationManager.IMPORTANCE_LOW);

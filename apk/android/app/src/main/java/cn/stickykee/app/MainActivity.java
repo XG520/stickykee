@@ -34,6 +34,11 @@ public class MainActivity extends BridgeActivity {
         // BridgeWebChromeClient.onGeolocationPermissionsShowPrompt 处理，无需自定义包装；
         // 此前报 "User denied Geolocation" 的根因是 AndroidManifest 未声明定位权限，
         // 未声明的权限被系统直接拒绝。权限声明见 AndroidManifest.xml。
+        // Android 13+：通知栏通知（HA notify.mobile_app / IM 新消息）是运行时权限，
+        // 启动时请求一次；拒绝后通知静默丢弃（NativeBridge.showNotification2 有兜底检查）。
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 4201);
+        }
     }
 
     @Override

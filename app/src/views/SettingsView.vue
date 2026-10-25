@@ -49,7 +49,7 @@
         {{ auth.isAdmin ? '也可由管理员在「用户管理」中代配。' : '管理员也可在「用户管理」中为你代配。' }}
         修改或切换后即时生效，无需重启服务器。
       </p>
-      <div class="flex gap-2">
+      <div class="flex flex-col sm:flex-row gap-2">
         <input v-model="myToken" type="password" autocomplete="new-password" placeholder="粘贴你的 Long-Lived Token（配置后即可访问实体）"
           class="flex-1 bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
         <button @click="saveMyToken" :disabled="savingToken"
@@ -508,10 +508,10 @@
             </div>
           </button>
         </div>
-        <div class="flex items-center gap-3">
+        <div class="flex flex-wrap items-center gap-3">
           <span class="text-muted text-sm">自定义颜色</span>
           <input type="color" v-model="customColor" class="w-8 h-8 rounded-lg cursor-pointer border border-border bg-transparent">
-          <input type="text" v-model="customColor" class="flex-1 bg-background border border-border rounded-lg px-3 py-1.5 text-on-surface text-sm font-mono focus:border-primary focus:outline-none transition-colors">
+          <input type="text" v-model="customColor" class="flex-1 min-w-24 bg-background border border-border rounded-lg px-3 py-1.5 text-on-surface text-sm font-mono focus:border-primary focus:outline-none transition-colors">
           <button v-if="customColor" @click="customColor = ''" class="px-3 py-1.5 rounded-lg bg-surface border border-border text-muted hover:text-on-surface text-sm transition-colors">恢复默认色</button>
         </div>
       </div>
@@ -590,7 +590,7 @@
           <p class="text-muted text-xs mt-0.5">选择你偏好的图标呈现方式</p>
         </div>
       </div>
-      <div class="grid grid-cols-4 gap-3">
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <button
           v-for="s in iconStyles"
           :key="s.key"
@@ -1079,7 +1079,7 @@
           <p class="text-muted text-xs mt-0.5">前后端版本号，用于确认部署是否已更新</p>
         </div>
       </div>
-      <div class="grid grid-cols-3 gap-2">
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
         <div class="rounded-xl bg-background border border-border px-3 py-2.5">
           <p class="text-muted text-xs mb-1">网页版本</p>
           <p class="text-on-surface text-sm font-semibold">{{ appVersion || '—' }}</p>
@@ -1183,7 +1183,7 @@
           <p class="text-muted text-xs mt-0.5">顶栏、登录页与浏览器标签标题显示的名字</p>
         </div>
       </div>
-      <div class="flex gap-2">
+      <div class="flex flex-col sm:flex-row gap-2">
         <input v-model="siteNameDraft" maxlength="20" placeholder="中文名称，例如：糯米"
           class="flex-1 min-w-0 bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
         <input v-model="siteNameEnDraft" maxlength="40" placeholder="英文名称，例如：Sticky Kee"
@@ -1193,7 +1193,7 @@
           <span class="material-symbols-outlined text-base">save</span> 保存
         </button>
       </div>
-      <div class="flex gap-2 mt-2">
+      <div class="flex flex-col sm:flex-row gap-2 mt-2">
         <input v-model="serverDeviceNameDraft" maxlength="40" placeholder="HA 设备名（留空 = 英文名 + Server）"
           class="flex-1 min-w-0 bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
         <button @click="saveServerDeviceName" :disabled="serverDeviceNameSaving"
@@ -1331,7 +1331,7 @@
             <button type="button" @click="u._editHA = !u._editHA"
               class="px-2.5 py-1.5 rounded-lg bg-surface-hover hover:bg-surface border border-border text-xs text-on-surface transition-colors">代配</button>
           </div>
-          <div v-if="u._editHA" class="flex gap-2 w-full max-w-md">
+          <div v-if="u._editHA" class="flex flex-col sm:flex-row gap-2 w-full max-w-md">
             <input v-model="u._haToken" type="password" autocomplete="new-password"
               :placeholder="u.has_ha_token ? '输入新 Token 覆盖；留空则清除并禁用' : '粘贴该用户的 Long-Lived Token'"
               class="flex-1 bg-background border border-border rounded-lg px-3 py-1.5 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
@@ -2257,6 +2257,13 @@ const SENSOR_ICONS = {
   app_version: 'info',
   bssid: 'wifi_access_point',
   geocoded_location: 'location_on',
+  car_speed: 'speed',
+  car_heading: 'explore',
+  driving: 'directions_car',
+  trip_today: 'route',
+  altitude: 'terrain',
+  gps_accuracy: 'gps_fixed',
+  gps_satellites: 'satellite_alt',
 }
 function sensorIcon(key) { return SENSOR_ICONS[key] || 'sensors' }
 
