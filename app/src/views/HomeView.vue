@@ -1652,6 +1652,7 @@ onBeforeUnmount(() => {
 .hc-card-editable {
   cursor: grab;
   user-select: none;
+  -webkit-user-select: none;
   touch-action: none;
 }
 /* 拖拽中的卡片：抬起效果 + 即时跟随指针（关闭过渡）；

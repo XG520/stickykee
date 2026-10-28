@@ -6,12 +6,13 @@
   <header class="sticky top-0 z-50 bg-background/80 backdrop-blur-xl border-b border-border">
     <div class="max-w-screen-2xl mx-auto px-6 py-3 flex items-center justify-between gap-4">
       <router-link to="/" class="flex items-center gap-3">
-        <div class="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+        <div v-if="brandDisplay.icon" class="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
           <SiteIcon span-class="text-on-primary text-lg" img-class="w-5 h-5 object-contain" />
         </div>
-        <div>
-          <h1 class="font-headline text-on-background font-semibold text-base leading-tight">{{ siteName }}</h1>
-          <p class="text-muted text-xs leading-tight">{{ siteNameEn }}</p>
+        <!-- 只保留一个名称时放大字号垂直居中拉满，避免半高留白 -->
+        <div v-if="brandDisplay.cn || brandDisplay.en" class="flex flex-col justify-center">
+          <h1 v-if="brandDisplay.cn" class="font-headline text-on-background font-semibold leading-tight" :class="brandDisplay.en ? 'text-base' : 'text-xl'">{{ siteName }}</h1>
+          <p v-if="brandDisplay.en" class="leading-tight" :class="brandDisplay.cn ? 'text-muted text-xs' : 'text-on-background text-sm font-medium'">{{ siteNameEn }}</p>
         </div>
       </router-link>
 
@@ -52,7 +53,7 @@
 
 <script setup>
 import { ref, computed } from 'vue'
-import { auth, authLogout, imUnread, toggleIm, entityList, siteName, siteNameEn, backendOnline } from '@/store'
+import { auth, authLogout, imUnread, toggleIm, entityList, siteName, siteNameEn, backendOnline, brandDisplay } from '@/store'
 import { useFullscreen } from '@/composables/useFullscreen'
 import MessageCenter from './MessageCenter.vue'
 import HANotifyCenter from './HANotifyCenter.vue'

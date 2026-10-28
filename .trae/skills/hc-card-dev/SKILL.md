@@ -5,46 +5,26 @@ description: 按本项目规范开发 HomeCanvas 仪表盘卡片（schema v2 自
 
 # HomeCanvas 卡片开发
 
-卡片规范的单一来源：`app/src/components/cards/designer/cardSpec.md`（已入版本库）。
-前端 AI 设计调用 `aiPrompt.js` 的 `buildSystemPrompt` 通过 `?raw` 内嵌同一文件进系统提示词，
-**修改卡片规范只改 cardSpec.md**，本技能与 AI 设计调用自动同步。开发前先完整阅读该文件。
+卡片 AI 设计规范的单一来源：`app/src/ai/card-designer.md`（已入版本库）。
+CardEditor.vue 的 `aiSystemPrompt()` 通过 `?raw` 将该文件内联为 /ai/chat 的系统提示词，
+并拼接动态上下文（本次可用占位符、勾选实体、修改模式下的现有卡片代码）。
+**调整 AI 生成卡片的质量/规范只改 card-designer.md**；主题配色设计同理走
+`app/src/ai/theme-designer.md`（设置页自定义调色板的 AI 设计功能）。
+开发前先完整阅读对应文件。
 
 项目：Vue3+Vite 前端 `app/`，Go 后端 `server/`。
 
-## 两种卡片形态
+## 现状说明（2026-10 校正）
 
-1. **schema v2 自由画布卡（优先）**：设计器产出的结构化 JSON，存于卡片的
-   `_designerSchema` 字段，经 `elementDefs.js` 的 `renderElementsToHtml` 编译为 html。
-   AI 生成卡片时**必须输出此格式**。
-2. **手写代码卡**：直接给 `html` / `css` / `js` 三个字符串。仅当需求超出
-   元素体系能力（复杂动画、第三方库、canvas 等）时使用。
-
-## AI 生成卡片的工作流程
-
-1. 读取用户勾选的实体（id + friendly_name）与画布尺寸。
-2. 输出**纯 JSON** schema v2（无 markdown 围栏、无解释文字）。
-3. 前端 `aiPrompt.js` 的 `parseAiSchema` 做围栏提取、JSON 校验、未知类型过滤、
-   越界收敛、id 去重、背景白名单透传（图片背景仅 http(s)），再
-   `designerStore.loadSchema` 落画布。
-4. 设计质量要求见 cardSpec.md「设计质量要求」一节。
-
-## 保存产物结构（designerStore.serialize → DesignerView.onSave）
-
-```js
-{
-  schema,          // v2 schema（含 canvas.background），存卡片 _designerSchema 供再次编辑
-  entitySlotMap,   // { entity_ids: [...] } 存卡片同名字段
-  html, css, js,   // 最终代码（手改覆盖优先于编译产物）
-  compiledHtml,    // 编译产物（未手改时 = html）
-}
-```
+- 线上 AI 生成路径：CardEditor.vue → `api.aiChat` → 输出 `{title,icon,w,h,html,css}` 手写代码卡。
+- 本文件先前描述的 schema v2 设计器链路（`designer/aiPrompt.js`、`cardSpec.md`、
+  `elementDefs.js`、`designerStore`）在当前代码库中已不存在；卡片数据模型仍保留
+  `_designerSchema` / `compiledHtml` / `entitySlotMap` 字段用于渲染存量卡片
+  （CodeCard.vue 按 schema 渲染），新卡片走手写代码卡路径。
 
 ## 校验清单（改动后逐项过）
 
-- [ ] 规范符合 cardSpec.md：schema 含 version:2、canvas、elements；元素 id 唯一、类型在 ELEMENT_DEFS 内
-- [ ] 元素不越出画布；局部背景元素在数组最前；整卡背景用 canvas.background
-- [ ] entity/button 的 props.entity 是真实存在的实体 id（对照 `entityStates`）
-- [ ] 产物无写死 px 定位/字号（编译器自动转 cqw/cqh；手写卡需自查）
+- [ ] AI 提示词规范符合 card-designer.md；动态上下文（占位符/实体/现有代码）拼接正确
 - [ ] 交互只用 data-hc 体系，无内联 onclick
 - [ ] 前端验证：`cd app && npx vite build`；后端验证：`cd server && go build ./...`
 - [ ] 只做构建验证，不部署、不启动浏览器自动化测试

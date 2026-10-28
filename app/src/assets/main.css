@@ -4,20 +4,24 @@
 
 /* ================= 主题变量 =================
    全部界面颜色经 :root CSS 变量驱动，tailwind 颜色类引用 var(--c-*)；
-   运行时切换主题只需改写这些变量，全局即时生效（见 src/themes.js）。 */
-:root {
+   运行时切换主题只需改写这些变量，全局即时生效（见 src/themes.js）。
+   .theme-default 与 :root 同源：供「主题迷你预览」等局部作用域显式引用默认变量集
+   （直接设置在元素上的变量优先级高于 html 上已应用主题类的继承值）。 */
+:root, .theme-default {
   --c-primary: 245 166 35;
   --c-primary-hover: 255 184 77;
   --c-on-primary: 14 15 18;
   --c-background: 14 15 18;
-  --c-surface: 26 27 30;
-  --c-surface-alt: 34 35 39;
-  --c-surface-hover: 42 43 47;
+  /* 卡片层级整体抬亮一档：表面/页面底对比 ≥1.15，卡片不再融底 */
+  --c-surface: 30 31 34;
+  --c-surface-alt: 38 39 44;
+  --c-surface-hover: 47 48 54;
   --c-on-background: 242 240 235;
   --c-on-surface: 232 229 221;
   --c-muted: 138 137 134;
-  --c-faint: 92 91 88;
-  --c-border: 46 47 51;
+  /* 占位/弱化文字提亮：对卡片表面对比 ≥3:1（WCAG 大字/图标级） */
+  --c-faint: 110 109 105;
+  --c-border: 52 53 58;
   --c-border-focus: 245 166 35;
   --c-accent: 94 196 176;
   --c-error: 232 93 76;
@@ -26,30 +30,36 @@
   --c-info: 107 163 217;
   --font-headline: 'Space Grotesk', system-ui, sans-serif;
   --font-body: 'Source Sans 3', system-ui, sans-serif;
+  /* 图标风格变量轴：字体图标（.material-symbols-outlined）跟随；
+     html.ic-* 类覆盖（见文末「图标风格」节，对应 src/themes.js applyIconStyle） */
+  --icon-fvs: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
 }
 
 /* ================= 中国风主题 =================
    采用 Tailwind 官方 class 主题方案：html 上切换 .theme-china 即整体换肤，
    变量静态编译进 CSS，无需 JS 注入，切换即时可靠（对应 src/themes.js）。 */
 .theme-china {
-  --c-primary: 198 57 44; /* 朱砂 #C6392C */
-  --c-primary-hover: 226 92 70;
+  /* 朱砂提亮至 #E45C40：主色文字对页面/卡片对比 ≥4.5:1（原 3.44 不达标） */
+  --c-primary: 228 92 64;
+  --c-primary-hover: 240 104 74;
   --c-on-primary: 255 250 244; /* 米白 */
   --c-background: 17 13 11; /* 暖墨（水墨基底） */
-  --c-surface: 27 22 18;
-  --c-surface-alt: 38 31 26;
-  --c-surface-hover: 49 41 34;
+  /* 卡片层级抬亮一档：表面/页面底对比 ≥1.15 */
+  --c-surface: 36 30 24;
+  --c-surface-alt: 46 39 32;
+  --c-surface-hover: 57 49 41;
   --c-on-background: 245 238 226;
   --c-on-surface: 237 229 216;
   --c-muted: 152 140 122;
-  --c-faint: 104 93 79;
+  /* 占位文字提亮：对卡片对比 ≥3:1 */
+  --c-faint: 128 115 98;
   --c-border: 62 52 44;
-  --c-border-focus: 198 57 44;
+  --c-border-focus: 228 92 64;
   --c-accent: 212 175 55; /* 鎏金 #D4AF37 */
   --c-error: 226 98 78;
   --c-warning: 214 150 58; /* 赭金 */
   --c-success: 104 162 128; /* 青瓷绿 */
-  --c-info: 110 132 186; /* 黛蓝 */
+  --c-info: 122 142 194; /* 黛蓝（提亮，对卡片 ≥4.5:1） */
   --font-headline: 'KaiTi', 'STKaiti', '楷体', 'Noto Serif SC', serif;
   --font-body: 'Source Han Serif SC', 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
 }
@@ -68,9 +78,10 @@
   --c-primary-hover: 134 239 196;
   --c-on-primary: 6 15 20;
   --c-background: 9 12 26; /* 深靛蓝夜空 */
-  --c-surface: 18 22 42;
-  --c-surface-alt: 26 31 56;
-  --c-surface-hover: 34 40 68;
+  /* 卡片层级抬亮：表面/页面底 ≥1.15 */
+  --c-surface: 24 29 52;
+  --c-surface-alt: 33 39 68;
+  --c-surface-hover: 42 48 80;
   --c-on-background: 232 240 250;
   --c-on-surface: 226 232 244;
   --c-muted: 148 156 186;
@@ -104,9 +115,10 @@ html.theme-aurora body::before {
   --c-primary-hover: 138 180 148;
   --c-on-primary: 10 22 14;
   --c-background: 11 19 14; /* 深林 */
-  --c-surface: 19 30 23;
-  --c-surface-alt: 27 41 31;
-  --c-surface-hover: 35 52 40;
+  /* 卡片层级抬亮：表面/页面底 ≥1.15 */
+  --c-surface: 25 38 29;
+  --c-surface-alt: 34 49 38;
+  --c-surface-hover: 43 61 47;
   --c-on-background: 238 244 238;
   --c-on-surface: 230 238 230;
   --c-muted: 148 168 154;
@@ -141,13 +153,15 @@ html.theme-forest body::before {
   --c-primary-hover: 255 140 98;
   --c-on-primary: 40 18 8;
   --c-background: 15 15 24; /* 深墨蓝 */
-  --c-surface: 24 24 36;
-  --c-surface-alt: 32 32 47;
-  --c-surface-hover: 41 41 58;
+  /* 卡片层级抬亮：表面/页面底 ≥1.15 */
+  --c-surface: 30 30 45;
+  --c-surface-alt: 39 39 57;
+  --c-surface-hover: 48 48 69;
   --c-on-background: 244 242 248;
   --c-on-surface: 236 234 242;
   --c-muted: 152 150 172;
-  --c-faint: 104 102 124;
+  /* 占位文字提亮：对卡片对比 ≥3:1 */
+  --c-faint: 108 106 128;
   --c-border: 47 47 66;
   --c-border-focus: 240 106 64;
   --c-accent: 76 118 246; /* 钴蓝 #4C76F6 */
@@ -185,13 +199,15 @@ html.theme-geo body::after {
   --c-primary-hover: 103 232 249;
   --c-on-primary: 4 14 20;
   --c-background: 5 10 20; /* 深空蓝 */
-  --c-surface: 13 19 34;
-  --c-surface-alt: 20 28 48;
-  --c-surface-hover: 28 38 62;
+  /* 卡片层级抬亮：表面/页面底 ≥1.15 */
+  --c-surface: 19 27 46;
+  --c-surface-alt: 26 36 61;
+  --c-surface-hover: 34 46 76;
   --c-on-background: 234 244 252;
   --c-on-surface: 226 238 248;
   --c-muted: 134 150 176;
-  --c-faint: 86 100 126;
+  /* 占位文字提亮：对卡片对比 ≥3:1 */
+  --c-faint: 92 106 132;
   --c-border: 37 48 74;
   --c-border-focus: 45 212 236;
   --c-accent: 147 97 246; /* 电子紫 #9361F6 */
@@ -221,28 +237,30 @@ html.theme-tech body::before {
   background-size: 32px 32px, 32px 32px, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%;
 }
 
-/* ---------- 复古（米黄纸感 + 噪点，浅色主题） ---------- */
+/* ---------- 复古（米黄纸感 + 噪点，浅色主题） ----------
+   对比度加固（WCAG AA）：主色加深为焦茶 #A84C08（原 #D97706 作文字仅 3.1:1）；
+   页面底加深一档与纯白卡片拉开层级；muted/warning/success 同步加深至 ≥4.5:1。 */
 .theme-retro {
-  --c-primary: 217 119 6; /* 琥珀棕 #D97706 */
-  --c-primary-hover: 245 158 11;
+  --c-primary: 168 76 8; /* 焦茶 #A84C08 */
+  --c-primary-hover: 146 64 6; /* hover 更深（浅色主题按压缩深） */
   --c-on-primary: 255 251 240;
-  --c-background: 248 242 230; /* 米黄纸感 */
+  --c-background: 240 232 215; /* 米黄纸感（加深一档，与卡片分层） */
   --c-surface: 255 252 244;
   --c-surface-alt: 255 254 247; /* 比 surface 更亮：卡片壳底色需与米黄背景拉开层次 */
-  --c-surface-hover: 243 235 218;
+  --c-surface-hover: 238 228 208;
   --c-on-background: 56 46 32;
   --c-on-surface: 62 52 38;
-  --c-muted: 138 120 98;
-  --c-faint: 178 162 140;
+  --c-muted: 118 100 76; /* 加深：对卡片/页面 ≥4.5:1 */
+  --c-faint: 156 138 114; /* 加深：对卡片 ≥3:1 */
   --c-border: 205 189 158; /* 加深一档：浅色纸面上 1px 边框需可辨 */
-  --c-border-focus: 217 119 6;
+  --c-border-focus: 168 76 8;
   --c-accent: 176 92 46; /* 赭陶红 */
   --c-error: 190 62 42;
-  --c-warning: 196 138 22;
-  --c-success: 76 140 82;
+  --c-warning: 150 92 6; /* 加深：对卡片 ≥4.5:1 */
+  --c-success: 56 122 66; /* 加深：对卡片 ≥4.5:1 */
   --c-info: 90 110 160;
 }
-html.theme-retro { background-color: rgb(248 242 230 / 1); }
+html.theme-retro { background-color: rgb(240 232 215 / 1); }
 html.theme-retro body { background-color: transparent; }
 html.theme-retro body::before {
   content: '';
@@ -254,7 +272,7 @@ html.theme-retro body::before {
   background:
     radial-gradient(ellipse 70% 50% at 50% 0%, rgb(255 255 255 / 0.22), transparent 60%),
     radial-gradient(ellipse 60% 45% at 50% 110%, rgb(196 150 90 / 0.14), transparent 60%),
-    linear-gradient(180deg, rgb(247 240 226 / 1) 0%, rgb(240 231 212 / 1) 100%);
+    linear-gradient(180deg, rgb(240 232 215 / 1) 0%, rgb(232 223 204 / 1) 100%);
 }
 html.theme-retro body::after {
   content: '';
@@ -271,13 +289,15 @@ html.theme-retro body::after {
   --c-primary-hover: 248 134 78;
   --c-on-primary: 44 20 8;
   --c-background: 22 14 10; /* 深栗 */
-  --c-surface: 33 22 15;
-  --c-surface-alt: 44 30 20;
-  --c-surface-hover: 55 38 25;
+  /* 卡片层级抬亮：表面/页面底 ≥1.15 */
+  --c-surface: 41 28 19;
+  --c-surface-alt: 53 37 25;
+  --c-surface-hover: 64 46 31;
   --c-on-background: 250 243 232;
   --c-on-surface: 245 236 222;
   --c-muted: 170 146 120;
-  --c-faint: 120 99 78;
+  /* 占位文字提亮：对卡片对比 ≥3:1 */
+  --c-faint: 124 103 81;
   --c-border: 62 45 30;
   --c-border-focus: 232 106 54;
   --c-accent: 245 184 66; /* 暖金 #F5B842 */
@@ -304,19 +324,21 @@ html.theme-autumn body::before {
 
 /* ---------- 节日（绯红鎏金 · 丝绒质感，克制不俗） ---------- */
 .theme-festive {
-  --c-primary: 226 76 92; /* 绯红 #E24C5C */
+  --c-primary: 234 88 104; /* 绯红 #EA5868（提亮：文字对卡片 ≥4.5:1） */
   --c-primary-hover: 244 108 120;
   --c-on-primary: 46 8 14;
   --c-background: 24 10 14; /* 丝绒深红 */
-  --c-surface: 36 17 22;
-  --c-surface-alt: 48 24 30;
-  --c-surface-hover: 60 31 38;
+  /* 卡片层级抬亮：表面/页面底 ≥1.15 */
+  --c-surface: 46 24 30;
+  --c-surface-alt: 57 30 37;
+  --c-surface-hover: 69 38 46;
   --c-on-background: 250 240 242;
   --c-on-surface: 245 232 234;
   --c-muted: 176 142 148;
-  --c-faint: 126 96 102;
+  /* 占位文字提亮：对卡片对比 ≥3:1 */
+  --c-faint: 134 104 110;
   --c-border: 74 42 48;
-  --c-border-focus: 226 76 92;
+  --c-border-focus: 234 88 104;
   --c-accent: 232 178 58; /* 鎏金 #E8B23A */
   --c-error: 236 96 100;
   --c-warning: 240 178 66;
@@ -424,10 +446,81 @@ html::-webkit-scrollbar {
 }
 
 .material-symbols-outlined {
-  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  font-variation-settings: var(--icon-fvs, 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24);
   line-height: 1;
   user-select: none;
+  -webkit-user-select: none;
 }
+
+/* ================= 图标风格（html.ic-*，对应设置页「图标风格」） =================
+   全局图标经 hcIcons 统一替换为后端 SVG mask（.hc-iconsvg 实心剪影），
+   风格差异在 CSS 层实现；字体图标路径由 --icon-fvs 变量轴同步。 */
+html.ic-linear { --icon-fvs: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24; }
+html.ic-filled { --icon-fvs: 'FILL' 1, 'wght' 500, 'GRAD' 0, 'opsz' 24; }
+html.ic-duotone { --icon-fvs: 'FILL' 1, 'wght' 400, 'GRAD' -25, 'opsz' 24; }
+html.ic-minimal { --icon-fvs: 'FILL' 0, 'wght' 500, 'GRAD' 200, 'opsz' 24; }
+
+/* 填充：四向同色投影加粗剪影 → 饱满清晰 */
+html.ic-filled .hc-iconsvg {
+  filter:
+    drop-shadow(0.35px 0 0 currentColor)
+    drop-shadow(-0.35px 0 0 currentColor)
+    drop-shadow(0 0.35px 0 currentColor)
+    drop-shadow(0 -0.35px 0 currentColor);
+}
+/* 双色调：底部 45% 叠加主题强调色带 → 层次丰富 */
+html.ic-duotone .hc-iconsvg { position: relative; }
+html.ic-duotone .hc-iconsvg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgb(var(--c-accent));
+  clip-path: inset(55% 0 0 0);
+  opacity: 0.9;
+  -webkit-mask-image: inherit;
+  mask-image: inherit;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+/* 极简：缩小一档、降低存在感 → 纯粹简约 */
+html.ic-minimal .hc-iconsvg { transform: scale(0.82); opacity: 0.85; }
+/* 线性（默认）：仅字体图标变细（wght 300）；SVG 默认描边观感即线性 */
+
+/* 同款风格的元素级镜像（.icv-*）：供设置页「图标风格」选择卡在卡片作用域内
+   自演示（全局 ic-* 类一次只能呈现一种，卡片需并列展示四种差异） */
+.material-symbols-outlined.icv-linear { font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24; }
+.material-symbols-outlined.icv-filled { font-variation-settings: 'FILL' 1, 'wght' 500, 'GRAD' 0, 'opsz' 24; }
+.material-symbols-outlined.icv-duotone { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' -25, 'opsz' 24; }
+.material-symbols-outlined.icv-minimal { font-variation-settings: 'FILL' 0, 'wght' 500, 'GRAD' 200, 'opsz' 24; }
+.hc-iconsvg.icv-filled {
+  filter:
+    drop-shadow(0.35px 0 0 currentColor)
+    drop-shadow(-0.35px 0 0 currentColor)
+    drop-shadow(0 0.35px 0 currentColor)
+    drop-shadow(0 -0.35px 0 currentColor);
+}
+.hc-iconsvg.icv-duotone { position: relative; }
+.hc-iconsvg.icv-duotone::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgb(var(--c-accent));
+  clip-path: inset(55% 0 0 0);
+  opacity: 0.9;
+  -webkit-mask-image: inherit;
+  mask-image: inherit;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+.hc-iconsvg.icv-minimal { transform: scale(0.82); opacity: 0.85; }
 
 /* 后端 SVG 图标（CSS mask + currentColor 着色 + 1em 随 font-size 等比缩放） */
 .hc-iconsvg {
@@ -443,6 +536,94 @@ html::-webkit-scrollbar {
   mask-position: center;
   -webkit-mask-size: contain;
   mask-size: contain;
+}
+
+/* ================= 背景动效层（白名单动画，themes.js applyBgFx 注入 #hc-bg-fx） =================
+   固定装饰层 z-index:-1（同预设主题 body::before 层级），动画只动 transform/opacity
+   （GPU 合成，不重排）；颜色取自当前主题变量，任何主题下自动协调；--bgfx-alpha 控整体强度。 */
+#hc-bg-fx {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+  opacity: var(--bgfx-alpha, 0.7);
+}
+#hc-bg-fx:not([class*="fx-"]) { display: none; }
+#hc-bg-fx::before,
+#hc-bg-fx::after { content: ''; position: absolute; inset: 0; }
+
+/* 极光流动：两片大光斑反向缓慢漂移 */
+#hc-bg-fx.fx-aurora::before {
+  inset: -20%;
+  background:
+    radial-gradient(ellipse 42% 36% at 28% 26%, rgb(var(--c-primary) / 0.26), transparent 66%),
+    radial-gradient(ellipse 38% 42% at 74% 66%, rgb(var(--c-accent) / 0.22), transparent 66%);
+  animation: hc-bgfx-drift 28s ease-in-out infinite alternate;
+}
+#hc-bg-fx.fx-aurora::after {
+  inset: -20%;
+  background: radial-gradient(ellipse 46% 40% at 60% 20%, rgb(var(--c-info) / 0.16), transparent 68%);
+  animation: hc-bgfx-drift 36s ease-in-out infinite alternate-reverse;
+}
+@keyframes hc-bgfx-drift {
+  from { transform: translate3d(-2.5%, -1.5%, 0) rotate(-1.5deg); }
+  to { transform: translate3d(2.5%, 2%, 0) rotate(1.5deg); }
+}
+
+/* 星点闪烁：两层错位星点交替呼吸 */
+#hc-bg-fx.fx-twinkle::before {
+  background-image: radial-gradient(rgb(var(--c-primary) / 0.55) 1px, transparent 1.8px);
+  background-size: 48px 48px;
+  animation: hc-bgfx-blink 4.2s ease-in-out infinite;
+}
+#hc-bg-fx.fx-twinkle::after {
+  background-image: radial-gradient(rgb(var(--c-accent) / 0.45) 1.2px, transparent 2px);
+  background-size: 72px 72px;
+  background-position: 26px 34px;
+  animation: hc-bgfx-blink 6.4s ease-in-out 1.3s infinite reverse;
+}
+@keyframes hc-bgfx-blink {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 0.75; }
+}
+
+/* 网格扫描：静态细网格 + 自上而下循环的扫描光带 */
+#hc-bg-fx.fx-scan::before {
+  background-image:
+    linear-gradient(rgb(var(--c-border) / 0.55) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(var(--c-border) / 0.55) 1px, transparent 1px);
+  background-size: 44px 44px;
+}
+#hc-bg-fx.fx-scan::after {
+  inset: 0 0 auto 0;
+  height: 26%;
+  background: linear-gradient(180deg, transparent, rgb(var(--c-primary) / 0.10) 55%, rgb(var(--c-primary) / 0.22));
+  animation: hc-bgfx-scan 8s linear infinite;
+}
+@keyframes hc-bgfx-scan {
+  from { transform: translateY(-110%); }
+  to { transform: translateY(480%); }
+}
+
+/* 呼吸渐变：上下两片光晕缓慢起伏 */
+#hc-bg-fx.fx-breathe::before {
+  background: radial-gradient(ellipse 72% 52% at 50% -6%, rgb(var(--c-primary) / 0.17), transparent 70%);
+  animation: hc-bgfx-breathe 10s ease-in-out infinite;
+}
+#hc-bg-fx.fx-breathe::after {
+  background: radial-gradient(ellipse 64% 48% at 50% 106%, rgb(var(--c-accent) / 0.15), transparent 70%);
+  animation: hc-bgfx-breathe 13s ease-in-out 1.8s infinite reverse;
+}
+@keyframes hc-bgfx-breathe {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.05); }
+}
+
+/* 系统「减弱动效」偏好：全部静态化（保留配色，停掉运动） */
+@media (prefers-reduced-motion: reduce) {
+  #hc-bg-fx::before,
+  #hc-bg-fx::after { animation: none !important; }
 }
 
 /* 脉冲圆点动画（当前值指示） */

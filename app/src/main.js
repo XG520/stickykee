@@ -4,14 +4,15 @@ import './assets/main.css'
 import App from './App.vue'
 import router from './router'
 import { initIconWatcher } from './utils/hcIcons'
-import { loadThemeFromCache } from './themes'
+import { loadAppearanceFromCache } from './themes'
 import { mark } from './utils/perf'
 
 // 性能基准起点：后续首屏各段耗时都相对它（≈页面导航开始）计算
 mark('boot:js')
 
-// 挂载前同步应用本地缓存主题（登录页/首屏即生效，后端权威值由 App.vue 登录后异步覆盖）
-loadThemeFromCache()
+// 挂载前同步应用本地缓存外观（主题 + 字号 + 图标风格；登录页/首屏即生效，
+// 后端权威值由 App.vue 登录后异步覆盖）
+loadAppearanceFromCache()
 
 createApp(App).use(router).mount('#app')
 mark('boot:mounted')

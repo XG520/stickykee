@@ -94,7 +94,7 @@ import MobileTabBar from '@/components/MobileTabBar.vue'
 import DeviceDrawer from '@/components/DeviceDrawer.vue'
 import CallOverlay from '@/components/CallOverlay.vue'
 import ServerManagerSheet from '@/components/ServerManagerSheet.vue'
-import { auth, loadInstances, ui } from '@/store'
+import { auth, loadInstances, ui, applyBrandDisplay } from '@/store'
 import { useFullscreen } from '@/composables/useFullscreen'
 import { useAutoHide } from '@/composables/useAutoHide'
 import { checkApkUpdate, downloadAndInstallApk } from '@/utils/appUpdate'
@@ -114,7 +114,7 @@ function startApkUpdate() {
     (msg) => { apkDownloading.value = false; console.warn('[appUpdate]', msg) },
   )
 }
-import { applyTheme, resolveTheme, loadThemeFromCache } from '@/themes'
+import { applyTheme, resolveTheme, loadAppearanceFromCache, applyFontSize, applyIconStyle, applyBgFx } from '@/themes'
 import { startAutoSync, stopAutoSync } from '@/utils/autoSync'
 import { startProximityScreenWake } from '@/utils/sensors'
 import { getPrefs } from '@/utils/prefs'
@@ -125,14 +125,25 @@ let stopProx = null // 人接近自动亮屏的停止函数
 const { toggle: toggleFullscreen } = useFullscreen()
 const { visible: exitShow, enter: exitEnter, leave: exitLeave } = useAutoHide(3000)
 
-// 从后端恢复主题权威值（登录成功后 / 已登录刷新时调用），结果写回本地缓存。
-// 后端离线或未登录时静默失败，此时保留本地缓存主题。
+// 从后端恢复外观权威值（登录成功后 / 已登录刷新时调用）：主题 + 字体大小 + 图标风格，
+// 结果由各 apply* 函数写回本地缓存。后端离线或未登录时静默失败，保留本地缓存外观。
 async function restoreTheme() {
   try {
     const { data } = await getPrefs()
     const r = resolveTheme(data && data.theme)
     applyTheme(r.themeKey, r.themeKey === 'custom' && r.colors ? r.colors : r.customHex)
-  } catch { /* 无会话/离线：保持本地缓存主题 */ }
+    if (data && data.font) applyFontSize(data.font)
+    if (data && data.icons) applyIconStyle(data.icons)
+    if (data && data.bgfx) {
+      try {
+        const b = JSON.parse(data.bgfx)
+        if (b && b.effect) applyBgFx(b.effect, b.strength)
+      } catch { /* 忽略坏配置 */ }
+    }
+    if (data && data.site_display) {
+      try { applyBrandDisplay(JSON.parse(data.site_display)) } catch { /* 忽略坏配置 */ }
+    }
+  } catch { /* 无会话/离线：保持本地缓存外观 */ }
 }
 // 用户自定义模板：从 prefs 加载并热注入 cardDefaults，让「添加卡片」面板立即出现。
 // 与 restoreTheme 并行，结果独立（模板失败不影响其他启动流程）。
@@ -161,15 +172,15 @@ watch(
     } else {
       stopAutoSync() // 登出/无会话时停止自动同步
       if (stopProx) { stopProx(); stopProx = null } // 释放屏幕唤醒锁
-      loadThemeFromCache()
+      loadAppearanceFromCache()
     }
   },
   { immediate: true },
 )
 
-// 启动时先应用本地缓存主题（防闪烁），已登录刷新时再异步对齐后端权威值。
+// 启动时先应用本地缓存外观（防闪烁），已登录刷新时再异步对齐后端权威值。
 onMounted(() => {
-  loadThemeFromCache()
+  loadAppearanceFromCache()
   restoreTheme()
   restoreTemplates()
 })

@@ -280,7 +280,7 @@ function pickEntity(id) {
 
 /* 规则卡片 */
 .lp-rule { border: 1px solid rgb(var(--c-border)); border-radius: 10px; background: rgb(var(--c-on-surface) / 0.02); overflow: hidden; }
-.lp-rule-head { display: flex; align-items: center; gap: 6px; padding: 7px 9px; cursor: pointer; user-select: none; }
+.lp-rule-head { display: flex; align-items: center; gap: 6px; padding: 7px 9px; cursor: pointer; user-select: none; -webkit-user-select: none; }
 .lp-rule-head:hover { background: rgb(var(--c-on-surface) / 0.03); }
 .lp-fold { font-size: 18px; color: rgb(var(--c-muted)); flex: none; }
 .lp-name {

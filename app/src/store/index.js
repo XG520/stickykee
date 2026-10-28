@@ -95,6 +95,16 @@ export async function saveSiteName(name, nameEn) {
 
 // ---- 系统显示图标（管理员可改，Material Symbol 名，存后端全局 prefs.site_icon） ----
 const SITE_ICON_CACHE_KEY = 'hc_site_icon'
+// 顶栏品牌区显示偏好（中文名/英文名/图标各自显隐；prefs 键 site_display，个人级显示设置，
+// 不改全局名称/图标本身）。TheHeader 消费；SettingsView/App.vue 负责从 prefs 恢复。
+export const brandDisplay = reactive({ cn: true, en: true, icon: true })
+export function applyBrandDisplay(conf) {
+  if (!conf || typeof conf !== 'object') return
+  if ('cn' in conf) brandDisplay.cn = !!conf.cn
+  if ('en' in conf) brandDisplay.en = !!conf.en
+  if ('icon' in conf) brandDisplay.icon = !!conf.icon
+}
+
 let cachedSiteIcon = 'bolt'
 try { cachedSiteIcon = localStorage.getItem(SITE_ICON_CACHE_KEY) || 'bolt' } catch { /* 隐私模式 */ }
 export const siteIcon = ref(cachedSiteIcon)

@@ -173,6 +173,7 @@ onBeforeUnmount(() => {
   height: 100%;
   object-fit: contain;
   user-select: none;
+  -webkit-user-select: none;
 }
 .fp-icon-code {
   width: 100%;

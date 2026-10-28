@@ -44,11 +44,6 @@
 
     <!-- ===== 右侧内容区 ===== -->
     <main class="min-w-0">
-      <header class="hidden lg:block mb-5">
-        <h2 class="hc-set-title">{{ curMeta.title }}</h2>
-        <p class="hc-set-sub">{{ curMeta.desc }}</p>
-      </header>
-
       <!-- 手机端二级切换：当前分组含多个页面时（如 智能 → AI / AI 诊断 / 日志） -->
       <div v-if="curGroup && curGroup.items.length > 1" class="lg:hidden hc-set-seg mb-3">
         <button v-for="t in curGroup.items" :key="t.key" @click="activeTab = t.key"
@@ -488,11 +483,26 @@
           v-for="t in themeOptions"
           :key="t.key"
           @click="themeKey = t.key"
-          class="relative flex flex-col gap-2 p-4 rounded-xl border-2 transition-all duration-200 hover:scale-[1.02] text-left"
+          class="relative flex flex-col gap-2 p-3 rounded-xl border-2 transition-all duration-200 hover:scale-[1.02] text-left"
           :class="themeKey === t.key ? 'border-primary bg-primary/10' : 'border-transparent hover:border-border bg-surface'"
         >
-          <div class="flex items-center gap-2">
-            <span v-for="(c, ci) in (t.key === 'custom' ? customSwatches : t.swatches)" :key="t.key + ci" class="w-5 h-5 rounded-full border border-white/10" :style="{ background: c }"></span>
+          <!-- 实时迷你预览：预设主题直接作用域引用 .theme-<key> 变量集；自定义主题用派生变量 inline。
+               预览内展示 标题/次要文字/按钮/图标/状态点/边框/底色分层，选中前即可判断可识别性 -->
+          <div class="tp-bg" :class="t.key !== 'custom' ? 'theme-' + t.key : ''" :style="t.key === 'custom' ? customPreviewVars : undefined">
+            <div class="tp-card">
+              <div class="flex items-center justify-between">
+                <span class="tp-title">Aa</span>
+                <span class="material-symbols-outlined tp-icon">bolt</span>
+              </div>
+              <span class="tp-muted">辅助说明文字</span>
+              <div class="flex items-center gap-1.5 mt-1.5">
+                <span class="tp-btn">按钮</span>
+                <span class="tp-dot" style="background: rgb(var(--c-success))"></span>
+                <span class="tp-dot" style="background: rgb(var(--c-warning))"></span>
+                <span class="tp-dot" style="background: rgb(var(--c-error))"></span>
+              </div>
+            </div>
+            <span v-if="t.key !== 'custom'" class="tp-aa" title="正文/次要文字/主色文字均达 WCAG AA ≥4.5:1">AA</span>
           </div>
           <span class="text-sm font-semibold" :class="themeKey === t.key ? 'text-primary' : 'text-on-surface'">{{ t.name }}</span>
           <span class="text-xs text-muted">{{ t.desc }}</span>
@@ -507,11 +517,45 @@
         <div class="flex items-center justify-between mb-3">
           <div>
             <p class="text-on-surface text-sm font-semibold">自定义调色板</p>
-            <p class="text-muted text-xs mt-0.5">自由调配整套配色，实时预览，保存后全局生效</p>
+            <p class="text-muted text-xs mt-0.5">自由调配整套配色，实时预览；右侧徽章为 WCAG 对比度评级</p>
           </div>
-          <button @click="resetCustomPalette" class="px-3 py-1.5 rounded-lg bg-surface border border-border text-muted hover:text-on-surface text-sm transition-colors flex items-center gap-1.5">
-            <span class="material-symbols-outlined text-base">restart_alt</span>恢复默认
-          </button>
+          <div class="flex items-center gap-2">
+            <button @click="fixPaletteContrast" class="px-3 py-1.5 rounded-lg bg-surface border border-border text-muted hover:text-on-surface text-sm transition-colors flex items-center gap-1.5" title="把不达标的颜色自动微调至 WCAG AA">
+              <span class="material-symbols-outlined text-base">contrast</span>优化对比度
+            </button>
+            <button @click="resetCustomPalette" class="px-3 py-1.5 rounded-lg bg-surface border border-border text-muted hover:text-on-surface text-sm transition-colors flex items-center gap-1.5">
+              <span class="material-symbols-outlined text-base">restart_alt</span>恢复默认
+            </button>
+          </div>
+        </div>
+        <!-- AI 主题设计：调用「AI 助手」页配置的模型，按文字描述生成整套调色板 -->
+        <div class="mb-4 rounded-xl bg-background border border-border p-3">
+          <div class="flex items-center gap-2">
+            <span class="material-symbols-outlined text-primary text-lg flex-shrink-0">auto_awesome</span>
+            <input v-model="aiThemeDesc" type="text" :disabled="aiThemeBusy"
+              class="flex-1 bg-transparent text-on-surface text-sm focus:outline-none placeholder:text-muted"
+              placeholder="描述想要的风格，如：赛博朋克夜景 / 极简白纸 / 抹茶拿铁"
+              @keydown.enter="aiDesignTheme">
+            <button @click="aiDesignTheme" :disabled="aiThemeBusy || !aiThemeDesc.trim()"
+              class="px-3 py-1.5 rounded-lg bg-primary text-on-primary text-sm font-semibold hover:bg-primary-hover transition-colors disabled:opacity-50 flex items-center gap-1.5 flex-shrink-0">
+              <span class="material-symbols-outlined text-base" :class="{ 'animate-spin': aiThemeBusy }">{{ aiThemeBusy ? 'progress_activity' : 'auto_awesome' }}</span>
+              {{ aiThemeBusy ? '设计中…' : 'AI 设计' }}
+            </button>
+          </div>
+          <p class="text-muted text-[10px] mt-1.5">使用「AI 助手」页配置的模型；生成后自动校验并修复低对比度颜色，实时预览，自动保存</p>
+        </div>
+        <!-- 背景动效：白名单动画层，颜色取自当前主题变量；AI 生成主题时可能一并指定 -->
+        <div class="mb-4 flex flex-wrap items-center gap-3">
+          <div class="flex items-center gap-2 flex-shrink-0">
+            <span class="material-symbols-outlined text-accent text-lg">animation</span>
+            <span class="text-on-surface text-xs font-medium">背景动效</span>
+          </div>
+          <UiSelect v-model="bgFx" class="w-44" :options="bgFxOptions" />
+          <template v-if="bgFx !== 'none'">
+            <input v-model.number="bgFxStrength" type="range" min="0.15" max="1" step="0.05" class="flex-1 min-w-28 accent-primary" title="动效强度">
+            <span class="text-muted text-xs w-9 text-right">{{ Math.round(bgFxStrength * 100) }}%</span>
+          </template>
+          <span v-else class="text-muted text-[10px]">动画颜色自动取自当前调色板，系统「减弱动效」时自动静止</span>
         </div>
         <div class="space-y-2.5">
           <div v-for="k in CUSTOM_COLOR_KEYS" :key="k.key" class="flex items-center gap-3">
@@ -521,6 +565,50 @@
             </div>
             <input type="color" v-model="customColors[k.key]" class="w-8 h-8 rounded-lg cursor-pointer border border-border bg-transparent flex-shrink-0">
             <input type="text" v-model="customColors[k.key]" class="flex-1 bg-background border border-border rounded-lg px-3 py-1.5 text-on-surface text-xs font-mono focus:border-primary focus:outline-none transition-colors">
+            <!-- 对比度徽章：AAA 优 / AA 达标 / 弱 不达标（悬停看具体比值与标准） -->
+            <span v-if="contrastBadges[k.key]" class="tp-badge flex-shrink-0" :class="'tp-badge--' + contrastBadges[k.key].level"
+              :title="`对其背景对比度 ${contrastBadges[k.key].ratio ?? '—'}:1（需 ≥${contrastBadges[k.key].min}:1）`">
+              {{ contrastBadges[k.key].text }}
+            </span>
+          </div>
+        </div>
+
+        <!-- 我的主题库：当前调色板 + 背景动效成套存为命名主题，点击卡片即切换 -->
+        <div class="pt-3 mt-3 border-t border-border">
+          <div class="flex items-center justify-between mb-2.5">
+            <p class="text-on-surface text-xs font-medium">我的主题库</p>
+            <button @click="saveCurrentAsTheme"
+              class="px-3 py-1.5 rounded-lg bg-primary text-on-primary text-xs font-semibold hover:bg-primary-hover transition-colors flex items-center gap-1.5"
+              title="把当前调色板与背景动效存为一套命名主题">
+              <span class="material-symbols-outlined text-sm">bookmark_add</span>存为我的主题
+            </button>
+          </div>
+          <p v-if="!savedThemes.length" class="text-muted text-[10px]">还没有保存的主题。调好配色或让 AI 设计后，点「存为我的主题」；名称取 AI 输入框内容（留空自动编号）。</p>
+          <div v-else class="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+            <div v-for="t in savedThemes" :key="t.id" class="cursor-pointer group" @click="applySavedTheme(t)" :title="`应用主题「${t.name}」`">
+              <div class="tp-bg" :style="savedPreviewVars(t)">
+                <div class="tp-card">
+                  <div class="flex items-center justify-between">
+                    <span class="tp-title">Aa</span>
+                    <span class="material-symbols-outlined tp-icon">bolt</span>
+                  </div>
+                  <span class="tp-muted">辅助说明文字</span>
+                  <div class="flex items-center gap-1.5 mt-1.5">
+                    <span class="tp-btn">按钮</span>
+                    <span class="tp-dot" style="background: rgb(var(--c-success))"></span>
+                    <span class="tp-dot" style="background: rgb(var(--c-warning))"></span>
+                    <span class="tp-dot" style="background: rgb(var(--c-error))"></span>
+                  </div>
+                </div>
+              </div>
+              <div class="flex items-center gap-1 mt-1.5">
+                <span class="text-xs text-on-surface truncate flex-1">{{ t.name }}</span>
+                <span v-if="t.bgFx && t.bgFx !== 'none'" class="material-symbols-outlined text-accent text-sm flex-shrink-0" title="含背景动效">animation</span>
+                <button @click.stop="removeSavedTheme(t.id)" class="w-5 h-5 rounded flex items-center justify-center text-muted hover:text-error hover:bg-error/10 transition-colors flex-shrink-0" :title="`删除主题「${t.name}」`">
+                  <span class="material-symbols-outlined text-sm">close</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -550,6 +638,22 @@
           <button v-if="customColor" @click="customColor = ''" class="px-3 py-1.5 rounded-lg bg-surface border border-border text-muted hover:text-on-surface text-sm transition-colors">恢复默认色</button>
         </div>
       </div>
+    </section>
+
+    <!-- 顶栏品牌显示：中/英文名称与图标各自显隐（个人显示偏好，不改全局名称与图标本身） -->
+    <section id="sec-brand" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
+      <div class="flex items-center gap-2.5 mb-2">
+        <div class="w-8 h-8 rounded-xl bg-info/20 flex items-center justify-center">
+          <span class="material-symbols-outlined text-info text-lg">branding_watermark</span>
+        </div>
+        <div>
+          <h2 class="font-headline text-on-background text-base font-semibold">顶栏品牌显示</h2>
+          <p class="text-muted text-xs mt-0.5">只保留一个名称时自动放大并垂直居中拉满；隐藏不修改名称与图标本身</p>
+        </div>
+      </div>
+      <ToggleRow v-model="brandIcon" icon="bolt" title="显示系统图标" desc="顶栏左侧的品牌图标" color="bg-primary/15 text-primary" />
+      <ToggleRow v-model="brandCn" icon="translate" title="显示中文名称" desc="顶栏主标题" color="bg-accent/15 text-accent" />
+      <ToggleRow v-model="brandEn" icon="abc" title="显示英文名称" desc="顶栏副标题" color="bg-success/15 text-success" />
     </section>
 
     <!-- 字体大小 -->
@@ -633,9 +737,10 @@
           class="flex flex-col items-center gap-2.5 py-4 rounded-xl border-2 bg-surface hover:bg-surface-hover transition-all duration-200"
           :class="iconStyle === s.key ? 'border-primary bg-primary/10' : 'border-transparent'"
         >
-          <div class="flex gap-1.5">
-            <svg class="w-5 h-5" :class="iconStyle === s.key ? 'text-primary' : 'text-on-surface'" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0a1 1 0 01-1-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1"/></svg>
-            <svg class="w-5 h-5" :class="iconStyle === s.key ? 'text-primary' : 'text-on-surface'" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+          <div class="flex gap-2 text-xl leading-none">
+            <!-- 真实图标 + .icv-* 元素级风格镜像：四张卡并列自演示各自风格（见 main.css） -->
+            <span class="material-symbols-outlined" :class="['icv-' + s.key, iconStyle === s.key ? 'text-primary' : 'text-on-surface']">home</span>
+            <span class="material-symbols-outlined" :class="['icv-' + s.key, iconStyle === s.key ? 'text-primary' : 'text-on-surface']">notifications</span>
           </div>
           <span class="text-xs font-medium text-on-surface">{{ s.name }}</span>
           <span class="text-muted text-xs">{{ s.note }}</span>
@@ -944,7 +1049,7 @@
 
           <div v-if="diagReportText" class="mt-4">
             <label class="text-on-surface text-xs font-medium mb-1.5 block">诊断报告预览</label>
-            <pre class="diag-report-pre">{{ diagReportText }}</pre>
+            <div class="diag-report-md" v-html="diagReportHtml"></div>
           </div>
         </template>
       </section>
@@ -1049,7 +1154,7 @@
               <span class="material-symbols-outlined text-sm">download</span>下载
             </button>
           </div>
-          <pre class="diag-report-pre">{{ logReport }}</pre>
+          <div class="diag-report-md" v-html="logReportHtml"></div>
         </div>
 
         <!-- 日志列表 -->
@@ -1449,11 +1554,14 @@ import ToggleRow from '@/components/ToggleRow.vue'
 import SiteIcon from '@/components/SiteIcon.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import api, { getToken } from '@/api'
+import { renderMarkdown } from '@/utils/markdown'
 import { listDevices, ensureDevice, renameDevice, deleteDevice, getDeviceId, currentDevice, readCache } from '@/utils/device'
 import { availableSensors, unavailableReason, startSensorMonitor, buildReportPayload, isNativeSensorMode } from '@/utils/sensors'
 import { showNotify, setBlackout, setScreenBrightness, setScreenWake, blackout, saveBlackoutDismiss, watchAmbientLight } from '@/utils/browserCommands'
-import { loadInstances, switchInstance, changePassword, authLogout, auth, store, backendOnline, haTokenConfigured, haTokenKnown, saveHAToken, siteName, siteNameEn, siteIcon, siteIconImg, loadSiteName, loadSiteIcon, saveSiteName as persistSiteName, saveSiteIcon as persistSiteIcon, saveSiteIconImage as persistSiteIconImage } from '@/store'
-import { applyTheme, resolveTheme, THEMES, CUSTOM_COLOR_KEYS, DEFAULT_CUSTOM_COLORS } from '@/themes'
+import { loadInstances, switchInstance, changePassword, authLogout, auth, store, backendOnline, haTokenConfigured, haTokenKnown, saveHAToken, siteName, siteNameEn, siteIcon, siteIconImg, loadSiteName, loadSiteIcon, saveSiteName as persistSiteName, saveSiteIcon as persistSiteIcon, saveSiteIconImage as persistSiteIconImage, brandDisplay, applyBrandDisplay } from '@/store'
+import { applyTheme, resolveTheme, THEMES, CUSTOM_COLOR_KEYS, DEFAULT_CUSTOM_COLORS, deriveCustomVars, wcagContrast, contrastLevel, fixContrast, applyFontSize, applyIconStyle, applyBgFx, BGFX_EFFECTS } from '@/themes'
+// 主题设计师技能文档：作为 system prompt 注入 /ai/chat（Vite ?raw 原样内联，维护直接改 md 文件）
+import THEME_DESIGNER_SKILL from '@/ai/theme-designer.md?raw'
 import { getPrefs, putPrefs, invalidate } from '@/utils/prefs'
 import { colsKeyFor } from '@/utils/dashboard'
 import { isApk, openServerSheet } from '@/utils/serverConfig'
@@ -1711,6 +1819,7 @@ const diagStatus = reactive({
 })
 const diagLogs = ref([])
 const diagReportText = ref('')
+const diagReportHtml = computed(() => renderMarkdown(diagReportText.value))
 const diagLogEl = ref(null)
 let diagTimer = null
 let diagTickTimer = null
@@ -1952,6 +2061,8 @@ const logLoading = ref(false)
 const logMsg = ref('')
 const logMsgErr = ref(false)
 const logReport = ref('')
+// AI 产出是 Markdown，转义优先渲染为 HTML 预览（见 utils/markdown.js 安全模型）
+const logReportHtml = computed(() => renderMarkdown(logReport.value))
 const logAnalysis = reactive({ status: 'idle', collected: 0, error: '' })
 let logPollTimer = null
 
@@ -2086,8 +2197,147 @@ const themeKey = ref('default')
 const customColor = ref('')
 // 自定义主题调色板（11 个可调色项，实时预览）
 const customColors = reactive({ ...DEFAULT_CUSTOM_COLORS })
-// 主题网格中「自定义」卡的实时色板（跟随调色板变化）
-const customSwatches = computed(() => [customColors.primary, customColors.accent, customColors.background])
+// 「自定义」主题卡的迷你预览变量集（派生后 inline 到预览容器，与其他预览卡的 .theme-<key> 类等价）
+const customPreviewVars = computed(() => {
+  const vars = deriveCustomVars(customColors)
+  const out = {}
+  for (const [k, v] of Object.entries(vars)) out[k] = Array.isArray(v) ? v.join(' ') : v
+  return out
+})
+
+// ---- 我的主题库（命名主题：调色板 + 背景动效成套保存，prefs 键 saved_themes，可保留多套随时切换） ----
+const savedThemes = ref([])
+// 主题库卡片的迷你预览变量集（与 customPreviewVars 同一派生逻辑，作用于任意一套保存的配色）
+function savedPreviewVars(t) {
+  const vars = deriveCustomVars({ ...DEFAULT_CUSTOM_COLORS, ...(t.colors || {}) })
+  const out = {}
+  for (const [k, v] of Object.entries(vars)) out[k] = Array.isArray(v) ? v.join(' ') : v
+  return out
+}
+function sanitizeSavedThemes(arr) {
+  if (!Array.isArray(arr)) return []
+  return arr.filter((t) => t && typeof t === 'object').slice(0, 30).map((t) => ({
+    id: String(t.id || Math.random().toString(36).slice(2, 8)),
+    name: String(t.name || '未命名').slice(0, 20),
+    colors: Object.fromEntries(
+      CUSTOM_COLOR_KEYS.map((k) => [k.key, t.colors?.[k.key]]).filter(([, v]) => /^#[0-9a-fA-F]{6}$/.test(String(v || ''))),
+    ),
+    bgFx: BGFX_EFFECTS.some((e) => e.key === t.bgFx) ? t.bgFx : 'none',
+    bgFxStrength: Number.isFinite(+t.bgFxStrength) ? Math.min(1, Math.max(0.15, +t.bgFxStrength)) : 0.7,
+  }))
+}
+function saveCurrentAsTheme() {
+  const name = (aiThemeDesc.value.trim() || `主题 ${savedThemes.value.length + 1}`).slice(0, 20)
+  savedThemes.value = [...savedThemes.value, {
+    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    name,
+    colors: { ...customColors },
+    bgFx: bgFx.value,
+    bgFxStrength: bgFxStrength.value,
+  }]
+  flash(`已保存主题「${name}」到我的主题库`, false)
+}
+function applySavedTheme(t) {
+  Object.assign(customColors, DEFAULT_CUSTOM_COLORS, t.colors || {})
+  bgFx.value = BGFX_EFFECTS.some((e) => e.key === t.bgFx) ? t.bgFx : 'none'
+  bgFxStrength.value = Number.isFinite(+t.bgFxStrength) ? Math.min(1, Math.max(0.15, +t.bgFxStrength)) : 0.7
+  themeKey.value = 'custom'
+  flash(`已切换到主题「${t.name}」`, false)
+}
+function removeSavedTheme(id) {
+  savedThemes.value = savedThemes.value.filter((t) => t.id !== id)
+}
+
+// 自定义调色板各颜色项的对比度考核规则：fg 色 vs 其实际背景色，min 为 WCAG 阈值
+const CONTRAST_RULES = {
+  primary: { bg: 'background', min: 4.5 },
+  surface: { bg: 'background', min: 1.15 },
+  onSurface: { bg: 'surface', min: 4.5 },
+  muted: { bg: 'surface', min: 4.5 },
+  border: { bg: 'surface', min: 1.25 },
+  accent: { bg: 'surface', min: 3 },
+  success: { bg: 'surface', min: 4.5 },
+  warning: { bg: 'surface', min: 4.5 },
+  error: { bg: 'surface', min: 4.5 },
+  info: { bg: 'surface', min: 4.5 },
+}
+// 实时对比度徽章：strong=AAA / ok=AA / weak=不达标
+const contrastBadges = computed(() => {
+  const out = {}
+  for (const [key, r] of Object.entries(CONTRAST_RULES)) {
+    const ratio = wcagContrast(customColors[key], customColors[r.bg])
+    const level = contrastLevel(ratio, r.min)
+    out[key] = {
+      ratio: ratio == null ? null : ratio.toFixed(1),
+      level,
+      min: r.min,
+      text: level === 'strong' ? 'AAA' : level === 'ok' ? 'AA' : '弱',
+    }
+  }
+  return out
+})
+// 一键把不达标颜色微调至达标（保持色相仅调明度，见 themes.js fixContrast）
+function fixPaletteContrast() {
+  let n = 0
+  for (const [key, r] of Object.entries(CONTRAST_RULES)) {
+    if (contrastBadges.value[key]?.level === 'weak') {
+      customColors[key] = fixContrast(customColors[key], customColors[r.bg], r.min)
+      n++
+    }
+  }
+  flash(n ? `已优化 ${n} 项低对比度颜色` : '当前调色板对比度已全部达标', false)
+}
+
+// ---- AI 主题设计：按文字描述生成整套调色板（走后端 /ai/chat 转发，密钥不落前端） ----
+const aiThemeDesc = ref('')
+const aiThemeBusy = ref(false)
+
+async function aiDesignTheme() {
+  const desc = aiThemeDesc.value.trim()
+  if (!desc || aiThemeBusy.value) return
+  aiThemeBusy.value = true
+  try {
+    const { data } = await api.aiChat([
+      { role: 'system', content: THEME_DESIGNER_SKILL },
+      { role: 'user', content: `主题风格：${desc}` },
+    ])
+    const raw = data?.choices?.[0]?.message?.content
+    const text = Array.isArray(raw) ? raw.map((p) => p?.text || '').join('') : raw
+    if (!text) throw new Error('AI 返回为空')
+    // 容错解析：剥代码围栏，取首尾花括号区间（与 CardEditor 的 aiParseJson 同款策略）
+    let s = String(text).trim()
+    const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i)
+    if (fence) s = fence[1]
+    const a = s.indexOf('{')
+    const b = s.lastIndexOf('}')
+    if (a < 0 || b <= a) throw new Error('AI 未返回有效 JSON')
+    const out = JSON.parse(s.slice(a, b + 1))
+    // 逐键校验 hex，非法项保留现值——不让 AI 的坏输出破坏界面可读性
+    let applied = 0
+    for (const k of CUSTOM_COLOR_KEYS) {
+      const v = String(out[k.key] || '').trim()
+      const hex = v.startsWith('#') ? v : '#' + v
+      if (/^#[0-9a-fA-F]{6}$/.test(hex)) { customColors[k.key] = hex; applied++ }
+    }
+    if (!applied) throw new Error('AI 结果中无有效颜色')
+    // 对比度兜底：弱项保持色相、仅调明度自动拉到达标线
+    let fixed = 0
+    for (const [key, r] of Object.entries(CONTRAST_RULES)) {
+      if (contrastBadges.value[key]?.level === 'weak') {
+        customColors[key] = fixContrast(customColors[key], customColors[r.bg], r.min)
+        fixed++
+      }
+    }
+    // 背景动效：AI 可选输出 bgFx/bgFxStrength，白名单校验后应用（watch 会自动持久化）
+    if (BGFX_EFFECTS.some((e) => e.key === out.bgFx)) bgFx.value = out.bgFx
+    if (Number.isFinite(+out.bgFxStrength)) bgFxStrength.value = Math.min(1, Math.max(0.15, +out.bgFxStrength))
+    flash(`已生成配色${fixed ? `，并自动修复 ${fixed} 项低对比度` : ''}，自动保存生效`, false)
+  } catch (e) {
+    flash('AI 主题生成失败：' + (e?.response?.data?.error || e?.message || e), true)
+  } finally {
+    aiThemeBusy.value = false
+  }
+}
 
 // 恢复默认调色板（回到以默认主题为基准的配色）
 function resetCustomPalette() {
@@ -2119,17 +2369,17 @@ const navGroups = computed(() =>
     items: visibleTabs.value.filter((t) => g.keys.includes(t.key)),
   })).filter((g) => g.items.length > 0)
 )
-// 每个分组的页面抬头（桌面端标题 + 副标题；手机端仅显示标题）
+// 各页面标题：仅手机端面包屑使用（桌面端由左侧导航高亮承担定位，不再重复渲染页头）
 const tabMeta = {
-  connect: { title: '连接与设备', desc: 'Home Assistant 接入、个人密钥与设备能力配置' },
-  personal: { title: '个性化', desc: '主题、字体、布局密度与图标风格' },
-  ai: { title: 'AI 助手', desc: '配置兼容 OpenAI 协议的模型，用于生成卡片' },
-  diag: { title: 'AI 诊断', desc: '采集运行日志并交由模型定位故障' },
-  logs: { title: '运行日志', desc: '服务器与前端运行事件，可筛选与导出' },
-  account: { title: '账户', desc: '账号安全、系统信息与版本更新' },
-  users: { title: '用户与设备', desc: '系统名称、成员账号与授权管理' },
+  connect: { title: '连接与设备' },
+  personal: { title: '个性化' },
+  ai: { title: 'AI 助手' },
+  diag: { title: 'AI 诊断' },
+  logs: { title: '运行日志' },
+  account: { title: '账户' },
+  users: { title: '用户与设备' },
 }
-const curMeta = computed(() => tabMeta[activeTab.value] || { title: '设置', desc: '' })
+const curMeta = computed(() => tabMeta[activeTab.value] || { title: '设置' })
 // 手机端两级导航：先选 4 个分组，再在分组内切页面（首屏只需 4 个等宽目标，避免横向滚 7 个标签）
 const mobileGroup = ref('连接')
 const curGroup = computed(() => navGroups.value.find((g) => g.label === mobileGroup.value) || navGroups.value[0])
@@ -2246,6 +2496,8 @@ const fontSizes = [
   { key: 'standard', name: '标准', note: '推荐' },
   { key: 'loose', name: '宽松', note: '适合老年' },
 ]
+// 字体大小即时预览（根字号缩放，见 themes.js applyFontSize）
+watch(fontSize, (v) => applyFontSize(v))
 
 // 仪表盘列数偏好：仅存本设备（localStorage），换设备互不影响；
 // auto 时首页窄屏固定 3 列、桌面按宽度自适应（见 HomeView.updateCols）
@@ -2278,6 +2530,20 @@ const iconStyles = [
   { key: 'duotone', name: '双色调', note: '层次丰富' },
   { key: 'minimal', name: '极简', note: '纯粹简约' },
 ]
+// 图标风格即时预览（html.ic-* 类切换，见 themes.js applyIconStyle）
+watch(iconStyle, (v) => applyIconStyle(v))
+
+// 背景动效（白名单动画层，见 themes.js applyBgFx / main.css 背景动效层）；颜色取自当前主题变量
+const bgFx = ref('none')
+const bgFxStrength = ref(0.7)
+const bgFxOptions = BGFX_EFFECTS.map((e) => ({ value: e.key, label: `${e.name} · ${e.note}` }))
+watch([bgFx, bgFxStrength], () => applyBgFx(bgFx.value, bgFxStrength.value))
+
+// 顶栏品牌显隐（store.brandDisplay 为消费端唯一事实源；此处 ref 只做表单态，watch 即时应用）
+const brandIcon = ref(brandDisplay.icon)
+const brandCn = ref(brandDisplay.cn)
+const brandEn = ref(brandDisplay.en)
+watch([brandIcon, brandCn, brandEn], () => applyBrandDisplay({ icon: brandIcon.value, cn: brandCn.value, en: brandEn.value }))
 
 const floorStyle = ref('wireframe')
 const floorStyles = [
@@ -2756,7 +3022,29 @@ async function loadPrefs() {
     }
     if (data.font) fontSize.value = data.font
     if (data.icons) iconStyle.value = data.icons
+    if (data.bgfx) {
+      try {
+        const b = JSON.parse(data.bgfx)
+        if (b && BGFX_EFFECTS.some((e) => e.key === b.effect)) {
+          bgFx.value = b.effect
+          if (Number.isFinite(+b.strength)) bgFxStrength.value = Math.min(1, Math.max(0.15, +b.strength))
+        }
+      } catch { /* 忽略坏配置 */ }
+    }
     if (data.floorplan) floorStyle.value = data.floorplan
+    if (data.site_display) {
+      try {
+        const sd = JSON.parse(data.site_display)
+        if (sd && typeof sd === 'object') {
+          if ('icon' in sd) brandIcon.value = !!sd.icon
+          if ('cn' in sd) brandCn.value = !!sd.cn
+          if ('en' in sd) brandEn.value = !!sd.en
+        }
+      } catch { /* 忽略坏配置 */ }
+    }
+    if (data.saved_themes) {
+      try { savedThemes.value = sanitizeSavedThemes(JSON.parse(data.saved_themes)) } catch { /* 忽略坏配置 */ }
+    }
     if (data.animation) {
       const m = JSON.parse(data.animation)
       toggles.value.forEach((t) => { if (t.id in m) t.on = !!m[t.id] })
@@ -2788,6 +3076,9 @@ async function persistPrefs() {
     theme,
     font: fontSize.value,
     icons: iconStyle.value,
+    bgfx: JSON.stringify({ effect: bgFx.value, strength: bgFxStrength.value }),
+    site_display: JSON.stringify({ icon: brandIcon.value, cn: brandCn.value, en: brandEn.value }),
+    saved_themes: JSON.stringify(savedThemes.value),
     floorplan: floorStyle.value,
     animation: JSON.stringify(animation),
     wakeWord: wakeWord.value,
@@ -2813,7 +3104,7 @@ function scheduleAutoSave() {
 
 // 任一偏好变化（含地图 Key）即触发自动保存
 watch(
-  [themeKey, customColor, customColors, fontSize, iconStyle, floorStyle, toggles, wakeWord, () => map.amap_key],
+  [themeKey, customColor, customColors, fontSize, iconStyle, bgFx, bgFxStrength, brandIcon, brandCn, brandEn, savedThemes, floorStyle, toggles, wakeWord, () => map.amap_key],
   () => scheduleAutoSave(),
   { deep: true },
 )
@@ -3041,19 +3332,6 @@ onUnmounted(() => {
   letter-spacing: -0.01em;
   color: rgb(var(--c-on-background));
 }
-.hc-set-title {
-  font-size: 17px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
-  color: rgb(var(--c-on-background));
-}
-.hc-set-sub {
-  margin-top: 3px;
-  font-size: 12px;
-  line-height: 1.6;
-  color: rgb(var(--c-muted));
-}
-
 /* 手机端大标题：作为页面锚点，滚动时始终明确「我在设置里」 */
 .hc-set-title-lg {
   font-size: 21px;
@@ -3316,19 +3594,131 @@ onUnmounted(() => {
 .diag-src { flex: none; color: rgb(var(--c-accent)); }
 .diag-msg { color: rgb(var(--c-on-surface)); white-space: pre-wrap; word-break: break-all; }
 .diag-empty { padding: 8px 0; text-align: center; color: rgb(var(--c-muted)); font-size: 11px; }
-.diag-report-pre {
-  margin: 0;
+/* AI 报告 Markdown 预览：容器滚动 + :deep 排版（v-html 子元素无 scope 标记），颜色全走主题变量 */
+.diag-report-md {
   max-height: 420px;
   overflow: auto;
-  padding: 12px 14px;
+  padding: 14px 16px;
   border: 1px solid rgb(var(--c-border));
   border-radius: 12px;
   background: rgb(var(--c-background));
   color: rgb(var(--c-on-surface));
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11.5px;
-  line-height: 1.65;
-  white-space: pre-wrap;
+  font-size: 12.5px;
+  line-height: 1.7;
   word-break: break-word;
 }
+.diag-report-md :deep(h1),
+.diag-report-md :deep(h2),
+.diag-report-md :deep(h3),
+.diag-report-md :deep(h4) {
+  margin: 14px 0 6px;
+  font-family: var(--font-headline);
+  font-weight: 700;
+  color: rgb(var(--c-on-background));
+  line-height: 1.35;
+}
+.diag-report-md :deep(h1) { font-size: 16px; }
+.diag-report-md :deep(h2) { font-size: 14.5px; }
+.diag-report-md :deep(h3) { font-size: 13px; }
+.diag-report-md :deep(h4) { font-size: 12.5px; }
+.diag-report-md :deep(h1:first-child),
+.diag-report-md :deep(h2:first-child),
+.diag-report-md :deep(h3:first-child) { margin-top: 0; }
+.diag-report-md :deep(p) { margin: 6px 0; }
+.diag-report-md :deep(ul),
+.diag-report-md :deep(ol) { margin: 6px 0; padding-left: 20px; }
+.diag-report-md :deep(li) { margin: 3px 0; }
+.diag-report-md :deep(li::marker) { color: rgb(var(--c-muted)); }
+.diag-report-md :deep(strong) { font-weight: 600; color: rgb(var(--c-on-background)); }
+.diag-report-md :deep(code) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: rgb(var(--c-surface));
+  border: 1px solid rgb(var(--c-border));
+}
+.diag-report-md :deep(pre) {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgb(var(--c-surface));
+  border: 1px solid rgb(var(--c-border));
+  overflow-x: auto;
+}
+.diag-report-md :deep(pre code) { padding: 0; border: none; background: none; white-space: pre; }
+.diag-report-md :deep(blockquote) {
+  margin: 8px 0;
+  padding: 6px 12px;
+  border-left: 3px solid rgb(var(--c-accent));
+  background: rgb(var(--c-accent) / 0.08);
+  border-radius: 0 8px 8px 0;
+  color: rgb(var(--c-muted));
+}
+.diag-report-md :deep(table) { margin: 8px 0; border-collapse: collapse; width: 100%; font-size: 12px; }
+.diag-report-md :deep(th),
+.diag-report-md :deep(td) { padding: 5px 10px; border: 1px solid rgb(var(--c-border)); text-align: left; }
+.diag-report-md :deep(th) { background: rgb(var(--c-surface)); font-weight: 600; }
+.diag-report-md :deep(a) { color: rgb(var(--c-primary)); text-decoration: underline; text-underline-offset: 2px; }
+.diag-report-md :deep(hr) { margin: 12px 0; border: none; border-top: 1px solid rgb(var(--c-border)); }
+
+/* ===== 主题迷你预览（消费 .theme-<key> / inline 作用域变量，真实还原主题可识别性） ===== */
+.tp-bg {
+  position: relative;
+  border-radius: 10px;
+  padding: 8px;
+  background-color: rgb(var(--c-background) / 1);
+  border: 1px solid rgb(var(--c-border) / 0.5);
+}
+.tp-card {
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgb(var(--c-surface) / 1);
+  border: 1px solid rgb(var(--c-border));
+}
+.tp-title {
+  font-family: var(--font-headline);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: rgb(var(--c-on-surface));
+}
+.tp-icon { font-size: 15px; color: rgb(var(--c-accent)); }
+.tp-muted { display: block; font-size: 10px; margin-top: 2px; color: rgb(var(--c-muted)); }
+.tp-btn {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgb(var(--c-primary));
+  color: rgb(var(--c-on-primary));
+}
+.tp-dot { width: 6px; height: 6px; border-radius: 9999px; }
+.tp-aa {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 0 4px;
+  line-height: 14px;
+  border-radius: 4px;
+  color: rgb(var(--c-on-background));
+  background: rgb(var(--c-surface-alt) / 0.92);
+  border: 1px solid rgb(var(--c-border));
+  opacity: 0.85;
+}
+
+/* ===== 自定义调色板对比度徽章 ===== */
+.tp-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 6px;
+  min-width: 30px;
+  text-align: center;
+}
+.tp-badge--strong { color: rgb(var(--c-success)); background: rgb(var(--c-success) / 0.12); }
+.tp-badge--ok { color: rgb(var(--c-info)); background: rgb(var(--c-info) / 0.12); }
+.tp-badge--weak { color: rgb(var(--c-warning)); background: rgb(var(--c-warning) / 0.14); }
 </style>

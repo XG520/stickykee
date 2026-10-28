@@ -38,7 +38,7 @@ func NewPrefs(repo *store.InstanceRepo, userPrefs *store.UserPrefs, manager *ha.
 // 按设备隔离的键 dashboard_apk_<deviceId>（布局）/ dashboard_apk_cols_<deviceId>
 // （列数）键名随设备 ID 动态变化，无法列入此固定清单，由 GET 全量扫描后按前缀
 // 放行、PUT 按前缀写入（见 isUserLayoutKey）。
-var userScoped = []string{"theme", "font", "icons", "floorplan", "floorplan_doc", "animation", "wakeWord", "dashboard", "dashboard_apk", "tts_engine", "tts_engine_apk", "birthdays", "ai_config"}
+var userScoped = []string{"theme", "font", "icons", "bgfx", "site_display", "saved_themes", "floorplan", "floorplan_doc", "animation", "wakeWord", "dashboard", "dashboard_apk", "tts_engine", "tts_engine_apk", "birthdays", "ai_config"}
 
 // isUserLayoutKey 判断 k 是否为用户级仪表盘布局键（需按用户隔离写入）。
 // dashboard=Web 端；dashboard_apk=手机端全局回退；dashboard_apk_<deviceId>=按设备隔离。

@@ -788,6 +788,8 @@ import { computeData } from './data'
 import { cardDefaults } from './defaults'
 import { WIDGET_DEFS, WIDGET_GROUPS } from './widgets'
 import { saveAsTemplate } from '@/composables/useCustomTemplates'
+// 卡片设计师技能文档：作为 system prompt 注入 /ai/chat（Vite ?raw 原样内联，维护直接改 md 文件）
+import CARD_DESIGNER_SKILL from '@/ai/card-designer.md?raw'
 import CodeCard from './CodeCard.vue'
 import VisualStage from './VisualStage.vue'
 import LogicPanel from './LogicPanel.vue'
@@ -1473,26 +1475,18 @@ const aiEntityBrief = computed(() => {
 
 function aiSystemPrompt() {
   const tokens = aiTokenList.value.join('、') || '（无）'
-  const current = aiKeep.value && draft.html.trim()
+  const isModify = aiKeep.value && draft.html.trim()
+  const current = isModify
     ? `\n\n当前卡片（在此基础上按需求修改，未要求改动的内容保持不变）：\nHTML:\n${draft.html}\nCSS:\n${draft.css}`
     : ''
-  return `你是 HomeCanvas 智能家居仪表盘的卡片设计器。请根据用户描述${aiKeep.value ? '修改' : '生成'}一张卡片。
+  // 静态设计规范全部在 card-designer.md；此处只拼本次任务的动态上下文
+  return `${CARD_DESIGNER_SKILL}
 
-只输出一个严格 JSON 对象，不要 Markdown 代码围栏，不要解释：
-{"title":"卡片名称","icon":"material_symbols图标名","w":1,"h":1,"html":"...","css":"..."}
+## 本次任务上下文
 
-硬性要求：
-1. html 必须只有一个根元素；根元素建议使用 class="hc"（卡片外壳的内边距、圆角、边框、背景由宿主提供）。
-2. w/h 为卡片尺寸格数，1 格约 120px，取 1~4 的整数。
-3. 字号 8~20px，内边距 4~10px，整体紧凑，适合深色主题。
-4. 颜色只能使用 CSS 变量：var(--hc-text)、var(--hc-sub)、var(--hc-bg)、var(--hc-bg2)、var(--hc-border)、var(--hc-primary)、var(--hc-success)、var(--hc-warn)、var(--hc-color)。不要写死颜色。
-5. 图标用 <span class="material-symbols-outlined">图标名</span>，字号 14~20px。
-6. 数据占位符只能放在文本节点或 HTML 片段中，可用：${tokens}。不要放进 style 属性，不要编造占位符。
-7. 交互：按钮可加 data-hc="toggle" 切换卡片实体；data-hc="svc" data-svc="domain.service" 调服务；data-hc="link" data-href="/path" 跳转。
-8. CSS 只写卡片内部类；禁止 body/html/:root、@import、外部字体和外部图片。
-9. 不要输出 JS。
-${aiKeep.value ? '10. 保留用户没有要求修改的结构与样式。\n' : ''}
-${aiEntityBrief.value}${current}`
+- 模式：${isModify ? '修改现有卡片' : '从零生成新卡片'}
+- 本次可用占位符（只能用这些，禁止编造）：${tokens}
+- ${aiEntityBrief.value}${current}`
 }
 
 function aiParseJson(text) {
@@ -3177,6 +3171,7 @@ watch(
   font: 12px/20px ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   color: rgb(var(--c-border));
   user-select: none;
+  -webkit-user-select: none;
 }
 .ce-code-scroll { position: relative; flex: 1; min-width: 0; }
 .ce-pre,
