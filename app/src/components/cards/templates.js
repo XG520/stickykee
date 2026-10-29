@@ -752,8 +752,12 @@ b 为高空卷云；两层遮罩均为「上下双向渐隐」，避免云层顶
 .wx-cv{position:absolute;inset:0;width:100%;height:100%;border-radius:inherit;z-index:4}
 /* 云/雾在 canvas 之上：遮挡星月更有纵深；内容最上 */
 /* ---- 场景元素可见性 ---- */
-.wx-sunny .wx-cl{display:none}          /* 晴天：干净天空，完全无云 */
-.wx-partly .wx-cl.b{display:block;opacity:.18}  /* 少云：一层薄云 */
+.wx-sunny .wx-cl.a{display:none}        /* 晴天：无积云 */
+.wx-sunny .wx-cl.b{display:block;opacity:.12}  /* 晴天：一层高空薄卷云缓慢漂移 —— 天幕有「活」感，不再是静止画面 */
+/* 多云（少云）：与晴天明确区分 —— 双层云成量可见，且云层移到 canvas（太阳）之上形成「云遮日」 */
+.wx-partly .wx-cl{display:block;z-index:5}
+.wx-partly .wx-cl.a{opacity:.26}
+.wx-partly .wx-cl.b{opacity:.44}
 .wx-cloudy .wx-cl{display:block}        /* 多云/阴天：两层云（近景积云 3 尺度 + 高空卷云，见上方共用滚动层） */
 .wx-rain .wx-cl{display:block;filter:brightness(.6) saturate(.8)}
 .wx-rain .wx-cl.b{opacity:.2}
@@ -769,7 +773,8 @@ b 为高空卷云；两层遮罩均为「上下双向渐隐」，避免云层顶
 /* ---- 场景配色（天幕渐变；全部画在 .wx-sky 上，由它的 overflow:hidden + border-radius 彻底裁剪
    —— 背景只在一层元素上，避免壳层与绝对定位背景的 subpixel 对齐缝） ----
 .wx-sky{background:linear-gradient(180deg,#46649a 0%,#52719f 34%,#5f7ead 62%,#6d8ab8 100%)}  /* 默认：晴天（对齐参考实拍天幕） */
-.wx-partly .wx-sky{background:linear-gradient(180deg,#4f8be8 0%,#5fa4f0 50%,#b2d2f7 75%,#d4e6fb 100%)}
+.wx-sunny .wx-sky{background:linear-gradient(180deg,#4f8be8 0%,#5fa4f0 50%,#b2d2f7 75%,#d4e6fb 100%)}  /* 晴：全场最明快的蔚蓝 */
+.wx-partly .wx-sky{background:linear-gradient(180deg,#5f7ba8 0%,#7a92b6 50%,#b0c1d6 75%,#d0dbe8 100%)}  /* 多云：去饱和压灰一档，与晴天拉开差距（修复旧版多云比晴天更艳的倒置） */
 .wx-cloudy .wx-sky{background:linear-gradient(180deg,#4a5c86 0%,#66799f 42%,#97a8c2 74%,#bcc8d9 100%)}  /* 阴天（对齐参考实拍）：上段饱和深蓝，亮度交给明亮云层 */
 .wx-rain .wx-sky{background:linear-gradient(180deg,#2f3f55 0%,#3d516a 50%,#6a829f 75%,#8ea5bc 100%)}
 .wx-snow .wx-sky{background:linear-gradient(180deg,#5490c4 0%,#6aabd6 50%,#b2d3ee 75%,#d5e6f3 100%)}
@@ -820,7 +825,7 @@ b 为高空卷云；两层遮罩均为「上下双向渐隐」，避免云层顶
 架构约定（关键）：场景 class 由本引擎独占写入，Vue 只负责 data-* 属性，
 两者互不覆盖 —— 彻底消除「Vue 刷新把 class 覆盖回实时值」导致的动画分裂/不生效问题。
 幂等重启、DOM 重建后认领新 canvas、页面隐藏/卡片离场自动暂停。 */
-var WX_VER = 21 /* 迁移版本标记：dashboard.js upgradeWeatherCard 据此重写旧卡代码 */
+var WX_VER = 22 /* 迁移版本标记：dashboard.js upgradeWeatherCard 据此重写旧卡代码 */
 if (el._wxStop) { el._wxStop() }
 var cv = el.querySelector('.wx-cv')
 if (!cv) return
@@ -992,31 +997,33 @@ function moonPos() {
   var p = Math.min(1, Math.max(0, h >= 18 ? (h - 18) / 12 : (h + 6) / 12))
   return { x: (0.1 + 0.8 * p) * W, y: (0.5 - Math.sin(p * Math.PI) * 0.36) * H }
 }
-function drawSun(t) {
+function drawSun(t, dim) {
+  if (dim == null) dim = 1
   var k = skyScale(), sp = sunPos()
   var sx = sp.x, sy = sp.y
   // 写实照片感太阳（对齐参考图）：大气泛光 + 细星芒射线 + 白金光晕 + 纯白小核心 + 镜头光斑
   ctx.save()
+  ctx.globalAlpha = dim  // 多云时太阳被云层遮蔽：整体透光率降低，配合云层 z-index 上移形成云遮日
   ctx.globalCompositeOperation = 'lighter'
   // 1. 大气散射：大范围柔和日辉（随时间缓慢呼吸，模拟空气透明度变化）
-  var bp = .5 + .5 * Math.sin(t * .0007)
+  var bp = .5 + .5 * Math.sin(t * .0011)
   var amb = ctx.createRadialGradient(sx, sy, 0, sx, sy, 78 * k)
-  amb.addColorStop(0, 'rgba(255,244,214,' + (.28 + .1 * bp) + ')')
+  amb.addColorStop(0, 'rgba(255,244,214,' + (.24 + .16 * bp) + ')')
   amb.addColorStop(.45, 'rgba(255,236,190,' + (.09 + .06 * bp) + ')')
   amb.addColorStop(1, 'rgba(255,228,176,0)')
   ctx.fillStyle = amb; ctx.beginPath(); ctx.arc(sx, sy, 78 * k, 0, 6.29); ctx.fill()
   // 2. 柔光射线：仅 6 根，角度不规则分布，发散梯形向外变宽变淡；
   //    整组套 blur 滤镜让边缘完全柔化（参考图：射线少而朦胧，无硬边）
   var frac = function (x) { return x - Math.floor(x) }
-  var rot = t * 0.000012
+  var rot = t * 0.00006
   ctx.filter = 'blur(' + 2.2 * k + 'px)'
   for (var i = 0; i < 6; i++) {
     var h1 = frac(Math.sin(i * 127.1) * 43758.5453)
     var h2 = frac(Math.sin(i * 269.5 + 13.7) * 24634.6345)
     var a = rot + i / 6 * 6.2832 + (h1 - .5) * .9
     var inn = 6 * k
-    // 每根射线独立缓慢伸缩（周期约 10s，相位错开）
-    var len = (26 + h2 * 58) * (.82 + .18 * Math.sin(t * .0006 + i * 1.7)) * k
+    // 每根射线独立伸缩（周期约 5.7s，相位错开）—— 肉眼可感的律动，而非近乎静止
+    var len = (26 + h2 * 58) * (.74 + .26 * Math.sin(t * .0011 + i * 1.7)) * k
     var ca = Math.cos(a), sa = Math.sin(a)
     var hwN = .8 * k, hwF = (3.5 + h2 * 4.5) * k // 近端窄、远端发散宽
     var bx = sx + ca * inn, by = sy + sa * inn
@@ -1302,7 +1309,8 @@ function frame(now) {
         }
         drawMoon(now)
       }
-    } else if (sc.s === 'sunny' || sc.s === 'partly') drawSun(now)
+    } else if (sc.s === 'sunny') drawSun(now, 1)
+    else if (sc.s === 'partly') drawSun(now, .55)  // 多云：太阳被云层遮蔽，只剩柔和透光
     // 旧版 motesDraw（晴天浮尘）已废弃：在蓝色天幕上呈现为白色气泡，
     // 用更干净的 drawSun 柔和光晕替代。
     if (sc.s === 'rain' || sc.s === 'thunder') rain(dt)
