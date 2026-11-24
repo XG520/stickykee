@@ -978,11 +978,12 @@ func (r *FinanceRepo) InstanceIDsWithFinance(ctx context.Context) ([]int64, erro
 // itemCategoryName 把库存物品分类映射到记账分类名。
 func itemCategoryName(c string) string {
 	switch strings.TrimSpace(c) {
-	case "食品", "饮料", "生鲜", "蔬菜", "水果", "零食", "粮油", "乳品":
+	case "食品", "饮料", "生鲜", "蔬菜", "水果", "零食", "粮油", "乳品",
+		"肉禽蛋", "水产", "酒水", "调味品", "冷冻食品", "熟食", "主食粮油":
 		return "食品"
-	case "药品", "医药", "保健品":
+	case "药品", "医药", "保健品", "医疗器械":
 		return "医疗"
-	case "日用品", "日用", "清洁", "纸品":
+	case "日用品", "日用", "清洁", "纸品", "清洁用品", "厨房用品", "家居用品", "收纳整理", "个护美妆":
 		return "日用"
 	default:
 		return "其他支出"

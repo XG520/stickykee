@@ -25,11 +25,16 @@
         </label>
         <label class="text-xs text-muted font-body">
           分类
-          <input
-            v-model="form.category"
-            placeholder="食品 / 饮料 / 药品 / 日用品"
-            class="mt-1 w-full px-3 py-2 rounded-lg bg-surface-alt border border-border text-sm text-on-surface outline-none focus:border-primary"
-          />
+          <button
+            type="button"
+            class="mt-1 w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-surface-alt border border-border text-sm text-left outline-none focus:border-primary"
+            @click="categoryOpen = true"
+          >
+            <span class="truncate" :class="form.category ? 'text-on-surface' : 'text-muted'">
+              {{ form.category || '请选择分类' }}
+            </span>
+            <span class="material-symbols-outlined text-base text-muted flex-shrink-0">expand_more</span>
+          </button>
         </label>
         <label class="text-xs text-muted font-body">
           单位
@@ -82,13 +87,7 @@
         <div class="grid grid-cols-2 gap-3">
           <label class="text-xs text-muted font-body">
             存放位置
-            <select
-              v-model.number="batch.location_id"
-              class="mt-1 w-full px-3 py-2 rounded-lg bg-surface-alt border border-border text-sm text-on-surface outline-none focus:border-primary"
-            >
-              <option :value="0">暂不入库</option>
-              <option v-for="l in locations" :key="l.id" :value="l.id">{{ l.name }}</option>
-            </select>
+            <UiSelect v-model="batch.location_id" class="mt-1 w-full text-sm" :options="locationOptions" />
           </label>
           <label class="text-xs text-muted font-body">
             数量
@@ -137,12 +136,20 @@
         </button>
       </div>
     </div>
+
+    <CategoryPickerDialog
+      v-model="categoryOpen"
+      :value="form.category"
+      @select="form.category = $event"
+    />
   </div>
 </template>
 
 <script setup>
-import { reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import api from '@/api'
+import UiSelect from '@/components/ui/UiSelect.vue'
+import CategoryPickerDialog from './CategoryPickerDialog.vue'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -166,6 +173,12 @@ const form = reactive(emptyForm())
 const batch = reactive({ location_id: 0, quantity: 1, production_date: '', expiry_date: '' })
 const saving = ref(false)
 const error = ref('')
+const categoryOpen = ref(false)
+
+const locationOptions = computed(() => [
+  { label: '暂不入库', value: 0 },
+  ...(props.locations || []).map((l) => ({ label: l.name, value: l.id })),
+])
 
 function reset() {
   Object.assign(form, emptyForm())
@@ -191,7 +204,10 @@ function reset() {
   }
 }
 
-watch(() => props.modelValue, (v) => { if (v) reset() })
+watch(() => props.modelValue, (v) => {
+  if (v) reset()
+  else categoryOpen.value = false
+})
 watch(() => props.item, () => { if (props.modelValue) reset() })
 
 function close() {
