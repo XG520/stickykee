@@ -14,6 +14,12 @@ services:
       # 注释即可用环境变量注入默认 HA 实例
       # HA_DEFAULT_URL: "${HA_DEFAULT_URL:-}"
       # HA_DEFAULT_TOKEN: "${HA_DEFAULT_TOKEN:-}"
+      # 可选：扫码商品识别额度。不配置也能用（匿名约 5 次/天），
+      # 在 https://apizero.cn/account/keys 免费申请后填入可提升到 20+ 次/天。
+      # APIZERO_API_KEY: "${APIZERO_API_KEY:-}"
+      # 可选：淘宝「码上淘」条码库，配置后国内商品覆盖更全。
+      # TAOBAO_APP_KEY: "${TAOBAO_APP_KEY:-}"
+      # TAOBAO_APP_SECRET: "${TAOBAO_APP_SECRET:-}"
     volumes:
       - stickynuo-data:/app/data
 

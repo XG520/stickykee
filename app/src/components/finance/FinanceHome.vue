@@ -1,63 +1,65 @@
 <template>
   <div class="space-y-4">
-    <!-- 月份切换与操作 -->
-    <div class="flex items-center justify-between gap-2 flex-wrap">
-      <div class="flex items-center gap-1">
+    <!-- 月份切换 + 记一笔：窄屏保持同一行，主操作不被挤走 -->
+    <div class="flex items-center justify-between gap-2">
+      <div class="flex items-center gap-1 min-w-0">
         <button class="p-1 rounded-lg text-muted hover:text-primary" @click="shiftMonth(-1)">
           <span class="material-symbols-outlined">chevron_left</span>
         </button>
-        <div class="text-sm font-medium font-body min-w-[92px] text-center">{{ monthLabel }}</div>
+        <div class="text-sm font-medium font-body min-w-[90px] text-center">{{ monthLabel }}</div>
         <button class="p-1 rounded-lg text-muted hover:text-primary" @click="shiftMonth(1)">
           <span class="material-symbols-outlined">chevron_right</span>
         </button>
         <button
           v-if="month !== currentMonthValue"
-          class="ml-1 px-2 py-1 rounded-lg text-xs text-muted border border-border"
+          class="ml-1 shrink-0 px-2 py-1 rounded-lg text-xs text-muted border border-border whitespace-nowrap"
           @click="goCurrentMonth"
         >本月</button>
       </div>
-      <div class="flex items-center gap-2">
-        <button
-          class="px-3 py-1.5 rounded-lg bg-surface-alt border border-border text-xs text-muted font-body"
-          @click="budgetOpen = true"
-        >预算</button>
-        <button
-          class="px-3 py-1.5 rounded-lg text-xs font-body border"
-          :class="showCalendar ? 'bg-primary/10 text-primary border-primary/30' : 'bg-surface-alt text-muted border-border'"
-          @click="showCalendar = !showCalendar"
-        >日历</button>
-        <button
-          class="px-3 py-1.5 rounded-lg text-xs font-body border"
-          :class="showReport ? 'bg-primary/10 text-primary border-primary/30' : 'bg-surface-alt text-muted border-border'"
-          @click="showReport = !showReport"
-        >报表</button>
-        <button
-          class="p-1.5 rounded-lg bg-surface-alt border border-border text-xs text-muted"
-          title="导出 CSV"
-          @click="exportCsv"
-        >
-          <span class="material-symbols-outlined text-base align-middle">download</span>
-        </button>
-        <button
-          class="px-3 py-1.5 rounded-lg bg-surface-alt border border-border text-xs text-muted font-body"
-          @click="importOpen = true"
-        >导入</button>
-        <button
-          class="px-3 py-1.5 rounded-lg bg-surface-alt border border-border text-xs text-muted font-body"
-          @click="openManager('account')"
-        >账户 / 分类</button>
-        <button
-          class="px-3 py-1.5 rounded-lg bg-surface-alt border border-border text-xs text-muted font-body"
-          @click="openManager('recurring')"
-        >周期</button>
-        <button
-          class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-body"
-          @click="openAdd"
-        >
-          <span class="material-symbols-outlined text-base">add</span>
-          记一笔
-        </button>
-      </div>
+      <button
+        class="shrink-0 flex items-center gap-1 px-3.5 py-2 rounded-xl bg-primary text-white text-xs font-body"
+        @click="openAdd"
+      >
+        <span class="material-symbols-outlined text-base">add</span>
+        记一笔
+      </button>
+    </div>
+
+    <!-- 工具按钮：手机横向滑动，宽屏自动换行 -->
+    <div class="hc-finance-tools">
+      <button
+        class="hc-finance-tool px-3 py-1.5 rounded-lg bg-surface-alt border border-border text-xs text-muted font-body"
+        @click="budgetOpen = true"
+      >预算</button>
+      <button
+        class="hc-finance-tool px-3 py-1.5 rounded-lg text-xs font-body border"
+        :class="showCalendar ? 'bg-primary/10 text-primary border-primary/30' : 'bg-surface-alt text-muted border-border'"
+        @click="showCalendar = !showCalendar"
+      >日历</button>
+      <button
+        class="hc-finance-tool px-3 py-1.5 rounded-lg text-xs font-body border"
+        :class="showReport ? 'bg-primary/10 text-primary border-primary/30' : 'bg-surface-alt text-muted border-border'"
+        @click="showReport = !showReport"
+      >报表</button>
+      <button
+        class="hc-finance-tool px-2.5 py-1.5 rounded-lg bg-surface-alt border border-border text-muted"
+        title="导出 CSV"
+        @click="exportCsv"
+      >
+        <span class="material-symbols-outlined text-base leading-none">download</span>
+      </button>
+      <button
+        class="hc-finance-tool px-3 py-1.5 rounded-lg bg-surface-alt border border-border text-xs text-muted font-body"
+        @click="importOpen = true"
+      >导入</button>
+      <button
+        class="hc-finance-tool px-3 py-1.5 rounded-lg bg-surface-alt border border-border text-xs text-muted font-body"
+        @click="openManager('account')"
+      >账户 / 分类</button>
+      <button
+        class="hc-finance-tool px-3 py-1.5 rounded-lg bg-surface-alt border border-border text-xs text-muted font-body"
+        @click="openManager('recurring')"
+      >周期</button>
     </div>
 
     <!-- 搜索 -->
@@ -641,3 +643,32 @@ onMounted(() => {
   reload()
 })
 </script>
+
+<style scoped>
+/* 工具按钮行：窄屏横向滚动（不换行、不挤压），宽屏自动换行铺满 */
+.hc-finance-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.hc-finance-tools::-webkit-scrollbar {
+  display: none;
+}
+.hc-finance-tool {
+  flex-shrink: 0;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+@media (min-width: 768px) {
+  .hc-finance-tools {
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+}
+</style>

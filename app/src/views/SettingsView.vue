@@ -263,6 +263,10 @@
             前往 <a href="https://console.amap.com/" target="_blank" rel="noopener" class="text-primary hover:underline">高德开放平台</a> → 应用管理，新建「Web端(JS API)」应用并开启定位权限。
           </p>
         </div>
+        <!-- Key 使用要点：局域网 IP 访问时白名单会拦截；手机必须能访问外网 -->
+        <p class="text-muted text-xs font-body leading-relaxed">
+          地图由高德 JS API 渲染，Key 必须是「Web端(JS API)」类型。若用局域网地址访问（如 192.168.x.x:8080），Key 请勿设置域名白名单，否则地图会被拒绝；手机也需能访问外网才能加载高德地图。
+        </p>
         <!-- 设备追踪开关：APK 默认开启，网页端默认关闭；切换即时生效（不刷新/不重登） -->
         <div class="rounded-xl bg-background border border-border px-1.5 py-1">
           <ToggleRow :model-value="locTracking" icon="my_location" color="bg-info/15 text-info"
@@ -282,6 +286,50 @@
             <span class="text-warning">提示：浏览器定位需在 HTTPS 下生效；部分浏览器首次需授权位置权限。</span>
           </p>
         </div>
+      </div>
+    </section>
+
+    <!-- 扫码商品识别（国内条码库 Key，系统级配置） -->
+    <section id="sec-barcode" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
+      <div class="flex items-center gap-2.5 mb-4">
+        <div class="w-8 h-8 rounded-xl bg-primary/20 flex items-center justify-center">
+          <span class="material-symbols-outlined text-primary text-lg">qr_code_scanner</span>
+        </div>
+        <div>
+          <h2 class="font-headline text-on-background text-base font-semibold">扫码商品识别</h2>
+          <p class="text-muted text-xs mt-0.5">扫描商品条码后自动补全名称、品牌与分类</p>
+        </div>
+      </div>
+
+      <div v-if="auth.isAdmin" class="space-y-4">
+        <div class="space-y-1.5">
+          <label class="text-on-surface text-sm font-medium block">淘宝「码上淘」AppKey / AppSecret</label>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <input v-model="barcodeCfg.taobao_app_key" placeholder="AppKey"
+              class="w-full bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
+            <input v-model="barcodeCfg.taobao_app_secret" type="password" placeholder="AppSecret"
+              class="w-full bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
+          </div>
+          <p class="text-muted text-xs font-body leading-relaxed">
+            推荐优先配置：淘宝该条码接口免费、无需授权，国内商品覆盖最全。到
+            <a href="https://open.taobao.com/" target="_blank" rel="noopener" class="text-primary hover:underline">淘宝开放平台</a>
+            创建应用（个人实名即可）后，在「应用信息」里获取 AppKey / AppSecret 填入即可。
+          </p>
+        </div>
+
+        <div class="space-y-1.5">
+          <label class="text-on-surface text-sm font-medium block">国内条码库 API Key（备用）</label>
+          <input v-model="barcodeCfg.apizero_key" placeholder="留空则使用匿名额度（约 5 次/天）"
+            class="w-full bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
+          <p class="text-muted text-xs font-body leading-relaxed">
+            淘宝查询未命中时的兜底来源。可前往
+            <a href="https://apizero.cn/account/keys" target="_blank" rel="noopener" class="text-primary hover:underline">极数本源</a>
+            免费申请 Key（免费账号约 20 次/天）。以上配置为系统级，普通用户无需填写。
+          </p>
+        </div>
+      </div>
+      <div v-else class="rounded-xl bg-background border border-border px-3 py-2.5">
+        <p class="text-muted text-xs font-body leading-relaxed">条码识别服务由管理员在系统中统一配置，普通用户无需填写。</p>
       </div>
     </section>
 
@@ -1705,6 +1753,8 @@ async function doLogout() {
 
 // ---- 偏好设置（对接 + 自动加载） ----
 const map = reactive({ amap_key: '' })
+// 扫码商品识别的条码库凭据（系统级，仅管理员可编辑）
+const barcodeCfg = reactive({ taobao_app_key: '', taobao_app_secret: '', apizero_key: '' })
 // 地图 Key 使用策略（普通用户）：use_admin=true 用管理员 Key；false 用本人 Key
 const mapConfig = reactive({ use_admin: false, has_own_key: false })
 
@@ -2436,6 +2486,7 @@ const anchors = {
     { id: 'sec-ring', label: '铃声' },
     { id: 'sec-ha-conn', label: 'HA 连接' },
     { id: 'sec-map', label: '地图' },
+    { id: 'sec-barcode', label: '扫码识别' },
     { id: 'sec-devices', label: '设备' },
     { id: 'sec-sensors', label: '传感器' },
     { id: 'sec-browser', label: '浏览器' },
@@ -3059,6 +3110,14 @@ async function loadPrefs() {
         if (auth.isAdmin || !mapConfig.use_admin) map.amap_key = mc.amap_key
       } catch { /* 忽略坏配置 */ }
     }
+    if (data.barcode_config) {
+      try {
+        const c = JSON.parse(data.barcode_config)
+        barcodeCfg.taobao_app_key = c.taobao_app_key || ''
+        barcodeCfg.taobao_app_secret = c.taobao_app_secret || ''
+        barcodeCfg.apizero_key = c.apizero_key || ''
+      } catch { /* 忽略坏配置 */ }
+    }
     if (data.ai_config) applyAiPrefs(data.ai_config)
   } catch { /* 后端离线时静默 */ }
 }
@@ -3086,6 +3145,12 @@ async function persistPrefs() {
   if (auth.isAdmin) {
     // 管理员始终写全局 Key
     body.map_config = JSON.stringify({ amap_key: map.amap_key.trim() })
+    // 扫码商品识别的条码库凭据（系统级）
+    body.barcode_config = JSON.stringify({
+      taobao_app_key: barcodeCfg.taobao_app_key.trim(),
+      taobao_app_secret: barcodeCfg.taobao_app_secret.trim(),
+      apizero_key: barcodeCfg.apizero_key.trim(),
+    })
   } else if (!mapConfig.use_admin) {
     // 普通用户且「本人 Key」模式：写本人的 Key
     body.map_config = JSON.stringify({ amap_key: map.amap_key.trim() })
@@ -3104,7 +3169,7 @@ function scheduleAutoSave() {
 
 // 任一偏好变化（含地图 Key）即触发自动保存
 watch(
-  [themeKey, customColor, customColors, fontSize, iconStyle, bgFx, bgFxStrength, brandIcon, brandCn, brandEn, savedThemes, floorStyle, toggles, wakeWord, () => map.amap_key],
+  [themeKey, customColor, customColors, fontSize, iconStyle, bgFx, bgFxStrength, brandIcon, brandCn, brandEn, savedThemes, floorStyle, toggles, wakeWord, () => map.amap_key, () => barcodeCfg.apizero_key, () => barcodeCfg.taobao_app_key, () => barcodeCfg.taobao_app_secret],
   () => scheduleAutoSave(),
   { deep: true },
 )

@@ -94,11 +94,24 @@
         <p v-if="routeSummary" class="text-xs text-on-surface font-medium mt-2">{{ routeSummary }}</p>
         <p v-if="routeError" class="text-xs text-error mt-2 break-words">{{ routeError }}</p>
       </div>
-      <div v-if="mapStatus !== 'ready'" class="absolute inset-0 bg-surface/80 backdrop-blur-sm flex items-center justify-center text-sm font-body text-muted">
+      <div v-if="mapStatus !== 'ready'" class="absolute inset-0 bg-surface/80 backdrop-blur-sm flex items-center justify-center text-sm font-body text-muted p-6">
         <span v-if="mapStatus === 'loading'" class="flex items-center gap-2">
           <span class="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin"></span> 地图加载中…
         </span>
-        <span v-else-if="mapStatus === 'error'" class="text-error">{{ mapError }}</span>
+        <div v-else-if="mapStatus === 'error'" class="flex flex-col items-center gap-3 text-center">
+          <span class="material-symbols-outlined text-3xl text-error">map</span>
+          <span class="text-error break-words max-w-[320px]">{{ mapError }}</span>
+          <div class="flex items-center gap-2">
+            <button
+              class="px-3.5 py-1.5 rounded-lg bg-primary text-on-primary text-xs font-semibold"
+              @click="retryMap"
+            >重试</button>
+            <router-link
+              to="/settings"
+              class="px-3.5 py-1.5 rounded-lg border border-border text-xs text-muted"
+            >检查地图 Key</router-link>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -187,6 +200,7 @@ function fitView() {
 async function initMap() {
   if (!configured.value || mapStatus.value === 'ready') return
   mapStatus.value = 'loading'
+  mapError.value = ''
   try {
     const AMap = await loadAMap(cfg.value.amap_key)
     map = new AMap.Map(mapEl.value, { zoom: 12 })
@@ -199,6 +213,23 @@ async function initMap() {
     mapStatus.value = 'error'
     mapError.value = e.message
   }
+}
+
+// 加载失败后手动/切页重试：销毁残留地图实例，重新读配置并加载 SDK
+async function retryMap() {
+  if (map) { try { map.destroy() } catch { /* 忽略 */ } }
+  map = null
+  personMarkMap.forEach((m) => { try { m.remove() } catch { /* 忽略 */ } })
+  personMarkMap.clear()
+  personMarks = []
+  circles.forEach((c) => { try { c.remove() } catch { /* 忽略 */ } })
+  circles = []
+  homeMark = null
+  myMarker = null
+  firstFitDone = false
+  mapStatus.value = 'idle'
+  await loadConfig()
+  if (configured.value) initMap()
 }
 
 // 家的位置标记 + 范围圆（与 HA zone 一致）。
@@ -508,8 +539,11 @@ onMounted(async () => {
   if (configured.value) initMap()
 })
 
-// keep-alive 缓存的页面重新激活：容器尺寸可能已随窗口变化，通知地图重算
-onActivated(() => { try { map?.resize?.() } catch { /* 忽略 */ } })
+// keep-alive 缓存的页面重新激活：失败态自动重试一次；已就绪则通知地图重算尺寸
+onActivated(() => {
+  if (configured.value && mapStatus.value === 'error') { retryMap(); return }
+  try { map?.resize?.() } catch { /* 忽略 */ }
+})
 </script>
 
 <style scoped>

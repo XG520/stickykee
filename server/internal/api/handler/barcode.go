@@ -84,7 +84,7 @@ func (h *Inventory) LookupBarcodeProduct(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	p, result := lookupBarcodeProduct(r.Context(), code)
+	p, result := lookupBarcodeProduct(r.Context(), code, h.barcodeCreds(r.Context()))
 	switch result {
 	case barcodeHit:
 		putBarcodeCache(code, p, true)
@@ -112,7 +112,7 @@ type openFoodFactsResp struct {
 	} `json:"product"`
 }
 
-func lookupBarcodeProduct(ctx context.Context, code string) (barcodeProduct, barcodeLookup) {
+func lookupBarcodeProduct(ctx context.Context, code string, creds barcodeCreds) (barcodeProduct, barcodeLookup) {
 	// 各入口并行查询，取最先命中的结果，避免串行等待翻倍
 	type lookupOut struct {
 		product barcodeProduct
@@ -129,9 +129,13 @@ func lookupBarcodeProduct(ctx context.Context, code string) (barcodeProduct, bar
 			return queryOpenFacts(ctx, h, code)
 		}})
 	}
-	// 淘宝「码上淘」条码库覆盖国内商品最全；配置 AppKey 后自动加入查询。
-	if taobaoConfigured() {
-		sources = append(sources, source{name: "taobao", fn: queryTaobao})
+	// 淘宝「码上淘」条码库覆盖国内商品最全，且接口免费、无需授权；
+	// 配置 AppKey/AppSecret 后自动加入查询。
+	if creds.taobaoKey != "" && creds.taobaoSecret != "" {
+		key, secret := creds.taobaoKey, creds.taobaoSecret
+		sources = append(sources, source{name: "taobao", fn: func(ctx context.Context, code string) (barcodeProduct, barcodeLookup) {
+			return queryTaobao(ctx, code, key, secret)
+		}})
 	}
 	ch := make(chan lookupOut, len(sources))
 	for _, s := range sources {
@@ -154,6 +158,18 @@ func lookupBarcodeProduct(ctx context.Context, code string) (barcodeProduct, bar
 			unavailable = true
 		}
 	}
+
+	// 国际开放库（Open Food Facts）对国内商品覆盖有限，全部落空后再兜底查一次
+	// 国内条码库。匿名额度很小（约 5 次/天），所以只在前面都没命中时才调用。
+	switch p, r := queryApizero(ctx, code, creds.apizeroKey); r {
+	case barcodeHit:
+		return p, barcodeHit
+	case barcodeMiss:
+		visited = true
+	default:
+		unavailable = true
+	}
+
 	if visited {
 		return barcodeProduct{}, barcodeMiss
 	}
@@ -163,16 +179,85 @@ func lookupBarcodeProduct(ctx context.Context, code string) (barcodeProduct, bar
 	return barcodeProduct{}, barcodeMiss
 }
 
+// ── 极数本源国内条码库（兜底，可匿名调用）────────────────────────
+// 覆盖国内日常消费品，返回名称/品牌/厂商/规格；匿名每日约 5 次，
+// 配置 APIZERO_API_KEY 可提升额度。未配置时也能用，只是额度更低。
+const apizeroEndpoint = "https://v1.apizero.cn/api/barcode-lookup"
+
+type apizeroResp struct {
+	Code int    `json:"code"`
+	Msg  string `json:"msg"`
+	Data struct {
+		Barcode      string `json:"barcode"`
+		Found        bool   `json:"found"`
+		Name         string `json:"name"`
+		Brand        string `json:"brand"`
+		Manufacturer string `json:"manufacturer"`
+		Spec         string `json:"spec"`
+		Category     string `json:"category"`
+	} `json:"data"`
+	RequestID string `json:"request_id"`
+}
+
+var apizeroCategorySuffix = regexp.MustCompile(`[（(]\s*\d+\s*[）)]\s*$`)
+
+func queryApizero(ctx context.Context, code, apiKey string) (barcodeProduct, barcodeLookup) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		apizeroEndpoint+"?barcode="+url.QueryEscape(code), nil)
+	if err != nil {
+		return barcodeProduct{}, barcodeUnavailable
+	}
+	if key := strings.TrimSpace(apiKey); key != "" {
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
+	req.Header.Set("User-Agent", "StickyNuo/1.0 (home inventory barcode lookup)")
+	req.Header.Set("Accept", "application/json")
+	resp, err := barcodeHTTP.Do(req)
+	if err != nil {
+		return barcodeProduct{}, barcodeUnavailable
+	}
+	defer resp.Body.Close()
+	// 429 是配额/限流，属于可恢复错误，不能当成「未收录」
+	if resp.StatusCode != http.StatusOK {
+		return barcodeProduct{}, barcodeUnavailable
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 256<<10))
+	if err != nil {
+		return barcodeProduct{}, barcodeUnavailable
+	}
+	var out apizeroResp
+	if json.Unmarshal(body, &out) != nil || out.Code != 0 {
+		return barcodeProduct{}, barcodeUnavailable
+	}
+	if !out.Data.Found {
+		return barcodeProduct{}, barcodeMiss
+	}
+	name := strings.TrimSpace(out.Data.Name)
+	if name == "" {
+		return barcodeProduct{}, barcodeMiss
+	}
+	spec := strings.TrimSpace(out.Data.Spec)
+	if spec != "" && len([]rune(spec)) <= 16 &&
+		!strings.Contains(strings.ToLower(name), strings.ToLower(spec)) {
+		name += " " + spec
+	}
+	p := barcodeProduct{
+		Barcode:  code,
+		Name:     name,
+		Brand:    strings.TrimSpace(out.Data.Brand),
+		Quantity: spec,
+		Source:   "apizero",
+	}
+	p.Category = mapBarcodeCategory(apizeroCategorySuffix.ReplaceAllString(
+		strings.TrimSpace(out.Data.Category), ""), nil)
+	return p, barcodeHit
+}
+
 // ── 淘宝开放平台条码库（可选）──────────────────────────────────────
 // taobao.ma.barcode.productinfo.get 免费且无需用户授权，只需在服务器配置
 // TAOBAO_APP_KEY / TAOBAO_APP_SECRET（在 open.taobao.com 创建应用即可获得）。
 // 未配置时完全不参与查询，行为与之前一致。
 const taobaoGateway = "https://eco.taobao.com/router/rest"
-
-func taobaoConfigured() bool {
-	return strings.TrimSpace(os.Getenv("TAOBAO_APP_KEY")) != "" &&
-		strings.TrimSpace(os.Getenv("TAOBAO_APP_SECRET")) != ""
-}
 
 func taobaoSign(params map[string]string, secret string) string {
 	keys := make([]string, 0, len(params))
@@ -207,9 +292,7 @@ type taobaoBarcodeResp struct {
 	} `json:"error_response"`
 }
 
-func queryTaobao(ctx context.Context, code string) (barcodeProduct, barcodeLookup) {
-	appKey := strings.TrimSpace(os.Getenv("TAOBAO_APP_KEY"))
-	secret := strings.TrimSpace(os.Getenv("TAOBAO_APP_SECRET"))
+func queryTaobao(ctx context.Context, code, appKey, secret string) (barcodeProduct, barcodeLookup) {
 	if appKey == "" || secret == "" {
 		return barcodeProduct{}, barcodeUnavailable
 	}
@@ -417,4 +500,49 @@ func putBarcodeCache(code string, p barcodeProduct, found bool) {
 		barcodeCache = map[string]barcodeCacheEntry{}
 	}
 	barcodeCache[code] = barcodeCacheEntry{product: p, found: found, at: time.Now()}
+}
+
+// clearBarcodeCache 清空识别结果缓存。商品库配置变更后调用，
+// 否则之前缓存的「未收录」会继续拦截新的查询。
+func clearBarcodeCache() {
+	barcodeCacheMu.Lock()
+	barcodeCache = map[string]barcodeCacheEntry{}
+	barcodeCacheMu.Unlock()
+}
+
+// barcodeCreds 解析扫码商品库凭据：设置页配置（barcode_config）优先，
+// 逐项回退环境变量；都没有时匿名调用（额度更低）。
+type barcodeCreds struct {
+	taobaoKey    string
+	taobaoSecret string
+	apizeroKey   string
+}
+
+func (h *Inventory) barcodeCreds(ctx context.Context) barcodeCreds {
+	c := barcodeCreds{
+		taobaoKey:    strings.TrimSpace(os.Getenv("TAOBAO_APP_KEY")),
+		taobaoSecret: strings.TrimSpace(os.Getenv("TAOBAO_APP_SECRET")),
+		apizeroKey:   strings.TrimSpace(os.Getenv("APIZERO_API_KEY")),
+	}
+	if h.inst == nil {
+		return c
+	}
+	raw, err := h.inst.GetPref(ctx, "barcode_config")
+	if err != nil || raw == "" {
+		return c
+	}
+	var cfg map[string]any
+	if json.Unmarshal([]byte(raw), &cfg) != nil {
+		return c
+	}
+	if v := strings.TrimSpace(toString(cfg["taobao_app_key"])); v != "" {
+		c.taobaoKey = v
+	}
+	if v := strings.TrimSpace(toString(cfg["taobao_app_secret"])); v != "" {
+		c.taobaoSecret = v
+	}
+	if v := strings.TrimSpace(toString(cfg["apizero_key"])); v != "" {
+		c.apizeroKey = v
+	}
+	return c
 }

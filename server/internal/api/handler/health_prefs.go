@@ -159,6 +159,13 @@ func (h *Prefs) Get(w http.ResponseWriter, r *http.Request) {
 	// map_config：组合管理员全局 key 与当前用户策略，返回生效 key
 	all["map_config"] = h.assembleMapConfig(r)
 
+	// barcode_config：扫码商品库 Key 属系统级配置，仅管理员返回（用于设置页编辑）
+	if auth.IsAdmin(r.Context()) {
+		if v, _ := h.repo.GetPref(r.Context(), "barcode_config"); v != "" {
+			all["barcode_config"] = v
+		}
+	}
+
 	// ha_token：不回传 token 明文，仅以布尔告知当前用户是否已配置个人 HA token。
 	hasToken := false
 	if username != "" {
@@ -470,6 +477,25 @@ func (h *Prefs) Put(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			}
+		case k == "barcode_config":
+			// 扫码商品库 Key：系统级配置，仅管理员可写；变更后清空识别缓存，
+			// 否则此前的「未收录」结果会继续拦截新的查询。
+			if !isAdmin {
+				continue
+			}
+			cfg := parseMapConfig(v)
+			next, _ := json.Marshal(map[string]string{
+				"taobao_app_key":    strings.TrimSpace(toString(cfg["taobao_app_key"])),
+				"taobao_app_secret": strings.TrimSpace(toString(cfg["taobao_app_secret"])),
+				"apizero_key":       strings.TrimSpace(toString(cfg["apizero_key"])),
+			})
+			if old, _ := h.repo.GetPref(r.Context(), "barcode_config"); old != string(next) {
+				if err := h.repo.SetPref(r.Context(), "barcode_config", string(next)); err != nil {
+					WriteErr(w, 500, "internal", err.Error())
+					return
+				}
+				clearBarcodeCache()
+			}
 		case k == "ai_config":
 			// AI 配置：api_key 为空表示「保留原 key 不变」，clear_key 明确清除。
 			// scope=global：管理员写全局默认（所有未自配用户共用）；否则写当前用户自己的配置。
@@ -606,7 +632,7 @@ func PublicCORS(next http.HandlerFunc) http.HandlerFunc {
 
 // Version 后端版本号：随发布递增，经 healthz 暴露，供前端设置页与 APK 壳页
 // 确认当前连接的服务端版本（排查「更新没生效」类问题）。
-const Version = "1.6.10"
+const Version = "1.6.11"
 
 // Healthz 存活探针（公开：附带后端版本号）。
 func (Health) Healthz(w http.ResponseWriter, r *http.Request) {
