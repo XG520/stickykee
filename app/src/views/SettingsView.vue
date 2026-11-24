@@ -57,8 +57,8 @@
           class="hc-set-chip shrink-0">{{ a.label }}</button>
       </nav>
 
-    <!-- ===== 连接与设备 ===== -->
-    <div v-show="activeTab === 'connect'" class="space-y-4 sm:space-y-6">
+    <!-- ===== 接口与密钥：集中管理所有服务地址与 Key ===== -->
+    <div v-show="activeTab === 'api'" class="space-y-4 sm:space-y-6">
     <!-- 我的 HA Token：地址管理员全局配置，密钥属个人（所有用户可见，可自配或管理员代配） -->
     <section id="sec-ha-token" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
       <div class="flex items-center gap-2.5 mb-3">
@@ -116,37 +116,6 @@
         {{ isApk
           ? '地址簿与 APP 启动页共用一份；可同时保存内网、外网地址，启动与运行中按当前网络（WiFi→内网、移动数据→外网）自动选用。'
           : '手机端（APK）启动时会根据网络类型自动选择内网或外网地址。' }}
-      </p>
-    </section>
-
-    <!-- 通话铃声（仅 APK）：来电铃声与呼叫彩铃，走系统铃声音量流 -->
-    <section v-if="canPickRing" id="sec-ring" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
-      <div class="flex items-center gap-2.5 mb-3">
-        <div class="w-8 h-8 rounded-xl bg-accent/20 flex items-center justify-center">
-          <span class="material-symbols-outlined text-accent text-lg">ring_volume</span>
-        </div>
-        <div>
-          <h2 class="font-headline text-on-background text-base font-semibold">通话铃声</h2>
-          <p class="text-muted text-xs mt-0.5">来电振铃与呼叫等待彩铃（随系统铃声音量）</p>
-        </div>
-      </div>
-      <div class="space-y-2">
-        <div v-for="k in ['call', 'back']" :key="k"
-          class="flex items-center justify-between gap-3 rounded-xl bg-background border border-border px-3 py-2.5">
-          <div class="min-w-0">
-            <p class="text-on-surface text-sm font-medium">{{ k === 'call' ? '来电铃声' : '呼叫彩铃（等待接听）' }}</p>
-            <p class="text-muted text-xs truncate">{{ ringNames[k] || '系统默认' }}</p>
-          </div>
-          <div class="flex items-center gap-2 shrink-0">
-            <button @click="pickRing(k)"
-              class="px-3 py-1.5 rounded-lg bg-accent hover:bg-accent/90 text-on-primary text-xs font-semibold transition-colors">选择</button>
-            <button v-if="ringNames[k]" @click="resetRing(k)"
-              class="px-3 py-1.5 rounded-lg bg-surface-hover hover:bg-surface border border-border text-xs text-on-surface transition-colors">默认</button>
-          </div>
-        </div>
-      </div>
-      <p class="text-muted text-xs font-body mt-2 leading-relaxed">
-        通话铃声使用系统「铃声音量」，与媒体音量互不影响；在选择器中选「无」可静音对应铃声。
       </p>
     </section>
 
@@ -331,6 +300,118 @@
       <div v-else class="rounded-xl bg-background border border-border px-3 py-2.5">
         <p class="text-muted text-xs font-body leading-relaxed">条码识别服务由管理员在系统中统一配置，普通用户无需填写。</p>
       </div>
+    </section>
+
+    <!-- AI 接口（地址 / 模型 / Key） -->
+    <section id="sec-ai" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
+      <div class="flex items-center gap-2.5 mb-4">
+        <div class="w-8 h-8 rounded-xl bg-accent/20 flex items-center justify-center">
+          <span class="material-symbols-outlined text-accent text-lg">auto_awesome</span>
+        </div>
+        <div class="min-w-0">
+          <h2 class="font-headline text-on-background text-base font-semibold">AI 设置</h2>
+          <p class="text-muted text-xs mt-0.5">OpenAI 兼容协议 · 用于卡片工作室 AI 生成</p>
+        </div>
+        <span class="ml-auto flex-shrink-0 px-2 py-0.5 rounded-full text-xs font-medium" :class="aiBadge.cls">{{ aiBadge.text }}</span>
+      </div>
+
+      <!-- 管理员可在「我的配置」与「全局默认」之间切换；普通用户只有本人配置 -->
+      <div v-if="auth.isAdmin" class="flex gap-1 p-1 rounded-xl bg-surface border border-border mb-4 w-fit">
+        <button
+          class="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+          :class="aiScope === 'user' ? 'bg-primary text-on-primary' : 'text-muted hover:text-on-surface'"
+          @click="aiScope = 'user'"
+        >我的配置</button>
+        <button
+          class="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+          :class="aiScope === 'global' ? 'bg-primary text-on-primary' : 'text-muted hover:text-on-surface'"
+          @click="aiScope = 'global'"
+        >全局默认</button>
+      </div>
+
+      <p class="text-muted text-xs mb-4 leading-relaxed">
+        <template v-if="aiScope === 'global'">全局配置作为所有未单独配置用户的兜底；每个用户仍可在「设置 → 接口与密钥」填写自己的 URL / Key 并优先使用。</template>
+        <template v-else>不填写 Key 时会自动使用管理员配置的全局 AI。API Key 只保存在服务端，不会回传浏览器。</template>
+      </p>
+
+      <div class="space-y-3">
+        <div>
+          <label class="text-on-surface text-sm font-medium mb-2 block">API 地址（Base URL）</label>
+          <input v-model="aiFields.base_url" type="text" class="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-on-surface text-sm focus:border-primary focus:outline-none transition-colors" placeholder="https://api.openai.com/v1">
+          <p class="text-muted text-xs mt-1">兼容 OpenAI 协议的地址，例如 https://api.openai.com/v1、https://api.deepseek.com/v1</p>
+        </div>
+        <div>
+          <label class="text-on-surface text-sm font-medium mb-2 block">模型</label>
+          <input v-model="aiFields.model" type="text" class="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-on-surface text-sm focus:border-primary focus:outline-none transition-colors" placeholder="gpt-4o-mini">
+        </div>
+        <div>
+          <label class="text-on-surface text-sm font-medium mb-2 block">API Key</label>
+          <input v-model="aiFields.api_key" type="password" autocomplete="new-password" class="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-on-surface text-sm focus:border-primary focus:outline-none transition-colors" :placeholder="aiFields.has_key ? '已配置，留空表示不修改' : 'sk-...'">
+        </div>
+        <label v-if="aiFields.has_key" class="flex items-center gap-2 text-xs text-muted">
+          <input type="checkbox" v-model="aiFields.clear_key" class="accent-primary" />
+          清除已保存的 Key
+        </label>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2 mt-4">
+        <button
+          class="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-on-primary text-sm font-medium transition-all active:scale-95 disabled:opacity-50"
+          :disabled="aiSaving"
+          @click="saveAi"
+        >
+          <span class="material-symbols-outlined text-base">{{ aiSaving ? 'progress_activity' : 'save' }}</span>{{ aiSaving ? '保存中…' : '保存' }}
+        </button>
+        <button
+          class="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-surface border border-border text-on-surface text-sm font-medium hover:bg-surface-hover transition-colors disabled:opacity-50"
+          :disabled="aiTesting || !aiEffective.has_key"
+          @click="testAi"
+        >
+          <span class="material-symbols-outlined text-base">{{ aiTesting ? 'progress_activity' : 'network_check' }}</span>{{ aiTesting ? '测试中…' : '测试连接' }}
+        </button>
+        <span v-if="aiMsg" class="text-xs" :class="aiMsgErr ? 'text-error' : 'text-success'">{{ aiMsg }}</span>
+      </div>
+
+      <p class="text-muted text-xs mt-3 leading-relaxed">
+        当前生效：
+        <span class="text-on-surface">{{ aiSourceText }}</span>
+        <template v-if="aiEffective.model"> · {{ aiEffective.model }}</template>
+        <template v-if="aiEffective.base_url"> · {{ aiEffective.base_url }}</template>
+      </p>
+    </section>
+    </div>
+
+    <!-- ===== 连接与设备 ===== -->
+    <div v-show="activeTab === 'connect'" class="space-y-4 sm:space-y-6">
+    <!-- 通话铃声（仅 APK）：来电铃声与呼叫彩铃，走系统铃声音量流 -->
+    <section v-if="canPickRing" id="sec-ring" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
+      <div class="flex items-center gap-2.5 mb-3">
+        <div class="w-8 h-8 rounded-xl bg-accent/20 flex items-center justify-center">
+          <span class="material-symbols-outlined text-accent text-lg">ring_volume</span>
+        </div>
+        <div>
+          <h2 class="font-headline text-on-background text-base font-semibold">通话铃声</h2>
+          <p class="text-muted text-xs mt-0.5">来电振铃与呼叫等待彩铃（随系统铃声音量）</p>
+        </div>
+      </div>
+      <div class="space-y-2">
+        <div v-for="k in ['call', 'back']" :key="k"
+          class="flex items-center justify-between gap-3 rounded-xl bg-background border border-border px-3 py-2.5">
+          <div class="min-w-0">
+            <p class="text-on-surface text-sm font-medium">{{ k === 'call' ? '来电铃声' : '呼叫彩铃（等待接听）' }}</p>
+            <p class="text-muted text-xs truncate">{{ ringNames[k] || '系统默认' }}</p>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <button @click="pickRing(k)"
+              class="px-3 py-1.5 rounded-lg bg-accent hover:bg-accent/90 text-on-primary text-xs font-semibold transition-colors">选择</button>
+            <button v-if="ringNames[k]" @click="resetRing(k)"
+              class="px-3 py-1.5 rounded-lg bg-surface-hover hover:bg-surface border border-border text-xs text-on-surface transition-colors">默认</button>
+          </div>
+        </div>
+      </div>
+      <p class="text-muted text-xs font-body mt-2 leading-relaxed">
+        通话铃声使用系统「铃声音量」，与媒体音量互不影响；在选择器中选「无」可静音对应铃声。
+      </p>
     </section>
 
     <!-- 设备列表（自动识别、去重、别名） -->
@@ -909,86 +990,6 @@
     </button>
     </div>
 
-    <!-- ===== AI ===== -->
-    <div v-show="activeTab === 'ai'" class="space-y-4 sm:space-y-6">
-      <section id="sec-ai" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
-        <div class="flex items-center gap-2.5 mb-4">
-          <div class="w-8 h-8 rounded-xl bg-accent/20 flex items-center justify-center">
-            <span class="material-symbols-outlined text-accent text-lg">auto_awesome</span>
-          </div>
-          <div class="min-w-0">
-            <h2 class="font-headline text-on-background text-base font-semibold">AI 设置</h2>
-            <p class="text-muted text-xs mt-0.5">OpenAI 兼容协议 · 用于卡片工作室 AI 生成</p>
-          </div>
-          <span class="ml-auto flex-shrink-0 px-2 py-0.5 rounded-full text-xs font-medium" :class="aiBadge.cls">{{ aiBadge.text }}</span>
-        </div>
-
-        <!-- 管理员可在「我的配置」与「全局默认」之间切换；普通用户只有本人配置 -->
-        <div v-if="auth.isAdmin" class="flex gap-1 p-1 rounded-xl bg-surface border border-border mb-4 w-fit">
-          <button
-            class="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-            :class="aiScope === 'user' ? 'bg-primary text-on-primary' : 'text-muted hover:text-on-surface'"
-            @click="aiScope = 'user'"
-          >我的配置</button>
-          <button
-            class="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-            :class="aiScope === 'global' ? 'bg-primary text-on-primary' : 'text-muted hover:text-on-surface'"
-            @click="aiScope = 'global'"
-          >全局默认</button>
-        </div>
-
-        <p class="text-muted text-xs mb-4 leading-relaxed">
-          <template v-if="aiScope === 'global'">全局配置作为所有未单独配置用户的兜底；每个用户仍可在「设置 → AI」填写自己的 URL / Key 并优先使用。</template>
-          <template v-else>不填写 Key 时会自动使用管理员配置的全局 AI。API Key 只保存在服务端，不会回传浏览器。</template>
-        </p>
-
-        <div class="space-y-3">
-          <div>
-            <label class="text-on-surface text-sm font-medium mb-2 block">API 地址（Base URL）</label>
-            <input v-model="aiFields.base_url" type="text" class="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-on-surface text-sm focus:border-primary focus:outline-none transition-colors" placeholder="https://api.openai.com/v1">
-            <p class="text-muted text-xs mt-1">兼容 OpenAI 协议的地址，例如 https://api.openai.com/v1、https://api.deepseek.com/v1</p>
-          </div>
-          <div>
-            <label class="text-on-surface text-sm font-medium mb-2 block">模型</label>
-            <input v-model="aiFields.model" type="text" class="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-on-surface text-sm focus:border-primary focus:outline-none transition-colors" placeholder="gpt-4o-mini">
-          </div>
-          <div>
-            <label class="text-on-surface text-sm font-medium mb-2 block">API Key</label>
-            <input v-model="aiFields.api_key" type="password" autocomplete="new-password" class="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-on-surface text-sm focus:border-primary focus:outline-none transition-colors" :placeholder="aiFields.has_key ? '已配置，留空表示不修改' : 'sk-...'">
-          </div>
-          <label v-if="aiFields.has_key" class="flex items-center gap-2 text-xs text-muted">
-            <input type="checkbox" v-model="aiFields.clear_key" class="accent-primary" />
-            清除已保存的 Key
-          </label>
-        </div>
-
-        <div class="flex flex-wrap items-center gap-2 mt-4">
-          <button
-            class="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-on-primary text-sm font-medium transition-all active:scale-95 disabled:opacity-50"
-            :disabled="aiSaving"
-            @click="saveAi"
-          >
-            <span class="material-symbols-outlined text-base">{{ aiSaving ? 'progress_activity' : 'save' }}</span>{{ aiSaving ? '保存中…' : '保存' }}
-          </button>
-          <button
-            class="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-surface border border-border text-on-surface text-sm font-medium hover:bg-surface-hover transition-colors disabled:opacity-50"
-            :disabled="aiTesting || !aiEffective.has_key"
-            @click="testAi"
-          >
-            <span class="material-symbols-outlined text-base">{{ aiTesting ? 'progress_activity' : 'network_check' }}</span>{{ aiTesting ? '测试中…' : '测试连接' }}
-          </button>
-          <span v-if="aiMsg" class="text-xs" :class="aiMsgErr ? 'text-error' : 'text-success'">{{ aiMsg }}</span>
-        </div>
-
-        <p class="text-muted text-xs mt-3 leading-relaxed">
-          当前生效：
-          <span class="text-on-surface">{{ aiSourceText }}</span>
-          <template v-if="aiEffective.model"> · {{ aiEffective.model }}</template>
-          <template v-if="aiEffective.base_url"> · {{ aiEffective.base_url }}</template>
-        </p>
-      </section>
-    </div>
-
     <!-- ===== AI 诊断 ===== -->
     <div v-show="activeTab === 'diag'" class="space-y-4 sm:space-y-6">
       <section id="sec-diag" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
@@ -1004,7 +1005,7 @@
         </div>
 
         <p class="text-muted text-xs mb-4 leading-relaxed">
-          功能默认关闭。开启后服务器与当前浏览器会收集日志，到达时长后自动调用「设置 → AI」配置的模型生成报告。
+          功能默认关闭。开启后服务器与当前浏览器会收集日志，到达时长后自动调用「设置 → 接口与密钥」配置的模型生成报告。
           诊断期间保持本页面打开可采集到更完整的前端日志；仅管理员可用。
         </p>
         <p class="text-muted text-xs mb-4 leading-relaxed">
@@ -1032,7 +1033,7 @@
             <span class="material-symbols-outlined text-base">{{ diagBusy ? 'progress_activity' : 'play_arrow' }}</span>
             {{ diagBusy ? '启动中…' : '开始诊断' }}
           </button>
-          <p v-if="!aiEffective.has_key" class="mt-2 text-xs text-warning leading-relaxed">请先在「AI」页配置 API Key，否则诊断结束后无法生成报告。</p>
+          <p v-if="!aiEffective.has_key" class="mt-2 text-xs text-warning leading-relaxed">请先在「接口与密钥」页配置 AI API Key，否则诊断结束后无法生成报告。</p>
           <p v-if="diagMsg" class="mt-3 text-xs" :class="diagMsgErr ? 'text-error' : 'text-success'">{{ diagMsg }}</p>
         </template>
 
@@ -1183,7 +1184,7 @@
             {{ logAnalysis.status === 'running' ? '分析中…' : 'AI 分析所选日志' }}
           </button>
         </div>
-        <p v-if="!aiEffective.has_key" class="mt-2 text-xs text-warning leading-relaxed">请先在「AI」页配置 API Key，否则无法进行日志分析。</p>
+        <p v-if="!aiEffective.has_key" class="mt-2 text-xs text-warning leading-relaxed">请先在「接口与密钥」页配置 AI API Key，否则无法进行日志分析。</p>
         <p v-if="logMsg" class="mt-2 text-xs" :class="logMsgErr ? 'text-error' : 'text-success'">{{ logMsg }}</p>
 
         <!-- AI 分析结果 -->
@@ -2397,8 +2398,8 @@ function resetCustomPalette() {
 // 分组导航：页面太长时收纳为标签页，各组状态保活（v-show）
 const tabs = [
   { key: 'connect', icon: 'link', label: '连接与设备' },
+  { key: 'api', icon: 'vpn_key', label: '接口与密钥' },
   { key: 'personal', icon: 'palette', label: '个性化' },
-  { key: 'ai', icon: 'auto_awesome', label: 'AI' },
   ...(auth.isAdmin ? [{ key: 'diag', icon: 'monitor_heart', label: 'AI 诊断' }] : []),
   ...(auth.isAdmin ? [{ key: 'logs', icon: 'receipt_long', label: '日志' }] : []),
   { key: 'account', icon: 'shield_person', label: '账户' },
@@ -2408,9 +2409,9 @@ const activeTab = ref('connect')
 const visibleTabs = computed(() => tabs.filter((t) => t.key !== 'diag' || auth.isAdmin))
 // 侧栏按使用场景归并分组：连接 → 外观 → 智能 → 账户，降低一次性认知负担
 const NAV_GROUPS = [
-  { label: '连接', keys: ['connect'] },
+  { label: '连接', keys: ['connect', 'api'] },
   { label: '外观', keys: ['personal'] },
-  { label: '智能', keys: ['ai', 'diag', 'logs'] },
+  { label: '智能', keys: ['diag', 'logs'] },
   { label: '账户', keys: ['account', 'users'] },
 ]
 const navGroups = computed(() =>
@@ -2422,8 +2423,8 @@ const navGroups = computed(() =>
 // 各页面标题：仅手机端面包屑使用（桌面端由左侧导航高亮承担定位，不再重复渲染页头）
 const tabMeta = {
   connect: { title: '连接与设备' },
+  api: { title: '接口与密钥' },
   personal: { title: '个性化' },
-  ai: { title: 'AI 助手' },
   diag: { title: 'AI 诊断' },
   logs: { title: '运行日志' },
   account: { title: '账户' },
@@ -2481,15 +2482,18 @@ onUnmounted(() => {
 // 锚点导航：每个标签页的区块快捷跳转列表
 const anchors = {
   connect: [
-    { id: 'sec-ha-token', label: 'HA Token' },
-    { id: 'sec-server', label: '服务器' },
     { id: 'sec-ring', label: '铃声' },
-    { id: 'sec-ha-conn', label: 'HA 连接' },
-    { id: 'sec-map', label: '地图' },
-    { id: 'sec-barcode', label: '扫码识别' },
     { id: 'sec-devices', label: '设备' },
     { id: 'sec-sensors', label: '传感器' },
     { id: 'sec-browser', label: '浏览器' },
+  ],
+  api: [
+    { id: 'sec-ha-token', label: 'HA Token' },
+    { id: 'sec-server', label: '服务器' },
+    { id: 'sec-ha-conn', label: 'HA 连接' },
+    { id: 'sec-map', label: '地图 Key' },
+    { id: 'sec-barcode', label: '扫码 Key' },
+    { id: 'sec-ai', label: 'AI 接口' },
   ],
   personal: [
     { id: 'sec-theme', label: '主题' },
@@ -2499,9 +2503,6 @@ const anchors = {
     { id: 'sec-floorplan', label: '户型图' },
     { id: 'sec-animation', label: '动画' },
     { id: 'sec-voice', label: '语音' },
-  ],
-  ai: [
-    { id: 'sec-ai', label: 'AI 设置' },
   ],
   diag: [
     { id: 'sec-diag', label: 'AI 诊断' },

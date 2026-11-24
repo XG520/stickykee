@@ -658,7 +658,7 @@
                     <span class="material-symbols-outlined">check_circle</span>{{ aiMsg }}
                   </p>
                   <p class="ce-ai-hint">
-                    使用「设置 → AI」中配置的模型（我的配置优先，其次管理员全局配置）。生成会覆盖 HTML / CSS，JS 与规则保持不变。
+                    使用「设置 → 接口与密钥」中配置的模型（我的配置优先，其次管理员全局配置）。生成会覆盖 HTML / CSS，JS 与规则保持不变。
                   </p>
                 </div>
               </div>
