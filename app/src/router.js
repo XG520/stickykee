@@ -82,4 +82,19 @@ router.afterEach(() => {
   })
 })
 
+// 发版后旧 chunk 失效（点击导航无反应/白屏）时自动整页刷新一次，拿到新 index.html。
+router.onError((err, to) => {
+  const msg = String((err && err.message) || '')
+  if (!/Failed to fetch dynamically imported module|Importing a module script failed|dynamically imported module/i.test(msg)) {
+    console.error(err)
+    return
+  }
+  try {
+    const key = 'hc_chunk_reload_' + ((to && to.fullPath) || '')
+    if (sessionStorage.getItem(key)) return
+    sessionStorage.setItem(key, '1')
+  } catch { /* 隐私模式下忽略 */ }
+  window.location.reload()
+})
+
 export default router

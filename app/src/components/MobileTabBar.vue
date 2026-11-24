@@ -1,12 +1,12 @@
 <template>
   <nav class="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-surface/95 backdrop-blur-md border-t border-border">
-    <div class="max-w-lg mx-auto">
-      <div class="flex items-center justify-around h-16">
+    <div class="max-w-lg mx-auto overflow-x-auto" style="scrollbar-width: none">
+      <div class="flex items-center justify-around h-16 min-w-full">
         <router-link
           v-for="item in items"
           :key="item.to"
           :to="item.to"
-          class="flex flex-col items-center gap-0.5 px-3 py-1.5"
+          class="flex flex-col items-center gap-0.5 px-3 py-1.5 shrink-0"
           :class="isActive(item.to) ? 'text-primary' : 'text-muted hover:text-on-surface transition-colors'"
         >
           <span

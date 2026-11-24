@@ -144,6 +144,7 @@ func withSPA(api http.Handler, dir string) http.Handler {
 			http.ServeFile(w, r, full)
 			return
 		}
+		w.Header().Set("Cache-Control", "no-cache")
 		http.ServeFile(w, r, filepath.Join(dir, "index.html"))
 	})
 }
