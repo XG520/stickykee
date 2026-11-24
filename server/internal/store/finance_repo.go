@@ -219,9 +219,13 @@ var seedExpenseCategories = []seedCategory{
 	{"购物", "shopping_bag"},
 	{"日用", "home"},
 	{"居住", "apartment"},
+	{"通讯", "phone_iphone"},
 	{"娱乐", "sports_esports"},
+	{"旅游", "flight"},
 	{"医疗", "medical_services"},
 	{"教育", "school"},
+	{"运动", "fitness_center"},
+	{"宠物", "pets"},
 	{"人情", "redeem"},
 	{"其他支出", "more_horiz"},
 }
@@ -235,42 +239,56 @@ var seedIncomeCategories = []seedCategory{
 	{"其他收入", "more_horiz"},
 }
 
-// ensureDefaults 首次使用账本时补齐默认账户与分类。
+// ensureDefaults 第一次使用账本时补齐默认账户与分类。
+// 分类采用「幂等补齐」：即使实例里已有自定义分类，也会把缺失的默认分类自动生成，
+// 保证记账弹窗首次打开就能直接选择餐饮、交通、购物等（参考主流记账软件）。
+// 用 prefs 标记只补一次，用户后续主动删除的默认分类不会被反复塞回。
 func (r *FinanceRepo) ensureDefaults(ctx context.Context, instanceID int64) error {
-	var n int
-	if err := r.db.QueryRowContext(ctx,
-		`SELECT COUNT(1) FROM fin_accounts WHERE instance_id=?`, instanceID).Scan(&n); err != nil {
+	// 没有任何账户时自动创建「现金」；单条语句保证并发加载不会重复创建
+	if _, err := r.db.ExecContext(ctx,
+		`INSERT INTO fin_accounts(instance_id, name, kind, icon, sort)
+		 SELECT ?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM fin_accounts WHERE instance_id=?)`,
+		instanceID, "现金", "cash", "payments", 0, instanceID); err != nil {
 		return err
 	}
-	if n == 0 {
-		if _, err := r.db.ExecContext(ctx,
-			`INSERT INTO fin_accounts(instance_id, name, kind, icon, sort) VALUES(?,?,?,?,?)`,
-			instanceID, "现金", "cash", "payments", 0); err != nil {
-			return err
-		}
-	}
-	if err := r.db.QueryRowContext(ctx,
-		`SELECT COUNT(1) FROM fin_categories WHERE instance_id=?`, instanceID).Scan(&n); err != nil {
+
+	flagKey := fmt.Sprintf("fin_cat_seed_v2_%d", instanceID)
+	var flag string
+	err := r.db.QueryRowContext(ctx, `SELECT value FROM prefs WHERE key=?`, flagKey).Scan(&flag)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
-	if n > 0 {
+	if flag != "" {
 		return nil
 	}
 	for i, c := range seedExpenseCategories {
-		if _, err := r.db.ExecContext(ctx,
-			`INSERT INTO fin_categories(instance_id, name, type, icon, sort) VALUES(?,?,?,?,?)`,
-			instanceID, c.name, "expense", c.icon, i); err != nil {
+		if err := r.insertMissingCategory(ctx, instanceID, "expense", c, i); err != nil {
 			return err
 		}
 	}
 	for i, c := range seedIncomeCategories {
-		if _, err := r.db.ExecContext(ctx,
-			`INSERT INTO fin_categories(instance_id, name, type, icon, sort) VALUES(?,?,?,?,?)`,
-			instanceID, c.name, "income", c.icon, i); err != nil {
+		if err := r.insertMissingCategory(ctx, instanceID, "income", c, i); err != nil {
 			return err
 		}
 	}
-	return nil
+	_, err = r.db.ExecContext(ctx,
+		`INSERT INTO prefs(key, value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+		flagKey, "1")
+	return err
+}
+
+// insertMissingCategory 仅在该名称的顶层分类不存在时插入。
+// 语句级 NOT EXISTS 让并发加载账户/分类时也不会生成重复分类。
+func (r *FinanceRepo) insertMissingCategory(ctx context.Context, instanceID int64, typ string, c seedCategory, sort int) error {
+	_, err := r.db.ExecContext(ctx,
+		`INSERT INTO fin_categories(instance_id, name, type, icon, sort)
+		 SELECT ?,?,?,?,? WHERE NOT EXISTS (
+		   SELECT 1 FROM fin_categories
+		   WHERE instance_id=? AND type=? AND name=? AND parent_id=0
+		 )`,
+		instanceID, c.name, typ, c.icon, sort,
+		instanceID, typ, c.name)
+	return err
 }
 
 // ── 账户 ──────────────────────────────────────────────────────────

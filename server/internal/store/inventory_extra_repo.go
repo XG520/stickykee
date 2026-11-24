@@ -273,13 +273,22 @@ func (r *InventoryRepo) BindBarcode(ctx context.Context, instanceID int64, barco
 }
 
 // GetBarcode 按条码查本地映射。
+// 先查独立条码表（一个物品可绑定多个条码），再回退到物品自身的 barcode 字段：
+// 新增/编辑物品时填写的条码此前不会写入条码表，导致再次扫同一件商品仍显示未收录。
 func (r *InventoryRepo) GetBarcode(ctx context.Context, instanceID int64, barcode string) (BarcodeMapping, error) {
 	var m BarcodeMapping
+	barcode = strings.TrimSpace(barcode)
 	err := r.db.QueryRowContext(ctx,
 		`SELECT b.barcode, b.item_id, COALESCE(i.name,'')
 		 FROM inventory_barcodes b LEFT JOIN inventory_items i ON i.id=b.item_id
-		 WHERE b.instance_id=? AND b.barcode=?`, instanceID, strings.TrimSpace(barcode)).
+		 WHERE b.instance_id=? AND b.barcode=?`, instanceID, barcode).
 		Scan(&m.Barcode, &m.ItemID, &m.ItemName)
+	if errors.Is(err, sql.ErrNoRows) {
+		err = r.db.QueryRowContext(ctx,
+			`SELECT COALESCE(barcode,''), id, COALESCE(name,'')
+			 FROM inventory_items WHERE instance_id=? AND barcode=? LIMIT 1`,
+			instanceID, barcode).Scan(&m.Barcode, &m.ItemID, &m.ItemName)
+	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return BarcodeMapping{}, ErrNotFound
 	}

@@ -89,12 +89,13 @@ public class BarcodeScannerActivity extends AppCompatActivity {
                 FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.TOP | Gravity.CENTER_HORIZONTAL);
         titleParams.topMargin = dp(44);
-        root.addView(title, titleParams);
 
         // 取景层：暗色遮罩 + 取景框 + 四角 + 上下往复扫描线
         overlay = new ScanOverlayView(this);
         root.addView(overlay, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        // 标题放在遮罩之上，避免被暗色层压暗
+        root.addView(title, titleParams);
 
         hintView = new TextView(this);
         hintView.setText("将条码放入框内，即可自动识别");
