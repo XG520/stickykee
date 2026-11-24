@@ -25,8 +25,3 @@ server/data/
 # 依赖目录：由 npm 安装生成，不入版本库
 node_modules/
 
-# 构建产物：APK/EXE 体积大且随构建变化，不入版本库（release/app_version.txt 仍保留）
-release/*.apk
-release/*.aab
-release/*.idsig
-release/*.exe
