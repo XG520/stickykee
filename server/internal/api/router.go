@@ -23,7 +23,7 @@ import (
 )
 
 // Router 组装全部 HTTP 路由。uploadDir 为聊天图片存储根目录（空串禁用图片功能）。
-func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store.UserPrefs, msgRepo *store.MessageRepo, logRepo *store.LogRepo, iconRepo *store.IconRepo, hb *hub.Hub, manager *ha.Manager, authOpt auth.Option, uploadDir string) http.Handler {
+func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store.UserPrefs, msgRepo *store.MessageRepo, logRepo *store.LogRepo, iconRepo *store.IconRepo, invRepo *store.InventoryRepo, hb *hub.Hub, manager *ha.Manager, authOpt auth.Option, uploadDir string) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
@@ -97,6 +97,9 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 	// device_tracker 实体经官方 update_location 命令自动绑定到注册设备。
 	location := handler.NewLocation(manager, sensors)
 	media := handler.NewMedia(manager)
+	// 库存 / 食品库：本地 SQLite 存储 + HA 总数/临期传感器同步
+	inventorySync := handler.NewInventorySync(manager, repo, userRepo, userPrefs, invRepo)
+	inventory := handler.NewInventory(invRepo, repo, inventorySync, ai)
 
 	// 语音通话：内存房间 + 信令事件推送（媒体经 /ws 二进制中继，不经 P2P）。
 	callHandler := handler.NewCall(callManager, hb, userRepo)
@@ -195,6 +198,45 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 			r.Put("/devices/{device_id}", devices.Rename)
 			r.Delete("/devices/{device_id}", devices.Delete)
 
+			// 库存 / 食品库（P1：位置、物品、批次、流水、统计）
+			r.Route("/inventory", func(r chi.Router) {
+				r.Get("/locations", inventory.ListLocations)
+				r.Post("/locations", inventory.CreateLocation)
+				r.Put("/locations/{id}", inventory.UpdateLocation)
+				r.Delete("/locations/{id}", inventory.DeleteLocation)
+
+				r.Get("/items", inventory.ListItems)
+				r.Post("/items", inventory.CreateItem)
+				r.Get("/items/{id}", inventory.GetItem)
+				r.Put("/items/{id}", inventory.UpdateItem)
+				r.Delete("/items/{id}", inventory.DeleteItem)
+				r.Post("/items/{id}/batches", inventory.AddBatch)
+
+				r.Post("/batches/{id}/consume", inventory.ConsumeBatch)
+				r.Post("/batches/{id}/discard", inventory.DiscardBatch)
+				r.Post("/batches/{id}/move", inventory.MoveBatch)
+				r.Post("/batches/{id}/open", inventory.OpenBatch)
+
+				r.Get("/stats", inventory.Stats)
+				r.Get("/logs", inventory.Logs)
+				r.Post("/stocktake", inventory.Stocktake)
+				r.Get("/export", inventory.Export)
+
+				// 购物清单
+				r.Get("/shopping-list", inventory.ListShopping)
+				r.Post("/shopping-list", inventory.AddShopping)
+				r.Put("/shopping-list/{id}", inventory.UpdateShopping)
+				r.Post("/shopping-list/{id}/check", inventory.CheckShopping)
+				r.Delete("/shopping-list/{id}", inventory.DeleteShopping)
+				r.Post("/items/{id}/to-shopping", inventory.ItemToShopping)
+				r.Post("/items/{id}/consume", inventory.ConsumeItem)
+
+				// 条码与识图
+				r.Get("/barcodes/{code}", inventory.GetBarcode)
+				r.Post("/barcodes", inventory.BindBarcode)
+				r.Post("/recognize", inventory.Recognize)
+			})
+
 			// 用户间消息 & 仪表盘共享（全部登录可见，action 端做归属校验）
 			r.Post("/crypto/handshake", cryptoHandler.Handshake)
 			r.Get("/messages/conversations", im.Conversations)
@@ -239,6 +281,8 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 
 	// 生日倒计时随日期跨天推进：每小时校正一次全部账号的 HA 生日传感器状态。
 	go birthdays.StartTicker(context.Background())
+	// 库存传感器每小时全量同步（兼作 HA 重启后的自愈兜底）。
+	go inventorySync.StartTicker(context.Background())
 
 	return r
 }

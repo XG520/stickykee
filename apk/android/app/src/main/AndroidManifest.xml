@@ -25,6 +25,12 @@
 
         </activity>
 
+        <!-- 条码扫描：全屏 CameraX 预览 + ML Kit 识别，结果经 stickykee-scan 事件回传 -->
+        <activity
+            android:name=".BarcodeScannerActivity"
+            android:exported="false"
+            android:theme="@style/AppTheme.NoActionBar" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -80,6 +86,10 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- 应用内更新：下载 APK 后拉起系统安装器（Android 8+ 需用户允许安装未知应用） -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- 条码扫描：库存功能扫码（首次扫码时弹系统授权） -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- 无摄像头设备也允许安装（扫码入口按需降级） -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
     <!-- 语音消息 / 语音通话：录音与音频路由（首次录音时弹系统授权） -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />

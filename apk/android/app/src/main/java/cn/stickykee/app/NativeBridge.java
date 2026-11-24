@@ -59,6 +59,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.lang.ref.WeakReference;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.HashMap;
@@ -125,10 +126,15 @@ public class NativeBridge {
     public void attachWebView(WebView wv) {
         this.webView = wv;
         activeBridge = this;
+        scanWebView = new WeakReference<>(wv);
     }
 
     // 当前活跃桥：Activity 销毁时 release() 置空（供扩展的原生回调判定页面是否存活）
     private static volatile NativeBridge activeBridge;
+
+    // 扫码回传用的 WebView 弱引用：BarcodeScannerActivity 独立于桥实例存活，
+    // 用弱引用避免静态字段延长 WebView/Activity 生命周期造成内存泄漏。
+    private static volatile WeakReference<WebView> scanWebView;
 
     /**
      * 后台 WebSocket 保活：由 KeepAliveService 每次心跳（默认 60s，主线程）调用。
@@ -1775,10 +1781,57 @@ public class NativeBridge {
         wv.post(() -> wv.evaluateJavascript(js, null));
     }
 
+    // ==================== 条码扫描（CameraX 预览 + ML Kit bundled） ====================
+
+    /**
+     * 拉起原生扫码页（全屏预览，识别到首个条码立即结束）。
+     * 结果经 window 事件 stickykee-scan 回传：
+     *   detail = {req, ok, value, format, message}
+     * req 原样回传，供前端匹配请求；取消/权限拒绝/相机失败时 ok=false 并带 message。
+     */
+    @JavascriptInterface
+    public void scanBarcode(final String req) {
+        try {
+            Intent intent = new Intent(activity, BarcodeScannerActivity.class);
+            intent.putExtra(BarcodeScannerActivity.EXTRA_REQ, req == null ? "" : req);
+            activity.startActivity(intent);
+        } catch (Exception e) {
+            deliverScan(req, false, "", "",
+                    "无法启动扫码: " + (e.getMessage() == null ? "未知错误" : e.getMessage()));
+        }
+    }
+
+    /** 扫码结果回传（BarcodeScannerActivity 调用）；WebView 已销毁时静默丢弃。 */
+    static void deliverScan(final String req, final boolean ok, final String value,
+                            final String format, final String message) {
+        final WeakReference<WebView> ref = scanWebView;
+        final WebView wv = ref == null ? null : ref.get();
+        if (wv == null) return;
+        final String js = "window.dispatchEvent(new CustomEvent('stickykee-scan',{detail:{"
+                + "req:" + JSONObject.quote(req == null ? "" : req)
+                + ",ok:" + ok
+                + ",value:" + JSONObject.quote(value == null ? "" : value)
+                + ",format:" + JSONObject.quote(format == null ? "" : format)
+                + ",message:" + JSONObject.quote(message == null ? "" : message)
+                + "}}))";
+        wv.post(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    wv.evaluateJavascript(js, null);
+                } catch (Exception ignored) {
+                }
+            }
+        });
+    }
+
     /** 释放原生 TTS 资源 */
     public void release() {
         try {
-            if (activeBridge == this) activeBridge = null; // Activity 销毁：服务心跳不再注入
+            if (activeBridge == this) {
+                activeBridge = null; // Activity 销毁：服务心跳不再注入
+                scanWebView = null;
+            }
             stopRingInternal();
             stopGpsWatch();
             stopConnWatchInternal();

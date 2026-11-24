@@ -96,6 +96,111 @@ func migrate(db *sql.DB) error {
 			icon TEXT NOT NULL,
 			PRIMARY KEY (instance_id, entity_id)
 		);`,
+		// ── 库存 / 食品库 ───────────────────────────────────────────
+		// 位置：冷藏室 / 冷冻室 / 橱柜 / 药箱 …；parent_id 支持 冰箱→冷藏/冷冻 层级
+		`CREATE TABLE IF NOT EXISTS inventory_locations (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			instance_id INTEGER NOT NULL REFERENCES instances(id) ON DELETE CASCADE,
+			name TEXT NOT NULL,
+			kind TEXT NOT NULL DEFAULT 'other',
+			icon TEXT NOT NULL DEFAULT '',
+			ha_entity_id TEXT NOT NULL DEFAULT '',
+			parent_id INTEGER NOT NULL DEFAULT 0,
+			sort INTEGER NOT NULL DEFAULT 0,
+			created_at TEXT NOT NULL DEFAULT (datetime('now')),
+			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_inventory_locations_instance ON inventory_locations(instance_id, sort);`,
+		// 物品主数据（商品维度）
+		`CREATE TABLE IF NOT EXISTS inventory_items (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			instance_id INTEGER NOT NULL REFERENCES instances(id) ON DELETE CASCADE,
+			name TEXT NOT NULL,
+			barcode TEXT NOT NULL DEFAULT '',
+			category TEXT NOT NULL DEFAULT '',
+			unit TEXT NOT NULL DEFAULT '件',
+			image_path TEXT NOT NULL DEFAULT '',
+			default_shelf_life_days INTEGER NOT NULL DEFAULT 0,
+			after_open_days INTEGER NOT NULL DEFAULT 0,
+			min_quantity REAL NOT NULL DEFAULT 0,
+			pack_size REAL NOT NULL DEFAULT 1,
+			pack_unit TEXT NOT NULL DEFAULT '',
+			tags TEXT NOT NULL DEFAULT '',
+			notes TEXT NOT NULL DEFAULT '',
+			created_by TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL DEFAULT (datetime('now')),
+			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+		);`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_inventory_barcode
+			ON inventory_items(instance_id, barcode) WHERE barcode <> '';`,
+		`CREATE INDEX IF NOT EXISTS idx_inventory_items_instance ON inventory_items(instance_id, name);`,
+		// 库存批次（同一物品可有多个过期日）
+		`CREATE TABLE IF NOT EXISTS inventory_batches (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			item_id INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+			location_id INTEGER NOT NULL REFERENCES inventory_locations(id),
+			quantity REAL NOT NULL DEFAULT 1,
+			production_date TEXT NOT NULL DEFAULT '',
+			expiry_date TEXT NOT NULL DEFAULT '',
+			opened INTEGER NOT NULL DEFAULT 0,
+			opened_at TEXT NOT NULL DEFAULT '',
+			entry_date TEXT NOT NULL DEFAULT '',
+			entry_price REAL NOT NULL DEFAULT 0,
+			status TEXT NOT NULL DEFAULT 'active',
+			created_by TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL DEFAULT (datetime('now')),
+			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_inventory_batches_item ON inventory_batches(item_id);`,
+		`CREATE INDEX IF NOT EXISTS idx_inventory_batches_expiry ON inventory_batches(status, expiry_date);`,
+		// 进出库流水（统计 / 回溯）
+		`CREATE TABLE IF NOT EXISTS inventory_logs (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			instance_id INTEGER NOT NULL REFERENCES instances(id) ON DELETE CASCADE,
+			item_id INTEGER NOT NULL DEFAULT 0,
+			batch_id INTEGER NOT NULL DEFAULT 0,
+			action TEXT NOT NULL,
+			delta REAL NOT NULL DEFAULT 0,
+			quantity_after REAL NOT NULL DEFAULT 0,
+			user TEXT NOT NULL DEFAULT '',
+			ts_ms INTEGER NOT NULL
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_inventory_logs_ts ON inventory_logs(ts_ms);`,
+		// 过期提醒去重（同一批次同一天只提醒一次）
+		`CREATE TABLE IF NOT EXISTS inventory_reminders (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			instance_id INTEGER NOT NULL REFERENCES instances(id) ON DELETE CASCADE,
+			batch_id INTEGER NOT NULL REFERENCES inventory_batches(id) ON DELETE CASCADE,
+			remind_date TEXT NOT NULL,
+			created_at TEXT NOT NULL DEFAULT (datetime('now')),
+			UNIQUE(batch_id, remind_date)
+		);`,
+		// 本地条码库（一个物品可对应多个条码，离线可查）
+		`CREATE TABLE IF NOT EXISTS inventory_barcodes (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			instance_id INTEGER NOT NULL REFERENCES instances(id) ON DELETE CASCADE,
+			barcode TEXT NOT NULL,
+			item_id INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+			source TEXT NOT NULL DEFAULT 'manual',
+			created_at TEXT NOT NULL DEFAULT (datetime('now')),
+			UNIQUE(instance_id, barcode)
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_inventory_barcodes_item ON inventory_barcodes(item_id);`,
+		// 购物清单（缺货/临期一键加入，成员共享）
+		`CREATE TABLE IF NOT EXISTS inventory_shopping_list (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			instance_id INTEGER NOT NULL REFERENCES instances(id) ON DELETE CASCADE,
+			item_id INTEGER NOT NULL DEFAULT 0,
+			name TEXT NOT NULL,
+			quantity REAL NOT NULL DEFAULT 1,
+			unit TEXT NOT NULL DEFAULT '件',
+			note TEXT NOT NULL DEFAULT '',
+			done INTEGER NOT NULL DEFAULT 0,
+			created_by TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL DEFAULT (datetime('now')),
+			done_at TEXT NOT NULL DEFAULT ''
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_inventory_shopping_done ON inventory_shopping_list(instance_id, done);`,
 	}
 	for _, s := range schemas {
 		if _, err := db.Exec(s); err != nil {

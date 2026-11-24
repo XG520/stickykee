@@ -32,6 +32,7 @@ const items = [
   { to: '/map', icon: 'map', label: '地图' },
   { to: '/floorplan', icon: 'apartment', label: '户型图' },
   { to: '/devices', icon: 'devices', label: '设备' },
+  { to: '/inventory', icon: 'kitchen', label: '库存' },
   { to: '/scenes', icon: 'magic_button', label: '场景' },
   { to: '/settings', icon: 'settings', label: '设置' },
 ]
