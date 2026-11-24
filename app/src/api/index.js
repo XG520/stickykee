@@ -277,6 +277,8 @@ export const api = {
   financeTrend: (months = 6) => api.get(`/finance/trend?months=${months}`),
   financeExport: (month = '') => api.get(`/finance/export${month ? `?month=${month}` : ''}`),
   financeRecognize: (image) => api.post('/finance/recognize', { image }),
+  financeNotification: (p) => api.post('/finance/notification', p),
+  financeImport: (p) => api.post('/finance/import', p),
   financeRecurring: () => api.get('/finance/recurring'),
   createFinanceRecurring: (p) => api.post('/finance/recurring', p),
   updateFinanceRecurring: (id, p) => api.put(`/finance/recurring/${id}`, p),

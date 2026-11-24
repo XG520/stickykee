@@ -12,22 +12,27 @@
         </button>
       </div>
 
-      <div class="grid grid-cols-3 gap-2 p-1 rounded-xl bg-surface-alt">
+      <div class="grid grid-cols-4 gap-2 p-1 rounded-xl bg-surface-alt">
         <button
-          class="py-2 rounded-lg text-sm font-body"
+          class="py-2 rounded-lg text-xs font-body"
           :class="tab === 'account' ? 'bg-primary text-white' : 'text-muted'"
           @click="tab = 'account'"
         >账户</button>
         <button
-          class="py-2 rounded-lg text-sm font-body"
+          class="py-2 rounded-lg text-xs font-body"
           :class="tab === 'category' ? 'bg-primary text-white' : 'text-muted'"
           @click="tab = 'category'"
         >分类</button>
         <button
-          class="py-2 rounded-lg text-sm font-body"
+          class="py-2 rounded-lg text-xs font-body"
           :class="tab === 'recurring' ? 'bg-primary text-white' : 'text-muted'"
           @click="tab = 'recurring'"
         >周期账单</button>
+        <button
+          class="py-2 rounded-lg text-xs font-body"
+          :class="tab === 'auto' ? 'bg-primary text-white' : 'text-muted'"
+          @click="tab = 'auto'"
+        >自动记账</button>
       </div>
 
       <!-- 账户 -->
@@ -119,7 +124,7 @@
       </template>
 
       <!-- 周期账单 -->
-      <template v-else>
+      <template v-else-if="tab === 'recurring'">
         <div class="space-y-2">
           <div v-for="x in recurring" :key="x.id" class="flex items-center justify-between gap-2 text-sm">
             <div class="min-w-0">
@@ -193,6 +198,52 @@
           <div v-if="error" class="text-xs text-error">{{ error }}</div>
         </div>
       </template>
+
+      <!-- 自动记账 -->
+      <template v-else>
+        <div class="space-y-3">
+          <div v-if="!auto.supported" class="text-xs text-muted font-body leading-relaxed">
+            网页版无法监听手机通知。安装糯米 APK 后，在「自动记账」中开启系统「通知使用权」，
+            微信 / 支付宝的支付通知即可自动入账。
+          </div>
+          <template v-else>
+            <div class="rounded-xl border border-border p-3 space-y-1.5">
+              <div class="flex items-center justify-between text-sm">
+                <span>通知监听</span>
+                <span :class="auto.enabled ? 'text-primary' : 'text-error'">
+                  {{ auto.enabled ? '已开启' : '未开启' }}
+                </span>
+              </div>
+              <div class="flex items-center justify-between text-xs text-muted font-body">
+                <span>待同步</span><span>{{ auto.pending || 0 }} 条</span>
+              </div>
+              <div class="flex items-center justify-between text-xs text-muted font-body">
+                <span>服务配置</span><span>{{ auto.configured ? '已连接' : '未连接' }}</span>
+              </div>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <button class="px-3 py-1.5 rounded-lg bg-primary text-white text-xs" @click="enableNotifyAccess">
+                {{ auto.enabled ? '系统设置' : '开启通知使用权' }}
+              </button>
+              <button class="px-3 py-1.5 rounded-lg bg-surface-alt border border-border text-xs text-muted" @click="refreshAuto">刷新状态</button>
+              <button class="px-3 py-1.5 rounded-lg bg-surface-alt border border-border text-xs text-muted" @click="syncNow">立即同步</button>
+            </div>
+            <p class="text-[11px] text-muted font-body leading-relaxed">
+              仅读取微信、支付宝通知的标题与正文用于识别金额，其他应用通知不会被读取或上传；识别失败不会入账。
+              开启后回到本页点「刷新状态」即可查看结果。
+            </p>
+          </template>
+
+          <div class="border-t border-border pt-3 space-y-2">
+            <div class="text-xs font-medium text-muted font-body">官方账单 CSV 导入</div>
+            <p class="text-[11px] text-muted font-body">支付宝 / 微信导出的官方账单可直接导入，重复交易自动跳过。</p>
+            <button class="px-3 py-1.5 rounded-lg bg-surface-alt border border-border text-xs text-muted" @click="openImport">
+              打开导入
+            </button>
+          </div>
+          <div v-if="error" class="text-xs text-error">{{ error }}</div>
+        </div>
+      </template>
     </div>
   </div>
 </template>
@@ -200,17 +251,25 @@
 <script setup>
 import { reactive, ref, watch } from 'vue'
 import api from '@/api'
+import {
+  autoFinanceStatus,
+  autoFinanceSupported,
+  flushAutoFinance,
+  openNotificationAccess,
+  syncAutoFinanceConfig,
+} from '@/utils/autoFinance'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
   accounts: { type: Array, default: () => [] },
   categories: { type: Array, default: () => [] },
 })
-const emit = defineEmits(['update:modelValue', 'changed'])
+const emit = defineEmits(['update:modelValue', 'changed', 'import'])
 
 const tab = ref('account')
 const error = ref('')
 const editingId = ref(0)
+const auto = ref({ supported: false, enabled: false, configured: false, pending: 0 })
 
 const kinds = [
   { value: 'cash', label: '现金' },
@@ -424,7 +483,33 @@ async function removeRecurring(x) {
 
 watch(tab, (v) => {
   if (v === 'recurring') loadRecurring()
+  if (v === 'auto') refreshAuto()
 })
+
+function refreshAuto() {
+  if (!autoFinanceSupported()) {
+    auto.value = { supported: false, enabled: false, configured: false, pending: 0 }
+    return
+  }
+  syncAutoFinanceConfig()
+  auto.value = autoFinanceStatus()
+}
+
+function enableNotifyAccess() {
+  syncAutoFinanceConfig()
+  openNotificationAccess()
+}
+
+function syncNow() {
+  syncAutoFinanceConfig()
+  flushAutoFinance()
+  window.setTimeout(refreshAuto, 1200)
+}
+
+function openImport() {
+  emit('update:modelValue', false)
+  emit('import')
+}
 
 watch(() => props.modelValue, (v) => {
   if (v) {

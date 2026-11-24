@@ -9,6 +9,7 @@ import { getPrefs, putPrefs } from '@/utils/prefs'
 import { handshake, openEnvelope, withCrypto } from '@/utils/crypto'
 import { isApk } from '@/utils/serverConfig'
 import { layoutKey, layoutKeyFor } from '@/utils/dashboard'
+import { resetAutoFinance } from '@/utils/autoFinance'
 
 mark('boot:store')
 
@@ -203,6 +204,8 @@ export async function authLogout() {
   sessionStorage.removeItem('hc_token')
   localStorage.removeItem('hc_token')
   setAuth(null)
+  // 清空 APK 原生自动记账令牌与待同步队列（避免下一个账号继承上一位的支付通知）
+  resetAutoFinance()
   store.ready = false
   // 清掉实体缓存与本地快照/布局缓存：下一个登录用户不该看到上一位用户的数据
   snapSeen = false

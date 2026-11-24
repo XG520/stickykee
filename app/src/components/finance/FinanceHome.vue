@@ -35,6 +35,10 @@
         </button>
         <button
           class="px-3 py-1.5 rounded-lg bg-surface-alt border border-border text-xs text-muted font-body"
+          @click="importOpen = true"
+        >导入</button>
+        <button
+          class="px-3 py-1.5 rounded-lg bg-surface-alt border border-border text-xs text-muted font-body"
           @click="managerOpen = true"
         >账户 / 分类</button>
         <button
@@ -166,6 +170,12 @@
       :accounts="allAccounts"
       :categories="categories"
       @changed="reloadAll"
+      @import="importOpen = true"
+    />
+    <ImportDialog
+      v-model="importOpen"
+      :accounts="allAccounts"
+      @changed="reloadAll"
     />
     <BudgetDialog
       v-model="budgetOpen"
@@ -183,6 +193,8 @@ import TransactionDialog from './TransactionDialog.vue'
 import AccountManager from './AccountManager.vue'
 import BudgetDialog from './BudgetDialog.vue'
 import FinanceReport from './FinanceReport.vue'
+import ImportDialog from './ImportDialog.vue'
+import { syncAutoFinanceConfig } from '@/utils/autoFinance'
 
 const PAGE_SIZE = 60
 
@@ -202,6 +214,7 @@ const dialogOpen = ref(false)
 const editing = ref(null)
 const managerOpen = ref(false)
 const budgetOpen = ref(false)
+const importOpen = ref(false)
 const showReport = ref(false)
 const trend = ref([])
 
@@ -447,5 +460,8 @@ async function exportCsv() {
   }
 }
 
-onMounted(reload)
+onMounted(() => {
+  syncAutoFinanceConfig()
+  reload()
+})
 </script>

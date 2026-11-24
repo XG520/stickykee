@@ -273,6 +273,10 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 				r.Delete("/recurring/{id}", finance.DeleteRecurring)
 
 				r.Post("/recognize", finance.Recognize)
+
+				// 自动记账：安卓通知监听（准实时）+ 官方账单 CSV 导入（非实时）
+				r.Post("/notification", finance.Notification)
+				r.Post("/import", finance.Import)
 			})
 
 			// 用户间消息 & 仪表盘共享（全部登录可见，action 端做归属校验）

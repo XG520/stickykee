@@ -1825,6 +1825,52 @@ public class NativeBridge {
         });
     }
 
+    /** 支付通知自动记账：状态（是否支持 / 通知使用权 / 服务配置 / 待同步条数）。 */
+    @JavascriptInterface
+    public String autoFinanceStatus() {
+        return FinanceAutoBridge.statusJson(activity);
+    }
+
+    /** 保存自动记账上报地址与登录令牌，并立即尝试同步积压通知。 */
+    @JavascriptInterface
+    public void configureAutoFinance(String baseUrl, String token) {
+        FinanceAutoBridge.configure(activity, baseUrl, token);
+        FinanceAutoBridge.flushAsync(activity);
+    }
+
+    /** 打开系统「通知使用权」设置页，引导用户开启微信 / 支付宝通知监听。 */
+    @JavascriptInterface
+    public void openNotificationAccessSettings() {
+        activity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    activity.startActivity(new Intent(
+                            Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                } catch (Exception e) {
+                    try {
+                        activity.startActivity(new Intent(Settings.ACTION_SETTINGS)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                    } catch (Exception ignored) {
+                    }
+                }
+            }
+        });
+    }
+
+    /** 立即上传待同步的支付通知。 */
+    @JavascriptInterface
+    public void flushAutoFinance() {
+        FinanceAutoBridge.flushAsync(activity);
+    }
+
+    /** 退出登录时清空自动记账令牌与待同步队列。 */
+    @JavascriptInterface
+    public void resetAutoFinance() {
+        FinanceAutoBridge.reset(activity);
+    }
+
     /** 释放原生 TTS 资源 */
     public void release() {
         try {
