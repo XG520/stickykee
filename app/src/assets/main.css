@@ -745,3 +745,21 @@ select option {
   background-color: rgb(var(--c-surface));
   color: rgb(var(--c-on-surface));
 }
+
+/* ================= APK 原生端字号阶梯（参照微信移动端比例） =================
+   手机 WebView 的阅读距离与像素密度和桌面不同，直接沿用桌面字号会明显偏小
+   （尤其 10/11px 的说明文字）。这里在 APK 内重建一套移动端阶梯：
+     正文 17px / 次要 15px / 辅助 13px / 极小角标 12px，行高沿用 body 的 1.5。
+   仅在 window.StickyKeeNative 存在时由 main.js 给 <html> 加 .native-app，
+   桌面端与移动浏览器完全不受影响；用户自选的「字体大小」仍经根字号 inline 生效。 */
+html.native-app {
+  /* rem 文本随根字号整体放大：text-xs≈12.8、sm≈14.9、base=17、lg≈19.1、xl≈21.3 */
+  font-size: 17px;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+/* 硬编码像素字号兜底：抬到微信辅助文字档位，rem 写法保证仍随「字体大小」设置联动 */
+html.native-app .text-\[9px\] { font-size: 0.7rem; }   /* ≈12px */
+html.native-app .text-\[10px\] { font-size: 0.74rem; } /* ≈12.6px */
+html.native-app .text-\[11px\] { font-size: 0.8rem; }  /* ≈13.6px */
+html.native-app .text-\[15px\] { font-size: 0.94rem; } /* ≈16px */
