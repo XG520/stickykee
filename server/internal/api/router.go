@@ -237,6 +237,7 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 
 				// 条码与识图
 				r.Get("/barcodes/{code}", inventory.GetBarcode)
+				r.Get("/barcodes/{code}/product", inventory.LookupBarcodeProduct)
 				r.Post("/barcodes", inventory.BindBarcode)
 				r.Post("/recognize", inventory.Recognize)
 			})

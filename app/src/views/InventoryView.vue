@@ -557,6 +557,7 @@ async function delLocation(l) {
 
 async function handleScanned(code) {
   if (!code) return
+  error.value = ''
   try {
     const res = await api.inventoryBarcode(code)
     if (res.data && res.data.item_id) {
@@ -564,12 +565,35 @@ async function handleScanned(code) {
       return
     }
   } catch (e) {
-    // 本地未命中，转新建
+    // 本地未命中，转在线商品库识别
   }
+  // 立即跳转新增表单（条码已填），商品名称由在线识别异步补全
   initialItem.value = null
   initialBarcode.value = code
   editingItem.value = null
   editorOpen.value = true
+  lookupProduct(code)
+}
+
+// 本地条码库只记录用户绑定过的商品；未收录时查询公开商品库补全名称
+// （微信扫商品条码能出名称，走的也是商品数据库，而非手机本地数据）
+async function lookupProduct(code) {
+  try {
+    const res = await api.inventoryBarcodeProduct(code)
+    const p = res.data
+    if (!p || !p.name) return
+    // 期间用户可能已关闭弹窗或改扫了别的条码，只在同一张表单上回填
+    if (!editorOpen.value || editingItem.value || initialBarcode.value !== code) return
+    initialItem.value = {
+      name: p.name,
+      category: p.category || '',
+      unit: '件',
+      barcode: p.barcode || code,
+    }
+    initialBarcode.value = ''
+  } catch (e) {
+    // 商品库未收录或网络不可用：保留空表单，用户可手动填写
+  }
 }
 
 function scanBarcode() {

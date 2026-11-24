@@ -209,6 +209,13 @@ watch(() => props.modelValue, (v) => {
   else categoryOpen.value = false
 })
 watch(() => props.item, () => { if (props.modelValue) reset() })
+// 扫码识别是异步的：弹窗先打开，商品库结果稍后到达，仅回填用户尚未填写的字段
+watch(() => props.initial, (v) => {
+  if (!v || !props.modelValue || props.item) return
+  if (!form.name.trim() && v.name) form.name = v.name
+  if (!form.category && v.category) form.category = v.category
+  if (!form.unit && v.unit) form.unit = v.unit
+})
 
 function close() {
   emit('update:modelValue', false)

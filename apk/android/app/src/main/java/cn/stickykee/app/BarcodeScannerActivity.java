@@ -3,11 +3,13 @@ package cn.stickykee.app;
 import android.Manifest;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.WindowManager;
-import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 
@@ -53,6 +55,10 @@ public class BarcodeScannerActivity extends AppCompatActivity {
     private String req = "";
     private PreviewView previewView;
     private ProcessCameraProvider cameraProvider;
+    private ScanOverlayView overlay;
+    private TextView hintView;
+    // 识别成功后的短暂停留（展示绿色反馈）再关闭页面
+    private final Handler uiHandler = new Handler(Looper.getMainLooper());
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -73,26 +79,52 @@ public class BarcodeScannerActivity extends AppCompatActivity {
         root.addView(previewView, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-        TextView hint = new TextView(this);
-        hint.setText("将条码置于取景框内");
-        hint.setTextColor(Color.WHITE);
-        hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
-        hint.setGravity(Gravity.CENTER);
-        FrameLayout.LayoutParams hintParams = new FrameLayout.LayoutParams(
+        // 顶部标题
+        TextView title = new TextView(this);
+        title.setText("扫描商品条码");
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17);
+        title.setGravity(Gravity.CENTER);
+        FrameLayout.LayoutParams titleParams = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.TOP | Gravity.CENTER_HORIZONTAL);
-        hintParams.topMargin = dp(72);
-        root.addView(hint, hintParams);
+        titleParams.topMargin = dp(44);
+        root.addView(title, titleParams);
 
-        Button cancel = new Button(this);
+        // 取景层：暗色遮罩 + 取景框 + 四角 + 上下往复扫描线
+        overlay = new ScanOverlayView(this);
+        root.addView(overlay, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+
+        hintView = new TextView(this);
+        hintView.setText("将条码放入框内，即可自动识别");
+        hintView.setTextColor(0xCCFFFFFF);
+        hintView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        hintView.setGravity(Gravity.CENTER);
+        FrameLayout.LayoutParams hintParams = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        hintParams.bottomMargin = dp(136);
+        root.addView(hintView, hintParams);
+
+        // 取消：半透明胶囊按钮（贴近微信扫码页的视觉重量）
+        TextView cancel = new TextView(this);
         cancel.setText("取消");
-        cancel.setAllCaps(false);
+        cancel.setTextColor(Color.WHITE);
+        cancel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        cancel.setGravity(Gravity.CENTER);
+        GradientDrawable cancelBg = new GradientDrawable();
+        cancelBg.setColor(0x33FFFFFF);
+        cancelBg.setCornerRadius(dp(24));
+        cancel.setBackground(cancelBg);
+        cancel.setPadding(dp(26), dp(10), dp(26), dp(10));
         cancel.setOnClickListener(v -> finishWithResult(false, "", "", "已取消"));
         FrameLayout.LayoutParams cancelParams = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-        cancelParams.bottomMargin = dp(72);
+        cancelParams.bottomMargin = dp(56);
         root.addView(cancel, cancelParams);
+        overlay.start();
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
                 == PackageManager.PERMISSION_GRANTED) {
@@ -153,7 +185,7 @@ public class BarcodeScannerActivity extends AppCompatActivity {
                     for (Barcode barcode : barcodes) {
                         String value = firstNonEmpty(barcode.getRawValue(), barcode.getDisplayValue());
                         if (value != null) {
-                            finishWithResult(true, value, formatName(barcode.getFormat()), "");
+                            onDecoded(value, formatName(barcode.getFormat()));
                             return;
                         }
                     }
@@ -171,6 +203,34 @@ public class BarcodeScannerActivity extends AppCompatActivity {
     @Override
     public void onBackPressed() {
         finishWithResult(false, "", "", "已取消");
+    }
+
+    /** 识别成功：先给出微信式的绿色反馈，短暂停留后再回传并自动关闭到业务页。 */
+    private void onDecoded(final String value, final String format) {
+        if (!finished.compareAndSet(false, true)) return;
+        runOnUiThread(() -> {
+            if (overlay != null) overlay.markSuccess();
+            if (hintView != null) {
+                hintView.setText("识别成功");
+                hintView.setTextColor(0xFF07C160);
+            }
+            uiHandler.postDelayed(() -> {
+                NativeBridge.deliverScan(req, true, value, format, "");
+                finish();
+            }, 400);
+        });
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (!finished.get() && overlay != null) overlay.start();
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (overlay != null) overlay.stop();
     }
 
     /** 结束并回传（只生效一次）。回传统一走 NativeBridge 的静态事件派发。 */
@@ -207,6 +267,8 @@ public class BarcodeScannerActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
+        uiHandler.removeCallbacksAndMessages(null);
+        if (overlay != null) overlay.stop();
         if (cameraProvider != null) cameraProvider.unbindAll();
         try {
             scanner.close();

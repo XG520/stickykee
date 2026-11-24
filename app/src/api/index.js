@@ -251,6 +251,7 @@ export const api = {
   itemToShopping: (itemId, quantity = 1) => api.post(`/inventory/items/${itemId}/to-shopping`, { quantity }),
   consumeInventoryItem: (itemId, qty = 1) => api.post(`/inventory/items/${itemId}/consume`, { qty }),
   inventoryBarcode: (code) => api.get(`/inventory/barcodes/${encodeURIComponent(code)}`),
+  inventoryBarcodeProduct: (code) => api.get(`/inventory/barcodes/${encodeURIComponent(code)}/product`),
   bindInventoryBarcode: (p) => api.post('/inventory/barcodes', p),
   recognizeInventoryImage: (image) => api.post('/inventory/recognize', { image }),
   inventoryStocktake: (lines) => api.post('/inventory/stocktake', { lines }),
