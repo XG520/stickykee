@@ -194,6 +194,7 @@ import AccountManager from './AccountManager.vue'
 import BudgetDialog from './BudgetDialog.vue'
 import FinanceReport from './FinanceReport.vue'
 import ImportDialog from './ImportDialog.vue'
+import { confirmAction } from '@/composables/useConfirm'
 import { syncAutoFinanceConfig } from '@/utils/autoFinance'
 
 const PAGE_SIZE = 60
@@ -433,7 +434,12 @@ function openEdit(tx) {
 }
 
 async function remove(tx) {
-  if (!window.confirm(`删除这笔「${titleOf(tx)}」账目？`)) return
+  const ok = await confirmAction({
+    title: '删除账目',
+    message: `删除这笔「${titleOf(tx)}」账目？`,
+    confirmText: '删除',
+  })
+  if (!ok) return
   try {
     await api.deleteFinanceTransaction(tx.id)
     await reload()

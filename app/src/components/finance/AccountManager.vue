@@ -62,9 +62,7 @@
               placeholder="账户名称"
               class="col-span-2 px-3 py-2 rounded-lg bg-surface-alt border border-border text-sm outline-none focus:border-primary"
             />
-            <select v-model="accountForm.kind" class="px-2 py-2 rounded-lg bg-surface-alt border border-border text-sm">
-              <option v-for="k in kinds" :key="k.value" :value="k.value">{{ k.label }}</option>
-            </select>
+            <UiSelect v-model="accountForm.kind" class="text-sm" :options="kinds" />
             <input
               v-model="accountForm.opening"
               type="number"
@@ -113,10 +111,7 @@
               placeholder="分类名称"
               class="flex-1 px-3 py-2 rounded-lg bg-surface-alt border border-border text-sm outline-none focus:border-primary"
             />
-            <select v-model="categoryForm.type" class="px-2 py-2 rounded-lg bg-surface-alt border border-border text-sm">
-              <option value="expense">支出</option>
-              <option value="income">收入</option>
-            </select>
+            <UiSelect v-model="categoryForm.type" class="text-sm" :options="typeOptions" />
             <button class="px-4 py-2 rounded-lg text-sm bg-primary text-white" @click="addCategory">添加</button>
           </div>
           <div v-if="error" class="text-xs text-error">{{ error }}</div>
@@ -157,10 +152,7 @@
             class="w-full px-3 py-2 rounded-lg bg-surface-alt border border-border text-sm outline-none focus:border-primary"
           />
           <div class="grid grid-cols-2 gap-2">
-            <select v-model="recurringForm.type" class="px-2 py-2 rounded-lg bg-surface-alt border border-border text-sm">
-              <option value="expense">支出</option>
-              <option value="income">收入</option>
-            </select>
+            <UiSelect v-model="recurringForm.type" class="text-sm" :options="typeOptions" />
             <input
               v-model="recurringForm.amount"
               type="number"
@@ -168,14 +160,8 @@
               placeholder="金额（元）"
               class="px-3 py-2 rounded-lg bg-surface-alt border border-border text-sm outline-none focus:border-primary"
             />
-            <select v-model.number="recurringForm.account_id" class="px-2 py-2 rounded-lg bg-surface-alt border border-border text-sm">
-              <option :value="0">选择账户</option>
-              <option v-for="a in accounts.filter((x) => !x.archived)" :key="a.id" :value="a.id">{{ a.name }}</option>
-            </select>
-            <select v-model.number="recurringForm.category_id" class="px-2 py-2 rounded-lg bg-surface-alt border border-border text-sm">
-              <option :value="0">不指定分类</option>
-              <option v-for="c in categories.filter((x) => x.type === recurringForm.type)" :key="c.id" :value="c.id">{{ c.name }}</option>
-            </select>
+            <UiSelect v-model="recurringForm.account_id" class="text-sm" :options="accountOptions" />
+            <UiSelect v-model="recurringForm.category_id" class="text-sm" :options="recurringCategoryOptions" />
             <label class="text-xs text-muted font-body flex items-center gap-2 px-1">
               每月
               <input
@@ -249,8 +235,11 @@
 </template>
 
 <script setup>
-import { reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import api from '@/api'
+import UiSelect from '@/components/ui/UiSelect.vue'
+import { confirmAction } from '@/composables/useConfirm'
+import { toast } from '@/utils/browserCommands'
 import {
   autoFinanceStatus,
   autoFinanceSupported,
@@ -301,6 +290,25 @@ const recurringForm = reactive({
   day_of_month: 1,
   enabled: true,
 })
+
+const typeOptions = [
+  { label: '支出', value: 'expense' },
+  { label: '收入', value: 'income' },
+]
+
+const accountOptions = computed(() => [
+  { label: '选择账户', value: 0 },
+  ...(props.accounts || [])
+    .filter((a) => !a.archived)
+    .map((a) => ({ label: a.name, value: a.id })),
+])
+
+const recurringCategoryOptions = computed(() => [
+  { label: '不指定分类', value: 0 },
+  ...(props.categories || [])
+    .filter((c) => c.type === recurringForm.type)
+    .map((c) => ({ label: c.name, value: c.id })),
+])
 
 function kindLabel(kind) {
   return (kinds.find((k) => k.value === kind) || {}).label || '其他'
@@ -362,11 +370,16 @@ async function saveAccount() {
 }
 
 async function removeAccount(a) {
-  if (!window.confirm(`删除账户「${a.name}」？已有流水时将转为归档。`)) return
+  const ok = await confirmAction({
+    title: '删除账户',
+    message: `删除账户「${a.name}」？\n已有流水时将转为归档。`,
+    confirmText: '删除',
+  })
+  if (!ok) return
   try {
     const res = await api.deleteFinanceAccount(a.id)
     if (res.data && res.data.archived) {
-      window.alert('该账户已有流水，已转为归档（不再出现在记账账户中）。')
+      toast('该账户已有流水，已转为归档（不再出现在记账账户中）。')
     }
     emit('changed')
   } catch (e) {
@@ -394,7 +407,12 @@ async function addCategory() {
 }
 
 async function removeCategory(c) {
-  if (!window.confirm(`删除分类「${c.name}」？`)) return
+  const ok = await confirmAction({
+    title: '删除分类',
+    message: `删除分类「${c.name}」？`,
+    confirmText: '删除',
+  })
+  if (!ok) return
   try {
     await api.deleteFinanceCategory(c.id)
     emit('changed')
@@ -471,7 +489,12 @@ async function toggleRecurring(x) {
 }
 
 async function removeRecurring(x) {
-  if (!window.confirm(`删除周期账单「${x.name}」？`)) return
+  const ok = await confirmAction({
+    title: '删除周期账单',
+    message: `删除周期账单「${x.name}」？`,
+    confirmText: '删除',
+  })
+  if (!ok) return
   try {
     await api.deleteFinanceRecurring(x.id)
     await loadRecurring()

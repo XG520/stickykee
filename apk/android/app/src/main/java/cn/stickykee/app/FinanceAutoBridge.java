@@ -107,13 +107,18 @@ final class FinanceAutoBridge {
 
     /** 入队一条通知负载（NotificationListenerService 调用）。 */
     static void enqueue(Context c, JSONObject payload) {
+        boolean saved = false;
         synchronized (LOCK) {
-            JSONArray arr = pendingArray(c);
-            arr.put(payload);
-            while (arr.length() > MAX_PENDING) arr.remove(0);
-            savePending(c, arr);
+            try {
+                JSONArray arr = pendingArray(c);
+                arr.put(payload);
+                while (arr.length() > MAX_PENDING) arr.remove(0);
+                savePending(c, arr);
+                saved = true;
+            } catch (Exception ignored) {
+            }
         }
-        flushAsync(c);
+        if (saved) flushAsync(c);
     }
 
     static String statusJson(Context c) {

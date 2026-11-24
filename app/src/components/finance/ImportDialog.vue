@@ -30,10 +30,7 @@
       </div>
 
       <div class="grid grid-cols-2 gap-2">
-        <select v-model.number="accountId" class="px-2 py-2 rounded-lg bg-surface-alt border border-border text-sm">
-          <option :value="0">默认账户</option>
-          <option v-for="a in activeAccounts" :key="a.id" :value="a.id">{{ a.name }}</option>
-        </select>
+        <UiSelect v-model="accountId" class="w-full text-sm" :options="accountOptions" />
         <button
           class="px-3 py-2 rounded-lg border border-border bg-surface-alt text-xs text-muted font-body disabled:opacity-50"
           :disabled="!content || loading"
@@ -107,6 +104,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import api from '@/api'
+import UiSelect from '@/components/ui/UiSelect.vue'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -126,6 +124,10 @@ const commitMode = ref(false)
 const error = ref('')
 
 const activeAccounts = computed(() => (props.accounts || []).filter((a) => !a.archived))
+const accountOptions = computed(() => [
+  { label: '默认账户', value: 0 },
+  ...activeAccounts.value.map((a) => ({ label: a.name, value: a.id })),
+])
 
 function money(cents) {
   return '¥' + (Number(cents || 0) / 100).toFixed(2)

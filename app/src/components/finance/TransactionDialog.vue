@@ -82,12 +82,7 @@
       <div class="grid grid-cols-2 gap-3">
         <label class="text-xs text-muted font-body">
           账户
-          <select
-            v-model.number="accountId"
-            class="mt-1 w-full px-3 py-2 rounded-lg bg-surface-alt border border-border text-sm text-on-surface outline-none focus:border-primary"
-          >
-            <option v-for="a in accounts" :key="a.id" :value="a.id">{{ a.name }}</option>
-          </select>
+          <UiSelect v-model="accountId" class="mt-1 w-full text-sm" :options="accountOptions" />
         </label>
         <label class="text-xs text-muted font-body">
           日期
@@ -99,12 +94,7 @@
         </label>
         <label class="text-xs text-muted font-body">
           币种
-          <select
-            v-model="currency"
-            class="mt-1 w-full px-3 py-2 rounded-lg bg-surface-alt border border-border text-sm text-on-surface outline-none focus:border-primary"
-          >
-            <option v-for="c in currencies" :key="c" :value="c">{{ c }}</option>
-          </select>
+          <UiSelect v-model="currency" class="mt-1 w-full text-sm" :options="currencyOptions" />
         </label>
         <label v-if="currency !== 'CNY'" class="text-xs text-muted font-body">
           汇率（1 {{ currency }} = ? 元）
@@ -163,6 +153,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import api from '@/api'
+import UiSelect from '@/components/ui/UiSelect.vue'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -187,6 +178,10 @@ const error = ref('')
 const currencies = ['CNY', 'USD', 'EUR', 'JPY', 'HKD', 'GBP']
 const currencySymbols = { CNY: '¥', USD: '$', EUR: '€', JPY: 'JP¥', HKD: 'HK$', GBP: '£' }
 const currencySymbol = computed(() => currencySymbols[currency.value] || currency.value)
+
+const currencyOptions = currencies.map((c) => ({ label: c, value: c }))
+const accountOptions = computed(() =>
+  (props.accounts || []).map((a) => ({ label: a.name, value: a.id })))
 
 const candidates = ref([])
 const recognizing = ref(false)
