@@ -12,7 +12,7 @@
         </button>
       </div>
 
-      <div class="grid grid-cols-2 gap-2 p-1 rounded-xl bg-surface-alt">
+      <div class="grid grid-cols-3 gap-2 p-1 rounded-xl bg-surface-alt">
         <button
           class="py-2 rounded-lg text-sm font-body"
           :class="tab === 'account' ? 'bg-primary text-white' : 'text-muted'"
@@ -23,6 +23,11 @@
           :class="tab === 'category' ? 'bg-primary text-white' : 'text-muted'"
           @click="tab = 'category'"
         >分类</button>
+        <button
+          class="py-2 rounded-lg text-sm font-body"
+          :class="tab === 'recurring' ? 'bg-primary text-white' : 'text-muted'"
+          @click="tab = 'recurring'"
+        >周期账单</button>
       </div>
 
       <!-- 账户 -->
@@ -74,7 +79,7 @@
       </template>
 
       <!-- 分类 -->
-      <template v-else>
+      <template v-else-if="tab === 'category'">
         <div class="space-y-3">
           <div v-for="t in ['expense', 'income']" :key="t" class="space-y-1.5">
             <div class="text-xs font-medium text-muted font-body">{{ t === 'expense' ? '支出分类' : '收入分类' }}</div>
@@ -108,6 +113,82 @@
               <option value="income">收入</option>
             </select>
             <button class="px-4 py-2 rounded-lg text-sm bg-primary text-white" @click="addCategory">添加</button>
+          </div>
+          <div v-if="error" class="text-xs text-error">{{ error }}</div>
+        </div>
+      </template>
+
+      <!-- 周期账单 -->
+      <template v-else>
+        <div class="space-y-2">
+          <div v-for="x in recurring" :key="x.id" class="flex items-center justify-between gap-2 text-sm">
+            <div class="min-w-0">
+              <div class="truncate">
+                {{ x.name }}
+                <span class="text-[10px] ml-1 px-1.5 py-0.5 rounded-full bg-surface-alt text-muted">
+                  {{ x.type === 'income' ? '收入' : '支出' }}
+                </span>
+                <span v-if="!x.enabled" class="text-[10px] ml-1 px-1.5 py-0.5 rounded-full bg-surface-alt text-muted">已暂停</span>
+              </div>
+              <div class="text-[11px] text-muted font-body">
+                {{ money(x.amount) }} · 每月 {{ x.day_of_month }} 日 · {{ x.account_name || '账户已删除' }}
+              </div>
+            </div>
+            <div class="flex items-center gap-2 flex-shrink-0">
+              <button class="text-xs text-muted hover:text-primary" @click="toggleRecurring(x)">
+                {{ x.enabled ? '暂停' : '启用' }}
+              </button>
+              <button class="text-xs text-muted hover:text-error" @click="removeRecurring(x)">删除</button>
+            </div>
+          </div>
+          <div v-if="!recurring.length" class="text-xs text-muted">暂无周期账单</div>
+        </div>
+
+        <div class="border-t border-border pt-3 space-y-2">
+          <div class="text-xs font-medium text-muted font-body">新增周期账单</div>
+          <input
+            v-model="recurringForm.name"
+            placeholder="名称，如：房租 / 会员"
+            class="w-full px-3 py-2 rounded-lg bg-surface-alt border border-border text-sm outline-none focus:border-primary"
+          />
+          <div class="grid grid-cols-2 gap-2">
+            <select v-model="recurringForm.type" class="px-2 py-2 rounded-lg bg-surface-alt border border-border text-sm">
+              <option value="expense">支出</option>
+              <option value="income">收入</option>
+            </select>
+            <input
+              v-model="recurringForm.amount"
+              type="number"
+              step="0.01"
+              placeholder="金额（元）"
+              class="px-3 py-2 rounded-lg bg-surface-alt border border-border text-sm outline-none focus:border-primary"
+            />
+            <select v-model.number="recurringForm.account_id" class="px-2 py-2 rounded-lg bg-surface-alt border border-border text-sm">
+              <option :value="0">选择账户</option>
+              <option v-for="a in accounts.filter((x) => !x.archived)" :key="a.id" :value="a.id">{{ a.name }}</option>
+            </select>
+            <select v-model.number="recurringForm.category_id" class="px-2 py-2 rounded-lg bg-surface-alt border border-border text-sm">
+              <option :value="0">不指定分类</option>
+              <option v-for="c in categories.filter((x) => x.type === recurringForm.type)" :key="c.id" :value="c.id">{{ c.name }}</option>
+            </select>
+            <label class="text-xs text-muted font-body flex items-center gap-2 px-1">
+              每月
+              <input
+                v-model.number="recurringForm.day_of_month"
+                type="number"
+                min="1"
+                max="31"
+                class="w-16 px-2 py-1.5 rounded-lg bg-surface-alt border border-border text-sm text-right outline-none focus:border-primary"
+              />
+              日
+            </label>
+            <label class="text-xs text-muted font-body flex items-center gap-1.5">
+              <input v-model="recurringForm.enabled" type="checkbox" />
+              启用
+            </label>
+          </div>
+          <div class="flex justify-end">
+            <button class="px-4 py-1.5 rounded-lg text-xs bg-primary text-white" @click="addRecurring">添加</button>
           </div>
           <div v-if="error" class="text-xs text-error">{{ error }}</div>
         </div>
@@ -151,6 +232,16 @@ const kindIcons = {
 
 const accountForm = reactive({ name: '', kind: 'cash', opening: '' })
 const categoryForm = reactive({ name: '', type: 'expense' })
+const recurring = ref([])
+const recurringForm = reactive({
+  name: '',
+  type: 'expense',
+  amount: '',
+  account_id: 0,
+  category_id: 0,
+  day_of_month: 1,
+  enabled: true,
+})
 
 function kindLabel(kind) {
   return (kinds.find((k) => k.value === kind) || {}).label || '其他'
@@ -252,6 +343,88 @@ async function removeCategory(c) {
     error.value = e.message || '删除失败'
   }
 }
+
+async function loadRecurring() {
+  try {
+    const res = await api.financeRecurring()
+    recurring.value = res.data || []
+  } catch (e) {
+    error.value = e.message || '加载周期账单失败'
+  }
+}
+
+function recurringPayload(x, enabled) {
+  return {
+    name: x.name,
+    type: x.type,
+    amount: x.amount,
+    account_id: x.account_id,
+    category_id: x.category_id,
+    day_of_month: x.day_of_month,
+    enabled,
+  }
+}
+
+async function addRecurring() {
+  error.value = ''
+  if (!recurringForm.name.trim()) {
+    error.value = '请填写名称'
+    return
+  }
+  if (!recurringForm.account_id) {
+    error.value = '请选择账户'
+    return
+  }
+  const amount = Math.round(Number(recurringForm.amount || 0) * 100)
+  if (amount <= 0) {
+    error.value = '请填写金额'
+    return
+  }
+  try {
+    await api.createFinanceRecurring({
+      name: recurringForm.name.trim(),
+      type: recurringForm.type,
+      amount,
+      account_id: recurringForm.account_id,
+      category_id: recurringForm.category_id,
+      day_of_month: Number(recurringForm.day_of_month) || 1,
+      enabled: recurringForm.enabled,
+    })
+    recurringForm.name = ''
+    recurringForm.amount = ''
+    recurringForm.day_of_month = 1
+    recurringForm.enabled = true
+    await loadRecurring()
+    emit('changed')
+  } catch (e) {
+    error.value = e.message || '添加失败'
+  }
+}
+
+async function toggleRecurring(x) {
+  try {
+    await api.updateFinanceRecurring(x.id, recurringPayload(x, !x.enabled))
+    await loadRecurring()
+    emit('changed')
+  } catch (e) {
+    error.value = e.message || '操作失败'
+  }
+}
+
+async function removeRecurring(x) {
+  if (!window.confirm(`删除周期账单「${x.name}」？`)) return
+  try {
+    await api.deleteFinanceRecurring(x.id)
+    await loadRecurring()
+    emit('changed')
+  } catch (e) {
+    error.value = e.message || '删除失败'
+  }
+}
+
+watch(tab, (v) => {
+  if (v === 'recurring') loadRecurring()
+})
 
 watch(() => props.modelValue, (v) => {
   if (v) {

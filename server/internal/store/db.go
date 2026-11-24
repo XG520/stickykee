@@ -240,6 +240,8 @@ func migrate(db *sql.DB) error {
 			to_account_id INTEGER NOT NULL DEFAULT 0,
 			category_id INTEGER NOT NULL DEFAULT 0,
 			currency TEXT NOT NULL DEFAULT 'CNY',
+			orig_amount INTEGER NOT NULL DEFAULT 0,
+			fx_rate REAL NOT NULL DEFAULT 0,
 			note TEXT NOT NULL DEFAULT '',
 			tags TEXT NOT NULL DEFAULT '',
 			source TEXT NOT NULL DEFAULT 'manual',
@@ -302,6 +304,21 @@ func migrate(db *sql.DB) error {
 	} else if !has {
 		if _, err := db.Exec(`ALTER TABLE messages ADD COLUMN meta TEXT NOT NULL DEFAULT ''`); err != nil {
 			return fmt.Errorf("migrate messages.meta: %w", err)
+		}
+	}
+	// 迁移：多币种——原币金额（分）与折算汇率（1 原币 = fx_rate 元）
+	if has, err := hasColumn(db, "fin_transactions", "orig_amount"); err != nil {
+		return err
+	} else if !has {
+		if _, err := db.Exec(`ALTER TABLE fin_transactions ADD COLUMN orig_amount INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return fmt.Errorf("migrate fin_transactions.orig_amount: %w", err)
+		}
+	}
+	if has, err := hasColumn(db, "fin_transactions", "fx_rate"); err != nil {
+		return err
+	} else if !has {
+		if _, err := db.Exec(`ALTER TABLE fin_transactions ADD COLUMN fx_rate REAL NOT NULL DEFAULT 0`); err != nil {
+			return fmt.Errorf("migrate fin_transactions.fx_rate: %w", err)
 		}
 	}
 	return nil

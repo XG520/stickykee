@@ -39,26 +39,28 @@ type FinCategory struct {
 
 // FinTransaction 交易流水（金额单位为分）。
 type FinTransaction struct {
-	ID             int64  `json:"id"`
-	Type           string `json:"type"`
-	Amount         int64  `json:"amount"`
-	AccountID      int64  `json:"account_id"`
-	AccountName    string `json:"account_name"`
-	ToAccountID    int64  `json:"to_account_id"`
-	ToAccountName  string `json:"to_account_name"`
-	CategoryID     int64  `json:"category_id"`
-	CategoryName   string `json:"category_name"`
-	CategoryParent string `json:"category_parent"`
-	Currency       string `json:"currency"`
-	Note           string `json:"note"`
-	Tags           string `json:"tags"`
-	Source         string `json:"source"`
-	RefType        string `json:"ref_type"`
-	RefID          int64  `json:"ref_id"`
-	OccurredAt     string `json:"occurred_at"`
-	CreatedBy      string `json:"created_by"`
-	CreatedAt      string `json:"created_at"`
-	UpdatedAt      string `json:"updated_at"`
+	ID             int64   `json:"id"`
+	Type           string  `json:"type"`
+	Amount         int64   `json:"amount"`
+	AccountID      int64   `json:"account_id"`
+	AccountName    string  `json:"account_name"`
+	ToAccountID    int64   `json:"to_account_id"`
+	ToAccountName  string  `json:"to_account_name"`
+	CategoryID     int64   `json:"category_id"`
+	CategoryName   string  `json:"category_name"`
+	CategoryParent string  `json:"category_parent"`
+	Currency       string  `json:"currency"`
+	OrigAmount     int64   `json:"orig_amount"`
+	FxRate         float64 `json:"fx_rate"`
+	Note           string  `json:"note"`
+	Tags           string  `json:"tags"`
+	Source         string  `json:"source"`
+	RefType        string  `json:"ref_type"`
+	RefID          int64   `json:"ref_id"`
+	OccurredAt     string  `json:"occurred_at"`
+	CreatedBy      string  `json:"created_by"`
+	CreatedAt      string  `json:"created_at"`
+	UpdatedAt      string  `json:"updated_at"`
 }
 
 // FinAccountInput 账户新建/编辑入参。
@@ -83,15 +85,17 @@ type FinCategoryInput struct {
 
 // FinTransactionInput 记账/改账入参。
 type FinTransactionInput struct {
-	Type        string `json:"type"`
-	Amount      int64  `json:"amount"`
-	AccountID   int64  `json:"account_id"`
-	ToAccountID int64  `json:"to_account_id"`
-	CategoryID  int64  `json:"category_id"`
-	Currency    string `json:"currency"`
-	Note        string `json:"note"`
-	Tags        string `json:"tags"`
-	OccurredAt  string `json:"occurred_at"`
+	Type        string  `json:"type"`
+	Amount      int64   `json:"amount"`
+	AccountID   int64   `json:"account_id"`
+	ToAccountID int64   `json:"to_account_id"`
+	CategoryID  int64   `json:"category_id"`
+	Currency    string  `json:"currency"`
+	OrigAmount  int64   `json:"orig_amount"`
+	FxRate      float64 `json:"fx_rate"`
+	Note        string  `json:"note"`
+	Tags        string  `json:"tags"`
+	OccurredAt  string  `json:"occurred_at"`
 }
 
 // FinTransactionFilter 流水筛选条件。
@@ -101,6 +105,7 @@ type FinTransactionFilter struct {
 	AccountID  int64
 	CategoryID int64
 	Query      string
+	Tag        string
 	RefType    string
 	RefID      int64
 	Page       int
@@ -125,12 +130,12 @@ type FinCategoryStat struct {
 
 // FinBudgetProgress 分类预算进度。
 type FinBudgetProgress struct {
-	CategoryID int64 `json:"category_id"`
+	CategoryID int64  `json:"category_id"`
 	Name       string `json:"name"`
-	Budget     int64 `json:"budget"`
-	Spent      int64 `json:"spent"`
-	Left       int64 `json:"left"`
-	Pct        int   `json:"pct"`
+	Budget     int64  `json:"budget"`
+	Spent      int64  `json:"spent"`
+	Left       int64  `json:"left"`
+	Pct        int    `json:"pct"`
 }
 
 // FinBudget 月度预算（category_id=0 为总预算）。
@@ -182,16 +187,16 @@ type FinRecurringInput struct {
 
 // FinStats 本月概览。
 type FinStats struct {
-	Month         string            `json:"month"`
-	Expense       int64             `json:"expense"`
-	Income        int64             `json:"income"`
-	Balance       int64             `json:"balance"`
-	BudgetTotal   int64             `json:"budget_total"`
-	BudgetLeft    int64             `json:"budget_left"`
-	BudgetPct     int               `json:"budget_pct"`
-	BudgetOverall bool              `json:"budget_overall"`
-	ByCategory    []FinCategoryStat `json:"by_category"`
-	ByAccount     []FinAccount      `json:"by_account"`
+	Month         string              `json:"month"`
+	Expense       int64               `json:"expense"`
+	Income        int64               `json:"income"`
+	Balance       int64               `json:"balance"`
+	BudgetTotal   int64               `json:"budget_total"`
+	BudgetLeft    int64               `json:"budget_left"`
+	BudgetPct     int                 `json:"budget_pct"`
+	BudgetOverall bool                `json:"budget_overall"`
+	ByCategory    []FinCategoryStat   `json:"by_category"`
+	ByAccount     []FinAccount        `json:"by_account"`
 	Budgets       []FinBudgetProgress `json:"budgets"`
 }
 
@@ -559,7 +564,7 @@ func (r *FinanceRepo) DeleteCategory(ctx context.Context, instanceID, id int64) 
 
 const finTxSelect = `SELECT t.id, t.type, t.amount, t.account_id, COALESCE(a.name,''),
 	t.to_account_id, COALESCE(a2.name,''), t.category_id, COALESCE(c.name,''), COALESCE(p.name,''),
-	t.currency, t.note, t.tags, t.source, t.ref_type, t.ref_id, t.occurred_at,
+	t.currency, t.orig_amount, t.fx_rate, t.note, t.tags, t.source, t.ref_type, t.ref_id, t.occurred_at,
 	t.created_by, t.created_at, t.updated_at
 	FROM fin_transactions t
 	LEFT JOIN fin_accounts a ON a.id=t.account_id
@@ -571,7 +576,7 @@ func scanFinTx(row interface{ Scan(...any) error }) (FinTransaction, error) {
 	var t FinTransaction
 	err := row.Scan(&t.ID, &t.Type, &t.Amount, &t.AccountID, &t.AccountName,
 		&t.ToAccountID, &t.ToAccountName, &t.CategoryID, &t.CategoryName, &t.CategoryParent,
-		&t.Currency, &t.Note, &t.Tags, &t.Source, &t.RefType, &t.RefID, &t.OccurredAt,
+		&t.Currency, &t.OrigAmount, &t.FxRate, &t.Note, &t.Tags, &t.Source, &t.RefType, &t.RefID, &t.OccurredAt,
 		&t.CreatedBy, &t.CreatedAt, &t.UpdatedAt)
 	return t, err
 }
@@ -610,6 +615,10 @@ func (r *FinanceRepo) ListTransactions(ctx context.Context, instanceID int64, f 
 		where = append(where, "(t.note LIKE ? OR t.tags LIKE ?)")
 		like := "%" + q + "%"
 		args = append(args, like, like)
+	}
+	if tag := strings.TrimSpace(f.Tag); tag != "" {
+		where = append(where, "(',' || t.tags || ',') LIKE ?")
+		args = append(args, "%,"+tag+",%")
 	}
 	cond := " WHERE " + strings.Join(where, " AND ")
 
@@ -681,6 +690,19 @@ func (r *FinanceRepo) normalizeTxInput(ctx context.Context, instanceID int64, in
 	if in.Type != "income" {
 		in.Type = "expense"
 	}
+	in.Currency = strings.ToUpper(strings.TrimSpace(in.Currency))
+	if in.Currency == "" {
+		in.Currency = "CNY"
+	}
+	if in.Currency != "CNY" {
+		if in.OrigAmount <= 0 || in.FxRate <= 0 {
+			return errors.New("外币记账请填写原币金额与汇率")
+		}
+		in.Amount = int64(math.Round(float64(in.OrigAmount) * in.FxRate))
+	} else {
+		in.OrigAmount = 0
+		in.FxRate = 0
+	}
 	if in.Amount <= 0 {
 		return errors.New("金额必须大于 0")
 	}
@@ -691,9 +713,6 @@ func (r *FinanceRepo) normalizeTxInput(ctx context.Context, instanceID int64, in
 		if _, err := r.getCategory(ctx, instanceID, in.CategoryID); err != nil {
 			return errors.New("分类不存在")
 		}
-	}
-	if in.Currency == "" {
-		in.Currency = "CNY"
 	}
 	in.OccurredAt = normOccurred(in.OccurredAt)
 	in.Note = strings.TrimSpace(in.Note)
@@ -708,10 +727,10 @@ func (r *FinanceRepo) CreateTransaction(ctx context.Context, instanceID int64, i
 	}
 	res, err := r.db.ExecContext(ctx,
 		`INSERT INTO fin_transactions(instance_id, type, amount, account_id, category_id, currency,
-			note, tags, source, occurred_at, created_by)
-		 VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+			orig_amount, fx_rate, note, tags, source, occurred_at, created_by)
+		 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		instanceID, in.Type, in.Amount, in.AccountID, in.CategoryID, in.Currency,
-		in.Note, in.Tags, "manual", in.OccurredAt, user)
+		in.OrigAmount, in.FxRate, in.Note, in.Tags, "manual", in.OccurredAt, user)
 	if err != nil {
 		return FinTransaction{}, err
 	}
@@ -726,10 +745,10 @@ func (r *FinanceRepo) UpdateTransaction(ctx context.Context, instanceID, id int6
 	}
 	res, err := r.db.ExecContext(ctx,
 		`UPDATE fin_transactions SET type=?, amount=?, account_id=?, category_id=?, currency=?,
-			note=?, tags=?, occurred_at=?, updated_at=datetime('now')
+			orig_amount=?, fx_rate=?, note=?, tags=?, occurred_at=?, updated_at=datetime('now')
 		 WHERE id=? AND instance_id=? AND deleted_at=''`,
 		in.Type, in.Amount, in.AccountID, in.CategoryID, in.Currency,
-		in.Note, in.Tags, in.OccurredAt, id, instanceID)
+		in.OrigAmount, in.FxRate, in.Note, in.Tags, in.OccurredAt, id, instanceID)
 	if err != nil {
 		return FinTransaction{}, err
 	}

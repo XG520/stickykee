@@ -170,6 +170,90 @@ func (r *InventoryRepo) DeleteShopping(ctx context.Context, instanceID, id int64
 	return nil
 }
 
+// PurchaseShopping 把购物清单条目入库：按名称复用/创建物品，新增批次并标记完成。
+func (r *InventoryRepo) PurchaseShopping(ctx context.Context, instanceID, shoppingID int64, in InventoryBatchInput, user string) (InventoryItem, InventoryBatch, error) {
+	if in.LocationID <= 0 {
+		return InventoryItem{}, InventoryBatch{}, errors.New("请选择存放位置")
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return InventoryItem{}, InventoryBatch{}, err
+	}
+	defer tx.Rollback()
+	var itemID int64
+	var name, unit string
+	var qty float64
+	var done int
+	err = tx.QueryRowContext(ctx,
+		`SELECT item_id, name, unit, quantity, done FROM inventory_shopping_list
+		 WHERE id=? AND instance_id=?`, shoppingID, instanceID).
+		Scan(&itemID, &name, &unit, &qty, &done)
+	if errors.Is(err, sql.ErrNoRows) {
+		return InventoryItem{}, InventoryBatch{}, ErrNotFound
+	}
+	if err != nil {
+		return InventoryItem{}, InventoryBatch{}, err
+	}
+	if done != 0 {
+		return InventoryItem{}, InventoryBatch{}, errors.New("该条目已入库")
+	}
+	if unit == "" {
+		unit = "件"
+	}
+	if itemID > 0 {
+		var exists int
+		if err := tx.QueryRowContext(ctx,
+			`SELECT COUNT(1) FROM inventory_items WHERE id=? AND instance_id=?`, itemID, instanceID).Scan(&exists); err != nil {
+			return InventoryItem{}, InventoryBatch{}, err
+		}
+		if exists == 0 {
+			itemID = 0
+		}
+	}
+	if itemID == 0 {
+		err := tx.QueryRowContext(ctx,
+			`SELECT id FROM inventory_items WHERE instance_id=? AND name=? ORDER BY id LIMIT 1`,
+			instanceID, name).Scan(&itemID)
+		if errors.Is(err, sql.ErrNoRows) {
+			res, ierr := tx.ExecContext(ctx,
+				`INSERT INTO inventory_items(instance_id, name, unit, created_by) VALUES(?,?,?,?)`,
+				instanceID, name, unit, user)
+			if ierr != nil {
+				return InventoryItem{}, InventoryBatch{}, ierr
+			}
+			itemID, _ = res.LastInsertId()
+		} else if err != nil {
+			return InventoryItem{}, InventoryBatch{}, err
+		}
+	}
+	if in.Quantity <= 0 {
+		in.Quantity = qty
+	}
+	if in.Quantity <= 0 {
+		in.Quantity = 1
+	}
+	batchID, err := insertBatch(ctx, tx, itemID, in, user)
+	if err != nil {
+		return InventoryItem{}, InventoryBatch{}, err
+	}
+	if err := addLog(ctx, tx, instanceID, itemID, batchID, "add", in.Quantity, in.Quantity, user); err != nil {
+		return InventoryItem{}, InventoryBatch{}, err
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE inventory_shopping_list SET done=1, done_at=datetime('now') WHERE id=?`, shoppingID); err != nil {
+		return InventoryItem{}, InventoryBatch{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return InventoryItem{}, InventoryBatch{}, err
+	}
+	item, err := r.GetItem(ctx, instanceID, itemID)
+	if err != nil {
+		return InventoryItem{}, InventoryBatch{}, err
+	}
+	batch, err := r.getBatch(ctx, instanceID, batchID)
+	return item, batch, err
+}
+
 // ── 条码映射 ──────────────────────────────────────────────────────
 
 // BindBarcode 绑定条码到物品（同一条码再次绑定则改指向）。

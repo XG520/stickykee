@@ -102,7 +102,7 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 	inventory := handler.NewInventory(invRepo, finRepo, repo, inventorySync, ai)
 	// 账本：本地 SQLite 存储 + HA 收支/预算/资产传感器同步
 	financeSync := handler.NewFinanceSync(manager, repo, userRepo, userPrefs, finRepo)
-	finance := handler.NewFinance(finRepo, repo, financeSync)
+	finance := handler.NewFinance(finRepo, repo, financeSync, ai)
 
 	// 语音通话：内存房间 + 信令事件推送（媒体经 /ws 二进制中继，不经 P2P）。
 	callHandler := handler.NewCall(callManager, hb, userRepo)
@@ -230,6 +230,7 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 				r.Post("/shopping-list", inventory.AddShopping)
 				r.Put("/shopping-list/{id}", inventory.UpdateShopping)
 				r.Post("/shopping-list/{id}/check", inventory.CheckShopping)
+				r.Post("/shopping-list/{id}/purchase", inventory.PurchaseShopping)
 				r.Delete("/shopping-list/{id}", inventory.DeleteShopping)
 				r.Post("/items/{id}/to-shopping", inventory.ItemToShopping)
 				r.Post("/items/{id}/consume", inventory.ConsumeItem)
@@ -260,6 +261,18 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 
 				r.Post("/transfer", finance.CreateTransfer)
 				r.Get("/stats", finance.Stats)
+
+				r.Get("/budgets", finance.ListBudgets)
+				r.Put("/budgets", finance.SetBudgets)
+				r.Get("/trend", finance.Trend)
+				r.Get("/export", finance.Export)
+
+				r.Get("/recurring", finance.ListRecurring)
+				r.Post("/recurring", finance.CreateRecurring)
+				r.Put("/recurring/{id}", finance.UpdateRecurring)
+				r.Delete("/recurring/{id}", finance.DeleteRecurring)
+
+				r.Post("/recognize", finance.Recognize)
 			})
 
 			// 用户间消息 & 仪表盘共享（全部登录可见，action 端做归属校验）

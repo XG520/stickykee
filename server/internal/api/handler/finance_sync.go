@@ -241,17 +241,31 @@ func (h *FinanceSync) SyncInstance(ctx context.Context, instanceID int64) {
 	if err := rest.PostJSON(ctx, "/api/webhook/"+reg.WebhookID, payload, nil); err != nil {
 		slog.Warn("finance sync: push failed", "instance", instanceID, "err", err.Error())
 	}
-	// 预算超支：按月去重推送持久通知（同一 notification_id 覆盖更新，不重复堆叠）。
-	if st.BudgetTotal > 0 && st.BudgetLeft < 0 {
-		message := fmt.Sprintf("%s 预算已超支 %s 元（预算 %s 元，已支出 %s 元）。",
-			month, store.FormatCents(-st.BudgetLeft), store.FormatCents(st.BudgetTotal), store.FormatCents(st.Expense))
-		if err := rest.PostJSON(ctx, "/api/services/persistent_notification/create", map[string]any{
-			"title":           "预算超支提醒",
-			"message":         message,
-			"notification_id": fmt.Sprintf("hc_fin_budget_%s_%d", month, 0),
-		}, nil); err != nil {
-			slog.Warn("finance sync: budget notify failed", "instance", instanceID, "err", err.Error())
+	// 预算超支：按月+分类去重推送持久通知（同一 notification_id 覆盖更新，不重复堆叠）。
+	if st.BudgetOverall {
+		if st.BudgetLeft < 0 {
+			h.notifyBudget(ctx, rest, instanceID, month, 0, "总预算", st.BudgetLeft, st.BudgetTotal, st.Expense)
 		}
+	} else {
+		for _, b := range st.Budgets {
+			if b.Left < 0 {
+				h.notifyBudget(ctx, rest, instanceID, month, b.CategoryID, b.Name, b.Left, b.Budget, b.Spent)
+			}
+		}
+	}
+}
+
+// notifyBudget 推送一条预算超支持久通知。
+func (h *FinanceSync) notifyBudget(ctx context.Context, rest *client.Rest, instanceID int64,
+	month string, categoryID int64, name string, left, budget, spent int64) {
+	message := fmt.Sprintf("%s「%s」已超支 %s 元（预算 %s 元，已支出 %s 元）。",
+		month, name, store.FormatCents(-left), store.FormatCents(budget), store.FormatCents(spent))
+	if err := rest.PostJSON(ctx, "/api/services/persistent_notification/create", map[string]any{
+		"title":           "预算超支提醒",
+		"message":         message,
+		"notification_id": fmt.Sprintf("hc_fin_budget_%s_%d", month, categoryID),
+	}, nil); err != nil {
+		slog.Warn("finance sync: budget notify failed", "instance", instanceID, "err", err.Error())
 	}
 }
 
@@ -270,8 +284,9 @@ func (h *FinanceSync) RequestSync(instanceID int64) {
 	go h.SyncInstance(context.Background(), instanceID)
 }
 
-// StartTicker 每小时全量同步一次（兼作 HA 重启后的自愈兜底）。
+// StartTicker 每小时生成周期账单并全量同步一次（兼作 HA 重启后的自愈兜底）。
 func (h *FinanceSync) StartTicker(ctx context.Context) {
+	_, _ = h.fin.RunRecurring(context.Background())
 	t := time.NewTicker(time.Hour)
 	defer t.Stop()
 	for {
@@ -279,6 +294,7 @@ func (h *FinanceSync) StartTicker(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
+			_, _ = h.fin.RunRecurring(context.Background())
 			h.SyncAll(context.Background())
 		}
 	}

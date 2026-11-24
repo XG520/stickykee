@@ -28,15 +28,41 @@
 
       <!-- 金额 -->
       <div class="text-right">
-        <span class="text-sm text-muted font-body">¥</span>
+        <span class="text-sm text-muted font-body">{{ currencySymbol }}</span>
         <span class="font-headline text-4xl font-semibold ml-1" :class="type === 'income' ? 'text-primary' : 'text-on-background'">
           {{ amount || '0' }}
         </span>
+        <div v-if="currency !== 'CNY' && cnyPreview > 0" class="text-[11px] text-muted font-body">
+          ≈ ¥{{ (cnyPreview / 100).toFixed(2) }}
+        </div>
       </div>
 
       <!-- 分类九宫格 -->
       <div class="space-y-1.5">
-        <div class="text-xs text-muted font-body">分类</div>
+        <div class="flex items-center justify-between">
+          <div class="text-xs text-muted font-body">分类</div>
+          <button
+            class="flex items-center gap-1 text-xs text-primary disabled:opacity-50"
+            :disabled="recognizing"
+            @click="pickImage"
+          >
+            <span class="material-symbols-outlined text-base">photo_camera</span>
+            {{ recognizing ? '识别中…' : '识图记账' }}
+          </button>
+          <input ref="fileInput" type="file" accept="image/*" class="hidden" @change="onImage" />
+        </div>
+        <div v-if="candidates.length" class="space-y-1">
+          <button
+            v-for="(c, i) in candidates"
+            :key="i"
+            class="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg border border-border bg-surface-alt text-xs text-left"
+            @click="applyCandidate(c)"
+          >
+            <span class="truncate">{{ c.type === 'income' ? '收入' : '支出' }} · {{ c.category || '未分类' }}{{ c.note ? ' · ' + c.note : '' }}</span>
+            <span class="flex-shrink-0 text-muted">¥{{ (c.amount / 100).toFixed(2) }}</span>
+          </button>
+        </div>
+        <div v-if="recognizeError" class="text-xs text-error">{{ recognizeError }}</div>
         <div class="grid grid-cols-4 sm:grid-cols-5 gap-1.5 max-h-44 overflow-y-auto">
           <button
             v-for="c in flatCategories"
@@ -71,11 +97,39 @@
             class="mt-1 w-full px-3 py-2 rounded-lg bg-surface-alt border border-border text-sm text-on-surface outline-none focus:border-primary"
           />
         </label>
+        <label class="text-xs text-muted font-body">
+          币种
+          <select
+            v-model="currency"
+            class="mt-1 w-full px-3 py-2 rounded-lg bg-surface-alt border border-border text-sm text-on-surface outline-none focus:border-primary"
+          >
+            <option v-for="c in currencies" :key="c" :value="c">{{ c }}</option>
+          </select>
+        </label>
+        <label v-if="currency !== 'CNY'" class="text-xs text-muted font-body">
+          汇率（1 {{ currency }} = ? 元）
+          <input
+            v-model="fxRate"
+            type="number"
+            step="0.0001"
+            min="0"
+            placeholder="如 7.20"
+            class="mt-1 w-full px-3 py-2 rounded-lg bg-surface-alt border border-border text-sm text-on-surface outline-none focus:border-primary"
+          />
+        </label>
         <label class="text-xs text-muted font-body col-span-2">
           备注
           <input
             v-model="note"
             placeholder="如：午饭 / 地铁 / 工资"
+            class="mt-1 w-full px-3 py-2 rounded-lg bg-surface-alt border border-border text-sm text-on-surface outline-none focus:border-primary"
+          />
+        </label>
+        <label class="text-xs text-muted font-body col-span-2">
+          标签
+          <input
+            v-model="tags"
+            placeholder="逗号分隔，如：出差,报销"
             class="mt-1 w-full px-3 py-2 rounded-lg bg-surface-alt border border-border text-sm text-on-surface outline-none focus:border-primary"
           />
         </label>
@@ -124,8 +178,27 @@ const accountId = ref(0)
 const categoryId = ref(0)
 const date = ref('')
 const note = ref('')
+const tags = ref('')
+const currency = ref('CNY')
+const fxRate = ref('')
 const saving = ref(false)
 const error = ref('')
+
+const currencies = ['CNY', 'USD', 'EUR', 'JPY', 'HKD', 'GBP']
+const currencySymbols = { CNY: '¥', USD: '$', EUR: '€', JPY: 'JP¥', HKD: 'HK$', GBP: '£' }
+const currencySymbol = computed(() => currencySymbols[currency.value] || currency.value)
+
+const candidates = ref([])
+const recognizing = ref(false)
+const recognizeError = ref('')
+const fileInput = ref(null)
+
+const cnyPreview = computed(() => {
+  if (currency.value === 'CNY') return 0
+  const rate = Number(fxRate.value)
+  if (!(rate > 0)) return 0
+  return Math.round(Number(amount.value || 0) * 100 * rate)
+})
 
 const flatCategories = computed(() => {
   const out = []
@@ -148,14 +221,20 @@ function todayString() {
 
 function reset() {
   error.value = ''
+  candidates.value = []
+  recognizeError.value = ''
   const tx = props.transaction
   if (tx) {
     type.value = tx.type === 'income' ? 'income' : 'expense'
-    amount.value = (Number(tx.amount || 0) / 100).toFixed(2).replace(/\.?0+$/, '') || '0'
+    const cents = Number(tx.orig_amount) > 0 ? Number(tx.orig_amount) : Number(tx.amount || 0)
+    amount.value = (cents / 100).toFixed(2).replace(/\.?0+$/, '') || '0'
     accountId.value = tx.account_id || 0
     categoryId.value = tx.category_id || 0
     date.value = (tx.occurred_at || '').slice(0, 10) || todayString()
     note.value = tx.note || ''
+    tags.value = tx.tags || ''
+    currency.value = tx.currency || 'CNY'
+    fxRate.value = Number(tx.fx_rate) > 0 ? String(tx.fx_rate) : ''
     return
   }
   type.value = 'expense'
@@ -167,6 +246,9 @@ function reset() {
   categoryId.value = food ? food.id : (flatCategories.value[0] || {}).id || 0
   date.value = todayString()
   note.value = ''
+  tags.value = ''
+  currency.value = 'CNY'
+  fxRate.value = ''
 }
 
 function setType(t) {
@@ -196,12 +278,64 @@ function close() {
   emit('update:modelValue', false)
 }
 
+function pickImage() {
+  if (recognizing.value) return
+  fileInput.value?.click()
+}
+
+function applyCandidate(c) {
+  type.value = c.type === 'income' ? 'income' : 'expense'
+  amount.value = (Number(c.amount || 0) / 100).toFixed(2).replace(/\.?0+$/, '') || '0'
+  const exact = flatCategories.value.find((x) => x.name === c.category)
+  const loose = flatCategories.value.find((x) => c.category && (x.name.includes(c.category) || c.category.includes(x.name)))
+  if (exact || loose) categoryId.value = (exact || loose).id
+  if (c.note) note.value = c.note
+  if (c.tags) tags.value = c.tags
+  if (c.occurred_at) date.value = String(c.occurred_at).slice(0, 10)
+}
+
+async function onImage(e) {
+  const file = e.target.files && e.target.files[0]
+  if (!file) return
+  recognizeError.value = ''
+  recognizing.value = true
+  try {
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result)
+      reader.onerror = reject
+      reader.readAsDataURL(file)
+    })
+    const res = await api.financeRecognize(dataUrl)
+    candidates.value = (res.data && res.data.items) || []
+    if (!candidates.value.length) {
+      recognizeError.value = '未识别到账目，可手动填写'
+    } else {
+      applyCandidate(candidates.value[0])
+    }
+  } catch (err) {
+    recognizeError.value = err.message || '识别失败'
+  } finally {
+    recognizing.value = false
+    e.target.value = ''
+  }
+}
+
 async function save() {
   error.value = ''
   const cents = Math.round(Number(amount.value || 0) * 100)
   if (!cents || cents <= 0) {
     error.value = '请输入金额'
     return
+  }
+  let cnyCents = cents
+  if (currency.value !== 'CNY') {
+    const rate = Number(fxRate.value)
+    if (!(rate > 0)) {
+      error.value = '请填写汇率'
+      return
+    }
+    cnyCents = Math.round(cents * rate)
   }
   if (!accountId.value) {
     error.value = '请选择账户'
@@ -217,10 +351,14 @@ async function save() {
     : `${pad(now.getHours())}:${pad(now.getMinutes())}`
   const payload = {
     type: type.value,
-    amount: cents,
+    amount: cnyCents,
     account_id: accountId.value,
     category_id: categoryId.value,
+    currency: currency.value,
+    orig_amount: currency.value === 'CNY' ? 0 : cents,
+    fx_rate: currency.value === 'CNY' ? 0 : Number(fxRate.value),
     note: note.value.trim(),
+    tags: tags.value.trim(),
     occurred_at: `${date.value} ${time}`,
   }
   saving.value = true

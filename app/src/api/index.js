@@ -272,6 +272,16 @@ export const api = {
   restoreFinanceTransaction: (id) => api.post(`/finance/transactions/${id}/restore`),
   financeTransfer: (p) => api.post('/finance/transfer', p),
   financeStats: (month = '') => api.get(`/finance/stats${month ? `?month=${month}` : ''}`),
+  financeBudgets: (month = '') => api.get(`/finance/budgets${month ? `?month=${month}` : ''}`),
+  setFinanceBudgets: (month, items) => api.put(`/finance/budgets?month=${month}`, { items }),
+  financeTrend: (months = 6) => api.get(`/finance/trend?months=${months}`),
+  financeExport: (month = '') => api.get(`/finance/export${month ? `?month=${month}` : ''}`),
+  financeRecognize: (image) => api.post('/finance/recognize', { image }),
+  financeRecurring: () => api.get('/finance/recurring'),
+  createFinanceRecurring: (p) => api.post('/finance/recurring', p),
+  updateFinanceRecurring: (id, p) => api.put(`/finance/recurring/${id}`, p),
+  deleteFinanceRecurring: (id) => api.del(`/finance/recurring/${id}`),
+  purchaseShoppingItem: (id, p) => api.post(`/inventory/shopping-list/${id}/purchase`, p),
 
   // 用户间 IM & 仪表盘共享
   listConversations: () => api.get('/messages/conversations'),

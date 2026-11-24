@@ -19,6 +19,22 @@
       <div class="flex items-center gap-2">
         <button
           class="px-3 py-1.5 rounded-lg bg-surface-alt border border-border text-xs text-muted font-body"
+          @click="budgetOpen = true"
+        >预算</button>
+        <button
+          class="px-3 py-1.5 rounded-lg text-xs font-body border"
+          :class="showReport ? 'bg-primary/10 text-primary border-primary/30' : 'bg-surface-alt text-muted border-border'"
+          @click="showReport = !showReport"
+        >报表</button>
+        <button
+          class="p-1.5 rounded-lg bg-surface-alt border border-border text-xs text-muted"
+          title="导出 CSV"
+          @click="exportCsv"
+        >
+          <span class="material-symbols-outlined text-base align-middle">download</span>
+        </button>
+        <button
+          class="px-3 py-1.5 rounded-lg bg-surface-alt border border-border text-xs text-muted font-body"
           @click="managerOpen = true"
         >账户 / 分类</button>
         <button
@@ -29,6 +45,22 @@
           记一笔
         </button>
       </div>
+    </div>
+
+    <!-- 标签筛选 -->
+    <div v-if="allTags.length" class="flex flex-wrap items-center gap-1.5">
+      <button
+        class="px-2.5 py-1 rounded-full text-xs font-body border"
+        :class="!tagFilter ? 'bg-primary text-white border-primary' : 'bg-surface-alt text-muted border-border'"
+        @click="setTag('')"
+      >全部</button>
+      <button
+        v-for="t in allTags"
+        :key="t"
+        class="px-2.5 py-1 rounded-full text-xs font-body border"
+        :class="tagFilter === t ? 'bg-primary text-white border-primary' : 'bg-surface-alt text-muted border-border'"
+        @click="setTag(tagFilter === t ? '' : t)"
+      >#{{ t }}</button>
     </div>
 
     <!-- 概览 -->
@@ -74,6 +106,8 @@
     </div>
 
     <div v-if="error" class="text-xs text-error font-body">{{ error }}</div>
+
+    <FinanceReport v-if="showReport" :stats="stats" :trend="trend" />
 
     <!-- 按日流水 -->
     <div v-if="groups.length" class="space-y-4">
@@ -133,6 +167,12 @@
       :categories="categories"
       @changed="reloadAll"
     />
+    <BudgetDialog
+      v-model="budgetOpen"
+      :month="month"
+      :categories="categories"
+      @saved="reload"
+    />
   </div>
 </template>
 
@@ -141,6 +181,8 @@ import { computed, onMounted, ref } from 'vue'
 import api from '@/api'
 import TransactionDialog from './TransactionDialog.vue'
 import AccountManager from './AccountManager.vue'
+import BudgetDialog from './BudgetDialog.vue'
+import FinanceReport from './FinanceReport.vue'
 
 const PAGE_SIZE = 60
 
@@ -152,12 +194,16 @@ const categories = ref([])
 const items = ref([])
 const total = ref(0)
 const page = ref(1)
+const tagFilter = ref('')
 const loading = ref(false)
 const error = ref('')
 
 const dialogOpen = ref(false)
 const editing = ref(null)
 const managerOpen = ref(false)
+const budgetOpen = ref(false)
+const showReport = ref(false)
+const trend = ref([])
 
 function pad(n) {
   return String(n).padStart(2, '0')
@@ -198,6 +244,20 @@ const groups = computed(() => {
   return [...map.values()]
 })
 
+const tagPool = ref([])
+const allTags = computed(() => tagPool.value)
+
+function collectTags(list) {
+  const set = new Set()
+  for (const tx of list) {
+    for (const raw of String(tx.tags || '').split(',')) {
+      const t = raw.trim()
+      if (t) set.add(t)
+    }
+  }
+  return [...set].slice(0, 20)
+}
+
 function money(cents) {
   return '¥' + (Number(cents || 0) / 100).toLocaleString('zh-CN', {
     minimumFractionDigits: 2,
@@ -228,8 +288,17 @@ function subtitleOf(tx) {
   if (tx.type === 'transfer') {
     return `${tx.account_name || ''} → ${tx.to_account_name || ''}`
   }
+  const parts = []
+  if (tx.currency && tx.currency !== 'CNY' && Number(tx.orig_amount) > 0) {
+    parts.push(`${tx.currency} ${(Number(tx.orig_amount) / 100).toFixed(2)} @${tx.fx_rate}`)
+  }
+  if (tx.note) parts.push(tx.note)
+  if (tx.tags) {
+    const ts = String(tx.tags).split(',').map((x) => x.trim()).filter(Boolean)
+    if (ts.length) parts.push(ts.map((t) => `#${t}`).join(' '))
+  }
   const account = tx.account_name || ''
-  return tx.note ? `${account} · ${tx.note}` : account
+  return [account, ...parts].filter(Boolean).join(' · ')
 }
 
 function dateLabel(d) {
@@ -276,12 +345,24 @@ async function loadCategories() {
 async function loadTransactions(reset = true) {
   if (reset) page.value = 1
   try {
-    const res = await api.financeTransactions({ month: month.value, page: page.value, page_size: PAGE_SIZE })
+    const params = { month: month.value, page: page.value, page_size: PAGE_SIZE }
+    if (tagFilter.value) params.tag = tagFilter.value
+    const res = await api.financeTransactions(params)
     const d = res.data || {}
     items.value = reset ? (d.items || []) : items.value.concat(d.items || [])
     total.value = d.total || 0
+    if (reset && !tagFilter.value) tagPool.value = collectTags(items.value)
   } catch (e) {
     error.value = e.message || '加载失败'
+  }
+}
+
+async function loadTrend() {
+  try {
+    const res = await api.financeTrend(6)
+    trend.value = res.data || []
+  } catch (e) {
+    error.value = e.message || ''
   }
 }
 
@@ -289,7 +370,7 @@ async function reload() {
   error.value = ''
   loading.value = true
   try {
-    await Promise.all([loadStats(), loadAccounts(), loadCategories(), loadTransactions()])
+    await Promise.all([loadStats(), loadAccounts(), loadCategories(), loadTransactions(), loadTrend()])
   } finally {
     loading.value = false
   }
@@ -304,16 +385,25 @@ function loadMore() {
   loadTransactions(false)
 }
 
+function setTag(tag) {
+  tagFilter.value = tag
+  loadTransactions()
+}
+
 function shiftMonth(n) {
   const [y, m] = month.value.split('-').map(Number)
   const d = new Date(y, m - 1 + n, 1)
   month.value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}`
+  tagFilter.value = ''
+  tagPool.value = []
   loadStats()
   loadTransactions()
 }
 
 function goCurrentMonth() {
   month.value = currentMonthValue
+  tagFilter.value = ''
+  tagPool.value = []
   loadStats()
   loadTransactions()
 }
@@ -336,6 +426,24 @@ async function remove(tx) {
     await reload()
   } catch (e) {
     error.value = e.message || '删除失败'
+  }
+}
+
+async function exportCsv() {
+  try {
+    const res = await api.financeExport(month.value)
+    const { filename, content } = res.data || {}
+    const blob = new Blob([content || ''], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename || `finance-${month.value}.csv`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  } catch (e) {
+    error.value = e.message || '导出失败'
   }
 }
 

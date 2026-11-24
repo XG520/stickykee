@@ -590,6 +590,56 @@ func (h *Inventory) DeleteShopping(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, 200, true)
 }
 
+type inventoryShoppingPurchasePayload struct {
+	LocationID     int64   `json:"location_id"`
+	Quantity       float64 `json:"quantity"`
+	EntryPrice     float64 `json:"entry_price"`
+	ProductionDate string  `json:"production_date"`
+	ExpiryDate     string  `json:"expiry_date"`
+	EntryDate      string  `json:"entry_date"`
+}
+
+// PurchaseShopping POST /inventory/shopping-list/{id}/purchase
+// 购物清单条目入库：新建/复用物品与批次，并自动记一笔采购支出。
+func (h *Inventory) PurchaseShopping(w http.ResponseWriter, r *http.Request) {
+	id, ok := h.active(w, r)
+	if !ok {
+		return
+	}
+	sid, ok := invID(r, "id")
+	if !ok {
+		WriteErr(w, 404, "not_found", "条目不存在")
+		return
+	}
+	var p inventoryShoppingPurchasePayload
+	if err := DecodeBody(r, &p); err != nil {
+		WriteErr(w, 400, "bad_request", "参数格式错误")
+		return
+	}
+	it, b, err := h.repo.PurchaseShopping(r.Context(), id, sid, store.InventoryBatchInput{
+		LocationID:     p.LocationID,
+		Quantity:       p.Quantity,
+		ProductionDate: p.ProductionDate,
+		ExpiryDate:     p.ExpiryDate,
+		EntryDate:      p.EntryDate,
+		EntryPrice:     p.EntryPrice,
+	}, rUsername(r))
+	if err != nil {
+		invErr(w, err)
+		return
+	}
+	if h.fin != nil {
+		if amount := cents(b.EntryPrice, b.Quantity); amount > 0 {
+			if ferr := h.fin.RecordShoppingPurchase(context.Background(), id,
+				it.Name, it.Category, sid, amount, b.EntryDate, rUsername(r)); ferr != nil {
+				slog.Warn("inventory auto finance: shopping purchase failed", "instance", id, "shopping", sid, "err", ferr.Error())
+			}
+		}
+	}
+	h.changed(id)
+	WriteJSON(w, 201, map[string]any{"item": it, "batch": b})
+}
+
 type inventoryToShoppingPayload struct {
 	Quantity float64 `json:"quantity"`
 }

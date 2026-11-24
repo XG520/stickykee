@@ -1,9 +1,13 @@
 package handler
 
 import (
+	"bytes"
+	"encoding/csv"
 	"errors"
+	"math"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"stickynuo/server/internal/auth"
 	"stickynuo/server/internal/store"
@@ -16,11 +20,12 @@ type Finance struct {
 	repo *store.FinanceRepo
 	inst *store.InstanceRepo
 	sync *FinanceSync
+	ai   *AI
 }
 
 // NewFinance 构造 handler。
-func NewFinance(repo *store.FinanceRepo, inst *store.InstanceRepo, sync *FinanceSync) *Finance {
-	return &Finance{repo: repo, inst: inst, sync: sync}
+func NewFinance(repo *store.FinanceRepo, inst *store.InstanceRepo, sync *FinanceSync, ai *AI) *Finance {
+	return &Finance{repo: repo, inst: inst, sync: sync, ai: ai}
 }
 
 func (h *Finance) active(w http.ResponseWriter, r *http.Request) (int64, bool) {
@@ -242,6 +247,7 @@ func (h *Finance) ListTransactions(w http.ResponseWriter, r *http.Request) {
 		AccountID:  finQueryInt(r, "account"),
 		CategoryID: finQueryInt(r, "category"),
 		Query:      r.URL.Query().Get("q"),
+		Tag:        r.URL.Query().Get("tag"),
 		RefType:    r.URL.Query().Get("ref_type"),
 		RefID:      finQueryInt(r, "ref_id"),
 		Page:       int(finQueryInt(r, "page")),
@@ -402,4 +408,303 @@ func (h *Finance) Stats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	WriteJSON(w, 200, st)
+}
+
+// ── 预算、趋势与导出 ──────────────────────────────────────────────
+
+// ListBudgets GET /finance/budgets?month=
+func (h *Finance) ListBudgets(w http.ResponseWriter, r *http.Request) {
+	id, ok := h.active(w, r)
+	if !ok {
+		return
+	}
+	list, err := h.repo.ListBudgets(r.Context(), id, r.URL.Query().Get("month"))
+	if err != nil {
+		WriteErr(w, 500, "internal", err.Error())
+		return
+	}
+	WriteJSON(w, 200, list)
+}
+
+type financeBudgetsPayload struct {
+	Items []store.FinBudgetInput `json:"items"`
+}
+
+// SetBudgets PUT /finance/budgets?month=
+func (h *Finance) SetBudgets(w http.ResponseWriter, r *http.Request) {
+	id, ok := h.active(w, r)
+	if !ok {
+		return
+	}
+	var p financeBudgetsPayload
+	if err := DecodeBody(r, &p); err != nil {
+		WriteErr(w, 400, "bad_request", "参数格式错误")
+		return
+	}
+	if err := h.repo.SetBudgets(r.Context(), id, r.URL.Query().Get("month"), p.Items); err != nil {
+		finErr(w, err)
+		return
+	}
+	h.changed(id)
+	WriteJSON(w, 200, true)
+}
+
+// Trend GET /finance/trend?months=6
+func (h *Finance) Trend(w http.ResponseWriter, r *http.Request) {
+	id, ok := h.active(w, r)
+	if !ok {
+		return
+	}
+	list, err := h.repo.Trend(r.Context(), id, int(finQueryInt(r, "months")))
+	if err != nil {
+		WriteErr(w, 500, "internal", err.Error())
+		return
+	}
+	WriteJSON(w, 200, list)
+}
+
+// Export GET /finance/export?month= 返回 CSV 文本（前端转成文件下载）。
+func (h *Finance) Export(w http.ResponseWriter, r *http.Request) {
+	id, ok := h.active(w, r)
+	if !ok {
+		return
+	}
+	month := store.MonthOf(r.URL.Query().Get("month"))
+	list, err := h.repo.MonthTransactions(r.Context(), id, month)
+	if err != nil {
+		WriteErr(w, 500, "internal", err.Error())
+		return
+	}
+	var buf bytes.Buffer
+	buf.WriteString("\uFEFF") // 带 BOM，Excel 打开中文不乱码
+	cw := csv.NewWriter(&buf)
+	_ = cw.Write([]string{"日期", "类型", "分类", "账户", "金额(元)", "原币金额", "汇率", "备注", "标签", "来源"})
+	for _, t := range list {
+		typ := "支出"
+		if t.Type == "income" {
+			typ = "收入"
+		} else if t.Type == "transfer" {
+			typ = "转账"
+		}
+		account := t.AccountName
+		if t.Type == "transfer" {
+			account = t.AccountName + "→" + t.ToAccountName
+		}
+		orig := ""
+		rate := ""
+		if t.OrigAmount > 0 {
+			orig = store.FormatCents(t.OrigAmount)
+		}
+		if t.FxRate > 0 {
+			rate = strconv.FormatFloat(t.FxRate, 'f', 4, 64)
+		}
+		_ = cw.Write([]string{
+			t.OccurredAt, typ, t.CategoryName, account,
+			store.FormatCents(t.Amount), orig, rate, t.Note, t.Tags, t.Source,
+		})
+	}
+	cw.Flush()
+	WriteJSON(w, 200, map[string]any{
+		"filename": "finance-" + month + ".csv",
+		"content":  buf.String(),
+	})
+}
+
+// ── 周期账单 ──────────────────────────────────────────────────────
+
+// ListRecurring GET /finance/recurring
+func (h *Finance) ListRecurring(w http.ResponseWriter, r *http.Request) {
+	id, ok := h.active(w, r)
+	if !ok {
+		return
+	}
+	list, err := h.repo.ListRecurring(r.Context(), id)
+	if err != nil {
+		WriteErr(w, 500, "internal", err.Error())
+		return
+	}
+	WriteJSON(w, 200, list)
+}
+
+// CreateRecurring POST /finance/recurring
+func (h *Finance) CreateRecurring(w http.ResponseWriter, r *http.Request) {
+	id, ok := h.active(w, r)
+	if !ok {
+		return
+	}
+	var p store.FinRecurringInput
+	if err := DecodeBody(r, &p); err != nil {
+		WriteErr(w, 400, "bad_request", "参数格式错误")
+		return
+	}
+	x, err := h.repo.CreateRecurring(r.Context(), id, p)
+	if err != nil {
+		finErr(w, err)
+		return
+	}
+	WriteJSON(w, 201, x)
+}
+
+// UpdateRecurring PUT /finance/recurring/{id}
+func (h *Finance) UpdateRecurring(w http.ResponseWriter, r *http.Request) {
+	id, ok := h.active(w, r)
+	if !ok {
+		return
+	}
+	rid, ok := finID(r, "id")
+	if !ok {
+		WriteErr(w, 404, "not_found", "周期账单不存在")
+		return
+	}
+	var p store.FinRecurringInput
+	if err := DecodeBody(r, &p); err != nil {
+		WriteErr(w, 400, "bad_request", "参数格式错误")
+		return
+	}
+	x, err := h.repo.UpdateRecurring(r.Context(), id, rid, p)
+	if err != nil {
+		finErr(w, err)
+		return
+	}
+	WriteJSON(w, 200, x)
+}
+
+// DeleteRecurring DELETE /finance/recurring/{id}
+func (h *Finance) DeleteRecurring(w http.ResponseWriter, r *http.Request) {
+	id, ok := h.active(w, r)
+	if !ok {
+		return
+	}
+	rid, ok := finID(r, "id")
+	if !ok {
+		WriteErr(w, 404, "not_found", "周期账单不存在")
+		return
+	}
+	if err := h.repo.DeleteRecurring(r.Context(), id, rid); err != nil {
+		finErr(w, err)
+		return
+	}
+	WriteJSON(w, 200, true)
+}
+
+// ── 账单截图识别 ──────────────────────────────────────────────────
+
+type financeRecognizePayload struct {
+	Image string `json:"image"`
+}
+
+// financeCandidate 识图得到的候选账目（金额单位为分）。
+type financeCandidate struct {
+	Type       string `json:"type"`
+	Amount     int64  `json:"amount"`
+	Category   string `json:"category"`
+	Note       string `json:"note"`
+	OccurredAt string `json:"occurred_at"`
+	Tags       string `json:"tags"`
+}
+
+// Recognize POST /finance/recognize 账单截图 → 候选账目。
+func (h *Finance) Recognize(w http.ResponseWriter, r *http.Request) {
+	id, ok := h.active(w, r)
+	if !ok {
+		return
+	}
+	var p financeRecognizePayload
+	if err := DecodeBody(r, &p); err != nil || strings.TrimSpace(p.Image) == "" {
+		WriteErr(w, 400, "bad_request", "请提供图片")
+		return
+	}
+	if len(p.Image) > 8<<20 {
+		WriteErr(w, 400, "bad_request", "图片过大")
+		return
+	}
+	if h.ai == nil {
+		WriteErr(w, 400, "ai_not_configured", "AI 未配置")
+		return
+	}
+	var names []string
+	if list, err := h.repo.ListCategories(r.Context(), id, "expense"); err == nil {
+		for _, c := range list {
+			names = append(names, c.Name)
+		}
+	}
+	messages := []map[string]any{
+		{"role": "system", "content": "你是记账助手。只输出 JSON，不要解释。"},
+		{"role": "user", "content": []map[string]any{
+			{"type": "text", "text": "识别这张账单/支付截图中的交易，返回严格 JSON：{\"items\":[{\"type\":\"expense|income\",\"amount\":12.34,\"category\":\"餐饮\",\"note\":\"\",\"occurred_at\":\"yyyy-mm-dd HH:MM\",\"tags\":\"\"}]}。amount 单位为元，最多 3 条；category 优先从这些分类中选择：" + strings.Join(names, "、")},
+			{"type": "image_url", "image_url": map[string]any{"url": p.Image}},
+		}},
+	}
+	text, err := h.ai.CompleteByUser(r.Context(), rUsername(r), messages, 0.2)
+	if err != nil {
+		WriteErr(w, 502, "ai_error", err.Error())
+		return
+	}
+	WriteJSON(w, 200, map[string]any{
+		"raw":   text,
+		"items": financeCandidatesFromText(text),
+	})
+}
+
+func financeCandidatesFromText(text string) []financeCandidate {
+	out := []financeCandidate{}
+	obj, _ := extractJSONObject(text).(map[string]any)
+	if obj == nil {
+		return out
+	}
+	raw, ok := obj["items"].([]any)
+	if !ok {
+		if _, single := obj["amount"]; single {
+			raw = []any{obj}
+		} else {
+			return out
+		}
+	}
+	for _, it := range raw {
+		m, ok := it.(map[string]any)
+		if !ok {
+			continue
+		}
+		c := financeCandidate{
+			Type:       strings.ToLower(finStr(m["type"])),
+			Amount:     finAmountCents(m["amount"]),
+			Category:   finStr(m["category"]),
+			Note:       finStr(m["note"]),
+			OccurredAt: finStr(m["occurred_at"]),
+			Tags:       finStr(m["tags"]),
+		}
+		if c.Type != "income" {
+			c.Type = "expense"
+		}
+		if c.Amount <= 0 {
+			continue
+		}
+		out = append(out, c)
+		if len(out) >= 5 {
+			break
+		}
+	}
+	return out
+}
+
+func finStr(v any) string {
+	if s, ok := v.(string); ok {
+		return strings.TrimSpace(s)
+	}
+	return ""
+}
+
+func finAmountCents(v any) int64 {
+	switch x := v.(type) {
+	case float64:
+		return int64(math.Round(x * 100))
+	case string:
+		s := strings.TrimSpace(x)
+		s = strings.TrimLeft(s, "¥$￥€£")
+		f, err := strconv.ParseFloat(s, 64)
+		if err == nil {
+			return int64(math.Round(f * 100))
+		}
+	}
+	return 0
 }
