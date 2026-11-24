@@ -123,17 +123,76 @@ type FinCategoryStat struct {
 	Percent    float64 `json:"percent"`
 }
 
+// FinBudgetProgress 分类预算进度。
+type FinBudgetProgress struct {
+	CategoryID int64 `json:"category_id"`
+	Name       string `json:"name"`
+	Budget     int64 `json:"budget"`
+	Spent      int64 `json:"spent"`
+	Left       int64 `json:"left"`
+	Pct        int   `json:"pct"`
+}
+
+// FinBudget 月度预算（category_id=0 为总预算）。
+type FinBudget struct {
+	ID         int64  `json:"id"`
+	Month      string `json:"month"`
+	CategoryID int64  `json:"category_id"`
+	Amount     int64  `json:"amount"`
+}
+
+// FinBudgetInput 预算设置入参。
+type FinBudgetInput struct {
+	CategoryID int64 `json:"category_id"`
+	Amount     int64 `json:"amount"`
+}
+
+// FinTrendPoint 月度收支趋势点。
+type FinTrendPoint struct {
+	Month   string `json:"month"`
+	Expense int64  `json:"expense"`
+	Income  int64  `json:"income"`
+}
+
+// FinRecurring 周期账单。
+type FinRecurring struct {
+	ID           int64  `json:"id"`
+	Name         string `json:"name"`
+	Type         string `json:"type"`
+	Amount       int64  `json:"amount"`
+	AccountID    int64  `json:"account_id"`
+	AccountName  string `json:"account_name"`
+	CategoryID   int64  `json:"category_id"`
+	CategoryName string `json:"category_name"`
+	DayOfMonth   int    `json:"day_of_month"`
+	Enabled      bool   `json:"enabled"`
+	LastRunMonth string `json:"last_run_month"`
+}
+
+// FinRecurringInput 周期账单入参。
+type FinRecurringInput struct {
+	Name       string `json:"name"`
+	Type       string `json:"type"`
+	Amount     int64  `json:"amount"`
+	AccountID  int64  `json:"account_id"`
+	CategoryID int64  `json:"category_id"`
+	DayOfMonth int    `json:"day_of_month"`
+	Enabled    bool   `json:"enabled"`
+}
+
 // FinStats 本月概览。
 type FinStats struct {
-	Month       string            `json:"month"`
-	Expense     int64             `json:"expense"`
-	Income      int64             `json:"income"`
-	Balance     int64             `json:"balance"`
-	BudgetTotal int64             `json:"budget_total"`
-	BudgetLeft  int64             `json:"budget_left"`
-	BudgetPct   int               `json:"budget_pct"`
-	ByCategory  []FinCategoryStat `json:"by_category"`
-	ByAccount   []FinAccount      `json:"by_account"`
+	Month         string            `json:"month"`
+	Expense       int64             `json:"expense"`
+	Income        int64             `json:"income"`
+	Balance       int64             `json:"balance"`
+	BudgetTotal   int64             `json:"budget_total"`
+	BudgetLeft    int64             `json:"budget_left"`
+	BudgetPct     int               `json:"budget_pct"`
+	BudgetOverall bool              `json:"budget_overall"`
+	ByCategory    []FinCategoryStat `json:"by_category"`
+	ByAccount     []FinAccount      `json:"by_account"`
+	Budgets       []FinBudgetProgress `json:"budgets"`
 }
 
 // FinanceRepo 提供记账相关持久化访问。
@@ -785,7 +844,7 @@ func MonthOf(v string) string {
 // Stats 汇总某月收支、分类占比、账户余额与预算进度。
 func (r *FinanceRepo) Stats(ctx context.Context, instanceID int64, month string) (FinStats, error) {
 	month = MonthOf(month)
-	st := FinStats{Month: month, ByCategory: []FinCategoryStat{}, ByAccount: []FinAccount{}}
+	st := FinStats{Month: month, ByCategory: []FinCategoryStat{}, ByAccount: []FinAccount{}, Budgets: []FinBudgetProgress{}}
 	if err := r.db.QueryRowContext(ctx,
 		`SELECT COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END),0),
 			COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END),0)
@@ -824,18 +883,51 @@ func (r *FinanceRepo) Stats(ctx context.Context, instanceID int64, month string)
 	for _, a := range accounts {
 		st.Balance += a.Balance
 	}
+	st.Budgets = []FinBudgetProgress{}
+	var overall int64
 	if err := r.db.QueryRowContext(ctx,
 		`SELECT COALESCE(SUM(amount),0) FROM fin_budgets
-		 WHERE instance_id=? AND month=? AND category_id=0`, instanceID, month).
-		Scan(&st.BudgetTotal); err != nil {
+		 WHERE instance_id=? AND month=? AND category_id=0`, instanceID, month).Scan(&overall); err != nil {
 		return st, err
 	}
-	if st.BudgetTotal == 0 {
-		if err := r.db.QueryRowContext(ctx,
-			`SELECT COALESCE(SUM(monthly_budget),0) FROM fin_categories
-			 WHERE instance_id=? AND type='expense'`, instanceID).Scan(&st.BudgetTotal); err != nil {
+	brows, err := r.db.QueryContext(ctx,
+		`SELECT c.id, c.name,
+			COALESCE((SELECT b.amount FROM fin_budgets b
+				WHERE b.instance_id=c.instance_id AND b.month=? AND b.category_id=c.id), c.monthly_budget),
+			COALESCE((SELECT SUM(t.amount) FROM fin_transactions t
+				WHERE t.instance_id=c.instance_id AND t.deleted_at='' AND t.type='expense'
+				  AND substr(t.occurred_at,1,7)=?
+				  AND (t.category_id=c.id OR t.category_id IN
+				       (SELECT id FROM fin_categories WHERE parent_id=c.id))),0)
+		 FROM fin_categories c
+		 WHERE c.instance_id=? AND c.type='expense' AND c.parent_id=0
+		 ORDER BY c.sort, c.id`, month, month, instanceID)
+	if err != nil {
+		return st, err
+	}
+	defer brows.Close()
+	var sumBudgets int64
+	for brows.Next() {
+		var bp FinBudgetProgress
+		if err := brows.Scan(&bp.CategoryID, &bp.Name, &bp.Budget, &bp.Spent); err != nil {
 			return st, err
 		}
+		if bp.Budget <= 0 {
+			continue
+		}
+		bp.Left = bp.Budget - bp.Spent
+		bp.Pct = int(math.Round(float64(bp.Spent) * 100 / float64(bp.Budget)))
+		sumBudgets += bp.Budget
+		st.Budgets = append(st.Budgets, bp)
+	}
+	if err := brows.Err(); err != nil {
+		return st, err
+	}
+	if overall > 0 {
+		st.BudgetTotal = overall
+		st.BudgetOverall = true
+	} else {
+		st.BudgetTotal = sumBudgets
 	}
 	if st.BudgetTotal > 0 {
 		st.BudgetLeft = st.BudgetTotal - st.Expense
@@ -928,19 +1020,20 @@ func defaultExpenseCategoryTx(ctx context.Context, ex interface {
 }
 
 func insertAutoTx(ctx context.Context, tx *sql.Tx, instanceID int64, refType string, refID int64,
-	accountID, categoryID, amount int64, note, occurredAt, user string) error {
+	accountID, categoryID, amount int64, source, note, occurredAt, user string) error {
 	_, err := tx.ExecContext(ctx,
 		`INSERT OR IGNORE INTO fin_transactions(instance_id, type, amount, account_id, category_id,
 			currency, note, source, ref_type, ref_id, occurred_at, created_by)
 		 VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
 		instanceID, "expense", amount, accountID, categoryID, "CNY", note,
-		"inventory", refType, refID, normOccurred(occurredAt), user)
+		source, refType, refID, normOccurred(occurredAt), user)
 	return err
 }
 
-// RecordInventoryPurchase 库存入库自动记一笔支出（按批次幂等）。
-func (r *FinanceRepo) RecordInventoryPurchase(ctx context.Context, instanceID int64, itemName, itemCategory string, batchID, amount int64, occurredAt, user string) error {
-	if amount <= 0 || batchID <= 0 {
+// recordAutoTx 自动记账公共实现：按 (ref_type, ref_id) 幂等。
+func (r *FinanceRepo) recordAutoTx(ctx context.Context, instanceID int64, source, refType string, refID int64,
+	itemName, itemCategory string, amount int64, occurredAt, user string) error {
+	if amount <= 0 || refID <= 0 {
 		return nil
 	}
 	if err := r.ensureDefaults(ctx, instanceID); err != nil {
@@ -956,36 +1049,351 @@ func (r *FinanceRepo) RecordInventoryPurchase(ctx context.Context, instanceID in
 		return err
 	}
 	categoryID := defaultExpenseCategoryTx(ctx, tx, instanceID, itemCategory)
-	if err := insertAutoTx(ctx, tx, instanceID, "inventory_batch", batchID,
-		accountID, categoryID, amount, "入库："+itemName, occurredAt, user); err != nil {
+	if err := insertAutoTx(ctx, tx, instanceID, refType, refID,
+		accountID, categoryID, amount, source, itemName, occurredAt, user); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
+// RecordInventoryPurchase 库存入库自动记一笔支出（按批次幂等）。
+func (r *FinanceRepo) RecordInventoryPurchase(ctx context.Context, instanceID int64, itemName, itemCategory string, batchID, amount int64, occurredAt, user string) error {
+	return r.recordAutoTx(ctx, instanceID, "inventory", "inventory_batch", batchID,
+		"入库："+itemName, itemCategory, amount, occurredAt, user)
+}
+
 // RecordInventoryLoss 丢弃批次自动记一笔损耗支出（独立 ref_type，避免与入库冲突）。
 func (r *FinanceRepo) RecordInventoryLoss(ctx context.Context, instanceID int64, itemName string, batchID, amount int64, occurredAt, user string) error {
-	if amount <= 0 || batchID <= 0 {
-		return nil
+	return r.recordAutoTx(ctx, instanceID, "inventory", "inventory_loss", batchID,
+		"损耗："+itemName, "", amount, occurredAt, user)
+}
+
+// RecordShoppingPurchase 购物清单入库自动记一笔支出（按清单项幂等）。
+func (r *FinanceRepo) RecordShoppingPurchase(ctx context.Context, instanceID int64, itemName, itemCategory string, shoppingID, amount int64, occurredAt, user string) error {
+	return r.recordAutoTx(ctx, instanceID, "shopping", "shopping_item", shoppingID,
+		"采购："+itemName, itemCategory, amount, occurredAt, user)
+}
+
+// ── 预算 ──────────────────────────────────────────────────────────
+
+// ListBudgets 列出某月预算。
+func (r *FinanceRepo) ListBudgets(ctx context.Context, instanceID int64, month string) ([]FinBudget, error) {
+	month = MonthOf(month)
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id, month, category_id, amount FROM fin_budgets
+		 WHERE instance_id=? AND month=? ORDER BY category_id`, instanceID, month)
+	if err != nil {
+		return nil, err
 	}
-	if err := r.ensureDefaults(ctx, instanceID); err != nil {
-		return err
+	defer rows.Close()
+	out := []FinBudget{}
+	for rows.Next() {
+		var b FinBudget
+		if err := rows.Scan(&b.ID, &b.Month, &b.CategoryID, &b.Amount); err != nil {
+			return nil, err
+		}
+		out = append(out, b)
 	}
+	return out, rows.Err()
+}
+
+// SetBudgets 整体替换某月预算。
+func (r *FinanceRepo) SetBudgets(ctx context.Context, instanceID int64, month string, items []FinBudgetInput) error {
+	month = MonthOf(month)
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	accountID, err := defaultAccountTx(ctx, tx, instanceID)
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM fin_budgets WHERE instance_id=? AND month=?`, instanceID, month); err != nil {
+		return err
+	}
+	for _, it := range items {
+		if it.Amount < 0 {
+			return errors.New("预算不能为负数")
+		}
+		if it.Amount == 0 {
+			continue
+		}
+		if it.CategoryID < 0 {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO fin_budgets(instance_id, month, category_id, amount) VALUES(?,?,?,?)
+			 ON CONFLICT(instance_id, month, category_id) DO UPDATE SET amount=excluded.amount`,
+			instanceID, month, it.CategoryID, it.Amount); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// ── 趋势与导出 ────────────────────────────────────────────────────
+
+// Trend 返回近 N 个月（含本月）的收支趋势。
+func (r *FinanceRepo) Trend(ctx context.Context, instanceID int64, months int) ([]FinTrendPoint, error) {
+	if months <= 0 || months > 24 {
+		months = 6
+	}
+	start := time.Now().AddDate(0, -(months - 1), 0).Format("2006-01")
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT substr(occurred_at,1,7) AS m,
+			COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END),0),
+			COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END),0)
+		 FROM fin_transactions
+		 WHERE instance_id=? AND deleted_at='' AND type IN ('expense','income')
+		   AND substr(occurred_at,1,7)>=?
+		 GROUP BY m`, instanceID, start)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	got := map[string]FinTrendPoint{}
+	for rows.Next() {
+		var p FinTrendPoint
+		if err := rows.Scan(&p.Month, &p.Expense, &p.Income); err != nil {
+			return nil, err
+		}
+		got[p.Month] = p
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	out := make([]FinTrendPoint, 0, months)
+	for i := months - 1; i >= 0; i-- {
+		m := time.Now().AddDate(0, -i, 0).Format("2006-01")
+		if p, ok := got[m]; ok {
+			out = append(out, p)
+		} else {
+			out = append(out, FinTrendPoint{Month: m})
+		}
+	}
+	return out, nil
+}
+
+// MonthTransactions 返回某月全部流水（导出用，不分页）。
+func (r *FinanceRepo) MonthTransactions(ctx context.Context, instanceID int64, month string) ([]FinTransaction, error) {
+	month = MonthOf(month)
+	rows, err := r.db.QueryContext(ctx,
+		finTxSelect+` WHERE t.instance_id=? AND t.deleted_at='' AND substr(t.occurred_at,1,7)=?
+		 ORDER BY t.occurred_at, t.id`, instanceID, month)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []FinTransaction{}
+	for rows.Next() {
+		t, err := scanFinTx(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+// ── 周期账单 ──────────────────────────────────────────────────────
+
+const finRecurringSelect = `SELECT r.id, r.name, r.type, r.amount, r.account_id, COALESCE(a.name,''),
+	r.category_id, COALESCE(c.name,''), r.day_of_month, r.enabled, r.last_run_month
+	FROM fin_recurring r
+	LEFT JOIN fin_accounts a ON a.id=r.account_id
+	LEFT JOIN fin_categories c ON c.id=r.category_id`
+
+func scanFinRecurring(row interface{ Scan(...any) error }) (FinRecurring, error) {
+	var x FinRecurring
+	var enabled int
+	err := row.Scan(&x.ID, &x.Name, &x.Type, &x.Amount, &x.AccountID, &x.AccountName,
+		&x.CategoryID, &x.CategoryName, &x.DayOfMonth, &enabled, &x.LastRunMonth)
+	x.Enabled = enabled != 0
+	return x, err
+}
+
+// ListRecurring 列出周期账单。
+func (r *FinanceRepo) ListRecurring(ctx context.Context, instanceID int64) ([]FinRecurring, error) {
+	rows, err := r.db.QueryContext(ctx,
+		finRecurringSelect+` WHERE r.instance_id=? ORDER BY r.id`, instanceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []FinRecurring{}
+	for rows.Next() {
+		x, err := scanFinRecurring(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, x)
+	}
+	return out, rows.Err()
+}
+
+func (r *FinanceRepo) getRecurring(ctx context.Context, instanceID, id int64) (FinRecurring, error) {
+	row := r.db.QueryRowContext(ctx, finRecurringSelect+` WHERE r.instance_id=? AND r.id=?`, instanceID, id)
+	x, err := scanFinRecurring(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return FinRecurring{}, ErrNotFound
+	}
+	return x, err
+}
+
+func normalizeRecurring(ctx context.Context, r *FinanceRepo, instanceID int64, in *FinRecurringInput) error {
+	in.Name = strings.TrimSpace(in.Name)
+	if in.Name == "" {
+		return errors.New("名称不能为空")
+	}
+	if in.Type != "income" {
+		in.Type = "expense"
+	}
+	if in.Amount <= 0 {
+		return errors.New("金额必须大于 0")
+	}
+	if err := r.checkAccount(ctx, instanceID, in.AccountID); err != nil {
+		return err
+	}
+	if in.CategoryID > 0 {
+		if _, err := r.getCategory(ctx, instanceID, in.CategoryID); err != nil {
+			return errors.New("分类不存在")
+		}
+	}
+	if in.DayOfMonth <= 0 || in.DayOfMonth > 31 {
+		in.DayOfMonth = 1
+	}
+	return nil
+}
+
+// CreateRecurring 新增周期账单。
+func (r *FinanceRepo) CreateRecurring(ctx context.Context, instanceID int64, in FinRecurringInput) (FinRecurring, error) {
+	if err := normalizeRecurring(ctx, r, instanceID, &in); err != nil {
+		return FinRecurring{}, err
+	}
+	res, err := r.db.ExecContext(ctx,
+		`INSERT INTO fin_recurring(instance_id, name, type, amount, account_id, category_id, day_of_month, enabled)
+		 VALUES(?,?,?,?,?,?,?,?)`,
+		instanceID, in.Name, in.Type, in.Amount, in.AccountID, in.CategoryID, in.DayOfMonth, boolInt(in.Enabled))
+	if err != nil {
+		return FinRecurring{}, err
+	}
+	id, _ := res.LastInsertId()
+	return r.getRecurring(ctx, instanceID, id)
+}
+
+// UpdateRecurring 编辑周期账单。
+func (r *FinanceRepo) UpdateRecurring(ctx context.Context, instanceID, id int64, in FinRecurringInput) (FinRecurring, error) {
+	if err := normalizeRecurring(ctx, r, instanceID, &in); err != nil {
+		return FinRecurring{}, err
+	}
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE fin_recurring SET name=?, type=?, amount=?, account_id=?, category_id=?,
+			day_of_month=?, enabled=? WHERE id=? AND instance_id=?`,
+		in.Name, in.Type, in.Amount, in.AccountID, in.CategoryID, in.DayOfMonth, boolInt(in.Enabled), id, instanceID)
+	if err != nil {
+		return FinRecurring{}, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return FinRecurring{}, ErrNotFound
+	}
+	return r.getRecurring(ctx, instanceID, id)
+}
+
+// DeleteRecurring 删除周期账单。
+func (r *FinanceRepo) DeleteRecurring(ctx context.Context, instanceID, id int64) error {
+	res, err := r.db.ExecContext(ctx, `DELETE FROM fin_recurring WHERE id=? AND instance_id=?`, id, instanceID)
 	if err != nil {
 		return err
 	}
-	categoryID := defaultExpenseCategoryTx(ctx, tx, instanceID, "")
-	if err := insertAutoTx(ctx, tx, instanceID, "inventory_loss", batchID,
-		accountID, categoryID, amount, "损耗："+itemName, occurredAt, user); err != nil {
-		return err
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
 	}
-	return tx.Commit()
+	return nil
+}
+
+// RunRecurring 生成到期的周期账单（按 last_run_month 去重，跨月补生成一次）。
+func (r *FinanceRepo) RunRecurring(ctx context.Context) (int, error) {
+	now := time.Now()
+	month := now.Format("2006-01")
+	day := now.Day()
+	lastDay := time.Date(now.Year(), now.Month()+1, 0, 0, 0, 0, 0, now.Location()).Day()
+	if day > lastDay {
+		day = lastDay
+	}
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id, instance_id, name, type, amount, account_id, category_id, day_of_month
+		 FROM fin_recurring WHERE enabled=1 AND last_run_month<>?`, month)
+	if err != nil {
+		return 0, err
+	}
+	type due struct {
+		id, instanceID, amount, accountID, categoryID int64
+		dayOfMonth                                    int
+		name, typ                                     string
+	}
+	var list []due
+	for rows.Next() {
+		var d due
+		if err := rows.Scan(&d.id, &d.instanceID, &d.name, &d.typ, &d.amount, &d.accountID, &d.categoryID, &d.dayOfMonth); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		list = append(list, d)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	run := 0
+	for _, d := range list {
+		effDay := d.dayOfMonth
+		if effDay > lastDay {
+			effDay = lastDay
+		}
+		if day < effDay {
+			continue
+		}
+		tx, err := r.db.BeginTx(ctx, nil)
+		if err != nil {
+			return run, err
+		}
+		var exists int
+		if err := tx.QueryRowContext(ctx,
+			`SELECT COUNT(1) FROM fin_accounts WHERE id=? AND instance_id=? AND archived=0`,
+			d.accountID, d.instanceID).Scan(&exists); err != nil {
+			tx.Rollback()
+			continue
+		}
+		if exists == 0 {
+			tx.Rollback()
+			continue
+		}
+		occurred := fmt.Sprintf("%s-%02d 00:00", month, effDay)
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO fin_transactions(instance_id, type, amount, account_id, category_id, currency,
+				note, source, occurred_at, created_by)
+			 VALUES(?,?,?,?,?,?,?,?,?,?)`,
+			d.instanceID, d.typ, d.amount, d.accountID, d.categoryID, "CNY",
+			d.name, "recurring", occurred, "system"); err != nil {
+			tx.Rollback()
+			continue
+		}
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE fin_recurring SET last_run_month=? WHERE id=?`, month, d.id); err != nil {
+			tx.Rollback()
+			continue
+		}
+		if err := tx.Commit(); err != nil {
+			continue
+		}
+		run++
+	}
+	return run, nil
+}
+
+func boolInt(v bool) int {
+	if v {
+		return 1
+	}
+	return 0
 }
 
 // FormatCents 把分转换为元的字符串表示（供日志/导出复用）。
