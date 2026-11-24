@@ -1,11 +1,11 @@
 <template>
-  <div class="hc-set-shell pb-4" :style="{ '--hc-set-top': stickyTop + 'px' }">
+  <div class="hc-set-shell pb-4" :style="{ '--hc-set-top': stickyTop + 'px', '--hc-set-bar': barH + 'px' }">
   <h1 class="sr-only">设置</h1>
 
   <!-- ===== 手机端 / APK：大标题 + 四组分段导航（吸顶，分组内再二级切换） =====
        吸顶偏移按帧跟随顶部导航的实际底边：导航在视口内时紧贴其下，
        导航滚出视口后偏移归零直接贴顶，避免在页面中间留出一条「悬浮」空档。 -->
-  <div class="lg:hidden sticky z-30 -mx-6 px-6 pt-2.5 pb-2 hc-set-bar" :style="{ top: stickyTop + 'px' }">
+  <div ref="barEl" class="lg:hidden sticky z-30 -mx-6 px-6 pt-2.5 pb-2 hc-set-bar" :style="{ top: stickyTop + 'px' }">
     <div class="flex items-end justify-between gap-3 mb-2">
       <h2 class="hc-set-title-lg">设置</h2>
       <span class="hc-set-crumb truncate">{{ curMeta.title }}</span>
@@ -1235,7 +1235,13 @@
         </div>
         <div>
           <h2 class="font-headline text-on-background text-base font-semibold">账号与安全</h2>
-          <p class="text-muted text-xs mt-0.5">当前用户：{{ auth.user }}</p>
+          <p class="text-muted text-xs mt-0.5 flex items-center gap-1.5">
+            当前用户：{{ auth.user }}
+            <span class="px-1.5 py-0.5 rounded-full text-[11px] font-medium"
+              :class="auth.isAdmin ? 'bg-primary/15 text-primary' : 'bg-surface-alt text-muted'">
+              {{ auth.isAdmin ? '管理员' : '普通用户' }}
+            </span>
+          </p>
         </div>
       </div>
 
@@ -2396,7 +2402,7 @@ function resetCustomPalette() {
 }
 
 // 分组导航：页面太长时收纳为标签页，各组状态保活（v-show）
-const tabs = [
+const tabs = computed(() => [
   { key: 'connect', icon: 'link', label: '连接与设备' },
   { key: 'api', icon: 'vpn_key', label: '接口与密钥' },
   { key: 'personal', icon: 'palette', label: '个性化' },
@@ -2404,9 +2410,9 @@ const tabs = [
   ...(auth.isAdmin ? [{ key: 'logs', icon: 'receipt_long', label: '日志' }] : []),
   { key: 'account', icon: 'shield_person', label: '账户' },
   ...(auth.isAdmin ? [{ key: 'users', icon: 'group', label: '用户管理' }] : []),
-]
+])
 const activeTab = ref('connect')
-const visibleTabs = computed(() => tabs.filter((t) => t.key !== 'diag' || auth.isAdmin))
+const visibleTabs = computed(() => tabs.value.filter((t) => t.key !== 'diag' || auth.isAdmin))
 // 侧栏按使用场景归并分组：连接 → 外观 → 智能 → 账户，降低一次性认知负担
 const NAV_GROUPS = [
   { label: '连接', keys: ['connect', 'api'] },
@@ -2452,6 +2458,10 @@ function pickGroup(g) {
 // 上方就会露出 64px 内容，看起来像「悬浮」在页面中间。
 // 改为读取导航底边：导航在视口内时紧贴其下；滚出视口后自动贴顶（0），全程无缝。
 const stickyTop = ref(0)
+const barEl = ref(null)
+// 吸顶条实际高度：手机端标题 + 分组标签 + 安全区，APK 字号放大后不再是固定 96px，
+// 锚点跳转必须按实测高度让位，否则卡片标题会被压在吸顶条下面。
+const barH = ref(96)
 let headerEl = null
 let headerRO = null
 let rafId = 0
@@ -2459,6 +2469,10 @@ function measureStickyTop() {
   if (!headerEl) headerEl = document.querySelector('header')
   const bottom = headerEl ? Math.round(headerEl.getBoundingClientRect().bottom) : 0
   stickyTop.value = bottom > 0 ? Math.min(bottom, 120) : 0
+  if (barEl.value) {
+    const h = Math.round(barEl.value.offsetHeight)
+    if (h > 0) barH.value = h
+  }
 }
 function scheduleMeasure() {
   if (rafId) return
@@ -3393,7 +3407,7 @@ onUnmounted(() => {
 
 /* 侧栏标题：与页面标题同层级、足够大，避免被误读成「折行的小标签」 */
 .hc-set-asidetitle {
-  font-size: 17px;
+  font-size: 1.0625rem;
   font-weight: 650;
   letter-spacing: -0.01em;
   color: rgb(var(--c-on-background));
@@ -3421,11 +3435,13 @@ onUnmounted(() => {
 }
 .hc-set-segbtn {
   flex: 1;
-  padding: 6px 8px;
+  padding: 7px 8px;
   border-radius: 9px;
-  font-size: 12px;
+  font-size: 0.8125rem;
   font-weight: 500;
   color: rgb(var(--c-muted));
+  text-align: center;
+  min-width: 0;
   transition: color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
 }
 .hc-set-segbtn.on {
@@ -3440,10 +3456,10 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 7px 12px;
+  padding: 8px 12px;
   border-radius: 10px;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: 0.875rem;
   font-weight: 500;
   color: rgb(var(--c-muted));
   transition: color 0.16s ease, background 0.16s ease, transform 0.12s ease;
@@ -3573,11 +3589,15 @@ onUnmounted(() => {
     background: rgb(var(--c-surface));
     border-color: rgb(var(--c-border) / 0.65);
     box-shadow: 0 1px 2px rgb(var(--c-on-background) / 0.05);
+    /* 长 URL / Key / 错误信息不撑破卡片 */
+    overflow-wrap: anywhere;
     /* 锚点跳转要让开「顶部导航 + 吸顶分组条」的实际占位 */
-    scroll-margin-top: calc(var(--hc-set-top, 0px) + 96px);
+    scroll-margin-top: calc(var(--hc-set-top, 0px) + var(--hc-set-bar, 96px) + 10px);
   }
-  /* 卡片标题在手机上降一档，避免与页面大标题抢层级 */
-  .hc-set-card h2 { font-size: 14px; font-weight: 600; }
+  /* 标题行允许徽标换行，窄屏（APK 大字号）不再把标题挤成省略号 */
+  .hc-set-card > div:first-child { flex-wrap: wrap; row-gap: 6px; }
+  /* 卡片标题与正文拉开层级（rem 跟随 APK 字号阶梯，避免标题比正文还小） */
+  .hc-set-card h2 { font-size: 1rem; font-weight: 600; }
   /* 标题行与内容之间加发丝分隔，形成「分组卡 + 卡内分区」的移动端结构 */
   .hc-set-card > div:first-child {
     padding-bottom: 10px;

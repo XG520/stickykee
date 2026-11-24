@@ -13,23 +13,24 @@
         <span class="md:hidden shrink-0 text-[11px] text-muted font-body">{{ locations.length }} 个位置</span>
       </div>
 
-      <div class="grid grid-cols-3 gap-1 p-1 rounded-2xl bg-surface-alt border border-border md:inline-grid md:min-w-[336px]">
+      <!-- 页签按内容宽度收窄（避免手机上铺满整行显得空），标签不换行 -->
+      <div class="self-start inline-grid grid-cols-3 gap-1 p-1 rounded-2xl bg-surface-alt border border-border md:self-auto md:min-w-[336px]">
         <button
-          class="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm font-body transition-colors"
+          class="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm font-body whitespace-nowrap transition-colors"
           :class="activeTab === 'stock' ? 'bg-surface text-primary shadow-sm border border-border' : 'text-muted hover:text-on-surface'"
           @click="activeTab = 'stock'"
         >
           <span class="material-symbols-outlined hidden sm:inline-flex text-base">inventory_2</span>库存
         </button>
         <button
-          class="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm font-body transition-colors"
+          class="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm font-body whitespace-nowrap transition-colors"
           :class="activeTab === 'shopping' ? 'bg-surface text-primary shadow-sm border border-border' : 'text-muted hover:text-on-surface'"
           @click="activeTab = 'shopping'"
         >
           <span class="material-symbols-outlined hidden sm:inline-flex text-base">shopping_cart</span>购物清单
         </button>
         <button
-          class="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm font-body transition-colors"
+          class="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm font-body whitespace-nowrap transition-colors"
           :class="activeTab === 'finance' ? 'bg-surface text-primary shadow-sm border border-border' : 'text-muted hover:text-on-surface'"
           @click="activeTab = 'finance'"
         >
