@@ -102,6 +102,7 @@ import { auth, loadInstances, ui, applyBrandDisplay } from '@/store'
 import { useFullscreen } from '@/composables/useFullscreen'
 import { useAutoHide } from '@/composables/useAutoHide'
 import { checkApkUpdate, downloadAndInstallApk } from '@/utils/appUpdate'
+import { startFrontendUpdateGuard } from '@/utils/frontendUpdate'
 
 // APK 更新提示：登录后自动检测一次（每会话），发现新版本弹窗提示一键更新
 const apkUpdate = ref(null) // { version } 或 null
@@ -187,5 +188,7 @@ onMounted(() => {
   loadAppearanceFromCache()
   restoreTheme()
   restoreTemplates()
+  // 前端有新构建时自动整页刷新，避免 APK 长期停留在旧页面。
+  startFrontendUpdateGuard()
 })
 </script>

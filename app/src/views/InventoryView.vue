@@ -1,113 +1,147 @@
 <template>
-  <div class="space-y-4 py-2">
-    <!-- 主 Tab -->
-    <div class="flex items-center gap-2">
-      <button
-        class="px-4 py-1.5 rounded-lg text-sm font-body"
-        :class="activeTab === 'stock' ? 'bg-primary text-white' : 'bg-surface-alt text-muted'"
-        @click="activeTab = 'stock'"
-      >库存</button>
-      <button
-        class="px-4 py-1.5 rounded-lg text-sm font-body"
-        :class="activeTab === 'shopping' ? 'bg-primary text-white' : 'bg-surface-alt text-muted'"
-        @click="activeTab = 'shopping'"
-      >购物清单</button>
-      <button
-        class="px-4 py-1.5 rounded-lg text-sm font-body"
-        :class="activeTab === 'finance' ? 'bg-primary text-white' : 'bg-surface-alt text-muted'"
-        @click="activeTab = 'finance'"
-      >账本</button>
-    </div>
+  <div class="space-y-4 md:space-y-5 py-2 pb-20 md:pb-2">
+    <h1 class="sr-only">生活</h1>
 
-    <template v-if="activeTab === 'stock'">
-    <!-- 工具栏 -->
-    <div class="flex items-center justify-between gap-2 flex-wrap">
-      <div class="flex items-center gap-1.5 overflow-x-auto max-w-full">
+    <!-- 页面头部：移动端纵向堆叠，桌面端标题与页签同一行 -->
+    <header class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+      <div class="flex items-center justify-between gap-3">
+        <div class="min-w-0 text-sm font-body text-muted">
+          <span class="text-on-background font-medium">生活</span>
+          <span class="mx-1.5 text-faint">·</span>
+          <span>家里的物品、采购与开销</span>
+        </div>
+        <span class="md:hidden shrink-0 text-[11px] text-muted font-body">{{ locations.length }} 个位置</span>
+      </div>
+
+      <div class="grid grid-cols-3 gap-1 p-1 rounded-2xl bg-surface-alt border border-border md:inline-grid md:min-w-[336px]">
         <button
-          class="px-3 py-1.5 rounded-full text-xs font-body border whitespace-nowrap"
-          :class="selectedLocation === 0 ? 'bg-primary text-white border-primary' : 'bg-surface-alt text-muted border-border'"
-          @click="selectLocation(0)"
-        >全部</button>
-        <button
-          v-for="l in locations"
-          :key="l.id"
-          class="px-3 py-1.5 rounded-full text-xs font-body border whitespace-nowrap"
-          :class="selectedLocation === l.id ? 'bg-primary text-white border-primary' : 'bg-surface-alt text-muted border-border'"
-          @click="selectLocation(l.id)"
-        >{{ l.name }}</button>
-        <button
-          class="px-2.5 py-1.5 rounded-full text-xs font-body border border-dashed border-border text-muted"
-          @click="locManager = true"
+          class="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm font-body transition-colors"
+          :class="activeTab === 'stock' ? 'bg-surface text-primary shadow-sm border border-border' : 'text-muted hover:text-on-surface'"
+          @click="activeTab = 'stock'"
         >
-          <span class="material-symbols-outlined text-base align-middle">add</span>
+          <span class="material-symbols-outlined hidden sm:inline-flex text-base">inventory_2</span>库存
+        </button>
+        <button
+          class="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm font-body transition-colors"
+          :class="activeTab === 'shopping' ? 'bg-surface text-primary shadow-sm border border-border' : 'text-muted hover:text-on-surface'"
+          @click="activeTab = 'shopping'"
+        >
+          <span class="material-symbols-outlined hidden sm:inline-flex text-base">shopping_cart</span>购物清单
+        </button>
+        <button
+          class="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm font-body transition-colors"
+          :class="activeTab === 'finance' ? 'bg-surface text-primary shadow-sm border border-border' : 'text-muted hover:text-on-surface'"
+          @click="activeTab = 'finance'"
+        >
+          <span class="material-symbols-outlined hidden sm:inline-flex text-base">account_balance_wallet</span>账本
         </button>
       </div>
-      <div class="flex items-center gap-2">
+    </header>
+
+    <template v-if="activeTab === 'stock'">
+    <!-- 位置筛选 -->
+    <div class="flex items-center gap-1.5 overflow-x-auto pb-0.5" style="scrollbar-width: none">
+      <button
+        class="px-3 py-1.5 rounded-full text-xs font-body border whitespace-nowrap shrink-0"
+        :class="selectedLocation === 0 ? 'bg-primary text-white border-primary' : 'bg-surface-alt text-muted border-border'"
+        @click="selectLocation(0)"
+      >全部</button>
+      <button
+        v-for="l in locations"
+        :key="l.id"
+        class="px-3 py-1.5 rounded-full text-xs font-body border whitespace-nowrap shrink-0"
+        :class="selectedLocation === l.id ? 'bg-primary text-white border-primary' : 'bg-surface-alt text-muted border-border'"
+        @click="selectLocation(l.id)"
+      >{{ l.name }}</button>
+      <button
+        class="shrink-0 flex items-center gap-0.5 px-2.5 py-1.5 rounded-full text-xs font-body border border-dashed border-border text-muted hover:text-on-surface"
+        title="管理位置"
+        @click="locManager = true"
+      >
+        <span class="material-symbols-outlined text-base">tune</span>
+      </button>
+    </div>
+
+    <!-- 搜索 + 添加 -->
+    <div class="flex items-center gap-2">
+      <div class="relative flex-1 min-w-0">
+        <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-muted text-lg pointer-events-none">search</span>
         <input
           v-model="query"
           placeholder="搜索名称 / 条码"
-          class="px-3 py-1.5 rounded-lg bg-surface-alt border border-border text-xs text-on-surface outline-none focus:border-primary w-40"
+          class="w-full pl-9 pr-8 py-2 rounded-xl bg-surface border border-border text-sm font-body text-on-background placeholder:text-faint outline-none focus:border-primary transition-colors"
           @input="onQueryInput"
         />
         <button
-          class="px-2.5 py-1.5 rounded-lg bg-surface-alt border border-border text-xs text-muted"
-          title="盘点"
-          @click="openStocktake"
-        >盘点</button>
-        <button
-          class="px-2.5 py-1.5 rounded-lg bg-surface-alt border border-border text-xs text-muted"
-          title="导出 CSV"
-          @click="exportCsv"
-        >导出</button>
-        <button
-          class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-surface-alt border border-border text-xs text-muted"
-          title="扫码"
-          @click="scanBarcode"
+          v-if="query"
+          class="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-on-surface"
+          aria-label="清除搜索"
+          @click="clearQuery"
         >
-          <span class="material-symbols-outlined text-base">qr_code_scanner</span>
+          <span class="material-symbols-outlined text-base">close</span>
         </button>
-        <label
-          class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-surface-alt border border-border text-xs text-muted cursor-pointer"
-          title="拍照识图"
-        >
-          <span class="material-symbols-outlined text-base">photo_camera</span>
-          <input type="file" accept="image/*" capture="environment" class="hidden" @change="onPickImage" />
-        </label>
-        <button
-          class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-body"
-          @click="openCreate"
-        >
-          <span class="material-symbols-outlined text-base">add</span>
-          添加
-        </button>
+      </div>
+      <button
+        class="shrink-0 flex items-center gap-1 px-3.5 py-2 rounded-xl bg-primary text-white text-sm font-body"
+        @click="openCreate"
+      >
+        <span class="material-symbols-outlined text-base">add</span>添加
+      </button>
+    </div>
+
+    <!-- 快捷操作 -->
+    <div class="flex items-center gap-2 overflow-x-auto pb-0.5" style="scrollbar-width: none">
+      <button
+        class="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-full bg-surface-alt border border-border text-xs font-body text-muted hover:text-on-surface"
+        @click="openStocktake"
+      >
+        <span class="material-symbols-outlined text-base">fact_check</span>盘点
+      </button>
+      <button
+        class="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-full bg-surface-alt border border-border text-xs font-body text-muted hover:text-on-surface"
+        @click="exportCsv"
+      >
+        <span class="material-symbols-outlined text-base">download</span>导出
+      </button>
+      <button
+        class="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-full bg-surface-alt border border-border text-xs font-body text-muted hover:text-on-surface"
+        @click="scanBarcode"
+      >
+        <span class="material-symbols-outlined text-base">qr_code_scanner</span>扫码
+      </button>
+      <label
+        class="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-full bg-surface-alt border border-border text-xs font-body text-muted cursor-pointer hover:text-on-surface"
+      >
+        <span class="material-symbols-outlined text-base">photo_camera</span>拍照
+        <input type="file" accept="image/*" capture="environment" class="hidden" @change="onPickImage" />
+      </label>
+    </div>
+
+    <!-- 概览 -->
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-2.5 md:gap-3">
+      <div class="col-span-2 md:col-span-1 bg-surface border border-border rounded-2xl px-4 py-3.5">
+        <div class="text-[11px] text-muted font-body">在库总数</div>
+        <div class="mt-1 font-headline text-2xl md:text-xl font-semibold tabular-nums">{{ fmt(stats.total) }}</div>
+      </div>
+      <div class="bg-surface border border-border rounded-2xl px-4 py-3.5">
+        <div class="text-[11px] text-muted font-body">库存价值</div>
+        <div class="mt-1 font-headline text-xl font-semibold tabular-nums">{{ fmt(stats.total_value) }}</div>
+      </div>
+      <div class="bg-surface border border-border rounded-2xl px-4 py-3.5">
+        <div class="text-[11px] text-muted font-body">临期</div>
+        <div class="mt-1 font-headline text-xl font-semibold tabular-nums text-error">{{ stats.expiring || 0 }}</div>
+      </div>
+      <div class="bg-surface border border-border rounded-2xl px-4 py-3.5">
+        <div class="text-[11px] text-muted font-body">已过期</div>
+        <div class="mt-1 font-headline text-xl font-semibold tabular-nums text-error">{{ stats.expired || 0 }}</div>
+      </div>
+      <div class="bg-surface border border-border rounded-2xl px-4 py-3.5">
+        <div class="text-[11px] text-muted font-body">需补货</div>
+        <div class="mt-1 font-headline text-xl font-semibold tabular-nums text-primary">{{ stats.low_stock || 0 }}</div>
       </div>
     </div>
 
-    <!-- 统计 -->
-    <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
-      <div class="bg-surface border border-border rounded-2xl p-4">
-        <div class="text-xs text-muted font-body">在库总数</div>
-        <div class="font-headline text-xl font-semibold">{{ fmt(stats.total) }}</div>
-      </div>
-      <div class="bg-surface border border-border rounded-2xl p-4">
-        <div class="text-xs text-muted font-body">库存价值</div>
-        <div class="font-headline text-xl font-semibold">{{ fmt(stats.total_value) }}</div>
-      </div>
-      <div class="bg-surface border border-border rounded-2xl p-4">
-        <div class="text-xs text-muted font-body">临期</div>
-        <div class="font-headline text-xl font-semibold text-error">{{ stats.expiring || 0 }}</div>
-      </div>
-      <div class="bg-surface border border-border rounded-2xl p-4">
-        <div class="text-xs text-muted font-body">已过期</div>
-        <div class="font-headline text-xl font-semibold text-error">{{ stats.expired || 0 }}</div>
-      </div>
-      <div class="bg-surface border border-border rounded-2xl p-4">
-        <div class="text-xs text-muted font-body">需补货</div>
-        <div class="font-headline text-xl font-semibold text-primary">{{ stats.low_stock || 0 }}</div>
-      </div>
-    </div>
-
-    <!-- 筛选 -->
+    <!-- 筛选 + 结果数 -->
     <div class="flex items-center gap-2 text-xs font-body">
       <button
         class="px-3 py-1 rounded-full border"
@@ -119,38 +153,52 @@
         :class="lowStockOnly ? 'bg-primary/10 text-primary border-primary/30' : 'bg-surface-alt text-muted border-border'"
         @click="toggleLowStock"
       >仅看需补货</button>
-      <span v-if="error" class="text-error ml-auto">{{ error }}</span>
+      <span class="ml-auto whitespace-nowrap text-muted">{{ items.length }} 件</span>
     </div>
+    <div v-if="error" class="text-xs text-error font-body">{{ error }}</div>
 
     <!-- 列表 -->
-    <div v-if="items.length" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-      <div
+    <div v-if="items.length" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
+      <article
         v-for="it in items"
         :key="it.id"
-        class="bg-surface border rounded-2xl p-4 cursor-pointer transition-colors"
+        class="group relative bg-surface border rounded-2xl p-4 cursor-pointer transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
         :class="it.low_stock ? 'border-error/40' : 'border-border hover:border-primary/40'"
         @click="openDetail(it)"
       >
-        <div class="flex items-start justify-between gap-2">
+        <span v-if="it.low_stock" class="absolute left-0 top-4 bottom-4 w-0.5 rounded-full bg-error/60"></span>
+        <div class="flex items-start justify-between gap-3">
           <div class="min-w-0">
-            <div class="font-headline font-semibold text-on-background truncate">{{ it.name }}</div>
-            <div class="text-xs text-muted font-body mt-0.5">{{ it.category || '未分类' }}</div>
-          </div>
-          <div class="text-right flex-shrink-0">
-            <div class="font-headline text-lg font-semibold">
-              {{ fmt(it.total_quantity) }}<span class="text-xs text-muted font-body ml-0.5">{{ it.unit }}</span>
+            <div class="font-headline font-semibold text-[15px] truncate text-on-background">{{ it.name }}</div>
+            <div class="mt-1.5 flex items-center gap-1.5 flex-wrap">
+              <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-surface-alt text-muted font-body">{{ it.category || '未分类' }}</span>
+              <span v-if="it.low_stock" class="text-[10px] px-1.5 py-0.5 rounded-full bg-error/10 text-error font-body">需补货</span>
             </div>
-            <span v-if="it.low_stock" class="text-[10px] px-1.5 py-0.5 rounded-full bg-error/10 text-error">需补货</span>
+          </div>
+          <div class="text-right shrink-0">
+            <div class="font-headline text-xl font-semibold leading-none tabular-nums">
+              {{ fmt(it.total_quantity) }}<span class="text-[11px] text-muted font-body ml-0.5">{{ it.unit }}</span>
+            </div>
           </div>
         </div>
-        <div class="flex items-center justify-between mt-3 text-xs font-body">
+        <div class="mt-3 pt-3 border-t border-border flex items-center justify-between gap-2 text-xs font-body">
           <span :class="expiryView(it.nearest_expiry).cls">{{ expiryView(it.nearest_expiry).text }}</span>
-          <span class="text-muted truncate ml-2">{{ locationText(it) }}</span>
+          <span class="text-muted truncate flex items-center gap-0.5 min-w-0">
+            <span class="material-symbols-outlined text-sm">place</span>{{ locationText(it) }}
+          </span>
         </div>
-      </div>
+      </article>
     </div>
-    <div v-else class="text-center py-16 text-sm text-muted font-body">
-      {{ loading ? '加载中…' : '暂无库存，点击右上角「添加」开始记录' }}
+    <div v-else class="py-14 text-center">
+      <div class="w-12 h-12 mx-auto rounded-full bg-surface-alt flex items-center justify-center text-muted">
+        <span class="material-symbols-outlined">inventory_2</span>
+      </div>
+      <p class="mt-3 text-sm text-muted font-body">{{ loading ? '加载中…' : '还没有记录物品' }}</p>
+      <button
+        v-if="!loading"
+        class="mt-3 px-4 py-2 rounded-xl bg-primary text-white text-xs font-body"
+        @click="openCreate"
+      >添加第一件物品</button>
     </div>
     </template>
 
@@ -427,6 +475,11 @@ async function refresh() {
 function onQueryInput() {
   clearTimeout(queryTimer)
   queryTimer = setTimeout(loadItems, 300)
+}
+
+function clearQuery() {
+  query.value = ''
+  loadItems()
 }
 
 function selectLocation(id) {

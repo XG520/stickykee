@@ -30,6 +30,9 @@ public class MainActivity extends BridgeActivity {
         // mediaPlaybackRequiresUserGesture=true 时自动朗读（无用户手势）会在合成回到
         // 前端后被 WebView 拒绝，导致自定义 TTS 引擎无声、只能回退系统 TTS。
         bridge.getWebView().getSettings().setMediaPlaybackRequiresUserGesture(false);
+        // APK 覆盖安装后，WebView 可能仍命中旧内置前端的缓存。版本号变化时清一次
+        // 资源缓存并重载，保证直接用上新 APK 里的前端，无需用户手动清除应用数据。
+        refreshWebCacheOnUpgrade();
         // 定位：navigator.geolocation 的授权弹窗与运行时权限由 Capacitor 的
         // BridgeWebChromeClient.onGeolocationPermissionsShowPrompt 处理，无需自定义包装；
         // 此前报 "User denied Geolocation" 的根因是 AndroidManifest 未声明定位权限，
@@ -40,6 +43,31 @@ public class MainActivity extends BridgeActivity {
         // 启动时请求一次；拒绝后通知静默丢弃（NativeBridge.showNotification2 有兜底检查）。
         if (android.os.Build.VERSION.SDK_INT >= 33) {
             requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 4201);
+        }
+    }
+
+    // APK 版本号变化（覆盖安装）时清理 WebView 资源缓存并重载一次。
+    // 不清 Cookie / localStorage，登录态与服务器地址簿不受影响。
+    private void refreshWebCacheOnUpgrade() {
+        try {
+            android.content.pm.PackageInfo pi = getPackageManager().getPackageInfo(getPackageName(), 0);
+            String cur = pi.versionName + "#" + pi.versionCode;
+            android.content.SharedPreferences sp = getSharedPreferences("hc_web_cache", MODE_PRIVATE);
+            String last = sp.getString("version", "");
+            if (cur.equals(last)) return;
+            final android.webkit.WebView wv = bridge.getWebView();
+            wv.clearCache(true);
+            wv.clearHistory();
+            sp.edit().putString("version", cur).apply();
+            // 覆盖安装：清完缓存主动重载，避免首屏已用旧缓存渲染。
+            wv.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    wv.reload();
+                }
+            }, 400);
+        } catch (Exception ignored) {
+            // 取版本失败不影响主流程，下次启动会重试。
         }
     }
 

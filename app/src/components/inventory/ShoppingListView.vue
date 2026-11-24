@@ -1,24 +1,27 @@
 <template>
   <div class="space-y-3">
-    <div class="flex items-center gap-2 flex-wrap">
+    <div class="space-y-2">
       <input
         v-model="name"
         placeholder="添加到购物清单…"
-        class="flex-1 min-w-40 px-3 py-2 rounded-lg bg-surface-alt border border-border text-sm text-on-surface outline-none focus:border-primary"
+        class="w-full px-3 py-2.5 rounded-xl bg-surface-alt border border-border text-sm text-on-surface outline-none focus:border-primary transition-colors"
         @keyup.enter="add"
       />
-      <input
-        v-model.number="qty"
-        type="number"
-        min="1"
-        step="1"
-        class="w-16 px-2 py-2 rounded-lg bg-surface-alt border border-border text-sm text-on-surface outline-none focus:border-primary"
-      />
-      <button class="px-3 py-2 rounded-lg bg-primary text-white text-sm font-body" @click="add">添加</button>
-      <label class="text-xs text-muted font-body flex items-center gap-1.5 ml-auto">
-        <input v-model="showDone" type="checkbox" @change="load" />
-        显示已完成
-      </label>
+      <div class="flex items-center gap-2">
+        <label class="text-xs text-muted font-body whitespace-nowrap">数量</label>
+        <input
+          v-model.number="qty"
+          type="number"
+          min="1"
+          step="1"
+          class="w-16 px-2 py-2 rounded-xl bg-surface-alt border border-border text-sm text-on-surface outline-none focus:border-primary"
+        />
+        <button class="px-4 py-2 rounded-xl bg-primary text-white text-sm font-body" @click="add">添加</button>
+        <label class="text-xs text-muted font-body flex items-center gap-1.5 ml-auto whitespace-nowrap">
+          <input v-model="showDone" type="checkbox" @change="load" />
+          显示已完成
+        </label>
+      </div>
     </div>
 
     <div v-if="error" class="text-xs text-error font-body">{{ error }}</div>

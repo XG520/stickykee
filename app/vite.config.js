@@ -2,10 +2,28 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import legacy from '@vitejs/plugin-legacy'
 import { fileURLToPath, URL } from 'node:url'
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 
 // 构建时把 package.json 的版本注入 __APP_VERSION__，设置页展示前端版本。
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf-8'))
+
+// 本次构建号：写入 dist/version.json 并注入前端，页面据此判断服务器前端是否已更新。
+// 用时间戳而不是 package 版本，前后端只发一次或未改版本号时也能识别新构建。
+const BUILD_ID = process.env.HC_BUILD_ID || Date.now().toString(36)
+const VERSION_FILE = fileURLToPath(new URL('./dist/version.json', import.meta.url))
+
+function frontendVersionPlugin() {
+  let wrote = false
+  return {
+    name: 'hc-frontend-version',
+    apply: 'build',
+    closeBundle() {
+      if (wrote) return
+      wrote = true
+      writeFileSync(VERSION_FILE, JSON.stringify({ build: BUILD_ID, version: pkg.version }))
+    },
+  }
+}
 
 export default defineConfig({
   plugins: [
@@ -18,9 +36,11 @@ export default defineConfig({
       polyfills: true,
       modernPolyfills: true,
     }),
+    frontendVersionPlugin(),
   ],
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
+    __APP_BUILD__: JSON.stringify(BUILD_ID),
   },
   resolve: {
     alias: {
