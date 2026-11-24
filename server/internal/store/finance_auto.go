@@ -301,6 +301,7 @@ type FinImportItem struct {
 	OccurredAt   string `json:"occurred_at"`
 	Counterparty string `json:"counterparty"`
 	Note         string `json:"note"`
+	Tags         string `json:"tags,omitempty"`
 	CategoryID   int64  `json:"category_id"`
 	CategoryName string `json:"category_name"`
 	Duplicate    bool   `json:"duplicate"`
@@ -507,7 +508,7 @@ func txRefExists(ctx context.Context, ex interface {
 	return ok
 }
 
-// ImportBill 解析支付宝 / 微信官方账单 CSV；Commit=true 时写入流水（按交易单号幂等）。
+// ImportBill 解析支付宝 / 微信官方账单、鲨鱼记账等账本 CSV；Commit=true 时写入流水（幂等）。
 func (r *FinanceRepo) ImportBill(ctx context.Context, instanceID int64, in FinImportInput, user string) (FinImportResult, error) {
 	out := FinImportResult{Items: []FinImportItem{}, Errors: []string{}}
 	content := strings.TrimSpace(strings.TrimPrefix(in.Content, "\uFEFF"))
@@ -518,18 +519,26 @@ func (r *FinanceRepo) ImportBill(ctx context.Context, instanceID int64, in FinIm
 	if err != nil {
 		return out, err
 	}
-	cols, headerAt, ok := findBillColumns(records)
-	if !ok {
-		return out, errors.New("未识别到账单表头（需包含「交易时间」「金额」「收/支」等列）")
+	cols, headerAt, isBill := findBillColumns(records)
+	var ledgerCols ledgerColumns
+	var ledgerHeaderAt int
+	isLedger := false
+	if !isBill {
+		ledgerCols, ledgerHeaderAt, isLedger = findLedgerColumns(records)
 	}
-	out.Source = detectBillSource(content)
+	if !isBill && !isLedger {
+		return out, errors.New("未识别到账单表头（支持支付宝 / 微信官方账单与鲨鱼记账等账本导出的 CSV，需包含日期和金额列）")
+	}
+	if isBill {
+		out.Source = detectBillSource(content)
+	} else {
+		out.Source = detectLedgerSource(content)
+	}
 	if err := r.ensureDefaults(ctx, instanceID); err != nil {
 		return out, err
 	}
 
-	var ex interface {
-		QueryRowContext(context.Context, string, ...any) *sql.Row
-	}
+	var ex finImportExecer
 	var tx *sql.Tx
 	accountID := in.AccountID
 	if in.Commit {
@@ -553,6 +562,25 @@ func (r *FinanceRepo) ImportBill(ctx context.Context, instanceID int64, in FinIm
 		ex = r.db
 	}
 
+	if isBill {
+		if err := r.importBillRows(ctx, ex, instanceID, accountID, records, cols, headerAt, &out, in.Commit, user); err != nil {
+			return out, err
+		}
+	} else if err := r.importLedgerRows(ctx, ex, instanceID, accountID, records, ledgerCols, ledgerHeaderAt, &out, in.Commit, user); err != nil {
+		return out, err
+	}
+
+	if in.Commit {
+		if err := tx.Commit(); err != nil {
+			return out, err
+		}
+	}
+	return out, nil
+}
+
+// importBillRows 导入支付宝 / 微信官方账单行。
+func (r *FinanceRepo) importBillRows(ctx context.Context, ex finImportExecer, instanceID, accountID int64,
+	records [][]string, cols billColumns, headerAt int, out *FinImportResult, commit bool, user string) error {
 	for i := headerAt + 1; i < len(records); i++ {
 		rec := records[i]
 		if len(rec) == 0 {
@@ -570,20 +598,20 @@ func (r *FinanceRepo) ImportBill(ctx context.Context, instanceID int64, in FinIm
 		if item.Type == "" {
 			item.Skipped, item.Reason = true, "不计收支"
 			out.Skipped++
-			out.appendItem(item, in.Commit)
+			out.appendItem(item, commit)
 			continue
 		}
 		item.Amount = parseBillAmount(billCell(rec, cols.amount))
 		if item.Amount <= 0 {
 			item.Skipped, item.Reason = true, "金额无法解析"
 			out.Skipped++
-			out.appendItem(item, in.Commit)
+			out.appendItem(item, commit)
 			continue
 		}
 		if status := billCell(rec, cols.status); billStatusSkipped(status) {
 			item.Skipped, item.Reason = true, "交易状态："+status
 			out.Skipped++
-			out.appendItem(item, in.Commit)
+			out.appendItem(item, commit)
 			continue
 		}
 		catName := importCategoryName(item.Type, billCategoryText(rec, cols, item.Counterparty))
@@ -593,15 +621,15 @@ func (r *FinanceRepo) ImportBill(ctx context.Context, instanceID int64, in FinIm
 		if txRefExists(ctx, ex, instanceID, "import", refID) {
 			item.Duplicate = true
 			out.Duplicates++
-			out.appendItem(item, in.Commit)
+			out.appendItem(item, commit)
 			continue
 		}
-		if !in.Commit {
+		if !commit {
 			out.Importable++
 			out.appendItem(item, false)
 			continue
 		}
-		res, err := tx.ExecContext(ctx,
+		res, err := ex.ExecContext(ctx,
 			`INSERT OR IGNORE INTO fin_transactions(instance_id, type, amount, account_id, category_id,
 				currency, note, source, ref_type, ref_id, occurred_at, created_by)
 			 VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -621,10 +649,5 @@ func (r *FinanceRepo) ImportBill(ctx context.Context, instanceID int64, in FinIm
 		}
 		out.appendItem(item, true)
 	}
-	if in.Commit {
-		if err := tx.Commit(); err != nil {
-			return out, err
-		}
-	}
-	return out, nil
+	return nil
 }

@@ -6,15 +6,17 @@
   >
     <div class="w-full max-w-xl max-h-[90vh] overflow-y-auto bg-surface border border-border rounded-t-2xl sm:rounded-2xl p-5 space-y-4">
       <div class="flex items-center justify-between">
-        <h3 class="font-headline text-lg font-semibold">导入官方账单</h3>
+        <h3 class="font-headline text-lg font-semibold">导入账单</h3>
         <button class="text-muted hover:text-on-surface" @click="close">
           <span class="material-symbols-outlined">close</span>
         </button>
       </div>
 
       <p class="text-xs text-muted font-body leading-relaxed">
-        支持支付宝 / 微信官方账单 CSV。支付宝在「我的 → 账单 → 开具交易流水证明」导出（GBK），
-        微信在「我 → 服务 → 钱包 → 账单 → 常见问题 → 下载账单」导出（UTF-8）。重复交易会自动跳过。
+        支持<span class="text-on-surface">鲨鱼记账</span>、支付宝、微信导出的 CSV。
+        鲨鱼记账在「我的 → 设置 → 导出数据」导出；支付宝在「我的 → 账单 → 开具交易流水证明」导出（GBK）；
+        微信在「我 → 服务 → 钱包 → 账单 → 常见问题 → 下载账单」导出（UTF-8）。
+        鲨鱼记账的分类会自动映射到现有分类，对不上的会自动新建；重复交易自动跳过。
       </p>
 
       <input ref="fileInput" type="file" accept=".csv,text/csv" class="hidden" @change="onFile" />
@@ -39,6 +41,10 @@
       </div>
 
       <div v-if="result" class="space-y-2">
+        <div class="flex items-center justify-between">
+          <span class="text-[11px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-body">{{ sourceLabel }}</span>
+          <span class="text-[11px] text-muted font-body">识别到 {{ result.total }} 条记录</span>
+        </div>
         <div class="grid grid-cols-4 gap-2 text-center">
           <div class="bg-surface-alt rounded-xl py-2">
             <div class="text-[11px] text-muted font-body">共</div>
@@ -71,7 +77,7 @@
           >
             <div class="min-w-0">
               <div class="truncate">{{ it.note || it.counterparty || '未命名' }}</div>
-              <div class="text-[10px] text-muted">{{ it.occurred_at }} · {{ it.category_name || '未分类' }}</div>
+              <div class="text-[10px] text-muted">{{ it.occurred_at }} · {{ it.category_name || '未分类' }}<template v-if="it.tags"> · #{{ it.tags }}</template></div>
             </div>
             <div class="text-right flex-shrink-0">
               <div :class="it.type === 'income' ? 'text-primary' : ''">
@@ -128,6 +134,10 @@ const accountOptions = computed(() => [
   { label: '默认账户', value: 0 },
   ...activeAccounts.value.map((a) => ({ label: a.name, value: a.id })),
 ])
+const sourceLabel = computed(() => {
+  const map = { shark: '鲨鱼记账', alipay: '支付宝账单', wechat: '微信账单', ledger: '通用账本' }
+  return map[result.value?.source] || '账单'
+})
 
 function money(cents) {
   return '¥' + (Number(cents || 0) / 100).toFixed(2)

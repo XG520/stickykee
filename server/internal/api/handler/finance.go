@@ -243,6 +243,7 @@ func (h *Finance) ListTransactions(w http.ResponseWriter, r *http.Request) {
 	}
 	f := store.FinTransactionFilter{
 		Month:      r.URL.Query().Get("month"),
+		Day:        r.URL.Query().Get("day"),
 		Type:       r.URL.Query().Get("type"),
 		AccountID:  finQueryInt(r, "account"),
 		CategoryID: finQueryInt(r, "category"),

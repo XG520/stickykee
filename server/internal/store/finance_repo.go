@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -101,6 +102,7 @@ type FinTransactionInput struct {
 // FinTransactionFilter 流水筛选条件。
 type FinTransactionFilter struct {
 	Month      string
+	Day        string
 	Type       string
 	AccountID  int64
 	CategoryID int64
@@ -126,6 +128,13 @@ type FinCategoryStat struct {
 	Name       string  `json:"name"`
 	Amount     int64   `json:"amount"`
 	Percent    float64 `json:"percent"`
+}
+
+// FinDayStat 某天的收支合计（用于收支日历）。
+type FinDayStat struct {
+	Day     string `json:"day"`
+	Expense int64  `json:"expense"`
+	Income  int64  `json:"income"`
 }
 
 // FinBudgetProgress 分类预算进度。
@@ -196,6 +205,7 @@ type FinStats struct {
 	BudgetPct     int                 `json:"budget_pct"`
 	BudgetOverall bool                `json:"budget_overall"`
 	ByCategory    []FinCategoryStat   `json:"by_category"`
+	ByDay         []FinDayStat        `json:"by_day"`
 	ByAccount     []FinAccount        `json:"by_account"`
 	Budgets       []FinBudgetProgress `json:"budgets"`
 }
@@ -613,6 +623,10 @@ func (r *FinanceRepo) ListTransactions(ctx context.Context, instanceID int64, f 
 		where = append(where, "substr(t.occurred_at,1,7)=?")
 		args = append(args, f.Month)
 	}
+	if f.Day != "" {
+		where = append(where, "substr(t.occurred_at,1,10)=?")
+		args = append(args, f.Day)
+	}
 	if f.Type != "" {
 		where = append(where, "t.type=?")
 		args = append(args, f.Type)
@@ -630,9 +644,16 @@ func (r *FinanceRepo) ListTransactions(ctx context.Context, instanceID int64, f 
 		args = append(args, f.RefType, f.RefID)
 	}
 	if q := strings.TrimSpace(f.Query); q != "" {
-		where = append(where, "(t.note LIKE ? OR t.tags LIKE ?)")
 		like := "%" + q + "%"
-		args = append(args, like, like)
+		// 纯数字搜索同时按金额匹配（按元输入，库内为分）。
+		cleaned := strings.NewReplacer("¥", "", "￥", "", ",", "", "元", "").Replace(q)
+		if v, err := strconv.ParseFloat(cleaned, 64); err == nil && v > 0 {
+			where = append(where, "(t.note LIKE ? OR t.tags LIKE ? OR t.amount=?)")
+			args = append(args, like, like, int64(math.Round(v*100)))
+		} else {
+			where = append(where, "(t.note LIKE ? OR t.tags LIKE ?)")
+			args = append(args, like, like)
+		}
 	}
 	if tag := strings.TrimSpace(f.Tag); tag != "" {
 		where = append(where, "(',' || t.tags || ',') LIKE ?")
@@ -881,7 +902,7 @@ func MonthOf(v string) string {
 // Stats 汇总某月收支、分类占比、账户余额与预算进度。
 func (r *FinanceRepo) Stats(ctx context.Context, instanceID int64, month string) (FinStats, error) {
 	month = MonthOf(month)
-	st := FinStats{Month: month, ByCategory: []FinCategoryStat{}, ByAccount: []FinAccount{}, Budgets: []FinBudgetProgress{}}
+	st := FinStats{Month: month, ByCategory: []FinCategoryStat{}, ByDay: []FinDayStat{}, ByAccount: []FinAccount{}, Budgets: []FinBudgetProgress{}}
 	if err := r.db.QueryRowContext(ctx,
 		`SELECT COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END),0),
 			COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END),0)
@@ -912,6 +933,26 @@ func (r *FinanceRepo) Stats(ctx context.Context, instanceID int64, month string)
 		st.ByCategory = append(st.ByCategory, cs)
 	}
 	rows.Close()
+	drows, err := r.db.QueryContext(ctx,
+		`SELECT substr(occurred_at,1,10),
+			COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END),0),
+			COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END),0)
+		 FROM fin_transactions
+		 WHERE instance_id=? AND deleted_at='' AND type IN ('expense','income')
+		   AND substr(occurred_at,1,7)=?
+		 GROUP BY substr(occurred_at,1,10) ORDER BY 1`, instanceID, month)
+	if err != nil {
+		return st, err
+	}
+	for drows.Next() {
+		var ds FinDayStat
+		if err := drows.Scan(&ds.Day, &ds.Expense, &ds.Income); err != nil {
+			drows.Close()
+			return st, err
+		}
+		st.ByDay = append(st.ByDay, ds)
+	}
+	drows.Close()
 	accounts, err := r.ListAccounts(ctx, instanceID, true)
 	if err != nil {
 		return st, err

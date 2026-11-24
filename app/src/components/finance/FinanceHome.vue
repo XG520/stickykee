@@ -23,6 +23,11 @@
         >预算</button>
         <button
           class="px-3 py-1.5 rounded-lg text-xs font-body border"
+          :class="showCalendar ? 'bg-primary/10 text-primary border-primary/30' : 'bg-surface-alt text-muted border-border'"
+          @click="showCalendar = !showCalendar"
+        >日历</button>
+        <button
+          class="px-3 py-1.5 rounded-lg text-xs font-body border"
           :class="showReport ? 'bg-primary/10 text-primary border-primary/30' : 'bg-surface-alt text-muted border-border'"
           @click="showReport = !showReport"
         >报表</button>
@@ -39,8 +44,12 @@
         >导入</button>
         <button
           class="px-3 py-1.5 rounded-lg bg-surface-alt border border-border text-xs text-muted font-body"
-          @click="managerOpen = true"
+          @click="openManager('account')"
         >账户 / 分类</button>
+        <button
+          class="px-3 py-1.5 rounded-lg bg-surface-alt border border-border text-xs text-muted font-body"
+          @click="openManager('recurring')"
+        >周期</button>
         <button
           class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-body"
           @click="openAdd"
@@ -49,6 +58,22 @@
           记一笔
         </button>
       </div>
+    </div>
+
+    <!-- 搜索 -->
+    <div class="flex items-center gap-2">
+      <div class="flex-1 min-w-0 flex items-center gap-2 px-3 py-2 rounded-xl bg-surface border border-border focus-within:border-primary/50">
+        <span class="material-symbols-outlined text-base text-muted">search</span>
+        <input
+          v-model="searchQuery"
+          class="flex-1 min-w-0 bg-transparent outline-none text-sm text-on-surface placeholder:text-muted"
+          placeholder="搜索备注 / 标签 / 金额（全部月份）"
+        />
+        <button v-if="searchQuery" class="text-muted hover:text-on-surface" @click="clearSearch">
+          <span class="material-symbols-outlined text-base">close</span>
+        </button>
+      </div>
+      <UiSelect v-model="filterCategoryId" class="w-32 flex-shrink-0 text-sm" :options="categoryFilterOptions" />
     </div>
 
     <!-- 标签筛选 -->
@@ -89,6 +114,50 @@
       </div>
     </div>
 
+    <!-- 收支日历 -->
+    <section v-if="showCalendar" class="bg-surface border border-border rounded-2xl p-3 space-y-2">
+      <div class="flex items-center justify-between px-1">
+        <div class="text-sm font-medium font-body">收支日历</div>
+        <div class="flex items-center gap-2 text-[10px] font-body text-muted">
+          <span class="flex items-center gap-1">
+            <i class="w-1.5 h-1.5 rounded-full bg-primary inline-block"></i>支出
+          </span>
+          <button v-if="dayFilter" class="text-primary" @click="clearDay">取消筛选</button>
+        </div>
+      </div>
+      <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-body text-muted">
+        <span v-for="w in weekLabels" :key="w">{{ w }}</span>
+      </div>
+      <div class="grid grid-cols-7 gap-1">
+        <button
+          v-for="(c, i) in calendarCells"
+          :key="i"
+          type="button"
+          class="h-10 rounded-xl flex flex-col items-center justify-center gap-0.5 font-body text-[11px] transition-colors"
+          :class="c
+            ? [c.key === dayFilter ? 'bg-primary text-white' : 'bg-surface-alt/50 text-on-surface hover:bg-surface-alt',
+               c.isToday && c.key !== dayFilter ? 'ring-1 ring-primary/40' : '']
+            : 'opacity-0 pointer-events-none'"
+          :disabled="!c"
+          @click="c && selectDay(c.key)"
+        >
+          <template v-if="c">
+            <span class="leading-none">{{ c.day }}</span>
+            <span
+              v-if="c.expense > 0"
+              class="text-[9px] leading-none"
+              :class="c.key === dayFilter ? 'text-white/80' : 'text-muted'"
+            >{{ shortMoney(c.expense) }}</span>
+            <span
+              v-else-if="c.income > 0"
+              class="text-[9px] leading-none"
+              :class="c.key === dayFilter ? 'text-white/80' : 'text-primary'"
+            >+{{ shortMoney(c.income) }}</span>
+          </template>
+        </button>
+      </div>
+    </section>
+
     <!-- 预算进度 -->
     <div v-if="Number(stats.budget_total) > 0" class="bg-surface border border-border rounded-2xl p-4 space-y-2">
       <div class="flex items-center justify-between text-xs font-body">
@@ -112,6 +181,10 @@
     <div v-if="error" class="text-xs text-error font-body">{{ error }}</div>
 
     <FinanceReport v-if="showReport" :stats="stats" :trend="trend" />
+
+    <div v-if="searching" class="text-[11px] text-muted font-body px-1">
+      全部月份 · 找到 {{ total }} 条
+    </div>
 
     <!-- 按日流水 -->
     <div v-if="groups.length" class="space-y-4">
@@ -155,7 +228,7 @@
       >加载更多（{{ items.length }} / {{ total }}）</button>
     </div>
     <div v-else class="text-center py-16 text-sm text-muted font-body">
-      {{ loading ? '加载中…' : '本月还没有账目，点击右上角「记一笔」开始' }}
+      {{ emptyHint }}
     </div>
 
     <TransactionDialog
@@ -170,6 +243,7 @@
       v-model="managerOpen"
       :accounts="allAccounts"
       :categories="categories"
+      :initial-tab="managerTab"
       @changed="reloadAll"
       @import="importOpen = true"
     />
@@ -188,8 +262,9 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import api from '@/api'
+import UiSelect from '@/components/ui/UiSelect.vue'
 import TransactionDialog from './TransactionDialog.vue'
 import AccountManager from './AccountManager.vue'
 import BudgetDialog from './BudgetDialog.vue'
@@ -215,10 +290,17 @@ const error = ref('')
 const dialogOpen = ref(false)
 const editing = ref(null)
 const managerOpen = ref(false)
+const managerTab = ref('account')
 const budgetOpen = ref(false)
 const importOpen = ref(false)
 const showReport = ref(false)
+const showCalendar = ref(true)
 const trend = ref([])
+
+const searchQuery = ref('')
+const filterCategoryId = ref(0)
+const dayFilter = ref('')
+const weekLabels = ['一', '二', '三', '四', '五', '六', '日']
 
 function pad(n) {
   return String(n).padStart(2, '0')
@@ -237,6 +319,51 @@ const monthLabel = computed(() => {
 })
 
 const balance = computed(() => Number(stats.value.income || 0) - Number(stats.value.expense || 0))
+
+const searching = computed(() => !!searchQuery.value.trim())
+
+const emptyHint = computed(() => {
+  if (loading.value) return '加载中…'
+  if (searching.value) return '没有找到匹配的账目'
+  if (dayFilter.value) return '这一天没有账目'
+  return '本月还没有账目，点击右上角「记一笔」开始'
+})
+
+const categoryFilterOptions = computed(() => [
+  { label: '全部分类', value: 0 },
+  ...categories.value.map((c) => ({ label: `${c.type === 'income' ? '收入' : '支出'} · ${c.name}`, value: c.id })),
+])
+
+const todayKey = (() => {
+  const d = new Date()
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+})()
+
+const dayStatMap = computed(() => {
+  const m = {}
+  for (const d of stats.value.by_day || []) m[d.day] = d
+  return m
+})
+
+const calendarCells = computed(() => {
+  const [y, mo] = month.value.split('-').map(Number)
+  if (!y || !mo) return []
+  const lead = (new Date(y, mo - 1, 1).getDay() + 6) % 7
+  const days = new Date(y, mo, 0).getDate()
+  const cells = Array.from({ length: lead }, () => null)
+  for (let d = 1; d <= days; d += 1) {
+    const key = `${month.value}-${pad(d)}`
+    const s = dayStatMap.value[key] || {}
+    cells.push({
+      day: d,
+      key,
+      expense: Number(s.expense || 0),
+      income: Number(s.income || 0),
+      isToday: key === todayKey,
+    })
+  }
+  return cells
+})
 
 const categoryMap = computed(() => {
   const m = {}
@@ -278,6 +405,28 @@ function money(cents) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })
+}
+
+function shortMoney(cents) {
+  const v = Number(cents || 0) / 100
+  if (!v) return ''
+  if (v >= 10000) return (v / 10000).toFixed(1).replace(/\.0$/, '') + '万'
+  if (v >= 100) return String(Math.round(v))
+  return v.toFixed(v % 1 ? 1 : 0)
+}
+
+function selectDay(key) {
+  dayFilter.value = dayFilter.value === key ? '' : key
+  loadTransactions()
+}
+
+function clearDay() {
+  dayFilter.value = ''
+  loadTransactions()
+}
+
+function clearSearch() {
+  searchQuery.value = ''
 }
 
 function signedAmount(tx) {
@@ -360,13 +509,18 @@ async function loadCategories() {
 async function loadTransactions(reset = true) {
   if (reset) page.value = 1
   try {
-    const params = { month: month.value, page: page.value, page_size: PAGE_SIZE }
+    const params = { page: page.value, page_size: PAGE_SIZE }
+    // 有关键词时跨全部月份搜索，否则只看当前月。
+    if (!searching.value) params.month = month.value
+    else params.q = searchQuery.value.trim()
+    if (filterCategoryId.value) params.category = filterCategoryId.value
+    if (dayFilter.value) params.day = dayFilter.value
     if (tagFilter.value) params.tag = tagFilter.value
     const res = await api.financeTransactions(params)
     const d = res.data || {}
     items.value = reset ? (d.items || []) : items.value.concat(d.items || [])
     total.value = d.total || 0
-    if (reset && !tagFilter.value) tagPool.value = collectTags(items.value)
+    if (reset && !tagFilter.value && !searching.value) tagPool.value = collectTags(items.value)
   } catch (e) {
     error.value = e.message || '加载失败'
   }
@@ -410,6 +564,7 @@ function shiftMonth(n) {
   const d = new Date(y, m - 1 + n, 1)
   month.value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}`
   tagFilter.value = ''
+  dayFilter.value = ''
   tagPool.value = []
   loadStats()
   loadTransactions()
@@ -418,6 +573,7 @@ function shiftMonth(n) {
 function goCurrentMonth() {
   month.value = currentMonthValue
   tagFilter.value = ''
+  dayFilter.value = ''
   tagPool.value = []
   loadStats()
   loadTransactions()
@@ -426,6 +582,11 @@ function goCurrentMonth() {
 function openAdd() {
   editing.value = null
   dialogOpen.value = true
+}
+
+function openManager(tab = 'account') {
+  managerTab.value = tab
+  managerOpen.value = true
 }
 
 function openEdit(tx) {
@@ -466,6 +627,14 @@ async function exportCsv() {
     error.value = e.message || '导出失败'
   }
 }
+
+let searchTimer = null
+watch(searchQuery, () => {
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => loadTransactions(), 300)
+})
+watch(filterCategoryId, () => loadTransactions())
+onBeforeUnmount(() => clearTimeout(searchTimer))
 
 onMounted(() => {
   syncAutoFinanceConfig()

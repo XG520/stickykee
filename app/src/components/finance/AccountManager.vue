@@ -252,6 +252,7 @@ const props = defineProps({
   modelValue: { type: Boolean, default: false },
   accounts: { type: Array, default: () => [] },
   categories: { type: Array, default: () => [] },
+  initialTab: { type: String, default: 'account' },
 })
 const emit = defineEmits(['update:modelValue', 'changed', 'import'])
 
@@ -537,7 +538,7 @@ function openImport() {
 watch(() => props.modelValue, (v) => {
   if (v) {
     resetAccountForm()
-    tab.value = 'account'
+    tab.value = props.initialTab || 'account'
   }
 })
 </script>
