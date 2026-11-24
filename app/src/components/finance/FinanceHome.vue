@@ -164,6 +164,7 @@
       :categories="categories"
       :transaction="editing"
       @saved="reload"
+      @reload="loadCategories"
     />
     <AccountManager
       v-model="managerOpen"

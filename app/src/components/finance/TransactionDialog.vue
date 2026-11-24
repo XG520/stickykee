@@ -162,7 +162,8 @@
                 >chevron_right</span>
               </button>
               <div v-if="!topCategories.length" class="col-span-4 text-xs text-muted py-6 text-center font-body">
-                暂无分类，请先在「账户 / 分类」中添加
+                暂无分类
+                <button class="block mx-auto mt-2 text-primary" @click="emit('reload')">重新加载分类</button>
               </div>
             </div>
 
@@ -308,7 +309,7 @@ const props = defineProps({
   categories: { type: Array, default: () => [] },
   transaction: { type: Object, default: null },
 })
-const emit = defineEmits(['update:modelValue', 'saved'])
+const emit = defineEmits(['update:modelValue', 'saved', 'reload'])
 
 const steps = [
   { n: 1, label: '分类' },
@@ -488,11 +489,10 @@ function setType(t) {
 }
 
 function chooseCategory(c) {
-  if (hasChildren(c)) {
-    drillParent.value = c
-    return
-  }
+  // 点一级分类即视为选中：有子类时同时展开，既不会“点了没反应”，也保留细分入口
   categoryId.value = c.id
+  error.value = ''
+  drillParent.value = hasChildren(c) ? c : null
 }
 
 function selectCategory(c) {
@@ -691,7 +691,17 @@ onMounted(() => document.addEventListener('keydown', onKeydown))
 onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
 
 watch(() => props.modelValue, (v) => {
-  if (v) reset()
+  if (!v) return
+  reset()
+  // 上次分类加载失败/为空时，打开弹窗自动重拉一次，避免一直停在“暂无分类”
+  if (!props.categories.length) emit('reload')
+})
+
+// 分类晚于弹窗加载完成时，自动补选默认分类，避免“分类列表出现了但没有选中项”
+watch(() => props.categories, () => {
+  if (!props.modelValue || step.value !== 1 || categoryId.value) return
+  const id = defaultCategory(type.value)
+  if (id) categoryId.value = id
 })
 </script>
 
