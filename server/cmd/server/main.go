@@ -41,6 +41,7 @@ func main() {
 	mrepo := store.NewMessageRepo(db.DB())
 	iconRepo := store.NewIconRepo(db.DB())
 	invRepo := store.NewInventoryRepo(db.DB())
+	finRepo := store.NewFinanceRepo(db.DB())
 	// 运行日志持久化：注册 slog 写入器（保留 30 天由 API 层定时清理）
 	logRepo := store.NewLogRepo(db.DB())
 	diag.SetSink(logRepo.Append)
@@ -60,7 +61,7 @@ func main() {
 	manager := ha.NewManager(repo, uprefs, hb, slog.Default(), cfg.TLSInsecure)
 	// 聊天图片与数据库同级存放：<data>/uploads/im/
 	uploadDir := filepath.Join(filepath.Dir(cfg.DBPath), "uploads")
-	handler := api.Router(repo, urepo, uprefs, mrepo, logRepo, iconRepo, invRepo, hb, manager, auth.Option{
+	handler := api.Router(repo, urepo, uprefs, mrepo, logRepo, iconRepo, invRepo, finRepo, hb, manager, auth.Option{
 		Authenticate: func(token string) (auth.Identity, bool) {
 			u, isAdmin, ok := urepo.IdentityByToken(context.Background(), token)
 			return auth.Identity{Username: u, IsAdmin: isAdmin}, ok

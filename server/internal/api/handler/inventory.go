@@ -2,9 +2,12 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
+	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -18,14 +21,15 @@ import (
 // Inventory 提供库存/食品库的 REST 接口。
 type Inventory struct {
 	repo *store.InventoryRepo
+	fin  *store.FinanceRepo
 	inst *store.InstanceRepo
 	sync *InventorySync
 	ai   *AI
 }
 
 // NewInventory 构造 handler。
-func NewInventory(repo *store.InventoryRepo, inst *store.InstanceRepo, sync *InventorySync, ai *AI) *Inventory {
-	return &Inventory{repo: repo, inst: inst, sync: sync, ai: ai}
+func NewInventory(repo *store.InventoryRepo, fin *store.FinanceRepo, inst *store.InstanceRepo, sync *InventorySync, ai *AI) *Inventory {
+	return &Inventory{repo: repo, fin: fin, inst: inst, sync: sync, ai: ai}
 }
 
 // active 解析当前激活实例；未配置时写错误并返回 false。
@@ -41,6 +45,54 @@ func (h *Inventory) active(w http.ResponseWriter, r *http.Request) (int64, bool)
 func (h *Inventory) changed(instanceID int64) {
 	if h.sync != nil {
 		h.sync.RequestSync(instanceID)
+	}
+}
+
+// cents 把「单价 × 数量（元）」换算为分；非正数返回 0。
+func cents(price, qty float64) int64 {
+	if price <= 0 || qty <= 0 {
+		return 0
+	}
+	return int64(math.Round(price * qty * 100))
+}
+
+// recordPurchase 库存入库自动记一笔支出（金额为 0 或未配置账本时跳过）。
+func (h *Inventory) recordPurchase(instanceID int64, itemName, category string, b store.InventoryBatch, user string) {
+	if h.fin == nil {
+		return
+	}
+	amount := cents(b.EntryPrice, b.Quantity)
+	if amount <= 0 {
+		return
+	}
+	if err := h.fin.RecordInventoryPurchase(context.Background(), instanceID,
+		itemName, category, b.ID, amount, b.EntryDate, user); err != nil {
+		slog.Warn("inventory auto finance: purchase failed", "instance", instanceID, "batch", b.ID, "err", err.Error())
+	}
+}
+
+// financeLossEnabled 实例设置：丢弃批次是否记损耗，默认开启。
+func (h *Inventory) financeLossEnabled(ctx context.Context) bool {
+	v, _ := h.inst.GetPref(ctx, "finance_loss_enabled")
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "0", "false", "off", "no":
+		return false
+	}
+	return true
+}
+
+// recordLoss 丢弃批次自动记一笔损耗支出。
+func (h *Inventory) recordLoss(instanceID int64, itemName string, b store.InventoryBatch, user string) {
+	if h.fin == nil {
+		return
+	}
+	amount := cents(b.EntryPrice, b.Quantity)
+	if amount <= 0 {
+		return
+	}
+	if err := h.fin.RecordInventoryLoss(context.Background(), instanceID,
+		itemName, b.ID, amount, "", user); err != nil {
+		slog.Warn("inventory auto finance: loss failed", "instance", instanceID, "batch", b.ID, "err", err.Error())
 	}
 }
 
@@ -200,6 +252,10 @@ func (h *Inventory) CreateItem(w http.ResponseWriter, r *http.Request) {
 		invErr(w, err)
 		return
 	}
+	// 首批次带单价：自动记一笔入库支出。
+	if p.FirstBatch != nil && len(it.Batches) > 0 {
+		h.recordPurchase(id, it.Name, it.Category, it.Batches[0], rUsername(r))
+	}
 	h.changed(id)
 	WriteJSON(w, 201, it)
 }
@@ -290,6 +346,10 @@ func (h *Inventory) AddBatch(w http.ResponseWriter, r *http.Request) {
 		invErr(w, err)
 		return
 	}
+	// 入库批次带单价：自动记一笔入库支出。
+	if it, ierr := h.repo.GetItem(r.Context(), id, iid); ierr == nil {
+		h.recordPurchase(id, it.Name, it.Category, b, rUsername(r))
+	}
 	h.changed(id)
 	WriteJSON(w, 201, b)
 }
@@ -331,9 +391,16 @@ func (h *Inventory) DiscardBatch(w http.ResponseWriter, r *http.Request) {
 		WriteErr(w, 404, "not_found", "批次不存在")
 		return
 	}
-	if err := h.repo.DiscardBatch(r.Context(), id, bid, rUsername(r)); err != nil {
+	b, err := h.repo.DiscardBatch(r.Context(), id, bid, rUsername(r))
+	if err != nil {
 		invErr(w, err)
 		return
+	}
+	// 丢弃可选记损耗（实例设置 finance_loss_enabled，默认开）。
+	if h.financeLossEnabled(r.Context()) {
+		if it, ierr := h.repo.GetItem(r.Context(), id, b.ItemID); ierr == nil {
+			h.recordLoss(id, it.Name, b, rUsername(r))
+		}
 	}
 	h.changed(id)
 	WriteJSON(w, 200, true)

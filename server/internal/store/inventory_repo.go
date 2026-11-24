@@ -614,37 +614,40 @@ func (r *InventoryRepo) ConsumeBatch(ctx context.Context, instanceID, batchID in
 	return newQty, nil
 }
 
-// DiscardBatch 丢弃批次。
-func (r *InventoryRepo) DiscardBatch(ctx context.Context, instanceID, batchID int64, user string) error {
+// DiscardBatch 丢弃批次；返回丢弃前的批次快照（供记账计算损耗金额）。
+func (r *InventoryRepo) DiscardBatch(ctx context.Context, instanceID, batchID int64, user string) (InventoryBatch, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return InventoryBatch{}, err
 	}
 	defer tx.Rollback()
 	var itemID int64
-	var cur float64
+	var cur, price float64
 	var status string
 	err = tx.QueryRowContext(ctx,
-		`SELECT b.item_id, b.quantity, b.status FROM inventory_batches b
+		`SELECT b.item_id, b.quantity, b.entry_price, b.status FROM inventory_batches b
 		 JOIN inventory_items i ON i.id=b.item_id WHERE b.id=? AND i.instance_id=?`, batchID, instanceID).
-		Scan(&itemID, &cur, &status)
+		Scan(&itemID, &cur, &price, &status)
 	if errors.Is(err, sql.ErrNoRows) {
-		return ErrNotFound
+		return InventoryBatch{}, ErrNotFound
 	}
 	if err != nil {
-		return err
+		return InventoryBatch{}, err
 	}
 	if status != "active" {
-		return errors.New("该批次已结束")
+		return InventoryBatch{}, errors.New("该批次已结束")
 	}
 	if _, err := tx.ExecContext(ctx,
 		`UPDATE inventory_batches SET status='discarded', quantity=0, updated_at=datetime('now') WHERE id=?`, batchID); err != nil {
-		return err
+		return InventoryBatch{}, err
 	}
 	if err := addLog(ctx, tx, instanceID, itemID, batchID, "discard", -cur, 0, user); err != nil {
-		return err
+		return InventoryBatch{}, err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return InventoryBatch{}, err
+	}
+	return InventoryBatch{ID: batchID, ItemID: itemID, Quantity: cur, EntryPrice: price, Status: "discarded"}, nil
 }
 
 // MoveBatch 批次移库。

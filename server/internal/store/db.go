@@ -201,6 +201,87 @@ func migrate(db *sql.DB) error {
 			done_at TEXT NOT NULL DEFAULT ''
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_inventory_shopping_done ON inventory_shopping_list(instance_id, done);`,
+		// ── 记账 / 账本 ─────────────────────────────────────────────
+		// 资金账户：现金 / 储蓄卡 / 信用卡 / 支付宝 / 微信 / 其他
+		`CREATE TABLE IF NOT EXISTS fin_accounts (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			instance_id INTEGER NOT NULL REFERENCES instances(id) ON DELETE CASCADE,
+			name TEXT NOT NULL,
+			kind TEXT NOT NULL DEFAULT 'cash',
+			currency TEXT NOT NULL DEFAULT 'CNY',
+			opening_balance INTEGER NOT NULL DEFAULT 0,
+			icon TEXT NOT NULL DEFAULT '',
+			sort INTEGER NOT NULL DEFAULT 0,
+			archived INTEGER NOT NULL DEFAULT 0,
+			created_at TEXT NOT NULL DEFAULT (datetime('now')),
+			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_fin_accounts_instance ON fin_accounts(instance_id, archived, sort);`,
+		// 收支分类（parent_id=0 为一级，二级分类挂在下面）
+		`CREATE TABLE IF NOT EXISTS fin_categories (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			instance_id INTEGER NOT NULL REFERENCES instances(id) ON DELETE CASCADE,
+			name TEXT NOT NULL,
+			type TEXT NOT NULL DEFAULT 'expense',
+			parent_id INTEGER NOT NULL DEFAULT 0,
+			icon TEXT NOT NULL DEFAULT '',
+			sort INTEGER NOT NULL DEFAULT 0,
+			monthly_budget INTEGER NOT NULL DEFAULT 0,
+			created_at TEXT NOT NULL DEFAULT (datetime('now'))
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_fin_categories_type ON fin_categories(instance_id, type, parent_id);`,
+		// 交易流水（金额恒为正数，单位为分）
+		`CREATE TABLE IF NOT EXISTS fin_transactions (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			instance_id INTEGER NOT NULL REFERENCES instances(id) ON DELETE CASCADE,
+			type TEXT NOT NULL DEFAULT 'expense',
+			amount INTEGER NOT NULL,
+			account_id INTEGER NOT NULL REFERENCES fin_accounts(id),
+			to_account_id INTEGER NOT NULL DEFAULT 0,
+			category_id INTEGER NOT NULL DEFAULT 0,
+			currency TEXT NOT NULL DEFAULT 'CNY',
+			note TEXT NOT NULL DEFAULT '',
+			tags TEXT NOT NULL DEFAULT '',
+			source TEXT NOT NULL DEFAULT 'manual',
+			ref_type TEXT NOT NULL DEFAULT '',
+			ref_id INTEGER NOT NULL DEFAULT 0,
+			occurred_at TEXT NOT NULL,
+			created_by TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL DEFAULT (datetime('now')),
+			updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+			deleted_at TEXT NOT NULL DEFAULT ''
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_fin_tx_time ON fin_transactions(instance_id, occurred_at);`,
+		`CREATE INDEX IF NOT EXISTS idx_fin_tx_category ON fin_transactions(instance_id, category_id, occurred_at);`,
+		`CREATE INDEX IF NOT EXISTS idx_fin_tx_account ON fin_transactions(instance_id, account_id, occurred_at);`,
+		// 库存自动记账幂等：同一批次/清单项只生成一笔（软删除后释放，可重新记账）
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_fin_tx_ref
+			ON fin_transactions(instance_id, ref_type, ref_id)
+			WHERE ref_type <> '' AND deleted_at = '';`,
+		// 月度预算（按月覆盖分类的默认预算）
+		`CREATE TABLE IF NOT EXISTS fin_budgets (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			instance_id INTEGER NOT NULL REFERENCES instances(id) ON DELETE CASCADE,
+			month TEXT NOT NULL,
+			category_id INTEGER NOT NULL DEFAULT 0,
+			amount INTEGER NOT NULL DEFAULT 0,
+			created_at TEXT NOT NULL DEFAULT (datetime('now')),
+			UNIQUE(instance_id, month, category_id)
+		);`,
+		// 周期账单（房租、会员、还款）
+		`CREATE TABLE IF NOT EXISTS fin_recurring (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			instance_id INTEGER NOT NULL REFERENCES instances(id) ON DELETE CASCADE,
+			name TEXT NOT NULL,
+			type TEXT NOT NULL DEFAULT 'expense',
+			amount INTEGER NOT NULL,
+			account_id INTEGER NOT NULL,
+			category_id INTEGER NOT NULL DEFAULT 0,
+			day_of_month INTEGER NOT NULL DEFAULT 1,
+			enabled INTEGER NOT NULL DEFAULT 1,
+			last_run_month TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL DEFAULT (datetime('now'))
+		);`,
 	}
 	for _, s := range schemas {
 		if _, err := db.Exec(s); err != nil {

@@ -12,6 +12,11 @@
         :class="activeTab === 'shopping' ? 'bg-primary text-white' : 'bg-surface-alt text-muted'"
         @click="activeTab = 'shopping'"
       >购物清单</button>
+      <button
+        class="px-4 py-1.5 rounded-lg text-sm font-body"
+        :class="activeTab === 'finance' ? 'bg-primary text-white' : 'bg-surface-alt text-muted'"
+        @click="activeTab = 'finance'"
+      >账本</button>
     </div>
 
     <template v-if="activeTab === 'stock'">
@@ -149,7 +154,9 @@
     </div>
     </template>
 
-    <ShoppingListView v-else @changed="refresh" />
+    <ShoppingListView v-else-if="activeTab === 'shopping'" @changed="refresh" />
+
+    <FinanceHome v-else />
 
     <!-- 物品详情 -->
     <div
@@ -314,6 +321,7 @@ import { onMounted, ref } from 'vue'
 import api from '@/api'
 import ItemEditorDialog from '@/components/inventory/ItemEditorDialog.vue'
 import ShoppingListView from '@/components/inventory/ShoppingListView.vue'
+import FinanceHome from '@/components/finance/FinanceHome.vue'
 
 const locations = ref([])
 const items = ref([])

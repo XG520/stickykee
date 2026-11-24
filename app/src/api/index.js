@@ -256,6 +256,23 @@ export const api = {
   inventoryStocktake: (lines) => api.post('/inventory/stocktake', { lines }),
   inventoryExport: () => api.get('/inventory/export'),
 
+  // 记账 / 账本
+  financeAccounts: (all = false) => api.get(`/finance/accounts${all ? '?all=1' : ''}`),
+  createFinanceAccount: (p) => api.post('/finance/accounts', p),
+  updateFinanceAccount: (id, p) => api.put(`/finance/accounts/${id}`, p),
+  deleteFinanceAccount: (id) => api.del(`/finance/accounts/${id}`),
+  financeCategories: (type = '') => api.get(`/finance/categories${type ? `?type=${type}` : ''}`),
+  createFinanceCategory: (p) => api.post('/finance/categories', p),
+  updateFinanceCategory: (id, p) => api.put(`/finance/categories/${id}`, p),
+  deleteFinanceCategory: (id) => api.del(`/finance/categories/${id}`),
+  financeTransactions: (q = {}) => api.get(`/finance/transactions?${new URLSearchParams(q)}`),
+  createFinanceTransaction: (p) => api.post('/finance/transactions', p),
+  updateFinanceTransaction: (id, p) => api.put(`/finance/transactions/${id}`, p),
+  deleteFinanceTransaction: (id) => api.del(`/finance/transactions/${id}`),
+  restoreFinanceTransaction: (id) => api.post(`/finance/transactions/${id}/restore`),
+  financeTransfer: (p) => api.post('/finance/transfer', p),
+  financeStats: (month = '') => api.get(`/finance/stats${month ? `?month=${month}` : ''}`),
+
   // 用户间 IM & 仪表盘共享
   listConversations: () => api.get('/messages/conversations'),
   listContacts: () => api.get('/messages/contacts'),

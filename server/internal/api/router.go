@@ -23,7 +23,7 @@ import (
 )
 
 // Router 组装全部 HTTP 路由。uploadDir 为聊天图片存储根目录（空串禁用图片功能）。
-func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store.UserPrefs, msgRepo *store.MessageRepo, logRepo *store.LogRepo, iconRepo *store.IconRepo, invRepo *store.InventoryRepo, hb *hub.Hub, manager *ha.Manager, authOpt auth.Option, uploadDir string) http.Handler {
+func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store.UserPrefs, msgRepo *store.MessageRepo, logRepo *store.LogRepo, iconRepo *store.IconRepo, invRepo *store.InventoryRepo, finRepo *store.FinanceRepo, hb *hub.Hub, manager *ha.Manager, authOpt auth.Option, uploadDir string) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
@@ -99,7 +99,10 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 	media := handler.NewMedia(manager)
 	// 库存 / 食品库：本地 SQLite 存储 + HA 总数/临期传感器同步
 	inventorySync := handler.NewInventorySync(manager, repo, userRepo, userPrefs, invRepo)
-	inventory := handler.NewInventory(invRepo, repo, inventorySync, ai)
+	inventory := handler.NewInventory(invRepo, finRepo, repo, inventorySync, ai)
+	// 账本：本地 SQLite 存储 + HA 收支/预算/资产传感器同步
+	financeSync := handler.NewFinanceSync(manager, repo, userRepo, userPrefs, finRepo)
+	finance := handler.NewFinance(finRepo, repo, financeSync)
 
 	// 语音通话：内存房间 + 信令事件推送（媒体经 /ws 二进制中继，不经 P2P）。
 	callHandler := handler.NewCall(callManager, hb, userRepo)
@@ -237,6 +240,28 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 				r.Post("/recognize", inventory.Recognize)
 			})
 
+			// 账本（P1：账户、分类、流水、转账、本月概览）
+			r.Route("/finance", func(r chi.Router) {
+				r.Get("/accounts", finance.ListAccounts)
+				r.Post("/accounts", finance.CreateAccount)
+				r.Put("/accounts/{id}", finance.UpdateAccount)
+				r.Delete("/accounts/{id}", finance.DeleteAccount)
+
+				r.Get("/categories", finance.ListCategories)
+				r.Post("/categories", finance.CreateCategory)
+				r.Put("/categories/{id}", finance.UpdateCategory)
+				r.Delete("/categories/{id}", finance.DeleteCategory)
+
+				r.Get("/transactions", finance.ListTransactions)
+				r.Post("/transactions", finance.CreateTransaction)
+				r.Put("/transactions/{id}", finance.UpdateTransaction)
+				r.Delete("/transactions/{id}", finance.DeleteTransaction)
+				r.Post("/transactions/{id}/restore", finance.RestoreTransaction)
+
+				r.Post("/transfer", finance.CreateTransfer)
+				r.Get("/stats", finance.Stats)
+			})
+
 			// 用户间消息 & 仪表盘共享（全部登录可见，action 端做归属校验）
 			r.Post("/crypto/handshake", cryptoHandler.Handshake)
 			r.Get("/messages/conversations", im.Conversations)
@@ -283,6 +308,8 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 	go birthdays.StartTicker(context.Background())
 	// 库存传感器每小时全量同步（兼作 HA 重启后的自愈兜底）。
 	go inventorySync.StartTicker(context.Background())
+	// 账本传感器每小时全量同步。
+	go financeSync.StartTicker(context.Background())
 
 	return r
 }
