@@ -51,6 +51,15 @@
             placeholder="可选"
             class="mt-1 w-full px-3 py-2 rounded-lg bg-surface-alt border border-border text-sm text-on-surface outline-none focus:border-primary"
           />
+          <span v-if="barcodeState === 'loading'" class="mt-1 block text-[10px] text-muted leading-relaxed">
+            正在识别商品…
+          </span>
+          <span v-else-if="barcodeState === 'miss'" class="mt-1 block text-[10px] text-muted leading-relaxed">
+            商品库未收录该条码，填写名称保存后，下次扫码会直接打开这件物品。
+          </span>
+          <span v-else-if="barcodeState === 'unavailable'" class="mt-1 block text-[10px] text-muted leading-relaxed">
+            商品库暂时不可用，可先手动填写名称。
+          </span>
         </label>
         <label class="text-xs text-muted font-body">
           补货点（低于则提醒）
@@ -157,6 +166,7 @@ const props = defineProps({
   locations: { type: Array, default: () => [] },
   initialBarcode: { type: String, default: '' },
   initial: { type: Object, default: null },
+  barcodeState: { type: String, default: '' },
 })
 const emit = defineEmits(['update:modelValue', 'saved'])
 
@@ -208,6 +218,7 @@ watch(() => props.modelValue, (v) => {
   if (v) reset()
   else categoryOpen.value = false
 })
+
 watch(() => props.item, () => { if (props.modelValue) reset() })
 // 扫码识别是异步的：弹窗先打开，商品库结果稍后到达，仅回填用户尚未填写的字段
 watch(() => props.initial, (v) => {

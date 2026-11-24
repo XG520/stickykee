@@ -2,10 +2,16 @@ package handler
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -107,22 +113,37 @@ type openFoodFactsResp struct {
 }
 
 func lookupBarcodeProduct(ctx context.Context, code string) (barcodeProduct, barcodeLookup) {
-	// 两个入口并行查询，取最先命中的结果，避免串行等待翻倍
+	// 各入口并行查询，取最先命中的结果，避免串行等待翻倍
 	type lookupOut struct {
 		product barcodeProduct
 		result  barcodeLookup
 	}
-	ch := make(chan lookupOut, len(barcodeHosts))
+	type source struct {
+		name string
+		fn   func(context.Context, string) (barcodeProduct, barcodeLookup)
+	}
+	sources := make([]source, 0, len(barcodeHosts)+1)
 	for _, host := range barcodeHosts {
-		go func(host string) {
-			p, result := queryOpenFacts(ctx, host, code)
+		h := host
+		sources = append(sources, source{name: h, fn: func(ctx context.Context, code string) (barcodeProduct, barcodeLookup) {
+			return queryOpenFacts(ctx, h, code)
+		}})
+	}
+	// 淘宝「码上淘」条码库覆盖国内商品最全；配置 AppKey 后自动加入查询。
+	if taobaoConfigured() {
+		sources = append(sources, source{name: "taobao", fn: queryTaobao})
+	}
+	ch := make(chan lookupOut, len(sources))
+	for _, s := range sources {
+		go func(s source) {
+			p, result := s.fn(ctx, code)
 			ch <- lookupOut{product: p, result: result}
-		}(host)
+		}(s)
 	}
 
 	visited := false
 	unavailable := false
-	for i := 0; i < len(barcodeHosts); i++ {
+	for i := 0; i < len(sources); i++ {
 		out := <-ch
 		switch out.result {
 		case barcodeHit:
@@ -140,6 +161,131 @@ func lookupBarcodeProduct(ctx context.Context, code string) (barcodeProduct, bar
 		return barcodeProduct{}, barcodeUnavailable
 	}
 	return barcodeProduct{}, barcodeMiss
+}
+
+// ── 淘宝开放平台条码库（可选）──────────────────────────────────────
+// taobao.ma.barcode.productinfo.get 免费且无需用户授权，只需在服务器配置
+// TAOBAO_APP_KEY / TAOBAO_APP_SECRET（在 open.taobao.com 创建应用即可获得）。
+// 未配置时完全不参与查询，行为与之前一致。
+const taobaoGateway = "https://eco.taobao.com/router/rest"
+
+func taobaoConfigured() bool {
+	return strings.TrimSpace(os.Getenv("TAOBAO_APP_KEY")) != "" &&
+		strings.TrimSpace(os.Getenv("TAOBAO_APP_SECRET")) != ""
+}
+
+func taobaoSign(params map[string]string, secret string) string {
+	keys := make([]string, 0, len(params))
+	for k := range params {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var b strings.Builder
+	b.WriteString(secret)
+	for _, k := range keys {
+		b.WriteString(k)
+		b.WriteString(params[k])
+	}
+	b.WriteString(secret)
+	sum := md5.Sum([]byte(b.String()))
+	return strings.ToUpper(hex.EncodeToString(sum[:]))
+}
+
+type taobaoBarcodeResp struct {
+	Response struct {
+		Result struct {
+			Title      string          `json:"title"`
+			PicURL     string          `json:"pic_url"`
+			Properties json.RawMessage `json:"properties"`
+		} `json:"result"`
+	} `json:"ma_barcode_productinfo_get_response"`
+	Error struct {
+		Code    int    `json:"code"`
+		Msg     string `json:"msg"`
+		SubCode string `json:"sub_code"`
+		SubMsg  string `json:"sub_msg"`
+	} `json:"error_response"`
+}
+
+func queryTaobao(ctx context.Context, code string) (barcodeProduct, barcodeLookup) {
+	appKey := strings.TrimSpace(os.Getenv("TAOBAO_APP_KEY"))
+	secret := strings.TrimSpace(os.Getenv("TAOBAO_APP_SECRET"))
+	if appKey == "" || secret == "" {
+		return barcodeProduct{}, barcodeUnavailable
+	}
+	params := map[string]string{
+		"app_key":     appKey,
+		"method":      "taobao.ma.barcode.productinfo.get",
+		"format":      "json",
+		"v":           "2.0",
+		"sign_method": "md5",
+		"timestamp":   time.Now().In(time.FixedZone("CST", 8*3600)).Format("2006-01-02 15:04:05"),
+		"barcode":     code,
+	}
+	params["sign"] = taobaoSign(params, secret)
+	form := url.Values{}
+	for k, v := range params {
+		form.Set(k, v)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, taobaoGateway, strings.NewReader(form.Encode()))
+	if err != nil {
+		return barcodeProduct{}, barcodeUnavailable
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded;charset=utf-8")
+	req.Header.Set("User-Agent", "StickyNuo/1.0 (home inventory barcode lookup)")
+	resp, err := barcodeHTTP.Do(req)
+	if err != nil {
+		return barcodeProduct{}, barcodeUnavailable
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return barcodeProduct{}, barcodeUnavailable
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 256<<10))
+	if err != nil {
+		return barcodeProduct{}, barcodeUnavailable
+	}
+	var out taobaoBarcodeResp
+	if json.Unmarshal(body, &out) != nil {
+		return barcodeProduct{}, barcodeUnavailable
+	}
+	if out.Error.Code != 0 {
+		// 签名 / 配额 / 限流属于可恢复错误，不能当成「未收录」缓存 12 小时。
+		return barcodeProduct{}, barcodeUnavailable
+	}
+	title := strings.TrimSpace(out.Response.Result.Title)
+	if title == "" {
+		return barcodeProduct{}, barcodeMiss
+	}
+	var props map[string]interface{}
+	if len(out.Response.Result.Properties) > 0 {
+		if json.Unmarshal(out.Response.Result.Properties, &props) != nil {
+			var raw string
+			if json.Unmarshal(out.Response.Result.Properties, &raw) == nil {
+				_ = json.Unmarshal([]byte(raw), &props)
+			}
+		}
+	}
+	brand := ""
+	propsText := ""
+	for k, v := range props {
+		s := strings.TrimSpace(fmt.Sprint(v))
+		if s == "" {
+			continue
+		}
+		propsText += k + " " + s + " "
+		if brand == "" && strings.Contains(k, "品牌") {
+			brand = s
+		}
+	}
+	p := barcodeProduct{
+		Barcode: code,
+		Name:    title,
+		Brand:   brand,
+		Source:  "taobao",
+	}
+	p.Category = mapBarcodeCategory(title+" "+propsText, nil)
+	return p, barcodeHit
 }
 
 func queryOpenFacts(ctx context.Context, host, code string) (barcodeProduct, barcodeLookup) {

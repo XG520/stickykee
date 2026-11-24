@@ -359,6 +359,7 @@
       :locations="locations"
       :initial-barcode="initialBarcode"
       :initial="initialItem"
+      :barcode-state="barcodeState"
       @saved="refresh"
     />
   </div>
@@ -387,6 +388,7 @@ const editorOpen = ref(false)
 const editingItem = ref(null)
 const initialBarcode = ref('')
 const initialItem = ref(null)
+const barcodeState = ref('')
 
 const stocktakeOpen = ref(false)
 const stocktakeRows = ref([])
@@ -501,11 +503,13 @@ function openCreate() {
   editingItem.value = null
   initialBarcode.value = ''
   initialItem.value = null
+  barcodeState.value = ''
   editorOpen.value = true
 }
 
 function openEdit(it) {
   editingItem.value = it
+  barcodeState.value = ''
   editorOpen.value = true
 }
 
@@ -614,6 +618,7 @@ async function handleScanned(code) {
   try {
     const res = await api.inventoryBarcode(code)
     if (res.data && res.data.item_id) {
+      barcodeState.value = ''
       await openDetail({ id: res.data.item_id })
       return
     }
@@ -624,6 +629,7 @@ async function handleScanned(code) {
   initialItem.value = null
   initialBarcode.value = code
   editingItem.value = null
+  barcodeState.value = 'loading'
   editorOpen.value = true
   lookupProduct(code)
 }
@@ -644,8 +650,10 @@ async function lookupProduct(code) {
       barcode: p.barcode || code,
     }
     initialBarcode.value = ''
+    barcodeState.value = 'found'
   } catch (e) {
     // 商品库未收录或网络不可用：保留空表单，用户可手动填写
+    barcodeState.value = String(e.message || '').includes('未收录') ? 'miss' : 'unavailable'
   }
 }
 
