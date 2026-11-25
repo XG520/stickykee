@@ -156,7 +156,6 @@
                 android:id="@+id/form_name"
                 style="@style/ScField"
                 android:hint="例如 家里内网 / 外网域名"
-                android:hintTextColor="@color/sc_muted"
                 android:inputType="text" />
 
             <TextView style="@style/ScLabel" android:text="服务器地址" />
@@ -210,7 +209,6 @@
                     android:textColor="@color/sc_text"
                     android:textSize="14sp"
                     android:hint="192.168.1.100:8080"
-                    android:hintTextColor="@color/sc_muted"
                     android:inputType="text"
                     android:imeOptions="actionDone"
                     android:maxLines="1" />
