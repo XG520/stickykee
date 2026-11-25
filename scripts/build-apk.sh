@@ -41,8 +41,11 @@ fix_exec_bits() {
   [ -d "$nm" ] || return 0
   chmod +x "$nm"/.bin/* 2>/dev/null || true
   find "$nm" -type f -path '*/.bin/*' -exec chmod +x {} + 2>/dev/null || true
-  local esbin
-  esbin="$(find "$nm/@esbuild" -type f -name esbuild 2>/dev/null | head -1)"
+  local esbin=""
+  # 该包不一定存在（如 apk/ 的 Capacitor 依赖没有 @esbuild）；find 失败不能让脚本挂掉
+  if [ -d "$nm/@esbuild" ]; then
+    esbin="$(find "$nm/@esbuild" -type f -name esbuild 2>/dev/null | head -1 || true)"
+  fi
   [ -n "$esbin" ] || return 0
   chmod +x "$esbin" 2>/dev/null || true
   if [ ! -x "$esbin" ]; then
