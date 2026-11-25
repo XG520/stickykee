@@ -33,11 +33,13 @@ export function iconUrl(name) {
 // 官方源下载兜底，因此任意 mdi/ha 图标名都能渲染为图形而非英文字母。
 export function replaceIconsIn(root) {
   if (!root) return
-  const spans = root.querySelectorAll
-    ? root.querySelectorAll('span.material-symbols-outlined')
-    : []
+  const spans = []
+  if (root.matches && root.matches('span.material-symbols-outlined')) spans.push(root)
+  if (root.querySelectorAll) spans.push(...root.querySelectorAll('span.material-symbols-outlined'))
   spans.forEach((sp) => {
-    if (sp.dataset.hci) return // 已替换
+    // Vue 重渲染会还原 class（hc-iconsvg 被覆盖）并把文本写回来，
+    // 这种节点要重新替换，否则会退回字体图标/显示成坏样子。
+    if (sp.dataset.hci && !sp.classList.contains('material-symbols-outlined')) return
     const name = (sp.textContent || '').trim()
     if (!name || !/^[a-z0-9_]+$/.test(name)) return // 模板文本/非法名保留
     const fs = window.getComputedStyle(sp).fontSize // 保留原字体尺寸，交由 1em 缩放
@@ -49,6 +51,14 @@ export function replaceIconsIn(root) {
     sp.style.fontSize = fs
     sp.style.maskImage = 'url("' + url + '")'
     sp.style.webkitMaskImage = 'url("' + url + '")'
+    // 尺寸/位置/平铺内联固化：早期构建的 .hc-iconsvg 没有 mask-size，
+    // SVG 会按原始 48px 居中裁切，只露出中间一块（看起来像“坏图标”）。
+    sp.style.maskSize = 'contain'
+    sp.style.webkitMaskSize = 'contain'
+    sp.style.maskPosition = 'center'
+    sp.style.webkitMaskPosition = 'center'
+    sp.style.maskRepeat = 'no-repeat'
+    sp.style.webkitMaskRepeat = 'no-repeat'
   })
 }
 
