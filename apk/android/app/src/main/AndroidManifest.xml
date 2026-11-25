@@ -17,12 +17,21 @@
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:launchMode="singleTask"
             android:exported="true">
+        </activity>
 
+        <!-- 原生「服务器地址」配置页：App 启动入口（LAUNCHER）。
+             冷启动取 active 地址探测，可达则带 target_url 进 MainActivity 直达服务器，
+             不可达/首次安装停留本页引导添加。Web 壳页逻辑保留作兜底（无 target 时）。 -->
+        <activity
+            android:name=".ServerConfigActivity"
+            android:label="@string/title_activity_main"
+            android:theme="@style/AppTheme.ServerConfig"
+            android:launchMode="singleTop"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-
         </activity>
 
         <!-- 条码扫描：全屏 CameraX 预览 + ML Kit 识别，结果经 stickykee-scan 事件回传 -->

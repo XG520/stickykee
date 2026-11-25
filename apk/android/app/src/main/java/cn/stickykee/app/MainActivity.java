@@ -8,9 +8,9 @@ public class MainActivity extends BridgeActivity {
 
     private NativeBridge nativeBridge;
 
-    // 原生「服务器地址」配置页直达目标：onNewIntent/load 时若 intent 携带 target_url，
-    // 直接 loadUrl 目标服务器，省掉 Web 壳页的 JS 探测与整页跳转往返。
-    private String pendingTarget = null;
+    // 原生「服务器地址」配置页直达目标（ServerConfigActivity.EXTRA_TARGET_URL）。
+    // 非空时 bridge 就绪后 loadUrl(target)，跳过 Web 壳页的 JS 探测与整页跳转往返。
+    private String targetUrl = null;
 
     // 主界面存活标记：KeepAliveService 被系统重启（进程被杀后 START_STICKY 拉活）时
     // 据此判断主界面是否需要重建——alive=false 说明用户划掉/进程被杀，尝试拉起自恢复
@@ -70,6 +70,48 @@ public class MainActivity extends BridgeActivity {
         if (android.os.Build.VERSION.SDK_INT >= 33) {
             requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 4201);
         }
+        // 直达目标在 super.onCreate → load() → onNewIntent(getIntent()) 里已经处理
+        // （applyTarget 读 target_url 并 loadUrl）。nativeBridge 此刻已创建，
+        // 若为原生直达（targetUrl 非空）则重启连接看门狗（原链路靠 Web 壳页 JS 调
+        // connWatch；直达跳过了壳页，不改则服务器掉线无兜底退回）。
+        restartConnWatchIfTarget();
+    }
+
+    /** 若 intent 携带 target_url，bridge 就绪后直达目标服务器。
+     *  注意：super.onCreate → load() → onNewIntent(getIntent()) 调用本方法时
+     *  nativeBridge 尚未创建，故此处只做 loadUrl；连接看门狗在 nativeBridge
+     *  就绪后由 restartConnWatchIfTarget() 启动（见 onCreate 尾部与 onNewIntent）。 */
+    private void applyTarget(Intent intent) {
+        if (intent == null) return;
+        String t = intent.getStringExtra(ServerConfigActivity.EXTRA_TARGET_URL);
+        if (t == null || t.isEmpty()) return;
+        targetUrl = t;
+        try {
+            bridge.getWebView().loadUrl(t);
+        } catch (Exception ignored) {
+            // bridge/webview 尚未就绪：理论上 load() 在 super.onCreate 已创建，此处兜底静默
+        }
+    }
+
+    /** 原生直达场景下重启连接看门狗。
+     *  原链路是 Web 壳页 JS 调 connWatch；直达跳过了壳页，不改这里则服务器
+     *  掉线时无兜底退回。nativeBridge 与 targetUrl 都就绪时调用。 */
+    private void restartConnWatchIfTarget() {
+        if (nativeBridge == null || targetUrl == null) return;
+        String base = targetUrl.endsWith("/")
+                ? targetUrl.substring(0, targetUrl.length() - 1) : targetUrl;
+        nativeBridge.connWatch(base);
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        // CLEAR_TOP 复用既有实例时系统重新投递 intent（看门狗退回/配置页再次连接）：
+        // 重新直达目标服务器并重启连接看门狗（此时 nativeBridge 已就绪）。
+        if (intent != null) {
+            applyTarget(intent);
+            restartConnWatchIfTarget();
+        }
     }
 
     // APK 版本号变化（覆盖安装）时清理 WebView 资源缓存并重载一次。
@@ -86,10 +128,16 @@ public class MainActivity extends BridgeActivity {
             wv.clearHistory();
             sp.edit().putString("version", cur).apply();
             // 覆盖安装：清完缓存主动重载，避免首屏已用旧缓存渲染。
+            // 直达场景（配置页带 target 进来）：重载目标服务器而非 localhost 壳页，
+            // 避免升级安装后 400ms 的重载把刚加载的服务器页冲回壳页。
             wv.postDelayed(new Runnable() {
                 @Override
                 public void run() {
-                    wv.reload();
+                    if (targetUrl != null) {
+                        wv.loadUrl(targetUrl);
+                    } else {
+                        wv.reload();
+                    }
                 }
             }, 400);
         } catch (Exception ignored) {

@@ -45,7 +45,9 @@ public class BootReceiver extends BroadcastReceiver {
         } catch (Exception ignored) {
         }
         try {
-            Intent it = new Intent(context, MainActivity.class);
+            // 开机走原生配置页（自动连接入口）：探测 active 地址可达则带 target 进主界面，
+            // 掉线/首次安装停留本页引导。比直接进 MainActivity 更稳——服务器不可达时不闪壳页。
+            Intent it = new Intent(context, ServerConfigActivity.class);
             it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             context.startActivity(it);
         } catch (Exception ignored) {

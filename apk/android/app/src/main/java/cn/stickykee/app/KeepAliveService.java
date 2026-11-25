@@ -133,7 +133,9 @@ public class KeepAliveService extends Service {
         // 主界面不在时尝试拉起——重建 WebView/连接后传感器与消息全部自动恢复。
         if (intent == null && !MainActivity.alive) {
             try {
-                Intent it = new Intent(this, MainActivity.class);
+                // 走原生配置页（自动连接入口）：active 可达则带 target 进主界面，
+                // 掉线时停留本页而非闪 Web 壳页。
+                Intent it = new Intent(this, ServerConfigActivity.class);
                 it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                 startActivity(it);
             } catch (Exception ignored) {

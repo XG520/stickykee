@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 服务器地址行：状态点 + 名称/URL + 内网外网徽标 + 编辑/删除 -->
+<!-- 服务器地址行：状态点 + 名称/URL + 内网外网徽标 + 编辑/删除
+     注：minSdk=22，全部用 paddingLeft/paddingRight/marginLeft/marginRight
+     （paddingHorizontal/Vertical 与 marginStart/End 是 API26+，旧机被忽略）。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
@@ -7,8 +9,10 @@
     android:orientation="horizontal"
     android:gravity="center_vertical"
     android:background="@drawable/sc_card_bg"
-    android:paddingHorizontal="14dp"
-    android:paddingVertical="12dp"
+    android:paddingLeft="14dp"
+    android:paddingRight="14dp"
+    android:paddingTop="12dp"
+    android:paddingBottom="12dp"
     android:layout_marginBottom="8dp">
 
     <!-- 在线状态点：灰=离线 / 主题色=探测中 / 绿=在线（代码切换背景） -->
@@ -16,7 +20,7 @@
         android:id="@+id/row_dot"
         android:layout_width="10dp"
         android:layout_height="10dp"
-        android:layout_marginEnd="12dp"
+        android:layout_marginRight="12dp"
         android:background="@drawable/sc_status_off" />
 
     <LinearLayout
@@ -41,33 +45,36 @@
                 android:fontFamily="sans-serif-medium"
                 android:maxLines="1"
                 android:ellipsize="end"
-                tools:text="家里内网"
-                xmlns:tools="http://schemas.android.com/tools" />
+                tools:text="家里内网" />
 
             <TextView
                 android:id="@+id/row_active"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:background="@drawable/sc_badge_bg"
-                android:paddingHorizontal="8dp"
-                android:paddingVertical="3dp"
+                android:paddingLeft="8dp"
+                android:paddingRight="8dp"
+                android:paddingTop="3dp"
+                android:paddingBottom="3dp"
                 android:textColor="@color/sc_on_primary"
                 android:textSize="10sp"
                 android:text="使用中"
                 android:visibility="gone"
-                android:layout_marginStart="6dp" />
+                android:layout_marginLeft="6dp" />
 
             <TextView
                 android:id="@+id/row_ver"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:background="@drawable/sc_badge_bg"
-                android:paddingHorizontal="8dp"
-                android:paddingVertical="3dp"
+                android:paddingLeft="8dp"
+                android:paddingRight="8dp"
+                android:paddingTop="3dp"
+                android:paddingBottom="3dp"
                 android:textColor="@color/sc_muted"
                 android:textSize="10sp"
                 android:visibility="gone"
-                android:layout_marginStart="6dp" />
+                android:layout_marginLeft="6dp" />
         </LinearLayout>
 
         <TextView
@@ -96,10 +103,12 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:background="@drawable/sc_badge_bg"
-        android:paddingHorizontal="8dp"
-        android:paddingVertical="3dp"
+        android:paddingLeft="8dp"
+        android:paddingRight="8dp"
+        android:paddingTop="3dp"
+        android:paddingBottom="3dp"
         android:textSize="10sp"
-        android:layout_marginStart="8dp"
+        android:layout_marginLeft="8dp"
         android:text="内网" />
 
     <TextView
@@ -108,11 +117,12 @@
         android:layout_height="48dp"
         android:gravity="center"
         android:minWidth="44dp"
-        android:paddingHorizontal="8dp"
+        android:paddingLeft="8dp"
+        android:paddingRight="8dp"
         android:text="编辑"
         android:textColor="@color/sc_muted"
         android:textSize="12sp"
-        android:layout_marginStart="8dp" />
+        android:layout_marginLeft="8dp" />
 
     <TextView
         android:id="@+id/row_del"
@@ -120,7 +130,8 @@
         android:layout_height="48dp"
         android:gravity="center"
         android:minWidth="44dp"
-        android:paddingHorizontal="8dp"
+        android:paddingLeft="8dp"
+        android:paddingRight="8dp"
         android:text="删除"
         android:textColor="@color/sc_error"
         android:textSize="12sp" />

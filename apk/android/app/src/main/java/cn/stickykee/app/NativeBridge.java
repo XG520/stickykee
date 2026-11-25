@@ -913,21 +913,23 @@ public class NativeBridge {
         }
     }
 
-    /** 回退壳页（http://localhost/）：已在该页则静默停止，否则 Toast 提示并跳转。 */
+    /**
+     * 回退到原生「服务器地址」配置页：服务器掉线时不再跳回 localhost Web 壳页，
+     * 而是拉起 ServerConfigActivity（带 from_watch 标记禁止自动重连，防 配置页↔服务器 循环）。
+     * 结束当前 MainActivity，让返回栈只剩配置页，避免残留断连的 WebView。
+     */
     private void bounceToShell() {
         activity.runOnUiThread(() -> {
             try {
-                WebView wv = webView;
-                if (wv == null) return;
-                String cur = wv.getUrl();
-                if (cur != null && cur.startsWith("http://localhost")) return; // 已在壳页
-                try {
-                    Toast.makeText(activity, "无法连接服务器，已返回地址配置", Toast.LENGTH_LONG).show();
-                } catch (Exception ignored) {
-                }
-                // 带 #connfail 标记回壳页：壳页 boot 识别后只展示地址列表、
-                // 不再自动跳回故障服务器，避免 壳页↔502 页 整页重载循环（画面闪烁）
-                wv.loadUrl("http://localhost/#connfail");
+                Toast.makeText(activity, "无法连接服务器，已返回地址配置", Toast.LENGTH_LONG).show();
+            } catch (Exception ignored) {
+            }
+            try {
+                Intent it = new Intent(activity, ServerConfigActivity.class);
+                it.putExtra(ServerConfigActivity.EXTRA_FROM_WATCH, true);
+                it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                activity.startActivity(it);
+                activity.finish(); // 结束断连的 MainActivity，返回栈收敛到配置页
             } catch (Exception ignored) {
             }
         });

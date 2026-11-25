@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 原生「服务器地址」配置页：列表视图 + 表单视图（代码切换可见性） -->
+<!-- 原生「服务器地址」配置页：列表视图 + 表单视图（代码切换可见性）。
+     注：minSdk=22，全部用 paddingLeft/paddingRight/marginLeft/marginRight
+     （paddingHorizontal/Vertical 与 marginStart/End 是 API26+，旧机被忽略）。 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -13,13 +15,36 @@
         android:orientation="vertical"
         android:padding="20dp">
 
-        <TextView
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="服务器地址"
-            android:textColor="@color/sc_text"
-            android:textSize="22sp"
-            android:fontFamily="sans-serif-medium" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="服务器地址"
+                android:textColor="@color/sc_text"
+                android:textSize="22sp"
+                android:fontFamily="sans-serif-medium" />
+
+            <!-- 主界面存活时显示：快捷返回（MainActivity.alive 由代码切换可见性） -->
+            <TextView
+                android:id="@+id/back_app"
+                android:layout_width="wrap_content"
+                android:layout_height="44dp"
+                android:gravity="center"
+                android:paddingLeft="14dp"
+                android:paddingRight="14dp"
+                android:background="@drawable/sc_card_bg"
+                android:text="返回主界面"
+                android:textColor="@color/sc_primary"
+                android:textSize="13sp"
+                android:fontFamily="sans-serif-medium"
+                android:visibility="gone" />
+        </LinearLayout>
 
         <TextView
             android:id="@+id/list_hint"
@@ -119,7 +144,8 @@
                     android:layout_width="wrap_content"
                     android:layout_height="44dp"
                     android:gravity="center"
-                    android:paddingHorizontal="14dp"
+                    android:paddingLeft="14dp"
+                    android:paddingRight="14dp"
                     android:text="返回列表"
                     android:textColor="@color/sc_muted"
                     android:textSize="13sp" />
@@ -131,8 +157,7 @@
                 style="@style/ScField"
                 android:hint="例如 家里内网 / 外网域名"
                 android:hintTextColor="@color/sc_muted"
-                android:inputType="text"
-                android:autofillHints="name" />
+                android:inputType="text" />
 
             <TextView style="@style/ScLabel" android:text="服务器地址" />
             <LinearLayout
@@ -145,14 +170,15 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
-                    android:layout_marginEnd="8dp">
+                    android:layout_marginRight="8dp">
 
                     <TextView
                         android:id="@+id/scheme_http"
                         android:layout_width="wrap_content"
                         android:layout_height="44dp"
                         android:gravity="center"
-                        android:paddingHorizontal="14dp"
+                        android:paddingLeft="14dp"
+                        android:paddingRight="14dp"
                         android:background="@drawable/sc_card_bg"
                         android:text="http://"
                         android:textColor="@color/sc_primary"
@@ -164,7 +190,8 @@
                         android:layout_width="wrap_content"
                         android:layout_height="44dp"
                         android:gravity="center"
-                        android:paddingHorizontal="14dp"
+                        android:paddingLeft="14dp"
+                        android:paddingRight="14dp"
                         android:background="@drawable/sc_card_bg"
                         android:text="https://"
                         android:textColor="@color/sc_muted"
@@ -178,15 +205,15 @@
                     android:layout_height="44dp"
                     android:layout_weight="1"
                     android:background="@drawable/sc_card_bg"
-                    android:paddingHorizontal="12dp"
+                    android:paddingLeft="12dp"
+                    android:paddingRight="12dp"
                     android:textColor="@color/sc_text"
                     android:textSize="14sp"
                     android:hint="192.168.1.100:8080"
                     android:hintTextColor="@color/sc_muted"
                     android:inputType="text"
                     android:imeOptions="actionDone"
-                    android:maxLines="1"
-                    android:autofillHints="url" />
+                    android:maxLines="1" />
             </LinearLayout>
 
             <TextView style="@style/ScLabel" android:text="网络类型" />
@@ -212,7 +239,7 @@
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:layout_marginStart="8dp"
+                    android:layout_marginLeft="8dp"
                     android:gravity="center"
                     android:background="@drawable/sc_card_bg"
                     android:text="外网（移动数据）"
@@ -253,7 +280,7 @@
                 <Button
                     android:id="@+id/save_only"
                     style="@style/ScGhostBtn"
-                    android:layout_marginEnd="8dp"
+                    android:layout_marginRight="8dp"
                     android:text="仅保存" />
 
                 <Button
