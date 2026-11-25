@@ -109,6 +109,17 @@ log "npm ci + cap sync android"
     npm install --no-audit --no-fund
   fi
   fix_exec_bits "$PWD/node_modules"
+  # Capacitor 原生模块完整性校验：npm 解包不完整（网络抖动/缓存损坏）时
+  # node_modules/@capacitor/android/capacitor/build.gradle 会缺失或为空，
+  # Gradle 随后报 "None of the consumable configurations have attributes"。
+  cap_gradle="node_modules/@capacitor/android/capacitor/build.gradle"
+  if [ ! -s "$cap_gradle" ]; then
+    log "Capacitor Android 模块不完整，重装 node_modules 后重试"
+    rm -rf node_modules
+    npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+    fix_exec_bits "$PWD/node_modules"
+  fi
+  [ -s "$cap_gradle" ] || fail "Capacitor Android 模块缺失：$cap_gradle（npm 安装不完整，请检查 registry/网络）"
   npx cap sync android
 )
 
