@@ -204,15 +204,24 @@ build_main() {
 }
 
 deploy_container() {
-  local args=(-d --name "$CONTAINER" --restart "$RESTART" -p "$PORT_MAP" -v "$VOLUME" -e "TZ=$TZ")
+  local args=(--restart "$RESTART" -p "$PORT_MAP" -v "$VOLUME" -e "TZ=$TZ")
   local v
   v="$(get SN_LOG_LEVEL "")"
   [[ -n "$v" ]] && args+=(-e "SN_LOG_LEVEL=$v")
   args+=("$IMAGE")
 
   log "部署容器 $CONTAINER"
+  # 先用 docker create 校验参数与镜像（不绑定端口、不影响旧容器），
+  # 校验通过才替换旧容器——避免「先删后建」在 run 失败时造成服务中断。
+  local new="${CONTAINER}-new" cid
+  docker rm -f "$new" >/dev/null 2>&1 || true
+  if ! cid="$(docker create --name "$new" "${args[@]}")"; then
+    err "新容器创建失败（参数或镜像异常），旧容器保持运行"
+    return 1
+  fi
   docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
-  docker run "${args[@]}"
+  docker rename "$new" "$CONTAINER"
+  docker start "$CONTAINER" >/dev/null
 }
 
 wait_health() {
