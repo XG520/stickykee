@@ -30,6 +30,27 @@ public class MainActivity extends BridgeActivity {
         // mediaPlaybackRequiresUserGesture=true 时自动朗读（无用户手势）会在合成回到
         // 前端后被 WebView 拒绝，导致自定义 TTS 引擎无声、只能回退系统 TTS。
         bridge.getWebView().getSettings().setMediaPlaybackRequiresUserGesture(false);
+        // P2：地图瓦片请求经原生磁盘 LRU 缓存（TileCache）——SW 的 Cache API 会被清缓存清掉，
+        // 原生文件落在 getExternalFilesDir/tilecache，清缓存/重启都不受影响；且 http 源下
+        // SW 根本不会注册（需 https），APK 内离线地图此前实际没有缓存。
+        // 在 Capacitor 默认的 BridgeWebViewClient 之上重写 shouldInterceptRequest：
+        // 瓦片域名走 TileCache；其余返回 super（壳页本地资源等逻辑由 Capacitor 处理）。
+        bridge.setWebViewClient(new com.getcapacitor.BridgeWebViewClient(bridge) {
+            @Override
+            public android.webkit.WebResourceResponse shouldInterceptRequest(
+                    android.webkit.WebView view, android.webkit.WebResourceRequest request) {
+                try {
+                    String url = request.getUrl().toString();
+                    if (TileCache.isTile(url)) {
+                        java.util.Map<String, String> h = request.getRequestHeaders();
+                        return TileCache.get(getApplicationContext()).serve(
+                                new TileCache.WebResourceRequestCompat(url, h.get("Referer"), h.get("Origin")));
+                    }
+                } catch (Exception ignored) {
+                }
+                return super.shouldInterceptRequest(view, request);
+            }
+        });
         // APK 覆盖安装后，WebView 可能仍命中旧内置前端的缓存。版本号变化时清一次
         // 资源缓存并重载，保证直接用上新 APK 里的前端，无需用户手动清除应用数据。
         refreshWebCacheOnUpgrade();

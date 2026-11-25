@@ -1269,6 +1269,20 @@ public class NativeBridge {
         showNotification2(title, body, false);
     }
 
+    // ==================== 库存每日提醒（临期/过期/需补货） ====================
+    // 数据面在前端（库存统计），触发面走系统精确闹钟——WebView 退后台/熄屏后 JS
+    // 定时器冻结，只有 AlarmManager 能按时弹出通知。见 StockReminder。
+
+    /**
+     * 设置每日库存提醒。time "HH:mm"（本地）；summary 为通知正文（如「临期 3 · 过期 1 · 需补货 2」，
+     * 由前端每次打开库存页时统计并写入，通知里会注明数据时效）。
+     * enabled=false 时撤掉闹钟。
+     */
+    @JavascriptInterface
+    public void setDailyStockReminder(final boolean enabled, final String time, final String summary) {
+        StockReminder.schedule(activity.getApplicationContext(), enabled, time, summary);
+    }
+
     /**
      * 弹出状态栏通知（可静默）。点击通知拉应用到前台。Android 13+ 需先授权 POST_NOTIFICATIONS。
      *

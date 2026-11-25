@@ -30,6 +30,20 @@ public class BootReceiver extends BroadcastReceiver {
                     new Intent(context, KeepAliveService.class));
         } catch (Exception ignored) {
         }
+        // 库存每日提醒：精确闹钟不随重启保留，开机按持久化配置重排（未启用时静默跳过）
+        try {
+            String js = context.getApplicationContext()
+                    .getSharedPreferences("stickykee", Context.MODE_PRIVATE)
+                    .getString("stock_reminder", "");
+            if (!js.isEmpty()) {
+                org.json.JSONObject o = new org.json.JSONObject(js);
+                if (o.optBoolean("enabled")) {
+                    StockReminder.schedule(context.getApplicationContext(), true,
+                            o.optString("time", "09:00"), o.optString("summary", ""));
+                }
+            }
+        } catch (Exception ignored) {
+        }
         try {
             Intent it = new Intent(context, MainActivity.class);
             it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);

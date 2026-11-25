@@ -2,16 +2,9 @@
   <div class="space-y-4 md:space-y-5 py-2 pb-20 md:pb-2">
     <h1 class="sr-only">生活</h1>
 
-    <!-- 页面头部：移动端纵向堆叠，桌面端标题与页签同一行 -->
-    <header class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-      <div class="flex items-center justify-between gap-3">
-        <div class="min-w-0 text-sm font-body text-muted">
-          <span class="text-on-background font-medium">生活</span>
-          <span class="mx-1.5 text-faint">·</span>
-          <span>家里的物品、采购与开销</span>
-        </div>
-        <span class="md:hidden shrink-0 text-[11px] text-muted font-body">{{ locations.length }} 个位置</span>
-      </div>
+    <!-- 页面头部：移动端纵向堆叠（标签在上、页签在下），桌面端页签直接左对齐 -->
+    <header class="flex flex-col gap-3 md:flex-row md:items-center">
+      <span class="md:hidden shrink-0 text-[11px] text-muted font-body">{{ locations.length }} 个位置</span>
 
       <!-- 页签按内容宽度收窄（避免手机上铺满整行显得空），标签不换行 -->
       <div class="self-start inline-grid grid-cols-3 gap-1 p-1 rounded-2xl bg-surface-alt border border-border md:self-auto md:min-w-[336px]">
@@ -154,6 +147,21 @@
         :class="lowStockOnly ? 'bg-primary/10 text-primary border-primary/30' : 'bg-surface-alt text-muted border-border'"
         @click="toggleLowStock"
       >仅看需补货</button>
+      <button
+        v-if="remCan"
+        class="px-3 py-1 rounded-full border"
+        :class="reminder.on ? 'bg-primary/10 text-primary border-primary/30' : 'bg-surface-alt text-muted border-border'"
+        :title="reminder.on ? '每日 ' + reminder.time + ' 提醒库存风险（APK 后台触发）' : '开启每日库存提醒'"
+        @click="toggleReminder"
+      >提醒</button>
+      <input
+        v-if="remCan && reminder.on"
+        v-model="reminder.time"
+        type="time"
+        class="px-2 py-0.5 rounded-full bg-surface-alt border border-border text-xs font-body text-muted outline-none"
+        title="每日提醒时间"
+        @change="onReminderTime"
+      />
       <span class="ml-auto whitespace-nowrap text-muted">{{ items.length }} 件</span>
     </div>
     <div v-if="error" class="text-xs text-error font-body">{{ error }}</div>
@@ -372,6 +380,7 @@ import api from '@/api'
 import ItemEditorDialog from '@/components/inventory/ItemEditorDialog.vue'
 import ShoppingListView from '@/components/inventory/ShoppingListView.vue'
 import FinanceHome from '@/components/finance/FinanceHome.vue'
+import { reminderAvailable as canReminder, loadReminderPref, applyReminder } from '@/utils/stockReminder'
 
 const locations = ref([])
 const items = ref([])
@@ -382,6 +391,21 @@ const expiringOnly = ref(false)
 const lowStockOnly = ref(false)
 const loading = ref(false)
 const error = ref('')
+
+// 每日库存提醒（临期/过期/需补货）：APK 内走原生精确闹钟，浏览器端 no-op。
+const remCan = canReminder()
+const reminder = ref(loadReminderPref())
+function reminderSummary() {
+  const s = stats.value || {}
+  return `临期 ${s.expiring || 0} · 过期 ${s.expired || 0} · 需补货 ${s.low_stock || 0}`
+}
+function toggleReminder() {
+  reminder.value.on = !reminder.value.on
+  applyReminder(reminder.value, reminder.value.on ? reminderSummary() : '')
+}
+function onReminderTime() {
+  applyReminder(reminder.value, reminder.value.on ? reminderSummary() : '')
+}
 
 const activeTab = ref('stock')
 const detailItem = ref(null)
@@ -442,6 +466,8 @@ async function loadStats() {
   } catch (e) {
     error.value = e.message || ''
   }
+  // 每次打开库存页刷新原生提醒摘要（通知里的数字尽量新鲜；未开启时 no-op）
+  if (remCan && reminder.value.on) applyReminder(reminder.value, reminderSummary())
 }
 
 async function loadItems() {
