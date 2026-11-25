@@ -606,7 +606,7 @@ public class ServerConfigActivity extends AppCompatActivity {
 
     private String genId() {
         return "srv_" + System.currentTimeMillis() + "_"
-                + Integer.toHexString((int) (Math.random() * 0x100000000));
+                + Long.toHexString((long) (Math.random() * 0x100000000L));
     }
 
     private int cPrimary() { return ContextCompat.getColor(this, R.color.sc_primary); }
