@@ -59,17 +59,28 @@ homecanvas/
 
 ### 方式一：Docker 部署（推荐）
 
-```bash
-# 构建镜像
-docker build -t stickynuo:latest .
+日常发版用部署脚本（容器内自动编译 APK + 前后端 + 重启，详见 [打包指南](docs/打包指南.md)）：
 
-# 运行容器
-docker run -d --name stickynuo \
+```bash
+bash scripts/deploy.sh update
+```
+
+手动分步（等价于脚本内部动作；主镜像构建前 `release/stickykee-app.apk` 必须存在，否则 `COPY` 失败）：
+
+```bash
+# 1. 先出 APK（容器编译）
+bash scripts/deploy.sh apk
+
+# 2. 构建镜像
+docker build -t stickykee:latest .
+
+# 3. 运行容器
+docker run -d --name stickykee \
   -p 8080:8080 \
-  -v stickynuo-data:/data \
+  -v stickykee-data:/data \
   -e TZ=Asia/Shanghai \
   --restart unless-stopped \
-  stickynuo:latest
+  stickykee:latest
 ```
 
 访问 `http://<主机IP>:8080` 即可使用。
@@ -123,22 +134,25 @@ go run ./cmd/server/main.go    # 监听 :8080，数据库 data/stickynuo.db
 
 ### 自行打包
 
-前置：JDK 17、Android SDK
+推荐：部署机上一条命令（容器内自动完成 前端构建 → cap sync → gradle 编译 → 签名）：
+
+```bash
+# 仓库根目录，需已装 Docker；APK 由 Docker 构建容器现场编译
+# （工具链：JDK17 + Android SDK34 + Node20，gradle/npm 全走国内镜像）
+bash scripts/deploy.sh apk
+# 产物：release/stickykee-app.apk（已签名，可直接安装）
+```
+
+前置：发版前先用 `scripts/bump-version.ps1` 同步 4 处版本号（容器编译会校验，不一致直接失败）。
+
+若确需本机手工打包（需 JDK 17 + Android SDK）：
 
 ```powershell
-# 1. 安装壳工程依赖
 cd apk
-npm install
-
-# 2. 同步壳页与配置
-npx cap sync android
-
-# 3. 构建 APK
-$env:JAVA_HOME = "C:\path\to\jdk-17"
+npm install && npx cap sync android
 cd android
+$env:JAVA_HOME = "C:\path\to\jdk-17"
 .\gradlew.bat assembleDebug
-
-# 产物路径：app\build\outputs\apk\debug\app-debug.apk
 ```
 
 详见 [打包指南](docs/打包指南.md)。
@@ -188,6 +202,9 @@ location / {
 ## 许可证
 
 本项目以 [MIT](LICENSE) 许可证开源，可自由使用、修改与分发，请保留版权与许可声明。
+
+- **作者 / GitHub**：[XG520](https://github.com/XG520)
+- **版权**：Copyright (c) 2026 XG520
 
 ## 第三方资源
 

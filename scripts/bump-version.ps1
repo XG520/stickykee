@@ -3,6 +3,7 @@
 # 用法：
 #   powershell -ExecutionPolicy Bypass -File scripts\bump-version.ps1              # 只读校验：打印四处版本，不一致则退出码 1
 #   powershell -ExecutionPolicy Bypass -File scripts\bump-version.ps1 1.5.4        # 提升到 1.5.4：versionCode 自动 +1，四处一次改完
+#   powershell -ExecutionPolicy Bypass -File scripts\bump-version.ps1 +0.0.1       # 迭代：在当前版本基础上增量 +0.0.1（patch 自增）
 #
 # 为什么必须有这个脚本：版本号分散在 4 个文件，历史上多次漏改——
 #   漏 app_version.txt       -> Docker 里 sidecar 缺失，/app/info fallback 后端版本，客户端收不到更新提示
@@ -73,14 +74,21 @@ if (-not $Version) {
 }
 
 # ---- 提升模式：校验入参语义版本 ----
-if ($Version -notmatch '^\d+\.\d+\.\d+$') {
-    throw "版本号格式必须为 x.y.z（如 1.5.4），收到：$Version"
+if ($Version -notmatch '^\d+\.\d+\.\d+$' -and $Version -notmatch '^\+\d+\.\d+\.\d+$') {
+    throw "版本号格式必须为 x.y.z（如 1.5.4）或 +x.y.z（增量，如 +0.0.1），收到：$Version"
 }
 $names = @($current.Values | Select-Object -Unique)
 if ($names.Count -ne 1) {
     throw "当前四处版本本身不一致（$($names -join ' / ')），请先手工修正或核对后再提升"
 }
 $old = $names[0]
+# 增量语法：+x.y.z = 当前版本逐段相加（+0.0.1 即 patch 自增一次）
+if ($Version.StartsWith('+')) {
+    $o = $old.Split('.') | ForEach-Object { [int]$_ }
+    $d = $Version.TrimStart('+').Split('.') | ForEach-Object { [int]$_ }
+    $Version = "$($o[0] + $d[0]).$($o[1] + $d[1]).$($o[2] + $d[2])"
+    Write-Host "增量 +$($d[0]).$($d[1]).$($d[2]) → 目标版本 $Version"
+}
 # 逐段数值比较，禁止降级 / 同号
 function Compare-Ver([string]$A, [string]$B) {
     $pa = $A.Split('.') | ForEach-Object { [int]$_ }

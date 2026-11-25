@@ -2,6 +2,7 @@
   "name": "stickynuo-apk",
   "private": true,
   "version": "1.0.0",
+  "author": "XG520 <https://github.com/XG520>",
   "scripts": {
     "cap:sync": "cap sync android",
     "cap:apk": "cd android && gradlew.bat assembleDebug",
