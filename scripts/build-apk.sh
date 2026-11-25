@@ -20,6 +20,9 @@
 #   BUILD_APK_KEEP_TEMP=1 构建成功后保留工作区临时文件（默认构建完自动清理）
 # ============================================================================
 set -euo pipefail
+# ERR trap：容器内任何命令失败都打印退出码与行号（否则 set -e 静默退出，日志戛然而止）
+set -E
+trap 'rc=$?; printf "\n\033[1;31m[apk FAIL] 命令失败：退出码 %s（build-apk.sh 第 %s 行）\033[0m\n" "$rc" "$LINENO" >&2; exit "$rc"' ERR
 
 SRC="${SRC:-/src}"
 cd "$SRC"

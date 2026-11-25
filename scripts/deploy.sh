@@ -38,6 +38,9 @@
 #       HA 地址、API key 等业务密钥在应用启动后的「系统配置」里填，不进 Docker。
 # ============================================================================
 set -euo pipefail
+# ERR trap：任何命令失败立即报出退出码与行号，避免 set -e 静默中止（日志突然断掉）
+set -E
+trap 'rc=$?; printf "\n\033[1;31m[FAIL] 命令失败：退出码 %s（%s 第 %s 行）\033[0m\n" "$rc" "${BASH_SOURCE[0]}" "$LINENO" >&2; exit "$rc"' ERR
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -183,9 +186,9 @@ require_apk() {
 # 清理容器构建产生的工作区中间物（不碰 release/ 产物与 stickykee-apk-cache 缓存卷）
 cleanup_temp() {
   [[ "$KEEP_TEMP" -eq 1 ]] && { log "跳过临时文件清理（--keep-temp）"; return 0; }
-  log "清理临时文件（node_modules / 构建产物 / gradle 中间目录）"
+  log "清理临时文件（构建产物 / gradle 中间目录；app/node_modules 是宿主开发依赖，保留）"
   local d removed=0
-  for d in app/node_modules app/dist apk/node_modules apk/www \
+  for d in app/dist apk/node_modules apk/www \
            apk/android/.gradle apk/android/build apk/android/app/build; do
     if [[ -e "$ROOT/$d" ]]; then rm -rf "$ROOT/$d" && removed=$((removed + 1)); fi
   done
