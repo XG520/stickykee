@@ -18,6 +18,7 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
+import androidx.core.graphics.ColorUtils;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -247,9 +248,9 @@ public class ServerConfigActivity extends AppCompatActivity {
         boolean lan = "lan".equals(a.type);
         type.setText(lan ? "内网" : "外网");
         int c = lan ? cSuccess() : cPrimary();
-        type.setBackgroundTintList(ColorStateList.valueOf(Color.setAlpha(c, 0x24)));
+        type.setBackgroundTintList(ColorStateList.valueOf(ColorUtils.setAlphaComponent(c, 0x24)));
         type.setTextColor(c);
-        active.setBackgroundTintList(ColorStateList.valueOf(Color.setAlpha(cPrimary(), 0x24)));
+        active.setBackgroundTintList(ColorStateList.valueOf(ColorUtils.setAlphaComponent(cPrimary(), 0x24)));
         active.setTextColor(cPrimary());
         if (a.id.equals(activeId)) active.setVisibility(View.VISIBLE);
         row.setOnClickListener(v -> connectTo(a));
