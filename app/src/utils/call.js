@@ -231,6 +231,8 @@ function isSelfAction(device) {
 }
 
 async function onInvite(ev) {
+  // 同房间重复（实时 invite 与连接时补发 resumed 指向同房间）：已振铃，不二次响/拒
+  if (callState.incoming?.id === ev.room || callState.active?.id === ev.room) return
   // 通话中收到新邀请：自动拒（忙碌）
   if (callState.active) { try { await api.callReject(ev.room, getDeviceId()) } catch {}; return }
   if (callState.incoming) { try { await api.callReject(ev.room, getDeviceId()) } catch {}; return }
@@ -238,6 +240,24 @@ async function onInvite(ev) {
   startRing('incoming')
   // 来电状态栏通知（APK）：响铃期间常驻，接听/挂断后取消；点击拉应用回前台
   try { window.StickyKeeNative?.callNotification?.('来电', '来自 ' + (ev.from || '联系人') + ' 的语音通话') } catch { /* 忽略 */ }
+}
+
+// 连接时补发（server 按本用户房间状态）：后台端 missed 实时 invite 后重连接后仍
+// 振铃；本设备此前接听后恢复通话 UI 与语音管线；其它设备接听后按多端语义退出。
+function onResumed(ev) {
+  if (!ev.joined) { onInvite({ room: ev.room, from: ev.owner, owner: ev.owner, members: ev.members }); return }
+  if (callState.active?.id === ev.room) return
+  if (ev.device && ev.device !== getDeviceId()) {
+    if (callState.incoming?.id === ev.room) endCall('other-accept')
+    return
+  }
+  stopRing()
+  callState.incoming = null
+  callState.active = { id: ev.room, owner: ev.owner, members: new Set(ev.members), voiceReady: true, startedAt: Date.now() }
+  startVoice(ev.room, wsSendBinary).catch((e) => {
+    flashError(e.message || '语音初始化失败')
+    endCall('hangup')
+  })
 }
 
 // 收到 WebRTC 信令：对端仍是旧版（P2P 直连方案）。新版媒体走 WS 中继，
