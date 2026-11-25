@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"stickykee/server/internal/auth"
+	"stickykee/server/internal/call"
 	"stickykee/server/internal/ha"
 	"stickykee/server/internal/ha/model"
 
@@ -34,14 +35,17 @@ type WS struct {
 	log          *slog.Logger
 	authenticate func(token string) (auth.Identity, bool) // 校验会话 token，返回身份
 	audio        func(user string, frame []byte)          // 通话语音二进制帧路由（可为 nil）
+	callRooms    *call.Manager // 通话房间表，连接时补发振铃/通话状态（可为 nil）
 }
 
-// NewWS 构造 WS handler。audio 用于把客户端上行语音帧交给 call.Manager 中继。
-func NewWS(manager *ha.Manager, log *slog.Logger, authenticate func(token string) (auth.Identity, bool), audio func(user string, frame []byte)) *WS {
+// NewWS 构造 WS handler。audio 用于把客户端上行语音帧交给 call.Manager 中继；
+// callRooms 用于连接时补发本用户通话房间状态（后台端重连接后仍振铃）。
+func NewWS(manager *ha.Manager, log *slog.Logger, authenticate func(token string) (auth.Identity, bool),
+	audio func(user string, frame []byte), callRooms *call.Manager) *WS {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &WS{manager: manager, log: log, authenticate: authenticate, audio: audio}
+	return &WS{manager: manager, log: log, authenticate: authenticate, audio: audio, callRooms: callRooms}
 }
 
 // ServeHTTP GET /api/v1/ws?instance={id}&token={token}
@@ -98,6 +102,22 @@ func (h *WS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if store != nil {
 		if snap := model.ParseDisplays(store.Snapshot()); len(snap) > 0 {
 			if b, merr := json.Marshal(map[string]any{"type": "state", "seq": h.manager.Seq(ctx, instanceID), "data": snap}); merr == nil {
+				_ = conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
+				if werr := conn.WriteMessage(websocket.TextMessage, b); werr != nil {
+					conn.Close()
+					return
+				}
+			}
+		}
+	}
+
+	// 通话状态补发：通话事件按推送「离线即丢弃、不补发」，后台端（Doze 掐网络 /
+	// 原生保活心跳重建 WS）时实时 invite 即永久丢失——该端 never 响铃，通话中端
+	// 也不恢复语音。连接时按本用户房间状态补发 resumed（仅本连接，其它在线设备
+	// 已持有实时状态）：joined=false 仍在振铃等待中，joined=true 已接听。
+	if h.callRooms != nil {
+		for _, ev := range h.callRooms.PendingFor(ident.Username) {
+			if b, merr := json.Marshal(ev); merr == nil {
 				_ = conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
 				if werr := conn.WriteMessage(websocket.TextMessage, b); werr != nil {
 					conn.Close()

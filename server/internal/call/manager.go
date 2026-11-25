@@ -34,6 +34,7 @@ type Room struct {
 	mu        sync.RWMutex
 	members   map[string]bool // 含 owner；被邀请即占名
 	joined    map[string]bool // 实际已加入（接听）者；owner 创建即视为已加入
+	joinedDev map[string]string // 按已加入者记录接听设备 id（多端语义补发时区分本设备/其它设备）
 }
 
 // Members 返回成员快照（含 owner）。
@@ -53,11 +54,28 @@ func (r *Room) has(u string) bool {
 	return r.members[u]
 }
 
-// markJoined 标记用户已接听。
-func (r *Room) markJoined(u string) {
+// markJoined 标记用户已接听，记录接听设备 id（可为空：未知发起设备）。
+func (r *Room) markJoined(u, device string) {
 	r.mu.Lock()
 	r.joined[u] = true
+	if device != "" {
+		r.joinedDev[u] = device
+	}
 	r.mu.Unlock()
+}
+
+// joinedFor 判断用户已接听。
+func (r *Room) joinedFor(u string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.joined[u]
+}
+
+// deviceOf 返回该用户接听时的设备 id（未记录即空串，补发前端 treats 作为本设备）。
+func (r *Room) deviceOf(u string) string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.joinedDev[u]
 }
 
 // snapshot 返回成员与已加入快照，供超时扫描判断。
@@ -162,6 +180,7 @@ func (m *Manager) Create(owner string, members []string) *Room {
 		CreatedAt: time.Now(),
 		members:   map[string]bool{owner: true},
 		joined:    map[string]bool{owner: true},
+		joinedDev: map[string]string{},
 	}
 	for _, u := range members {
 		if u != "" && u != owner {
@@ -193,16 +212,41 @@ func (m *Manager) HasMember(id, user string) bool {
 	return r.has(user)
 }
 
-// Join 标记用户已接听，返回房间。
-func (m *Manager) Join(id, user string) (*Room, bool) {
+// Join 标记用户已接听（记录设备 id），返回房间。
+func (m *Manager) Join(id, user, device string) (*Room, bool) {
 	m.mu.Lock()
 	r, ok := m.rooms[id]
 	m.mu.Unlock()
 	if !ok {
 		return nil, false
 	}
-	r.markJoined(user)
+	r.markJoined(user, device)
 	return r, true
+}
+
+// PendingFor 按用户返回其占的通话房间状态消息列表，供 WS 连接时补发。
+// 通话事件按推送「离线即丢弃、不补发」，后台端（Doze 掐网络 / 原生心跳重建连接）
+// 时实时 invite 即永久丢失——该端 never 响铃。补发让重连接后振铃/恢复通话。
+//   joined=false 房间仍在振铃等待中（前端振铃并弹来电 UI）；
+//   joined=true 本用户已接听，device 为接听设备（空即未知→前端本设备恢复通话中）。
+func (m *Manager) PendingFor(user string) []map[string]any {
+	m.mu.Lock()
+	targets := make([]*Room, 0, len(m.rooms))
+	for _, r := range m.rooms {
+		if r.has(user) {
+			targets = append(targets, r)
+		}
+	}
+	m.mu.Unlock()
+	out := make([]map[string]any, 0, len(targets))
+	for _, r := range targets {
+		out = append(out, map[string]any{
+			"type": "call", "event": "resumed",
+			"room": r.ID, "owner": r.Owner, "members": r.Members(),
+			"joined": r.joinedFor(user), "device": r.deviceOf(user),
+		})
+	}
+	return out
 }
 
 // Reject 成员拒接：将其移出房间。若移出后除 owner 外无其他成员，解散房间（ended=true）。

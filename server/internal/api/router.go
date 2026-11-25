@@ -87,7 +87,7 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 			hb.BroadcastUser(user, msg)
 		}
 	}, hb.BroadcastUserBinary)
-	ws := handler.NewWS(manager, nil, authOpt.Authenticate, callManager.AudioRoute)
+	ws := handler.NewWS(manager, nil, authOpt.Authenticate, callManager.AudioRoute, callManager)
 	agg := handler.NewAggregate(manager)
 	automation := handler.NewAutomation(manager)
 	devices := handler.NewDevices(repo, userPrefs, manager)

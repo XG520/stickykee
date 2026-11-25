@@ -221,6 +221,7 @@ export async function handleCallEvent(ev) {
     case 'left': return onLeft(ev)
     case 'reject': return onReject(ev)
     case 'ended': return onEnded(ev)
+    case 'resumed': return onResumed(ev)
   }
 }
 

@@ -134,7 +134,7 @@ func (h *Call) Join(w http.ResponseWriter, r *http.Request) {
 		WriteErr(w, 403, "forbidden", "你不在该通话中")
 		return
 	}
-	h.rooms.Join(body.Room, me)
+	h.rooms.Join(body.Room, me, body.Device)
 	others := room.Members()
 	ev := map[string]any{
 		"type": "call", "event": "joined",
