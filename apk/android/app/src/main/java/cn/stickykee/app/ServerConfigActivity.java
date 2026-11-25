@@ -3,7 +3,6 @@ package cn.stickykee.app;
 import android.content.Context;
 import android.content.Intent;
 import android.content.res.ColorStateList;
-import android.graphics.Color;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.os.Bundle;
@@ -75,6 +74,12 @@ public class ServerConfigActivity extends AppCompatActivity {
     });
     private final ExecutorService actionPool = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "sc-act");
+        t.setDaemon(true);
+        return t;
+    });
+    // 自动识别单独一个线程：扫描可能持续一两分钟，不能占用 actionPool（保存并连接会一直排队）
+    private final ExecutorService detectPool = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "sc-detect");
         t.setDaemon(true);
         return t;
     });
@@ -211,7 +216,7 @@ public class ServerConfigActivity extends AppCompatActivity {
         probePool.submit(() -> {
             boolean ok = ServerConfigStore.probe(target.url, 4000);
             runOnUiThread(() -> {
-                if (isFinishing()) return;
+                if (isFinishing() || isDestroyed()) return;
                 if (ok) {
                     launchApp(target.url);
                 } else {
@@ -275,7 +280,7 @@ public class ServerConfigActivity extends AppCompatActivity {
     private void updateRow(Addr a) {
         View row = findRow(a.id);
         if (row == null) return;
-        TextView dot = row.findViewById(R.id.row_dot);
+        View dot = row.findViewById(R.id.row_dot);
         TextView ver = row.findViewById(R.id.row_ver);
         TextView conn = row.findViewById(R.id.row_conn);
         String st = statuses.get(a.id);
@@ -305,7 +310,7 @@ public class ServerConfigActivity extends AppCompatActivity {
                 boolean ok = ServerConfigStore.probe(a.url, 3500);
                 String v = ok ? ServerConfigStore.fetchVersion(a.url, 3000) : null;
                 runOnUiThread(() -> {
-                    if (isFinishing()) return;
+                    if (isFinishing() || isDestroyed()) return;
                     statuses.put(a.id, ok ? "on" : "off");
                     if (v != null) versions.put(a.id, v);
                     updateRow(a);
@@ -324,7 +329,7 @@ public class ServerConfigActivity extends AppCompatActivity {
             boolean ok = ServerConfigStore.probe(a.url, 4000);
             runOnUiThread(() -> {
                 connectingId = null;
-                if (isFinishing()) return;
+                if (isFinishing() || isDestroyed()) return;
                 if (ok) {
                     activeId = a.id;
                     lastConnectedId = a.id; // 与 Web 端 switchTo 一致：连接成功记最近连接指针
@@ -350,7 +355,7 @@ public class ServerConfigActivity extends AppCompatActivity {
     }
 
     private void confirmDelete(final Addr a) {
-        new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog)
+        new AlertDialog.Builder(this)
                 .setTitle("删除「" + a.name + "」？")
                 .setPositiveButton("删除", (d, w) -> {
                     addresses.remove(a);
@@ -409,7 +414,7 @@ public class ServerConfigActivity extends AppCompatActivity {
 
     private void saveAndConnect() {
         if (busy) return;
-        final Addr a = collect(true);
+        final Addr a = collect(false);
         if (a == null) return;
         busy = true;
         setBusyUI(true);
@@ -421,8 +426,12 @@ public class ServerConfigActivity extends AppCompatActivity {
             runOnUiThread(() -> {
                 busy = false;
                 setBusyUI(false);
-                if (isFinishing()) return;
+                if (isFinishing() || isDestroyed()) return;
                 if (ok) {
+                    // 探测成功才切换 activeId，避免坏地址被持久化
+                    activeId = a.id;
+                    lastConnectedId = a.id;
+                    persist();
                     formMsg.setText("连接成功，正在进入…");
                     launchApp(a.url);
                 } else {
@@ -525,13 +534,13 @@ public class ServerConfigActivity extends AppCompatActivity {
         formErr.setVisibility(View.GONE);
         formMsg.setText("正在识别内网服务器…");
         formMsg.setVisibility(View.VISIBLE);
-        actionPool.submit(() -> {
+        detectPool.submit(() -> {
             String found = detectLanServer();
             runOnUiThread(() -> {
                 detecting = false;
                 autoDetect.setEnabled(true);
                 autoDetect.setAlpha(1f);
-                if (isFinishing()) return;
+                if (isFinishing() || isDestroyed()) return;
                 if (found != null) {
                     formHost.setText(stripScheme(found));
                     setScheme("http");
@@ -556,13 +565,20 @@ public class ServerConfigActivity extends AppCompatActivity {
         }
         // 每批 5 个走 3 线程池并发探测（对齐 Web 端 autoDetect 的批次策略）
         for (int i = 0; i < candidates.size(); i += 5) {
+            if (isFinishing() || isDestroyed() || Thread.currentThread().isInterrupted()) return null;
             int end = Math.min(i + 5, candidates.size());
             java.util.List<String> batch = candidates.subList(i, end);
             java.util.List<Future<Boolean>> fs = new java.util.ArrayList<>();
-            for (String u : batch) fs.add(probePool.submit(() -> ServerConfigStore.probe(u, 2000)));
+            for (String u : batch) {
+                try {
+                    fs.add(probePool.submit(() -> ServerConfigStore.probe(u, 2000)));
+                } catch (java.util.concurrent.RejectedExecutionException e) {
+                    return null; // Activity 已销毁、线程池关闭
+                }
+            }
             for (int k = 0; k < fs.size(); k++) {
                 try {
-                    if (fs.get(k).get(8, TimeUnit.SECONDS)) return batch.get(k);
+                    if (fs.get(k).get(3, TimeUnit.SECONDS)) return batch.get(k);
                 } catch (Exception ignored) { /* 超时/池忙：视为未发现，继续下一批 */ }
             }
         }
@@ -619,6 +635,7 @@ public class ServerConfigActivity extends AppCompatActivity {
     protected void onDestroy() {
         probePool.shutdownNow();
         actionPool.shutdownNow();
+        detectPool.shutdownNow();
         super.onDestroy();
     }
 }

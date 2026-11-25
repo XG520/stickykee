@@ -65,9 +65,10 @@ public final class ServerConfigStore {
                             a.optString("url"), a.optString("type", "lan")));
                 }
             }
-            String active = o.optString("activeId", "");
+            // JSON 里的 null 会被 optString 读成字符串 "null"，这里显式判空
+            String active = o.isNull("activeId") ? "" : o.optString("activeId", "");
             c.activeId = active.isEmpty() ? null : active;
-            String last = o.optString("lastConnectedId", "");
+            String last = o.isNull("lastConnectedId") ? "" : o.optString("lastConnectedId", "");
             c.lastConnectedId = last.isEmpty() ? null : last;
         } catch (Exception ignored) { /* JSON 损坏 → 空配置 */ }
         return c;
