@@ -213,8 +213,12 @@ inject_apk() {
     warn "未找到 $src，容器沿用镜像内置 APK"
     return 0
   fi
+  # docker cp 以 root 属主落地并保留源文件权限位；必须保证容器用户（sn, 10001）可读，
+  # 否则 /app/info 能 stat 到（提示有更新）而 /app/download 打开文件失败（403）。
+  chmod 644 "$src" 2>/dev/null || true
   docker cp "$src" "$CONTAINER:/var/apk/stickykee-app.apk"
   if [[ -s "$ROOT/release/app_version.txt" ]]; then
+    chmod 644 "$ROOT/release/app_version.txt" 2>/dev/null || true
     docker cp "$ROOT/release/app_version.txt" "$CONTAINER:/var/apk/app_version.txt"
   fi
   log "已注入 APK：$src（$(du -h "$src" | cut -f1)）"
