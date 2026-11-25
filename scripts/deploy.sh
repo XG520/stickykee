@@ -10,7 +10,8 @@
 #   bash scripts/deploy.sh frontend      # 只重建主镜像并重启（复用已有 APK，不 pull、不编译 APK）
 #   bash scripts/deploy.sh backend       # 同 frontend（前后端烘焙在同一镜像里）
 #   bash scripts/deploy.sh build         # 只构建主镜像，不重启
-#   bash scripts/deploy.sh restart       # 不构建，按当前 .env 重新部署
+#   bash scripts/deploy.sh restart       # 不构建，按当前 .env 重新部署；
+#                                        #   并把 release/ 里的 APK 注入容器（发布新包）
 #   bash scripts/deploy.sh status        # 容器状态 + /healthz + 内置版本
 #   bash scripts/deploy.sh logs [-f]     # 查看日志（-f 跟随）
 #   bash scripts/deploy.sh prune          # 清理悬挂镜像与构建缓存
@@ -203,6 +204,22 @@ build_main() {
   docker images "$IMAGE" --format '  {{.Repository}}:{{.Tag}}  {{.Size}}  {{.CreatedSince}}'
 }
 
+# 把 release/ 下编译好的 APK（及版本 sidecar）注入容器，覆盖镜像内烘焙的旧包。
+# 目的：restart / build 这类复用镜像的路径也能发布新 APK，无需重建镜像。
+# 目标路径与 Dockerfile 的 SN_APK_FILE / SN_APK_VERSION_FILE 保持一致。
+inject_apk() {
+  local src="$ROOT/release/stickykee-app.apk"
+  if [[ ! -s "$src" ]]; then
+    warn "未找到 $src，容器沿用镜像内置 APK"
+    return 0
+  fi
+  docker cp "$src" "$CONTAINER:/var/apk/stickykee-app.apk"
+  if [[ -s "$ROOT/release/app_version.txt" ]]; then
+    docker cp "$ROOT/release/app_version.txt" "$CONTAINER:/var/apk/app_version.txt"
+  fi
+  log "已注入 APK：$src（$(du -h "$src" | cut -f1)）"
+}
+
 deploy_container() {
   local args=(--restart "$RESTART" -p "$PORT_MAP" -v "$VOLUME" -e "TZ=$TZ")
   local v
@@ -221,6 +238,7 @@ deploy_container() {
   fi
   docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
   docker rename "$new" "$CONTAINER"
+  inject_apk
   docker start "$CONTAINER" >/dev/null
 }
 
