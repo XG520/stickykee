@@ -204,7 +204,7 @@ build_main() {
 }
 
 deploy_container() {
-  local args=(-d --name "$CONTAINER" --restart "$RESTART" "$PORT_MAP" "$VOLUME" -e "TZ=$TZ")
+  local args=(-d --name "$CONTAINER" --restart "$RESTART" -p "$PORT_MAP" -v "$VOLUME" -e "TZ=$TZ")
   local v
   v="$(get SN_LOG_LEVEL "")"
   [[ -n "$v" ]] && args+=(-e "SN_LOG_LEVEL=$v")
