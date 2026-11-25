@@ -1,11 +1,16 @@
 package cn.stickykee.app;
 
+import android.content.Intent;
 import android.os.Bundle;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
 
     private NativeBridge nativeBridge;
+
+    // 原生「服务器地址」配置页直达目标：onNewIntent/load 时若 intent 携带 target_url，
+    // 直接 loadUrl 目标服务器，省掉 Web 壳页的 JS 探测与整页跳转往返。
+    private String pendingTarget = null;
 
     // 主界面存活标记：KeepAliveService 被系统重启（进程被杀后 START_STICKY 拉活）时
     // 据此判断主界面是否需要重建——alive=false 说明用户划掉/进程被杀，尝试拉起自恢复

@@ -5,4 +5,15 @@
     <color name="colorAccent">#5EC4B0</color>
     <!-- 系统栏默认底色（与默认主题背景一致，动态主题色由 SystemTint 插件覆盖） -->
     <color name="systemBars">#0E0F12</color>
+
+    <!-- 原生「服务器地址」配置页（ServerConfigActivity）配色：与默认深色主题一致 -->
+    <color name="sc_bg">#0E0F12</color>
+    <color name="sc_surface">#17181D</color>
+    <color name="sc_border">#26282E</color>
+    <color name="sc_text">#F5F6F8</color>
+    <color name="sc_muted">#9CA3AF</color>
+    <color name="sc_primary">#F5A623</color>
+    <color name="sc_on_primary">#1A1206</color>
+    <color name="sc_success">#5EC4B0</color>
+    <color name="sc_error">#E5484D</color>
 </resources>

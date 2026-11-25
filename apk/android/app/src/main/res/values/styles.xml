@@ -29,4 +29,59 @@
         <item name="android:navigationBarColor">@color/systemBars</item>
         <item name="android:windowLightStatusBar">false</item>
     </style>
+
+    <!-- 原生「服务器地址」配置页（启动入口）：深色，与 App 默认主题一致 -->
+    <style name="AppTheme.ServerConfig" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">@color/sc_bg</item>
+        <item name="android:statusBarColor">@color/sc_bg</item>
+        <item name="android:navigationBarColor">@color/sc_bg</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="colorPrimary">@color/sc_primary</item>
+        <item name="colorAccent">@color/sc_primary</item>
+    </style>
+
+    <style name="ScField">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:background">@drawable/sc_card_bg</item>
+        <item name="android:textColor">@color/sc_text</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:padding">12dp</item>
+        <item name="android:inputType">text</item>
+        <item name="android:imeOptions">actionDone</item>
+        <item name="android:maxLines">1</item>
+    </style>
+
+    <style name="ScLabel">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textColor">@color/sc_text</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:layout_marginTop">16dp</item>
+        <item name="android:layout_marginBottom">6dp</item>
+    </style>
+
+    <style name="ScPrimaryBtn">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">44dp</item>
+        <item name="android:background">@drawable/sc_card_bg</item>
+        <item name="android:textColor">@color/sc_on_primary</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:gravity">center</item>
+        <item name="android:layout_marginTop">16dp</item>
+        <item name="android:stateListAnimator">@null</item>
+    </style>
+
+    <style name="ScGhostBtn">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">44dp</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:layout_marginTop">10dp</item>
+        <item name="android:background">@drawable/sc_card_bg</item>
+        <item name="android:textColor">@color/sc_text</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:gravity">center</item>
+    </style>
 </resources>

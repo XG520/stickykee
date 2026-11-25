@@ -1,0 +1,262 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 原生「服务器地址」配置页：列表视图 + 表单视图（代码切换可见性） -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/sc_bg">
+
+    <!-- ============ 列表视图 ============ -->
+    <LinearLayout
+        android:id="@+id/list_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="服务器地址"
+            android:textColor="@color/sc_text"
+            android:textSize="22sp"
+            android:fontFamily="sans-serif-medium" />
+
+        <TextView
+            android:id="@+id/list_hint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="按当前网络自动选用内网/外网地址"
+            android:textColor="@color/sc_muted"
+            android:textSize="12sp"
+            android:layout_marginTop="6dp" />
+
+        <TextView
+            android:id="@+id/list_err"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/sc_card_bg"
+            android:padding="12dp"
+            android:textColor="@color/sc_error"
+            android:textSize="12sp"
+            android:visibility="gone" />
+
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginTop="14dp"
+            android:fillViewport="true">
+
+            <LinearLayout
+                android:id="@+id/row_container"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+
+            <TextView
+                android:id="@+id/empty_hint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:text="还没有保存的服务器地址"
+                android:textColor="@color/sc_muted"
+                android:textSize="13sp"
+                android:padding="32dp"
+                android:visibility="gone" />
+        </ScrollView>
+
+        <Button
+            android:id="@+id/add_btn"
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/sc_primary_bg"
+            android:text="＋  添加服务器"
+            android:textColor="@color/sc_on_primary"
+            android:textSize="14sp"
+            android:fontFamily="sans-serif-medium" />
+    </LinearLayout>
+
+    <!-- ============ 表单视图 ============ -->
+    <ScrollView
+        android:id="@+id/form_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/sc_bg"
+        android:visibility="gone"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="20dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:id="@+id/form_title"
+                    android:text="添加服务器"
+                    android:textColor="@color/sc_text"
+                    android:textSize="22sp"
+                    android:fontFamily="sans-serif-medium" />
+
+                <TextView
+                    android:id="@+id/form_back"
+                    android:layout_width="wrap_content"
+                    android:layout_height="44dp"
+                    android:gravity="center"
+                    android:paddingHorizontal="14dp"
+                    android:text="←"
+                    android:textColor="@color/sc_muted"
+                    android:textSize="20sp" />
+            </LinearLayout>
+
+            <TextView style="@style/ScLabel" android:text="名称" />
+            <EditText
+                android:id="@+id/form_name"
+                style="@style/ScField"
+                android:hint="例如 家里内网 / 外网域名"
+                android:hintTextColor="@color/sc_muted"
+                android:inputType="text"
+                android:autofillHints="name" />
+
+            <TextView style="@style/ScLabel" android:text="服务器地址" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginEnd="8dp">
+
+                    <TextView
+                        android:id="@+id/scheme_http"
+                        android:layout_width="wrap_content"
+                        android:layout_height="44dp"
+                        android:gravity="center"
+                        android:paddingHorizontal="14dp"
+                        android:background="@drawable/sc_card_bg"
+                        android:text="http://"
+                        android:textColor="@color/sc_primary"
+                        android:textSize="13sp"
+                        android:fontFamily="sans-serif-medium" />
+
+                    <TextView
+                        android:id="@+id/scheme_https"
+                        android:layout_width="wrap_content"
+                        android:layout_height="44dp"
+                        android:gravity="center"
+                        android:paddingHorizontal="14dp"
+                        android:background="@drawable/sc_card_bg"
+                        android:text="https://"
+                        android:textColor="@color/sc_muted"
+                        android:textSize="13sp"
+                        android:fontFamily="sans-serif-medium" />
+                </LinearLayout>
+
+                <EditText
+                    android:id="@+id/form_host"
+                    android:layout_width="0dp"
+                    android:layout_height="44dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/sc_card_bg"
+                    android:paddingHorizontal="12dp"
+                    android:textColor="@color/sc_text"
+                    android:textSize="14sp"
+                    android:hint="192.168.1.100:8080"
+                    android:hintTextColor="@color/sc_muted"
+                    android:inputType="text"
+                    android:imeOptions="actionDone"
+                    android:maxLines="1"
+                    android:autofillHints="url" />
+            </LinearLayout>
+
+            <TextView style="@style/ScLabel" android:text="网络类型" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/type_lan"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:background="@drawable/sc_card_bg"
+                    android:text="内网（WiFi）"
+                    android:textColor="@color/sc_success"
+                    android:textSize="13sp"
+                    android:fontFamily="sans-serif-medium" />
+
+                <TextView
+                    android:id="@+id/type_wan"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:layout_marginStart="8dp"
+                    android:gravity="center"
+                    android:background="@drawable/sc_card_bg"
+                    android:text="外网（移动数据）"
+                    android:textColor="@color/sc_muted"
+                    android:textSize="13sp"
+                    android:fontFamily="sans-serif-medium" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/form_msg"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:textColor="@color/sc_success"
+                android:textSize="12sp"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/form_err"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:textColor="@color/sc_error"
+                android:textSize="12sp"
+                android:visibility="gone" />
+
+            <Button
+                android:id="@+id/save_connect"
+                style="@style/ScPrimaryBtn"
+                android:background="@drawable/sc_primary_bg"
+                android:text="保存并连接" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/save_only"
+                    style="@style/ScGhostBtn"
+                    android:layout_marginEnd="8dp"
+                    android:text="仅保存" />
+
+                <Button
+                    android:id="@+id/auto_detect"
+                    style="@style/ScGhostBtn"
+                    android:text="自动识别" />
+            </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
+</FrameLayout>
