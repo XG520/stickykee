@@ -1,0 +1,11 @@
+# 部署机为 Linux：shell 脚本必须保持 LF，否则 CRLF 会导致 bash 语法错误。
+# 仓库在 Windows 上检出时 git 不会把 .sh 转成 CRLF。
+*.sh text eol=lf
+
+# gradlew（Linux 侧 sh 执行）与 gradlew.bat（Windows 侧）分平台锁定换行：
+# Linux 容器内 APK 编译需要 gradlew 为 LF；Windows 打包机需要 .bat 为 CRLF。
+apk/android/gradlew text eol=lf
+apk/android/gradlew.bat text eol=crlf
+
+# 其余文本文件按平台正常换行（Windows 检出为 CRLF，Linux 为 LF）
+* text=auto

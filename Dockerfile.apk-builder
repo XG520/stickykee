@@ -1,0 +1,68 @@
+# syntax=docker/dockerfile:1
+# 归祺 Sticky Kee —— APK 构建容器（JDK 17 + Android SDK 34 + Node 20，纯工具链）
+#
+# 设计：本镜像只装工具链，不烘焙源码。部署时由 scripts/deploy.sh 把仓库挂进容器：
+#   docker build -f Dockerfile.apk-builder -t stickykee-apk-builder:latest .
+#   docker run --rm -v "$PWD:/src" stickykee-apk-builder:latest   # CMD 执行 scripts/build-apk.sh
+# 产物写入宿主 release/stickykee-app.apk（主 Dockerfile 的 COPY 输入）。
+#
+# 国内源策略：
+#   npm        → npmmirror（cap sync / vite 依赖）
+#   Gradle 发行 → 腾讯云（见 apk/android/gradle/wrapper/gradle-wrapper.properties）
+#   maven 依赖 → 阿里云（见 apk/android/build.gradle）
+#   Android SDK → 默认 Google 官方 dl.google.com；国内直连不通时用
+#                 --build-arg SDK_REPO=<可达镜像根> 覆盖，或给 docker 配 HTTPS_PROXY。
+# base image 可用 --build-arg BUILDER_BASE 覆盖（国内拉不到 docker.io 时指向可达的 ubuntu:22.04）。
+ARG BUILDER_BASE=ubuntu:22.04
+FROM $BUILDER_BASE
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# ---------- 基础工具 + JDK 17 ----------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        openjdk-17-jdk-headless curl unzip xz-utils ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+
+# ---------- Node 20（npmmirror 二进制，国内直连可靠；与主镜像 node:20 同代） ----------
+ENV NODE_VERSION=20.15.1
+RUN curl -fsSL "https://registry.npmmirror.com/-/binary/node/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" -o /tmp/node.tar.xz \
+    && tar -xJf /tmp/node.tar.xz -C /opt --strip-components=1 \
+    && ln -s /opt/bin/node /usr/local/bin/node \
+    && ln -s /opt/bin/npm  /usr/local/bin/npm \
+    && ln -s /opt/bin/npx  /usr/local/bin/npx \
+    && rm /tmp/node.tar.xz
+ENV npm_config_registry=https://registry.npmmirror.com
+
+# ---------- Android SDK 34（sdkmanager 标准装法，AGP 8.2.1 需要 platform/build-tools 34） ----------
+# 用 sdkmanager 按仓库清单安装（不硬编码组件 zip 文件名，镜像站布局变更也不怕）。
+# 组件安装走 sdkmanager 内置默认源 dl.google.com（国内直连通常可达，慢但稳）；
+# cmdline-tools 工具包本身可从 SDK_REPO 覆盖下载（--build-arg SDK_REPO=<可达仓库根>）。
+# 若组件下载也不通：给 docker 配 HTTPS_PROXY，或 hosts 技巧指向可达的 Google 下载节点。
+# cmdline-tools 11076708 布局：解压后为 cmdline-tools/bin/sdkmanager（find 定位，兼容两种布局）。
+ARG SDK_REPO=https://dl.google.com/android/repository
+ARG CMDTOOLS_ID=commandlinetools-linux-11076708_latest.zip
+ENV ANDROID_HOME=/opt/android-sdk
+RUN set -eux; \
+    cd /tmp; \
+    curl -fsSL --retry 3 "${SDK_REPO}/${CMDTOOLS_ID}" -o ct.zip; \
+    [ -s ct.zip ] || { echo "[apk-builder] cmdline-tools 下载失败：${SDK_REPO}/${CMDTOOLS_ID}"; exit 1; }; \
+    unzip -q ct.zip; \
+    sm="$(find /tmp/cmdline-tools -name sdkmanager -type f | head -n 1)"; \
+    [ -n "$sm" ] || { echo "[apk-builder] 未找到 sdkmanager（zip 布局异常）"; exit 1; }; \
+    # license：交互接受（yes 管道）+ 预置 SHA-256("android-sdk-license") 指纹兜底
+    mkdir -p "$ANDROID_HOME/licenses"; \
+    printf '8c7df89f83e316aa436be6efd5522a72ae018cff8a1194afb66cd3b91f1b7cc6\n' > "$ANDROID_HOME/licenses/android-sdk-license"; \
+    yes | "$sm" --sdk_root="$ANDROID_HOME" --licenses >/dev/null 2>&1 || true; \
+    "$sm" --sdk_root="$ANDROID_HOME" \
+        "platform-tools" "platforms;android-34" "build-tools;34.0.0"; \
+    # cmdline-tools 保留在 SDK 根下（运行时可继续用 sdkmanager），清理临时文件
+    cp -a /tmp/cmdline-tools "$ANDROID_HOME/cmdline-tools"; \
+    rm -rf /tmp/ct.zip /tmp/cmdline-tools; \
+    [ -f "$ANDROID_HOME/platform-tools/adb" ] || { echo "platform-tools 未装好"; exit 1; }; \
+    [ -f "$ANDROID_HOME/build-tools/34.0.0/aapt2" ] || { echo "build-tools 未装好"; exit 1; }; \
+    [ -f "$ANDROID_HOME/platforms/android-34/android.jar" ] || { echo "platforms;android-34 未装好"; exit 1; }
+ENV PATH="$ANDROID_HOME/cmdline-tools/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
+
+# 入口：挂载宿主仓库到 /src 后执行 scripts/build-apk.sh（见 deploy.sh）
+CMD ["bash", "/src/scripts/build-apk.sh"]

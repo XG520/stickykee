@@ -4,11 +4,16 @@
 # 例外：必须跟踪的隐藏文件
 !.gitignore
 !.dockerignore
+!.gitattributes
 
 # 例外：项目技能（hc-card-dev，AI 卡片设计规范入口）入版本库；.trae 其余内容仍忽略
 !.trae/
 .trae/*
 !.trae/skills/
+
+# 例外：部署配置模板入版本库；.env 含敏感配置（密钥等），保持忽略
+!scripts/.env.example
+scripts/.env
 
 # SQLite 数据库：不入版本库，部署后由服务启动时自动建库（见 internal/store/db.go 的 migrate）
 *.db
