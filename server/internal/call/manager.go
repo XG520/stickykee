@@ -13,9 +13,12 @@ import (
 
 // 超时策略：
 //   - ringingTimeout：创建后始终只有 owner 一人加入（无人接听）→ 判为未接通，清理并向全员推送 ended。
+//     180s 而非 60s：后台端（Doze 掐网 / 原生保活心跳重建 WS）会漏掉实时 invite，
+//     只能靠重连接时补发振铃；而重连接最坏耗时 = 服务端读超时 90s + 原生心跳周期 60s，
+//     60s 的振铃窗口内房间往往已被回收，补发也就无从谈起。180s 留出足够重连余量。
 //   - maxRoomTTL：房间存在上限（防止前端异常/断网导致房间永久泄漏）。
 const (
-	ringingTimeout = 60 * time.Second
+	ringingTimeout = 180 * time.Second
 	maxRoomTTL     = 30 * time.Minute
 	sweepInterval  = 15 * time.Second
 )
@@ -71,7 +74,20 @@ func (r *Room) joinedFor(u string) bool {
 	return r.joined[u]
 }
 
-// deviceOf 返回该用户接听时的设备 id（未记录即空串，补发前端 treats 作为本设备）。
+// answered 是否有 owner 以外的人加入（接通）。owner 创建即算 joined，
+// 因此不能用 joinedFor(owner) 判断"已有人接听"。
+func (r *Room) answered() bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for u := range r.joined {
+		if u != r.Owner {
+			return true
+		}
+	}
+	return false
+}
+
+// deviceOf 返回该用户接听时的设备 id（未记录即空串，补发前端取本设备后恢复通话）。
 func (r *Room) deviceOf(u string) string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -173,14 +189,15 @@ func newRoomID() string {
 }
 
 // Create 创建房间：owner + 去重后的被邀请成员；返回房间。
-func (m *Manager) Create(owner string, members []string) *Room {
+// device 为发起设备 id，owner 即视为已加入（振铃状态补发时识别本设备后恢复）。
+func (m *Manager) Create(owner string, members []string, device string) *Room {
 	r := &Room{
 		ID:        newRoomID(),
 		Owner:     owner,
 		CreatedAt: time.Now(),
 		members:   map[string]bool{owner: true},
 		joined:    map[string]bool{owner: true},
-		joinedDev: map[string]string{},
+		joinedDev: map[string]string{owner: device},
 	}
 	for _, u := range members {
 		if u != "" && u != owner {
@@ -226,9 +243,11 @@ func (m *Manager) Join(id, user, device string) (*Room, bool) {
 
 // PendingFor 按用户返回其占的通话房间状态消息列表，供 WS 连接时补发。
 // 通话事件按推送「离线即丢弃、不补发」，后台端（Doze 掐网络 / 原生心跳重建连接）
-// 时实时 invite 即永久丢失——该端 never 响铃。补发让重连接后振铃/恢复通话。
+// 时实时 invite 即永久丢失——该端不会响铃。补发让重连接后振铃/恢复通话。
 //   joined=false 房间仍在振铃等待中（前端振铃并弹来电 UI）；
-//   joined=true 本用户已接听，device 为接听设备（空即未知→前端本设备恢复通话中）。
+//   joined=true 本用户已接听，device 为接听设备（空即未知→前端本设备恢复通话中）；
+//   answered=false 房间内尚无 owner 以外的人加入（呼叫方重连时据此恢复"呼叫中+彩铃"，
+//   而不是误判成通话中直接开麦）。
 func (m *Manager) PendingFor(user string) []map[string]any {
 	m.mu.Lock()
 	targets := make([]*Room, 0, len(m.rooms))
@@ -242,8 +261,9 @@ func (m *Manager) PendingFor(user string) []map[string]any {
 	for _, r := range targets {
 		out = append(out, map[string]any{
 			"type": "call", "event": "resumed",
-			"room": r.ID, "owner": r.Owner, "members": r.Members(),
+			"room": r.ID, "from": r.Owner, "owner": r.Owner, "members": r.Members(),
 			"joined": r.joinedFor(user), "device": r.deviceOf(user),
+			"answered": r.answered(),
 		})
 	}
 	return out

@@ -45,6 +45,7 @@ func (h *Call) Start(w http.ResponseWriter, r *http.Request) {
 	me := rUsername(r)
 	var body struct {
 		Members []string `json:"members"`
+		Device  string   `json:"device"` // 发起设备 id：房间补发时区分本设备/其它设备
 	}
 	if err := DecodeBody(r, &body); err != nil {
 		WriteErr(w, 400, "bad_request", "bad payload")
@@ -68,7 +69,7 @@ func (h *Call) Start(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	room := h.rooms.Create(me, members)
+	room := h.rooms.Create(me, members, body.Device)
 	all := room.Members()
 	offline := []string{}
 	ev := map[string]any{

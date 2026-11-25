@@ -6,7 +6,7 @@
 //   - 邀请会推给被叫的全部设备 → 各端同时振铃；
 //   - 任一设备接听/拒绝/挂断后，后端事件携带发起设备 id（device），
 //     本设备匹配自身 id 忽略，其余设备据此停止振铃/退出并提示"已在其他设备…"；
-//   - 无人接听 60s 由后端超时清理并推送 ended{reason:'timeout'}。
+//   - 无人接听 180s 由后端超时清理并推送 ended{reason:'timeout'}。
 import { reactive } from 'vue'
 import api from '@/api'
 import { auth, wsSendBinary } from '@/store'
@@ -118,7 +118,7 @@ export async function startCall(users) {
   if (callState.active || callState.incoming) { flashError('正在通话中'); return }
   if (!voiceSupported()) { flashError('当前系统 WebView 过旧，无法语音通话'); return }
   try {
-    const { data } = await api.callStart(list)
+    const { data } = await api.callStart(list, getDeviceId())
     callState.active = {
       id: data.id, owner: data.owner || auth.user,
       members: new Set(data.members), voiceReady: false, startedAt: Date.now(),
@@ -242,18 +242,51 @@ async function onInvite(ev) {
   try { window.StickyKeeNative?.callNotification?.('来电', '来自 ' + (ev.from || '联系人') + ' 的语音通话') } catch { /* 忽略 */ }
 }
 
-// 连接时补发（server 按本用户房间状态）：后台端 missed 实时 invite 后重连接后仍
-// 振铃；本设备此前接听后恢复通话 UI 与语音管线；其它设备接听后按多端语义退出。
+// 连接时补发（server 按本用户房间状态）：后台端丢失实时 invite/joined 后重连接时补齐状态。
+//   - 未接听 → 振铃并弹来电 UI；
+//   - 本设备已接听 → 恢复通话 UI 与语音管线；
+//   - 已在通话界面但漏了 joined（后台丢帧）→ 停彩铃并启动语音，避免"一直回铃/双方无声"；
+//   - 本账号其它设备已接听/已是通话中的设备 → 按多端语义退出。
 function onResumed(ev) {
-  if (!ev.joined) { onInvite({ room: ev.room, from: ev.owner, owner: ev.owner, members: ev.members }); return }
-  if (callState.active?.id === ev.room) return
+  if (!ev.joined) {
+    if (callState.incoming?.id === ev.room) return // 已在振铃，无需重复
+    onInvite({ room: ev.room, from: ev.owner, owner: ev.owner, members: ev.members })
+    return
+  }
+  const a = callState.active
+  if (a && a.id !== ev.room) {
+    // 本端已在另一通话中：拒绝这条漏掉的房间状态，避免覆盖当前通话
+    api.callReject(ev.room, getDeviceId()).catch(() => {})
+    return
+  }
+  if (a && a.id === ev.room) {
+    if (!ev.answered) return
+    stopRing()
+    a.members = new Set(ev.members)
+    if (a.voiceReady) return
+    a.voiceReady = true
+    startVoice(ev.room, wsSendBinary).catch((e) => {
+      flashError(e.message || '语音初始化失败')
+      endCall('hangup')
+    })
+    return
+  }
   if (ev.device && ev.device !== getDeviceId()) {
     if (callState.incoming?.id === ev.room) endCall('other-accept')
     return
   }
   stopRing()
   callState.incoming = null
+  // 呼叫方且房间仍未接通（对方还没接）：恢复"呼叫中"并播彩铃，等 joined 再起语音，
+  // 否则会被误判成通话中直接开麦（对方根本不在线）。
+  if (ev.owner === auth.user && ev.answered === false) {
+    callState.active = { id: ev.room, owner: ev.owner, members: new Set(ev.members), voiceReady: false, startedAt: Date.now() }
+    callState.micMuted = false
+    startRing('back')
+    return
+  }
   callState.active = { id: ev.room, owner: ev.owner, members: new Set(ev.members), voiceReady: true, startedAt: Date.now() }
+  callState.micMuted = false
   startVoice(ev.room, wsSendBinary).catch((e) => {
     flashError(e.message || '语音初始化失败')
     endCall('hangup')

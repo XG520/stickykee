@@ -312,7 +312,7 @@ export const api = {
 
   // 语音通话信令。join/leave/reject 携带本机 device id：
   // 同账号多端在线时，后端事件回传 device 供其它设备识别"已在其他设备操作"。
-  callStart: (members) => api.post('/call/start', { members }),
+  callStart: (members, device) => api.post('/call/start', { members, device }),
   callSignal: (room, to, data) => api.post('/call/signal', { room, to, data }),
   callJoin: (room, device) => api.post('/call/join', { room, device }),
   callLeave: (room, device) => api.post('/call/leave', { room, device }),
