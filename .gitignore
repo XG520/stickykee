@@ -36,6 +36,8 @@ app/dist/
 apk/www/
 **/build/
 **/.gradle/
+# gradlew 的 LF 副本：容器内构建时 tr -d '\r' 现场生成（见 scripts/build-apk.sh），用完即删，不入版本库
+apk/android/gradlew.lf
 
 # 发版二进制（APK / 服务端可执行文件）：用 Releases 分发，不入版本库
 # 版本 sidecar 仍需跟踪，供 bump-version.ps1 与 Docker 构建读取
