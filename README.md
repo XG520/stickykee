@@ -173,3 +173,13 @@ location / {
 - **端口占用**：`bind: Only one usage of each socket address` 表示 8080 已被旧实例占用，先停掉旧进程再启动。
 - **数据库锁**：同一 `SN_DB_PATH` 不要被多个后端实例同时使用。
 - **镜像源**：项目默认配置国内源（npm npmmirror、Go goproxy.cn、Gradle 阿里云/腾讯云），无需额外设置。
+
+## 许可证
+
+本项目以 [MIT](LICENSE) 许可证开源，可自由使用、修改与分发，请保留版权与许可声明。
+
+## 第三方资源
+
+- 图标字体 Material Symbols、Material Design Icons：Apache-2.0
+- 3D 家具示例模型（`app/public/models`）：演示用示例资源，可按需替换为你自己的模型
+- 语音合成音色文件（`app/public/kokoro`）：Kokoro TTS，Apache-2.0

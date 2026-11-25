@@ -21,7 +21,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
-$JAVA_HOME_FIXED = 'C:\Users\Administrator\.local\share\android-build\jdk-17.0.2'
+$JAVA_HOME_FIXED = if ($env:JAVA_HOME) { $env:JAVA_HOME } else { 'C:\Program Files\Java\jdk-17' }
 
 function Fail([string]$Msg) { Write-Host "`n[FAIL] $Msg" -ForegroundColor Red; exit 1 }
 
@@ -91,4 +91,4 @@ Write-Host ("  版本：{0}" -f $ver)
 Write-Host ("  产物：{0}" -f $dst2)
 Write-Host ("  大小：{0:N2} MB" -f ($f.Length / 1MB))
 Write-Host ("  时间：{0:yyyy-MM-dd HH:mm:ss}" -f $f.LastWriteTime)
-Write-Host "`n部署提醒：提交推送后在服务器执行 bash /vol2/homecanvas/runner.sh（git pull + docker build）" -ForegroundColor Yellow
+Write-Host "`n部署提醒：提交推送后在部署服务器执行更新脚本（git pull + docker build）" -ForegroundColor Yellow

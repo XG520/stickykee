@@ -25,3 +25,14 @@ server/data/
 # 依赖目录：由 npm 安装生成，不入版本库
 node_modules/
 
+# 前端与 APK 构建产物：npm run build / scripts\build-apk.ps1 生成，不入版本库
+app/dist/
+apk/www/
+**/build/
+**/.gradle/
+
+# 发版二进制（APK / 服务端可执行文件）：用 Releases 分发，不入版本库
+# 版本 sidecar 仍需跟踪，供 bump-version.ps1 与 Docker 构建读取
+release/*
+!release/app_version.txt
+
