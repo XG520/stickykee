@@ -19,8 +19,8 @@
 # 可选参数（与子命令自由组合）：
 #   --no-apk          update 时跳过 APK 编译（复用 release/ 里已有 APK；前端/后端-only 发版）
 #   --skip-web        APK 编译时跳过前端 vite build（APK_SKIP_WEB=1，仅壳页/原生层改动时用）
-#   --keep-temp       成功后不清理工作区中间物（默认 update/apk/frontend/backend 成功后
-#                     自动清理 node_modules / dist / apk/www / gradle 产物等临时目录）
+#   --keep-temp       不清理工作区临时文件（默认两层清理：build-apk.sh 构建完成后自清理
+#                     中间物，deploy.sh 收尾再兜底扫一遍；保留时加此参数）
 #   --skip-git        跳过 git pull（用工作区当前代码）
 #   --rebuild-builder 强制重建 APK 构建镜像（工具链升级、换源时用）
 #   --no-prune        跳过收尾的镜像清理
@@ -162,6 +162,7 @@ apk_build() {
     -e GRADLE_USER_HOME=/cache/gradle \
     -e NPM_CONFIG_CACHE=/cache/npm \
     -e APK_SKIP_WEB="$SKIP_WEB" \
+    -e BUILD_APK_KEEP_TEMP="$KEEP_TEMP" \
     "$BUILDER"
   [[ -s "$APK_OUT" ]] || { err "APK 产物缺失：$APK_OUT（容器构建未成功）"; exit 1; }
   local sz; sz="$(du -h "$APK_OUT" | cut -f1)"
@@ -268,7 +269,7 @@ case "$CMD" in
   build)
     precheck; load_env
     require_apk
-    build_main ;;
+    build_main; cleanup_temp ;;
   restart)
     load_env; deploy_container; wait_health ;;
   status)  status ;;

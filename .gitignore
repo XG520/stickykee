@@ -29,6 +29,7 @@ server/data/
 
 # 依赖目录：由 npm 安装生成，不入版本库
 node_modules/
+node_modules_old/
 
 # 前端与 APK 构建产物：npm run build / scripts\build-apk.ps1 生成，不入版本库
 app/dist/

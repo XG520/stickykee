@@ -15,8 +15,9 @@
 #   5. 分发  -> release/stickykee-app.apk（主 Dockerfile 的 COPY 输入）
 #
 # 可选环境变量：
-#   APK_SKIP_WEB=1   跳过步骤 1（app/dist 与 apk/www 已就绪时用，如复用宿主侧产物）
-#   GRADLE_ARGS      追加 gradle 参数
+#   APK_SKIP_WEB=1        跳过步骤 1（app/dist 与 apk/www 已就绪时用，如复用宿主侧产物）
+#   GRADLE_ARGS           追加 gradle 参数
+#   BUILD_APK_KEEP_TEMP=1 构建成功后保留工作区临时文件（默认构建完自动清理）
 # ============================================================================
 set -euo pipefail
 
@@ -48,7 +49,14 @@ else
   log "前端 vite build"
   (
     cd app
-    [ -f package-lock.json ] && { npm ci --no-audit --no-fund --ignore-scripts; } || npm install --no-audit --no-fund --ignore-scripts
+    # npm ci 先清空 node_modules 再全量安装；宿主文件系统有文件锁（IDE/编辑器占用）时
+    # 会 ENOTEMPTY 失败并留下半残目录。兜底链：npm install（可增量、容错）。
+    if [ -f package-lock.json ]; then
+      npm ci --no-audit --no-fund --ignore-scripts \
+        || { log "npm ci 失败（常见于宿主文件锁），回退 npm install"; rm -rf node_modules; npm install --no-audit --no-fund --ignore-scripts; }
+    else
+      npm install --no-audit --no-fund --ignore-scripts
+    fi
     npm run build
   )
   [ -f app/dist/index.html ] || fail "app/dist/index.html 缺失，前端构建异常"
@@ -64,7 +72,12 @@ cp -a app/dist/. apk/www/
 log "npm ci + cap sync android"
 (
   cd apk
-  [ -f package-lock.json ] && { npm ci --no-audit --no-fund; } || npm install --no-audit --no-fund
+  if [ -f package-lock.json ]; then
+    npm ci --no-audit --no-fund \
+      || { log "npm ci 失败（常见于宿主文件锁），回退 npm install"; rm -rf node_modules; npm install --no-audit --no-fund; }
+  else
+    npm install --no-audit --no-fund
+  fi
   npx cap sync android
 )
 
@@ -102,4 +115,17 @@ sz_kb="$(du -k release/stickykee-app.apk | cut -f1)"
 echo "  版本：$ver_pkg（versionCode 见 build.gradle）"
 echo "  产物：release/stickykee-app.apk（$sz_kb KB）"
 echo "  时间：$(date '+%Y-%m-%d %H:%M:%S')"
+
+# ---- 6. 构建完成后清理工作区临时文件（默认开启；BUILD_APK_KEEP_TEMP=1 跳过） ----
+# 只删中间物：node_modules / vite 产物 / Capacitor 镜像目录 / gradle 中间目录。
+# release/ 产物（stickykee-app.apk、app_version.txt）与仓库源码一律保留。
+if [ "${BUILD_APK_KEEP_TEMP:-0}" = "1" ]; then
+  log "保留工作区临时文件（BUILD_APK_KEEP_TEMP=1）"
+else
+  log "清理工作区临时文件"
+  rm -rf app/node_modules app/dist apk/node_modules apk/www
+  rm -rf apk/android/.gradle apk/android/build apk/android/app/build
+  log "临时文件已清理（release/ 产物保留）"
+fi
+
 log "APK 构建完成，可继续 docker build 主镜像"
