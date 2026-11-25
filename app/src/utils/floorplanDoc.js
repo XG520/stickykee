@@ -215,20 +215,23 @@ export const FURNITURE_CATEGORIES = [
 // 内置模型版权署名（全部来自 Sweet Home 3D 免费 3D 模型库，均可免费商用，须保留作者署名）：
 //   - 绝大多数模型采用 Free Art License 或 CC-BY 3.0 双许可证（二选一），
 //     作者署名嵌入各模型 .obj/.mtl 头部的注释中（如 sofa1、bookcase © 2010 Peter Smolik）。
-//   - tableBasse（tableBasse.obj）© Etienne Gerard，Licence Art Libre。
+//   - tableBasse（tableBasse.obj）© Etienne Gerard，Licence Art Libre（FAL 1.3）。
+//   - counter、desk、litParents、armoire 原模型头部缺失许可注释，已替换为同库其他模型：
+//     kitchenIsland（Pencilart）、scrivania160W（LucaPresidente）、lettoCiliegio（LucaPresidente）、
+//     armoireLotus（Gael Bettinelli），许可条件同上（FAL + CC-BY 3.0 双选）。
 // 来源：https://www.sweethome3d.com/free-3d-models/
 export const FURNITURE_CATALOG = [
   { id: 'sofa', category: 'living', name: '沙发', icon: 'weekend', w: 180, d: 90, h: 80, color: '#ffffff', model: { obj: 'models/furniture/sofa/sofa1.obj', mtl: 'models/furniture/sofa/sofa1.mtl' } },
   { id: 'coffee_table', category: 'living', name: '茶几', icon: 'table_bar', w: 100, d: 60, h: 45, color: '#b0895c', model: { obj: 'models/furniture/coffee_table/tableBasse.obj' } },
   { id: 'tv_stand', category: 'living', name: '电视柜', icon: 'tv', w: 160, d: 40, h: 50, color: '#ffffff', model: { obj: 'models/furniture/tv_stand/TVCenter.obj', mtl: 'models/furniture/tv_stand/TVCenter.mtl' } },
-  { id: 'bed', category: 'bedroom', name: '双人床', icon: 'bed', w: 180, d: 200, h: 60, color: '#e8e2d8', model: { obj: 'models/furniture/bed/litParents.obj' } },
-  { id: 'wardrobe', category: 'bedroom', name: '衣柜', icon: 'door_sliding', w: 180, d: 56, h: 220, color: '#a08060', model: { obj: 'models/furniture/wardrobe/armoire.obj' } },
+  { id: 'bed', category: 'bedroom', name: '双人床', icon: 'bed', w: 180, d: 200, h: 60, color: '#e8e2d8', model: { obj: 'models/furniture/bed/lettoCiliegio.obj', mtl: 'models/furniture/bed/lettoCiliegio.mtl' } },
+  { id: 'wardrobe', category: 'bedroom', name: '衣柜', icon: 'door_sliding', w: 180, d: 56, h: 220, color: '#a08060', model: { obj: 'models/furniture/wardrobe/armoireLotus.obj', mtl: 'models/furniture/wardrobe/armoireLotus.mtl' } },
   { id: 'nightstand', category: 'bedroom', name: '床头柜', icon: 'table', w: 45, d: 40, h: 50, color: '#ffffff', model: { obj: 'models/furniture/nightstand/meubleChevet.obj', mtl: 'models/furniture/nightstand/meubleChevet.mtl' } },
   { id: 'dining_table', category: 'dining', name: '餐桌', icon: 'table_restaurant', w: 140, d: 80, h: 75, color: '#b0895c', model: { obj: 'models/furniture/dining_table/table2.obj' } },
   { id: 'chair', category: 'dining', name: '餐椅', icon: 'chair', w: 45, d: 50, h: 90, color: '#c9a06a', model: { obj: 'models/furniture/chair/chair.obj' } },
-  { id: 'counter', category: 'kitchen', name: '橱柜', icon: 'countertops', w: 120, d: 60, h: 85, color: '#ffffff', model: { obj: 'models/furniture/counter/counter.obj', mtl: 'models/furniture/counter/counter.mtl' } },
+  { id: 'counter', category: 'kitchen', name: '橱柜', icon: 'countertops', w: 120, d: 60, h: 85, color: '#ffffff', model: { obj: 'models/furniture/counter/kitchenIsland.obj', mtl: 'models/furniture/counter/kitchenIsland.mtl' } },
   { id: 'fridge', category: 'kitchen', name: '冰箱', icon: 'kitchen', w: 70, d: 70, h: 180, color: '#ffffff', model: { obj: 'models/furniture/fridge/frigo.obj', mtl: 'models/furniture/fridge/frigo.mtl' } },
-  { id: 'desk', category: 'office', name: '书桌', icon: 'desk', w: 120, d: 60, h: 75, color: '#ffffff', model: { obj: 'models/furniture/desk/desk.obj', mtl: 'models/furniture/desk/desk.mtl' } },
+  { id: 'desk', category: 'office', name: '书桌', icon: 'desk', w: 120, d: 60, h: 75, color: '#ffffff', model: { obj: 'models/furniture/desk/scrivania160W.obj', mtl: 'models/furniture/desk/scrivania160W.mtl' } },
   { id: 'bookshelf', category: 'office', name: '书架', icon: 'shelves', w: 90, d: 30, h: 200, color: '#ffffff', model: { obj: 'models/furniture/bookshelf/bookcase.obj', mtl: 'models/furniture/bookshelf/bookcase.mtl' } },
   { id: 'bathtub', category: 'bath', name: '浴缸', icon: 'bathtub', w: 80, d: 170, h: 60, color: '#ffffff', model: { obj: 'models/furniture/bathtub/bathtub_jet_system.obj', mtl: 'models/furniture/bathtub/bathtub_jet_system.mtl' } },
   { id: 'toilet', category: 'bath', name: '马桶', icon: 'wc', w: 40, d: 70, h: 70, color: '#ffffff', model: { obj: 'models/furniture/toilet/toilet_hang_round.obj', mtl: 'models/furniture/toilet/toilet_hang_round.mtl' } },

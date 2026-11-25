@@ -180,6 +180,6 @@ location / {
 
 ## 第三方资源
 
+- 3D 家具模型（`app/public/models/furniture/`）：全部来自 [Sweet Home 3D 免费模型库](https://www.sweethome3d.com/free-3d-models/)，作者署名嵌入各 `.obj`/`.mtl` 头部；许可条件为 **Free Art License 或 CC-BY 3.0 二选一**（可免费商用，须保留作者署名）
 - 图标字体 Material Symbols、Material Design Icons：Apache-2.0
-- 3D 家具示例模型（`app/public/models`）：演示用示例资源，可按需替换为你自己的模型
-- 语音合成音色文件（`app/public/kokoro`）：Kokoro TTS，Apache-2.0
+- 语音合成音色文件（`app/public/kokoro/`）：Kokoro TTS，Apache-2.0
