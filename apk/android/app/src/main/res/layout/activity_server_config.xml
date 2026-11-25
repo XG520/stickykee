@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- 原生「服务器地址」配置页：列表视图 + 表单视图（代码切换可见性） -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/sc_bg">
@@ -46,25 +45,30 @@
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
-            android:layout_marginTop="14dp"
-            android:fillViewport="true">
+            android:layout_marginTop="14dp">
 
+            <!-- ScrollView 单子节点约束：行容器与空态同包一层 -->
             <LinearLayout
-                android:id="@+id/row_container"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical" />
+                android:orientation="vertical">
 
-            <TextView
-                android:id="@+id/empty_hint"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center"
-                android:text="还没有保存的服务器地址"
-                android:textColor="@color/sc_muted"
-                android:textSize="13sp"
-                android:padding="32dp"
-                android:visibility="gone" />
+                <LinearLayout
+                    android:id="@+id/row_container"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical" />
+
+                <TextView
+                    android:id="@+id/empty_hint"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:text="还没有保存的服务器地址"
+                    android:textColor="@color/sc_muted"
+                    android:textSize="13sp"
+                    android:padding="32dp" />
+            </LinearLayout>
         </ScrollView>
 
         <Button
@@ -101,10 +105,10 @@
                 android:gravity="center_vertical">
 
                 <TextView
+                    android:id="@+id/form_title"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:id="@+id/form_title"
                     android:text="添加服务器"
                     android:textColor="@color/sc_text"
                     android:textSize="22sp"
@@ -116,9 +120,9 @@
                     android:layout_height="44dp"
                     android:gravity="center"
                     android:paddingHorizontal="14dp"
-                    android:text="←"
+                    android:text="返回列表"
                     android:textColor="@color/sc_muted"
-                    android:textSize="20sp" />
+                    android:textSize="13sp" />
             </LinearLayout>
 
             <TextView style="@style/ScLabel" android:text="名称" />
