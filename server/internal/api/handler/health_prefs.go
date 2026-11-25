@@ -33,7 +33,7 @@ func NewPrefs(repo *store.InstanceRepo, userPrefs *store.UserPrefs, manager *ha.
 
 // 用户级偏好 key：按登录用户隔离；无值回退全局 prefs。
 // tts_engine（网页端引擎）与 tts_engine_apk（手机端引擎）都必须在列：
-// 缺失时手机端读不到自己的引擎设置，会错误回退到网页端引擎（如 Kokoro）。
+// 缺失时手机端读不到自己的引擎设置，会错误回退到网页端引擎。
 // dashboard（Web 端仪表盘）与 dashboard_apk（手机端全局回退仪表盘）分键存储。
 // 按设备隔离的键 dashboard_apk_<deviceId>（布局）/ dashboard_apk_cols_<deviceId>
 // （列数）键名随设备 ID 动态变化，无法列入此固定清单，由 GET 全量扫描后按前缀

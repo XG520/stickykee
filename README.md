@@ -193,7 +193,6 @@ location / {
 
 - **3D 家具模型**（`app/public/models/furniture/`）：来自 [Sweet Home 3D 免费模型库](https://www.sweethome3d.com/free-3d-models/)，作者署名嵌入各 `.obj`/`.mtl` 头部；许可条件为 **Free Art License 或 CC-BY 3.0 二选一**（可免费商用，须保留作者署名）
 - **图标字体**：Material Symbols、Material Design Icons（Apache-2.0）
-- **语音合成音色**（`app/public/kokoro/`）：Kokoro TTS（Apache-2.0）
 - **前端框架**：Vue 3（MIT）、Vite（MIT）、Tailwind CSS（MIT）
 - **3D 引擎**：Three.js（MIT）
 - **后端框架**：chi（MIT）、modernc.org/sqlite（BSD-3-Clause）
