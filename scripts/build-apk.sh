@@ -68,20 +68,21 @@ echo "  版本一致：$ver_pkg"
 if [ "${APK_SKIP_WEB:-0}" = "1" ] && [ -f app/dist/index.html ]; then
   log "前端构建（APK_SKIP_WEB=1，复用已有 app/dist）"
 else
-  log "前端 vite build"
+  log "前端 vite build（容器本地目录，隔离宿主 node_modules）"
+  # 宿主 Windows 上装的是 win32 版 esbuild/rollup，容器里 npm ci 会换成 linux 版并互相
+  # 覆盖，vite spawn esbuild 时报 EACCES。因此只在 /tmp 拷一份源码构建，dist 再回写，
+  # 宿主的 app/node_modules（开发用）完全不受影响。
+  build_app=/tmp/app-build
+  rm -rf "$build_app"; mkdir -p "$build_app"
+  tar -C app -cf - --exclude=node_modules --exclude=dist . | tar -C "$build_app" -xf -
   (
-    cd app
-    # npm ci 先清空 node_modules 再全量安装；宿主文件系统有文件锁（IDE/编辑器占用）时
-    # 会 ENOTEMPTY 失败并留下半残目录。兜底链：npm install（可增量、容错）。
-    if [ -f package-lock.json ]; then
-      npm ci --no-audit --no-fund --ignore-scripts \
-        || { log "npm ci 失败（常见于宿主文件锁），回退 npm install"; rm -rf node_modules; npm install --no-audit --no-fund --ignore-scripts; }
-    else
-      npm install --no-audit --no-fund --ignore-scripts
-    fi
+    cd "$build_app"
+    npm ci --no-audit --no-fund --ignore-scripts
     fix_exec_bits "$PWD/node_modules"
     npm run build
   )
+  rm -rf app/dist; mkdir -p app/dist
+  cp -a "$build_app/dist/." app/dist/
   [ -f app/dist/index.html ] || fail "app/dist/index.html 缺失，前端构建异常"
 fi
 
@@ -141,13 +142,14 @@ echo "  产物：release/stickykee-app.apk（$sz_kb KB）"
 echo "  时间：$(date '+%Y-%m-%d %H:%M:%S')"
 
 # ---- 6. 构建完成后清理工作区临时文件（默认开启；BUILD_APK_KEEP_TEMP=1 跳过） ----
-# 只删中间物：node_modules / vite 产物 / Capacitor 镜像目录 / gradle 中间目录。
+# 只删中间物：vite 产物 / Capacitor 镜像目录 / 容器内构建缓存 / gradle 中间目录。
+# app/node_modules 是宿主开发依赖（win32 二进制），保留不动。
 # release/ 产物（stickykee-app.apk、app_version.txt）与仓库源码一律保留。
 if [ "${BUILD_APK_KEEP_TEMP:-0}" = "1" ]; then
   log "保留工作区临时文件（BUILD_APK_KEEP_TEMP=1）"
 else
   log "清理工作区临时文件"
-  rm -rf app/node_modules app/dist apk/node_modules apk/www
+  rm -rf app/dist apk/node_modules apk/www /tmp/app-build
   rm -rf apk/android/.gradle apk/android/build apk/android/app/build
   log "临时文件已清理（release/ 产物保留）"
 fi
