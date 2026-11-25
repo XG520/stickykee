@@ -28,6 +28,28 @@ GRADLE_ARGS="${GRADLE_ARGS:-}"
 log() { printf '\n\033[1;36m== [apk] %s ==\033[0m\n' "$*"; }
 fail() { printf '\033[1;31m[apk FAIL] %s\033[0m\n' "$*" >&2; exit 1; }
 
+# ---- 原生二进制执行位修复（宿主仓库挂在 Windows 驱动器的场景） ----
+# 9p/DrvFs 挂载下 npm 解包出的可执行位可能丢失，vite spawn esbuild 原生二进制
+# 报 EACCES。策略：先补 chmod；挂载不支持执行位时（chmod 无效），把 esbuild
+# 二进制拷到 /tmp（容器内 overlayfs，执行位必定生效）并设 ESBUILD_BINARY_PATH
+# 指向副本——esbuild 的 JS 层支持该环境变量覆盖二进制路径。
+fix_exec_bits() {
+  local nm="$1"
+  [ -d "$nm" ] || return 0
+  chmod +x "$nm"/.bin/* 2>/dev/null || true
+  find "$nm" -type f -path '*/.bin/*' -exec chmod +x {} + 2>/dev/null || true
+  local esbin
+  esbin="$(find "$nm/@esbuild" -type f -name esbuild 2>/dev/null | head -1)"
+  [ -n "$esbin" ] || return 0
+  chmod +x "$esbin" 2>/dev/null || true
+  if [ ! -x "$esbin" ]; then
+    cp -f "$esbin" /tmp/esbuild-fallback
+    chmod +x /tmp/esbuild-fallback
+    export ESBUILD_BINARY_PATH=/tmp/esbuild-fallback
+    log "esbuild 执行位丢失，已切 /tmp 副本（ESBUILD_BINARY_PATH=/tmp/esbuild-fallback）"
+  fi
+}
+
 # ---- 0. 版本一致性（4 处 + versionCode，与 bump-version.ps1 校验等价） ----
 log "版本一致性校验"
 ver_pkg="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' app/package.json | head -1)"
@@ -57,6 +79,7 @@ else
     else
       npm install --no-audit --no-fund --ignore-scripts
     fi
+    fix_exec_bits "$PWD/node_modules"
     npm run build
   )
   [ -f app/dist/index.html ] || fail "app/dist/index.html 缺失，前端构建异常"
@@ -78,6 +101,7 @@ log "npm ci + cap sync android"
   else
     npm install --no-audit --no-fund
   fi
+  fix_exec_bits "$PWD/node_modules"
   npx cap sync android
 )
 
