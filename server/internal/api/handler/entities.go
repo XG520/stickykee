@@ -1,13 +1,13 @@
-package handler
+﻿package handler
 
 import (
 	"errors"
 	"net/http"
 	"strings"
 
-	"stickynuo/server/internal/ha"
-	"stickynuo/server/internal/ha/client"
-	"stickynuo/server/internal/ha/model"
+	"stickykee/server/internal/ha"
+	"stickykee/server/internal/ha/client"
+	"stickykee/server/internal/ha/model"
 )
 
 // Entities 提供实体查询与开关控制。

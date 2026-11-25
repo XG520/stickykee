@@ -1,4 +1,4 @@
-package handler
+﻿package handler
 
 import (
 	"encoding/json"
@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"strings"
 
-	"stickynuo/server/internal/auth"
-	"stickynuo/server/internal/ha"
-	"stickynuo/server/internal/ha/model"
+	"stickykee/server/internal/auth"
+	"stickykee/server/internal/ha"
+	"stickykee/server/internal/ha/model"
 
 	"github.com/go-chi/chi/v5"
 )

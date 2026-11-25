@@ -1,10 +1,10 @@
-package handler
+﻿package handler
 
 import (
 	"net/http"
 	"strings"
 
-	"stickynuo/server/internal/store"
+	"stickykee/server/internal/store"
 )
 
 // Notification POST /finance/notification

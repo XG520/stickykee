@@ -1,4 +1,4 @@
-package handler
+﻿package handler
 
 // 到家距离传感器（被动）：设备定位上报时计算当前位置到 HA zone.home 的直线距离，
 // 经该设备 mobile_app webhook 以 sensor 实体上报（device_class=distance，单位 km），
@@ -19,7 +19,7 @@ import (
 	"sync"
 	"time"
 
-	"stickynuo/server/internal/ha/client"
+	"stickykee/server/internal/ha/client"
 )
 
 const (

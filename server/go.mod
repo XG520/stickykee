@@ -1,4 +1,4 @@
-module stickynuo/server
+module stickykee/server
 
 go 1.26.3
 

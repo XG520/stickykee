@@ -1,4 +1,4 @@
-// Package client 封装对 Home Assistant 的 HTTP/REST 与 WebSocket 访问。
+﻿// Package client 封装对 Home Assistant 的 HTTP/REST 与 WebSocket 访问。
 package client
 
 import (
@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"stickynuo/server/internal/ha/model"
+	"stickykee/server/internal/ha/model"
 )
 
 // Rest 是 HA REST API 客户端。

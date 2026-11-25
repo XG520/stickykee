@@ -1,4 +1,4 @@
-package handler
+﻿package handler
 
 import (
 	"context"
@@ -12,8 +12,8 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"stickynuo/server/internal/auth"
-	"stickynuo/server/internal/store"
+	"stickykee/server/internal/auth"
+	"stickykee/server/internal/store"
 )
 
 // Auth 处理用户注册/登录/登出/改密与状态查询。

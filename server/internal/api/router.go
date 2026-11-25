@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"context"
@@ -7,19 +7,19 @@ import (
 	"net/http"
 	"time"
 
-	"stickynuo/server/internal/auth"
-	"stickynuo/server/internal/call"
-	"stickynuo/server/internal/diag"
-	"stickynuo/server/internal/ha"
-	"stickynuo/server/internal/hub"
-	"stickynuo/server/internal/secure"
-	"stickynuo/server/internal/store"
+	"stickykee/server/internal/auth"
+	"stickykee/server/internal/call"
+	"stickykee/server/internal/diag"
+	"stickykee/server/internal/ha"
+	"stickykee/server/internal/hub"
+	"stickykee/server/internal/secure"
+	"stickykee/server/internal/store"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
-	"stickynuo/server/internal/api/handler"
-	"stickynuo/server/internal/icons"
+	"stickykee/server/internal/api/handler"
+	"stickykee/server/internal/icons"
 )
 
 // Router 组装全部 HTTP 路由。uploadDir 为聊天图片存储根目录（空串禁用图片功能）。

@@ -1,4 +1,4 @@
-package ha
+﻿package ha
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"stickynuo/server/internal/ha/model"
+	"stickykee/server/internal/ha/model"
 
 	"github.com/gorilla/websocket"
 )
@@ -52,7 +52,7 @@ type CommandHandler func(deviceID string, payload []byte)
 type NotifyHandler func(deviceID, title, message string, data json.RawMessage)
 
 // 从 HA 订阅的 Browser_mod 风格命令事件类型（与官方 browser_mod 兼容，便于迁移既有自动化）。
-var commandEventTypes = []string{"stickynuo_command", "browser_mod_command"}
+var commandEventTypes = []string{"stickykee_command", "browser_mod_command"}
 
 // 心跳保活参数：每 keepAlive 间隔发送一次 ping；若 readStale 内没有任何消息
 // （含 HA 应答的 pong）则判定连接停滞并重连。readStale 必须明显大于 keepAlive。

@@ -1,4 +1,4 @@
-package handler
+﻿package handler
 
 import (
 	"context"
@@ -11,14 +11,14 @@ import (
 	"sync"
 	"time"
 
-	"stickynuo/server/internal/ha"
-	"stickynuo/server/internal/ha/client"
-	"stickynuo/server/internal/store"
+	"stickykee/server/internal/ha"
+	"stickykee/server/internal/ha/client"
+	"stickykee/server/internal/store"
 )
 
 // InventorySync 把库存统计同步为 HA 的两个传感器实体：
 // sensor.hc_inventory_total（在库总件数）与 sensor.hc_inventory_expiring（临期件数）。
-// 复用生日功能的 mobile_app 虚拟设备（device_id = stickynuo_server_<instance_id>），
+// 复用生日功能的 mobile_app 虚拟设备（device_id = stickykee_server_<instance_id>），
 // 但使用独立的注册缓存命名空间，避免覆盖生日传感器的 webhook 记录。
 type InventorySync struct {
 	manager   *ha.Manager
@@ -113,14 +113,14 @@ func (h *InventorySync) ensureReg(ctx context.Context, instanceID int64, rest *c
 		return &reg, nil
 	}
 	payload := map[string]any{
-		"app_id":              "stickynuo",
-		"app_name":            "stickynuo",
+		"app_id":              "stickykee",
+		"app_name":            "stickykee",
 		"app_version":         Version,
-		"device_id":           fmt.Sprintf("stickynuo_server_%d", instanceID),
+		"device_id":           fmt.Sprintf("stickykee_server_%d", instanceID),
 		"device_name":         h.deviceName(ctx),
-		"manufacturer":        "stickynuo",
+		"manufacturer":        "stickykee",
 		"model":               "server",
-		"os_name":             "stickynuo",
+		"os_name":             "stickykee",
 		"os_version":          Version,
 		"supports_encryption": false,
 	}

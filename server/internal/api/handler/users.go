@@ -1,4 +1,4 @@
-package handler
+﻿package handler
 
 import (
 	"encoding/json"
@@ -8,10 +8,10 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"stickynuo/server/internal/auth"
-	"stickynuo/server/internal/ha"
-	"stickynuo/server/internal/hub"
-	"stickynuo/server/internal/store"
+	"stickykee/server/internal/auth"
+	"stickykee/server/internal/ha"
+	"stickykee/server/internal/hub"
+	"stickykee/server/internal/store"
 
 	"github.com/go-chi/chi/v5"
 )

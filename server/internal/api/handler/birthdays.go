@@ -1,4 +1,4 @@
-package handler
+﻿package handler
 
 import (
 	"context"
@@ -16,10 +16,10 @@ import (
 	"github.com/6tail/lunar-go/calendar"
 	"github.com/go-chi/chi/v5"
 
-	"stickynuo/server/internal/ha"
-	"stickynuo/server/internal/ha/client"
-	"stickynuo/server/internal/ha/model"
-	"stickynuo/server/internal/store"
+	"stickykee/server/internal/ha"
+	"stickykee/server/internal/ha/client"
+	"stickykee/server/internal/ha/model"
+	"stickykee/server/internal/store"
 )
 
 // Birthdays 账号级生日：存储 + HA mobile_app 传感器同步。
@@ -29,7 +29,7 @@ import (
 //   - 管理员经 PUT /users/{username}/birthdays 代设（数组直接传）。
 //
 // HA 侧：后端为每个 HA 实例各注册一条**虚拟 mobile_app 设备**
-// （device_id=stickynuo_server_<instance_id>，device_name=<site_name_en> Server），
+// （device_id=stickykee_server_<instance_id>，device_name=<site_name_en> Server），
 // 所有账号的生日都登记在这一台上（unique_id = birthday_<username>）。
 // 这样同一用户在多台手机上登录时 HA 里只会出现一个生日实体；
 // 同一 server 连接多台 HA 时各自有独立设备，互不串扰。
@@ -291,14 +291,14 @@ func (h *Birthdays) ensureReg(ctx context.Context, instanceID int64, rest *clien
 		return &reg, nil
 	}
 	payload := map[string]any{
-		"app_id":              "stickynuo",
-		"app_name":            "stickynuo",
+		"app_id":              "stickykee",
+		"app_name":            "stickykee",
 		"app_version":         Version,
-		"device_id":           fmt.Sprintf("stickynuo_server_%d", instanceID),
+		"device_id":           fmt.Sprintf("stickykee_server_%d", instanceID),
 		"device_name":         want,
-		"manufacturer":        "stickynuo",
+		"manufacturer":        "stickykee",
 		"model":               "server",
-		"os_name":             "stickynuo",
+		"os_name":             "stickykee",
 		"os_version":          Version,
 		"supports_encryption": false,
 	}

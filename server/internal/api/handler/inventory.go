@@ -1,4 +1,4 @@
-package handler
+﻿package handler
 
 import (
 	"bytes"
@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"stickynuo/server/internal/store"
+	"stickykee/server/internal/store"
 
 	"github.com/go-chi/chi/v5"
 )

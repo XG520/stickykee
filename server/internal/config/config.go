@@ -1,4 +1,4 @@
-// Package config 加载服务运行配置。
+﻿// Package config 加载服务运行配置。
 package config
 
 import (
@@ -20,7 +20,7 @@ type Config struct {
 
 // Load 从环境变量加载配置，未设置时用默认值。
 func Load() *Config {
-	dbPath := getenv("SN_DB_PATH", "data/stickynuo.db")
+	dbPath := getenv("SN_DB_PATH", "data/stickykee.db")
 	return &Config{
 		HTTPAddr:    getenv("SN_HTTP_ADDR", ":8080"),
 		DBPath:      dbPath,

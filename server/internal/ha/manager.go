@@ -1,4 +1,4 @@
-// Package ha 管理 Sticky Kee 与多个 Home Assistant 实例的连接。
+﻿// Package ha 管理 Sticky Kee 与多个 Home Assistant 实例的连接。
 package ha
 
 import (
@@ -8,11 +8,11 @@ import (
 	"log/slog"
 	"sync"
 
-	"stickynuo/server/internal/auth"
-	"stickynuo/server/internal/ha/client"
-	"stickynuo/server/internal/ha/model"
-	"stickynuo/server/internal/hub"
-	"stickynuo/server/internal/store"
+	"stickykee/server/internal/auth"
+	"stickykee/server/internal/ha/client"
+	"stickykee/server/internal/ha/model"
+	"stickykee/server/internal/hub"
+	"stickykee/server/internal/store"
 )
 
 // runtime 单条 HA 连接（按 (instance,user) 隔离）的实时运行态。

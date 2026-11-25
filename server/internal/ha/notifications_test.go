@@ -1,4 +1,4 @@
-package ha
+﻿package ha
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"stickynuo/server/internal/ha/model"
+	"stickykee/server/internal/ha/model"
 )
 
 func TestNotificationEntities(t *testing.T) {

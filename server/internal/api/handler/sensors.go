@@ -1,4 +1,4 @@
-package handler
+﻿package handler
 
 import (
 	"context"
@@ -8,9 +8,9 @@ import (
 	"net/http"
 	"strings"
 
-	"stickynuo/server/internal/ha"
-	"stickynuo/server/internal/ha/client"
-	"stickynuo/server/internal/store"
+	"stickykee/server/internal/ha"
+	"stickykee/server/internal/ha/client"
+	"stickykee/server/internal/store"
 )
 
 // SensorDef 传感器注册表项。
@@ -387,10 +387,10 @@ func (h *Sensors) doRegister(ctx context.Context, username string, rest *client.
 		osVersion = Version
 	}
 	payload := map[string]any{
-		"app_id":              "stickynuo",
-		"app_name":            "stickynuo",
+		"app_id":              "stickykee",
+		"app_name":            "stickykee",
 		"app_version":         Version,
-		"device_id":           "stickynuo_" + dev.DevID,
+		"device_id":           "stickykee_" + dev.DevID,
 		"device_name":         deviceName,
 		"manufacturer":        manufacturer,
 		"model":               model,

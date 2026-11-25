@@ -1,4 +1,4 @@
-package handler
+﻿package handler
 
 import (
 	"context"
@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"stickynuo/server/internal/ha"
-	"stickynuo/server/internal/ha/client"
+	"stickykee/server/internal/ha"
+	"stickykee/server/internal/ha/client"
 )
 
 // Location 处理浏览器定位同步到 Home Assistant。

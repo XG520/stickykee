@@ -5,7 +5,7 @@
 [![Go](https://img.shields.io/badge/Go-1.21+-00ADD8.svg)](https://go.dev/)
 [![Android](https://img.shields.io/badge/Android-7.0+-3DDC84.svg)](https://developer.android.com/)
 
-基于 Home Assistant 的智能家画布应用：酷家乐式户型图编辑器（2D 绘制 + 3D 渲染）、智能仪表盘卡片、聊天与系统通知（文本/图片/语音消息/一对一及多人语音通话/内置 HA 智家助手）、移动端适配。
+基于 Home Assistant 的智能家画布应用：酷家乐式户型图编辑器（2D 绘制 + 3D 渲染；个人精力有限没有测试，户型图只是个雏形）、智能仪表盘卡片、聊天与系统通知（文本/图片/语音消息/一对一及多人语音通话/内置 HA 智家助手）、移动端适配。代码完全由ai生成，个人精力有限，功能可能有缺失或错误。欢迎提交pull request或反馈问题。
 
 ## 功能特性
 

@@ -1,4 +1,4 @@
-package handler
+﻿package handler
 
 import (
 	"context"
@@ -12,9 +12,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"stickynuo/server/internal/auth"
-	"stickynuo/server/internal/ha"
-	"stickynuo/server/internal/store"
+	"stickykee/server/internal/auth"
+	"stickykee/server/internal/ha"
+	"stickykee/server/internal/store"
 )
 
 // Device 设备注册项。DeviceID 是前端生成的持久唯一标识；DevID 是对应 Home Assistant 的 device_tracker 标识（稳定，避免重复添加）。
@@ -185,7 +185,7 @@ func (h *Devices) Rename(w http.ResponseWriter, r *http.Request) {
 }
 
 // syncHAName 把别名写入 HA 设备注册表的 name_by_user（尽力而为）。
-// 流程：WS config/device_registry/list 按 identifiers=["mobile_app","stickynuo_<dev_id>"]
+// 流程：WS config/device_registry/list 按 identifiers=["mobile_app","stickykee_<dev_id>"]
 // 定位 HA 设备 → config/device_registry/update 写入 name_by_user。未配置实例/token、
 // HA 不可达或 token 无管理员权限时返回 false 与中文原因。
 func (h *Devices) syncHAName(ctx context.Context, dev Device, name string) (bool, string) {
@@ -204,7 +204,7 @@ func (h *Devices) syncHAName(ctx context.Context, dev Device, name string) (bool
 	if json.Unmarshal(raw, &devs) != nil {
 		return false, "HA 返回的设备注册表无法解析"
 	}
-	want := "stickynuo_" + dev.DevID
+	want := "stickykee_" + dev.DevID
 	for _, d := range devs {
 		for _, ident := range d.Identifiers {
 			if len(ident) == 2 && ident[0] == "mobile_app" && ident[1] == want {
@@ -269,7 +269,7 @@ func (h *Devices) Delete(w http.ResponseWriter, r *http.Request) {
 }
 
 // removeHADevice 从 HA 设备注册表移除本设备的 mobile_app 设备（尽力而为）。
-// 流程：WS config/device_registry/list 按 identifiers=["mobile_app","stickynuo_<dev_id>"]
+// 流程：WS config/device_registry/list 按 identifiers=["mobile_app","stickykee_<dev_id>"]
 // 定位 HA 设备 → 逐个 config/device_registry/remove_config_entry 摘除配置项
 // （最后一个摘除后 HA 即删除该设备及其实体）。未配置实例/token、HA 不可达或
 // token 无管理员权限时返回 false 与中文原因。
@@ -291,7 +291,7 @@ func (h *Devices) removeHADevice(ctx context.Context, username string, dev Devic
 	if json.Unmarshal(raw, &devs) != nil {
 		return false, "HA 返回的设备注册表无法解析"
 	}
-	want := "stickynuo_" + dev.DevID
+	want := "stickykee_" + dev.DevID
 	haIdx := -1
 	for i, d := range devs {
 		for _, ident := range d.Identifiers {

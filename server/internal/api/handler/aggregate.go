@@ -1,4 +1,4 @@
-package handler
+﻿package handler
 
 import (
 	"errors"
@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"time"
 
-	"stickynuo/server/internal/ha"
-	"stickynuo/server/internal/ha/model"
+	"stickykee/server/internal/ha"
+	"stickykee/server/internal/ha/model"
 )
 
 // Aggregate 提供场景/自动化/能耗/历史/日志等聚合接口。

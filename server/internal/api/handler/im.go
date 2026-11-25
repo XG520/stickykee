@@ -1,4 +1,4 @@
-package handler
+﻿package handler
 
 import (
 	"crypto/rand"
@@ -15,12 +15,12 @@ import (
 	"strconv"
 	"strings"
 
-	"stickynuo/server/internal/ha"
-	"stickynuo/server/internal/ha/client"
-	"stickynuo/server/internal/hub"
-	"stickynuo/server/internal/secure"
-	"stickynuo/server/internal/store"
-	"stickynuo/server/internal/tts"
+	"stickykee/server/internal/ha"
+	"stickykee/server/internal/ha/client"
+	"stickykee/server/internal/hub"
+	"stickykee/server/internal/secure"
+	"stickykee/server/internal/store"
+	"stickykee/server/internal/tts"
 
 	"github.com/go-chi/chi/v5"
 )

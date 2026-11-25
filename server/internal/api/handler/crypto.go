@@ -1,4 +1,4 @@
-package handler
+﻿package handler
 
 import (
 	"encoding/base64"
@@ -8,7 +8,7 @@ import (
 	"io"
 	"net/http"
 
-	"stickynuo/server/internal/secure"
+	"stickykee/server/internal/secure"
 )
 
 // encVersion 密文信封版本号，便于未来协议升级时兼容。

@@ -1,4 +1,4 @@
-package handler
+﻿package handler
 
 import (
 	"bytes"
@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"strings"
 
-	"stickynuo/server/internal/auth"
-	"stickynuo/server/internal/store"
+	"stickykee/server/internal/auth"
+	"stickykee/server/internal/store"
 
 	"github.com/go-chi/chi/v5"
 )

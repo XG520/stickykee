@@ -1,4 +1,4 @@
-package handler
+﻿package handler
 
 import (
 	"context"
@@ -12,10 +12,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"stickynuo/server/internal/ha"
-	"stickynuo/server/internal/ha/model"
-	"stickynuo/server/internal/icons"
-	"stickynuo/server/internal/store"
+	"stickykee/server/internal/ha"
+	"stickykee/server/internal/ha/model"
+	"stickykee/server/internal/icons"
+	"stickykee/server/internal/store"
 )
 
 // 注册表刷新策略：按请求方用户按需刷新。个人 HA token 由每用户独立配置，

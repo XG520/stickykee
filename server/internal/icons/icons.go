@@ -1,4 +1,4 @@
-// Package icons 内嵌 Material Symbols（Outlined）SVG 图标子集，
+﻿// Package icons 内嵌 Material Symbols（Outlined）SVG 图标子集，
 // 通过 HTTP 提供给前端，替代在前端打包的大体积图标字体文件。
 package icons
 
@@ -314,7 +314,7 @@ func httpGetSVG(url string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "stickynuo/1.0")
+	req.Header.Set("User-Agent", "stickykee/1.0")
 	resp, err := remoteClient.Do(req)
 	if err != nil {
 		return nil, err

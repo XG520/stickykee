@@ -1,4 +1,4 @@
-package handler
+﻿package handler
 
 import (
 	"context"
@@ -8,10 +8,10 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"stickynuo/server/internal/auth"
-	"stickynuo/server/internal/ha"
-	"stickynuo/server/internal/hub"
-	"stickynuo/server/internal/store"
+	"stickykee/server/internal/auth"
+	"stickykee/server/internal/ha"
+	"stickykee/server/internal/hub"
+	"stickykee/server/internal/store"
 )
 
 // Prefs 处理偏好配置。用户级偏好（theme/dashboard/map_config/ha_token 等）按用户隔离，

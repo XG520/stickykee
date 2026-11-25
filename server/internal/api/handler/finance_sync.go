@@ -1,4 +1,4 @@
-package handler
+﻿package handler
 
 import (
 	"context"
@@ -11,14 +11,14 @@ import (
 	"sync"
 	"time"
 
-	"stickynuo/server/internal/ha"
-	"stickynuo/server/internal/ha/client"
-	"stickynuo/server/internal/store"
+	"stickykee/server/internal/ha"
+	"stickykee/server/internal/ha/client"
+	"stickykee/server/internal/store"
 )
 
 // FinanceSync 把账本概览发布为 HA 的四个传感器实体：
 // sensor.hc_finance_expense / income / budget_left / balance。
-// 复用 stickynuo_server_<instance_id> 虚拟设备，但使用独立注册缓存命名空间 fin_reg，
+// 复用 stickykee_server_<instance_id> 虚拟设备，但使用独立注册缓存命名空间 fin_reg，
 // 避免覆盖生日（bdReg）与库存（inventory_reg）的 sensor 列表。
 type FinanceSync struct {
 	manager   *ha.Manager
@@ -103,14 +103,14 @@ func (h *FinanceSync) ensureReg(ctx context.Context, instanceID int64, rest *cli
 		return &reg, nil
 	}
 	payload := map[string]any{
-		"app_id":              "stickynuo",
-		"app_name":            "stickynuo",
+		"app_id":              "stickykee",
+		"app_name":            "stickykee",
 		"app_version":         Version,
-		"device_id":           fmt.Sprintf("stickynuo_server_%d", instanceID),
+		"device_id":           fmt.Sprintf("stickykee_server_%d", instanceID),
 		"device_name":         h.deviceName(ctx),
-		"manufacturer":        "stickynuo",
+		"manufacturer":        "stickykee",
 		"model":               "server",
-		"os_name":             "stickynuo",
+		"os_name":             "stickykee",
 		"os_version":          Version,
 		"supports_encryption": false,
 	}

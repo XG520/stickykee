@@ -1,4 +1,4 @@
-// Command server 启动 Sticky Kee 后端服务。
+﻿// Command server 启动 Sticky Kee 后端服务。
 package main
 
 import (
@@ -14,14 +14,14 @@ import (
 	"syscall"
 	"time"
 
-	"stickynuo/server/internal/api"
-	"stickynuo/server/internal/auth"
-	"stickynuo/server/internal/config"
-	"stickynuo/server/internal/diag"
-	"stickynuo/server/internal/ha"
-	"stickynuo/server/internal/hub"
-	"stickynuo/server/internal/icons"
-	"stickynuo/server/internal/store"
+	"stickykee/server/internal/api"
+	"stickykee/server/internal/auth"
+	"stickykee/server/internal/config"
+	"stickykee/server/internal/diag"
+	"stickykee/server/internal/ha"
+	"stickykee/server/internal/hub"
+	"stickykee/server/internal/icons"
+	"stickykee/server/internal/store"
 )
 
 func main() {
