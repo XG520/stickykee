@@ -1,10 +1,6 @@
 <template>
   <div class="py-2 space-y-3 max-w-3xl mx-auto">
-    <FinanceHeader title="我的" subtitle="资产、账户与数据">
-      <button class="hc-ic" aria-label="返回生活" @click="router.push('/inventory')">
-        <span class="material-symbols-outlined">cottage</span>
-      </button>
-    </FinanceHeader>
+    <FinanceHeader title="我的" subtitle="资产、账户与数据" />
 
     <div v-if="error" class="text-xs text-error font-body">{{ error }}</div>
 
@@ -169,18 +165,6 @@ onMounted(load)
 </script>
 
 <style scoped>
-.hc-ic {
-  width: 44px;
-  height: 44px;
-  border-radius: 9999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: rgb(var(--c-on-surface));
-  flex-shrink: 0;
-}
-.hc-ic:hover { background: rgb(var(--c-surface-alt)); }
-
 .hc-row {
   width: 100%;
   height: 52px;

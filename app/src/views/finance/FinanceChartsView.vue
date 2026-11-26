@@ -1,10 +1,6 @@
 <template>
   <div class="py-2 space-y-3 max-w-3xl mx-auto">
-    <FinanceHeader title="图表" subtitle="看清钱花在哪里">
-      <button class="hc-ic" aria-label="切到我的" @click="router.push('/inventory/finance/me')">
-        <span class="material-symbols-outlined">person</span>
-      </button>
-    </FinanceHeader>
+    <FinanceHeader title="图表" subtitle="看清钱花在哪里" />
 
     <!-- 月份 -->
     <div class="flex items-center justify-between gap-2">
@@ -157,7 +153,6 @@
 
 <script setup>
 import { computed, onActivated, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import api from '@/api'
 import FinanceHeader from '@/components/finance/FinanceHeader.vue'
 import { financeMonth, shiftFinanceMonth } from '@/store/finance'
@@ -165,7 +160,6 @@ import { currentMonth, money, monthText } from '@/utils/finance'
 
 defineOptions({ name: 'FinanceChartsView' })
 
-const router = useRouter()
 const currentMonthValue = currentMonth()
 
 const type = ref('expense')
@@ -334,17 +328,6 @@ onActivated(() => {
 </script>
 
 <style scoped>
-.hc-ic {
-  width: 44px;
-  height: 44px;
-  border-radius: 9999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: rgb(var(--c-on-surface));
-  flex-shrink: 0;
-}
-.hc-ic:hover { background: rgb(var(--c-surface-alt)); }
 .hc-ic-sm {
   width: 34px;
   height: 34px;
