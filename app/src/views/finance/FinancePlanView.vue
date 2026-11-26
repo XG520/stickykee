@@ -1,5 +1,5 @@
 <template>
-  <div class="py-2 space-y-3">
+  <div class="py-2 space-y-3 max-w-3xl mx-auto">
     <FinanceHeader title="计划" subtitle="预算与周期账单">
       <button class="hc-ic" aria-label="预算设置" @click="budgetOpen = true">
         <span class="material-symbols-outlined">savings</span>

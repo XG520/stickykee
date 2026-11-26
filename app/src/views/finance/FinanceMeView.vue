@@ -1,5 +1,5 @@
 <template>
-  <div class="py-2 space-y-3">
+  <div class="py-2 space-y-3 max-w-3xl mx-auto">
     <FinanceHeader title="我的" subtitle="资产、账户与数据">
       <button class="hc-ic" aria-label="返回生活" @click="router.push('/inventory')">
         <span class="material-symbols-outlined">cottage</span>

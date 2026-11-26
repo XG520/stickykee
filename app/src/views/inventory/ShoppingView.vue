@@ -1,5 +1,5 @@
 <template>
-  <div class="py-2 pb-24 md:pb-4 space-y-3">
+  <div class="py-2 pb-4 space-y-3 max-w-3xl mx-auto">
     <header class="flex items-center gap-2 min-h-12">
       <button class="hc-icon-btn -ml-2" aria-label="返回生活" @click="router.push('/inventory')">
         <span class="material-symbols-outlined">arrow_back</span>

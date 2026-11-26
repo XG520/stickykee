@@ -1,5 +1,5 @@
 <template>
-  <div class="py-2 space-y-3">
+  <div class="py-2 space-y-3 max-w-3xl mx-auto">
     <FinanceHeader title="账本" subtitle="记好每一笔，心里有数">
       <button class="hc-ic" :class="searchOpen ? 'text-primary' : ''" aria-label="搜索" @click="toggleSearch">
         <span class="material-symbols-outlined">search</span>

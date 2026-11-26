@@ -1,5 +1,5 @@
 <template>
-  <div class="pb-24 md:pb-0">
+  <div>
     <router-view v-slot="{ Component }">
       <keep-alive :include="['FinanceLedgerView', 'FinanceChartsView']">
         <component :is="Component" />

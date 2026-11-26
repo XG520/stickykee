@@ -1,5 +1,5 @@
 <template>
-  <div class="py-2 space-y-3">
+  <div class="py-2 space-y-3 max-w-3xl mx-auto">
     <FinanceHeader title="图表" subtitle="看清钱花在哪里">
       <button class="hc-ic" aria-label="切到我的" @click="router.push('/inventory/finance/me')">
         <span class="material-symbols-outlined">person</span>
@@ -113,6 +113,7 @@
             stroke-width="2"
             stroke-linecap="round"
             stroke-linejoin="round"
+            vector-effect="non-scaling-stroke"
           />
           <circle
             v-for="(p, i) in trendDots"

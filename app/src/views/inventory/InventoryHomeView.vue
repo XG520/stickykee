@@ -1,5 +1,5 @@
 <template>
-  <div class="py-2 space-y-4">
+  <div class="py-2 space-y-4 max-w-3xl mx-auto">
     <!-- 标题 -->
     <header class="flex items-end justify-between gap-3">
       <div>

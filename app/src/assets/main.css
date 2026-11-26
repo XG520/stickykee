@@ -399,6 +399,8 @@ html.theme-china body::after {
   body {
     @apply bg-background text-on-background font-body antialiased;
     min-height: max(884px, 100dvh);
+    /* 顶部安全区：index.html 已启用 viewport-fit=cover，避免刘海/状态栏遮挡内容 */
+    padding-top: env(safe-area-inset-top);
     /* 为底部 Tab/悬浮操作区预留空间 */
     padding-bottom: 96px;
   }

@@ -1,7 +1,7 @@
 <template>
   <div class="hc-add-root" :style="{ paddingTop: 'env(safe-area-inset-top)' }">
     <!-- 头部 -->
-    <header class="flex items-center gap-2 px-3 h-14 shrink-0 border-b border-border/60">
+    <header class="hc-add-col flex items-center gap-2 px-3 h-14 shrink-0 border-b border-border/60">
       <button class="hc-ic" :aria-label="editing ? '取消编辑' : '关闭'" @click="close">
         <span class="material-symbols-outlined">{{ editing ? 'close' : 'arrow_back' }}</span>
       </button>
@@ -21,7 +21,7 @@
     </header>
 
     <!-- 分类与识图结果 -->
-    <div class="flex-1 min-h-0 overflow-y-auto px-4 pt-3">
+    <div class="hc-add-col flex-1 min-h-0 overflow-y-auto px-4 pt-3">
       <div class="grid grid-cols-2 gap-1 p-1 rounded-2xl bg-surface-alt">
         <button
           class="hc-type"
@@ -114,7 +114,7 @@
     </div>
 
     <!-- 金额 + 键盘 + 操作 -->
-    <div class="shrink-0 px-4 pb-3" :style="{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))' }">
+    <div class="hc-add-col shrink-0 px-4 pb-3" :style="{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))' }">
       <div v-if="error" class="text-xs text-error font-body mb-1.5">{{ error }}</div>
 
       <div class="flex items-end justify-between gap-3">
@@ -596,6 +596,14 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
 }
 .hc-ic:hover { background: rgb(var(--c-surface-alt)); }
+
+/* 桌面端把全屏记账页约束为居中单列，移动端保持满宽 */
+.hc-add-col {
+  width: 100%;
+  max-width: 30rem;
+  margin-left: auto;
+  margin-right: auto;
+}
 
 .hc-type {
   display: flex;
