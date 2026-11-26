@@ -5,6 +5,7 @@
       subtitle="固化筛选条件，随时回看"
       to="/inventory/finance/me"
       back-label="返回我的"
+      use-history
     />
 
     <div v-if="error" class="text-xs text-error font-body">{{ error }}</div>

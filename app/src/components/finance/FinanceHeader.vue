@@ -4,7 +4,7 @@
       v-if="back"
       class="hc-hdr-btn -ml-2"
       :aria-label="backLabel"
-      @click="router.push(to)"
+      @click="goBack"
     >
       <span class="material-symbols-outlined">arrow_back</span>
     </button>
@@ -25,9 +25,19 @@ const props = defineProps({
   back: { type: Boolean, default: true },
   to: { type: String, default: '/inventory' },
   backLabel: { type: String, default: '返回生活' },
+  // 优先返回来源页；无历史（如直接打开链接）时回退到 to
+  useHistory: { type: Boolean, default: false },
 })
 
 const router = useRouter()
+
+function goBack() {
+  if (props.useHistory && window.history.state && window.history.state.back) {
+    router.back()
+    return
+  }
+  router.push(props.to)
+}
 </script>
 
 <style scoped>
