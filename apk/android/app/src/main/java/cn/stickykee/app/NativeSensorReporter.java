@@ -420,6 +420,8 @@ public final class NativeSensorReporter {
         latestFixAt = 0L;
         latestNetFix = null;
         latestNetFixAt = 0L;
+        lastGpsFix = null;
+        lastGpsFixAt = 0L;
         locCarMode = false;
     }
 
