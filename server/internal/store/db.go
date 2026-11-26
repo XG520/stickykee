@@ -284,6 +284,17 @@ func migrate(db *sql.DB) error {
 			last_run_month TEXT NOT NULL DEFAULT '',
 			created_at TEXT NOT NULL DEFAULT (datetime('now'))
 		);`,
+		// 报表：筛选条件快照（JSON），生成后按 id 查看详情与明细
+		`CREATE TABLE IF NOT EXISTS fin_reports (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			instance_id INTEGER NOT NULL REFERENCES instances(id) ON DELETE CASCADE,
+			name TEXT NOT NULL,
+			filters TEXT NOT NULL,
+			created_by TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL DEFAULT (datetime('now')),
+			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_fin_reports_instance ON fin_reports(instance_id);`,
 	}
 	for _, s := range schemas {
 		if _, err := db.Exec(s); err != nil {
@@ -319,6 +330,14 @@ func migrate(db *sql.DB) error {
 	} else if !has {
 		if _, err := db.Exec(`ALTER TABLE fin_transactions ADD COLUMN fx_rate REAL NOT NULL DEFAULT 0`); err != nil {
 			return fmt.Errorf("migrate fin_transactions.fx_rate: %w", err)
+		}
+	}
+	// 迁移：支付方式（alipay/wechat/bankcard/credit/cash/other；历史流水为空）
+	if has, err := hasColumn(db, "fin_transactions", "pay_method"); err != nil {
+		return err
+	} else if !has {
+		if _, err := db.Exec(`ALTER TABLE fin_transactions ADD COLUMN pay_method TEXT NOT NULL DEFAULT ''`); err != nil {
+			return fmt.Errorf("migrate fin_transactions.pay_method: %w", err)
 		}
 	}
 	return nil

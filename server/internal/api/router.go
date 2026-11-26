@@ -268,6 +268,15 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 				r.Get("/trend", finance.Trend)
 				r.Get("/export", finance.Export)
 
+				// 报表：多维筛选生成 + 可视化详情 + 明细/CSV 导出
+				r.Get("/reports", finance.ListReports)
+				r.Post("/reports", finance.CreateReport)
+				r.Post("/reports/preview", finance.ReportPreview)
+				r.Get("/reports/{id}", finance.GetReport)
+				r.Get("/reports/{id}/transactions", finance.ReportTransactions)
+				r.Get("/reports/{id}/export", finance.ReportExport)
+				r.Delete("/reports/{id}", finance.DeleteReport)
+
 				r.Get("/recurring", finance.ListRecurring)
 				r.Post("/recurring", finance.CreateRecurring)
 				r.Put("/recurring/{id}", finance.UpdateRecurring)

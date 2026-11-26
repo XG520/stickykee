@@ -9,7 +9,22 @@ const routes = [
   { path: '/overview', name: 'overview', component: () => import('@/views/OverviewView.vue'), meta: { title: '能耗总览' } },
   { path: '/floorplan', name: 'floorplan', component: () => import('@/views/FloorplanView.vue'), meta: { title: '户型图' } },
   { path: '/devices', name: 'devices', component: () => import('@/views/DevicesView.vue'), meta: { title: '设备' } },
-  { path: '/inventory', name: 'inventory', component: () => import('@/views/InventoryView.vue'), meta: { title: '生活' } },
+  { path: '/inventory', name: 'inventory', component: () => import('@/views/inventory/InventoryHomeView.vue'), meta: { title: '生活' } },
+  { path: '/inventory/stock', name: 'inventory-stock', component: () => import('@/views/inventory/StockView.vue'), meta: { title: '库存' } },
+  { path: '/inventory/shopping', name: 'inventory-shopping', component: () => import('@/views/inventory/ShoppingView.vue'), meta: { title: '购物清单' } },
+  {
+    path: '/inventory/finance',
+    component: () => import('@/views/finance/FinanceView.vue'),
+    meta: { title: '账本', hideGlobalTab: true },
+    children: [
+      { path: '', redirect: '/inventory/finance/ledger' },
+      { path: 'ledger', name: 'finance-ledger', component: () => import('@/views/finance/FinanceLedgerView.vue'), meta: { title: '账本' } },
+      { path: 'charts', name: 'finance-charts', component: () => import('@/views/finance/FinanceChartsView.vue'), meta: { title: '图表' } },
+      { path: 'add', name: 'finance-add', component: () => import('@/views/finance/FinanceAddView.vue'), meta: { title: '记一笔' } },
+      { path: 'plan', name: 'finance-plan', component: () => import('@/views/finance/FinancePlanView.vue'), meta: { title: '计划' } },
+      { path: 'me', name: 'finance-me', component: () => import('@/views/finance/FinanceMeView.vue'), meta: { title: '我的' } },
+    ],
+  },
   { path: '/scenes', name: 'scenes', component: () => import('@/views/ScenesView.vue'), meta: { title: '场景' } },
   { path: '/settings', name: 'settings', component: () => import('@/views/SettingsView.vue'), meta: { title: '设置' } },
 ]
@@ -74,11 +89,15 @@ router.afterEach(() => {
   prefetched = true
   const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 1500))
   idle(() => {
-    for (const r of routes) {
-      if (typeof r.component === 'function') {
-        try { r.component() } catch { /* 预取失败不影响正常导航 */ }
+    const walk = (list) => {
+      for (const r of list) {
+        if (typeof r.component === 'function') {
+          try { r.component() } catch { /* 预取失败不影响正常导航 */ }
+        }
+        if (r.children) walk(r.children)
       }
     }
+    walk(routes)
   })
 })
 
