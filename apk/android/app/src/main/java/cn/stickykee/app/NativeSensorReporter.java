@@ -134,6 +134,11 @@ public final class NativeSensorReporter {
     // 注意：Android 的 NETWORK_PROVIDER 不是「公网 IP 定位」，而是系统定位服务基于
     // Wi-Fi 接入点/基站算出的点；按 Wi-Fi 级精度（≤100m）才采信，基站粗点直接丢弃。
     private static final float NET_ACC_MAX_M = 100f;                   // 网络定位精度差于 100m 不采信
+    // 网络点可信性：最近 10 分钟内有过卫星/融合定位时，网络点偏离该锚点超过 300m 视为错误定位。
+    // 常见成因：Wi-Fi/基站库把某个 AP 映射到几公里外的地址，但仍回报较好精度，HA 只按坐标
+    // 算 zone（不看精度），于是一次错误网络点即可把「离家」翻成「在家」，下次 GPS 心跳再翻回来。
+    private static final long GPS_ANCHOR_KEEP_MS = 10 * 60 * 1000L;
+    private static final float NET_JUMP_MAX_M = 300f;
 
     // ---- 公网 IP：多源探测 + 5 分钟缓存（避免频繁外网请求）----
     private static final int IP_CACHE_MS = 5 * 60 * 1000;
@@ -196,6 +201,8 @@ public final class NativeSensorReporter {
     private static volatile long latestFixAt = 0L;
     private static volatile Location latestNetFix; // 网络/融合定位缓存（卫星无 fix 时兜底）
     private static volatile long latestNetFixAt = 0L;
+    private static volatile Location lastGpsFix;   // 最近一次卫星/融合定位（网络点可信性锚点）
+    private static volatile long lastGpsFixAt = 0L;
     private static volatile boolean locCarMode = false; // 当前监听的定位档位（汽车高频/常规）
 
     /** 手动上报结果回调（在后台线程触发，调用方负责切回 UI 线程派发事件）。 */
@@ -313,10 +320,14 @@ public final class NativeSensorReporter {
                         latestFix = loc;
                         latestFixAt = System.currentTimeMillis();
                     }
+                    // 卫星/融合点作为网络点的可信性锚点（判断网络点是否跳飞）
+                    lastGpsFix = loc;
+                    lastGpsFixAt = System.currentTimeMillis();
                     return;
                 }
                 if (!isFreshFix(loc, TRACK_CACHE_MAX_AGE_MS)) return;
                 if (!accuracyOk(loc)) return;
+                if (!networkTrusted(loc)) return;
                 Location prevNet = latestNetFix;
                 if (prevNet == null || loc.getTime() >= prevNet.getTime()) {
                     latestNetFix = loc;
@@ -1108,14 +1119,31 @@ public final class NativeSensorReporter {
         Location netLive = latestNetFix;
         if (netLive != null && latestNetFixAt > 0
                 && now - latestNetFixAt < TRACK_CACHE_MAX_AGE_MS
-                && accuracyOk(netLive)) {
+                && accuracyOk(netLive) && networkTrusted(netLive)) {
             return netLive;
         }
         Location net = lastKnownFresh(lm, LocationManager.NETWORK_PROVIDER,
                 TRACK_CACHE_MAX_AGE_MS, NET_ACC_MAX_M);
-        if (net != null) return net;
-        return requestSingleFix(lm, LocationManager.NETWORK_PROVIDER,
+        if (net != null && networkTrusted(net)) return net;
+        Location netSingle = requestSingleFix(lm, LocationManager.NETWORK_PROVIDER,
                 5000, TRACK_CACHE_MAX_AGE_MS, NET_ACC_MAX_M);
+        return (netSingle != null && networkTrusted(netSingle)) ? netSingle : null;
+    }
+
+    /**
+     * 网络点可信性校验：最近 {@link #GPS_ANCHOR_KEEP_MS} 内有卫星/融合定位时，
+     * 网络点偏离该锚点超过 {@link #NET_JUMP_MAX_M} 视为错误定位（Wi-Fi/基站库把 AP
+     * 映射到远处地址仍回报较好精度），丢弃本周期，宁可不报也不跳飞。
+     */
+    private static boolean networkTrusted(Location net) {
+        Location g = lastGpsFix;
+        long at = lastGpsFixAt;
+        long now = System.currentTimeMillis();
+        if (g == null || at <= 0 || now - at > GPS_ANCHOR_KEEP_MS) return true;
+        double d = haversineM(g.getLatitude(), g.getLongitude(), net.getLatitude(), net.getLongitude());
+        if (d <= NET_JUMP_MAX_M) return true;
+        Log.d(TAG_TRACK, "net fix " + Math.round(d) + "m from last gps, reject");
+        return false;
     }
 
     /** Android 12+ 的系统融合 provider（部分机型/无 GMS 环境不存在）。 */

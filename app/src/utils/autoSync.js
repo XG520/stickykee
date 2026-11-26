@@ -68,8 +68,11 @@ async function mapKey() {
 }
 
 // 位置变化时上报：超过阈值才更新（go-location 去抖动）。
+// 原生模式下由原生心跳统一上报，这里直接跳过（避免双写）。
+const ACC_MAX_M = 150 // 精度差于此的粗点不推：HA 按坐标落 zone，不校验精度
 async function reportMoved(lat, lng, accuracy) {
-  if (inFlight.location || !canRun() || !trackingEnabled()) return
+  if (inFlight.location || !canRun() || !trackingEnabled() || isNativeSensorMode()) return
+  if (accuracy > ACC_MAX_M) return
   const cur = { lat, lng }
   if (lastLoc && distM(cur, lastLoc) < MOVE_THRESHOLD_M) return // 移动不足，跳过
   lastLoc = cur
@@ -88,11 +91,12 @@ async function reportMoved(lat, lng, accuracy) {
 // App 从后台恢复时若直接把缓存/漂移点推给 device_tracker，会出现「在家→离家→在家」瞬跳，
 // 故自动链路与原生心跳同一套防抖——静止（<40m）不重复推送。
 async function syncLocation() {
-  if (inFlight.location || !canRun() || !trackingEnabled()) return
+  if (inFlight.location || !canRun() || !trackingEnabled() || isNativeSensorMode()) return
   inFlight.location = true
   try {
     const pos = await getCurrentPosition()
     const { latitude, longitude, accuracy } = pos.coords
+    if (accuracy > ACC_MAX_M) return
     const cur = { lat: latitude, lng: longitude }
     if (lastLoc && distM(cur, lastLoc) < MOVE_THRESHOLD_M) return // 静止：跳过推送
     lastLoc = cur
@@ -154,7 +158,8 @@ async function syncSensors() {
 
 function onVisible() {
   if (!document.hidden) {
-    syncLocation()
+    // 原生模式：定位由原生统一上报，回前台不再重复推送（否则会和原生心跳互相翻状态）
+    if (!isNativeSensorMode()) syncLocation()
     if (isNativeSensorMode()) syncNativeSensorConfig()
     else syncSensors()
   }
@@ -279,7 +284,15 @@ export async function setSensorIntervalPref(sec) {
 // 传感器链路独立（由 sensor_config 控制），不受此开关影响。设置页切换后调用，即时生效。
 export function applyTrackingPref() {
   // 原生采集模式：追踪开关变化需即时同步给原生（geocoded_location 采集据此启停）
-  if (isNativeSensorMode()) syncNativeSensorConfig(true)
+  if (isNativeSensorMode()) {
+    syncNativeSensorConfig(true)
+    // 原生模式定位由 NativeSensorReporter 统一上报（见 docs/传感器原生采集开发规范.md）。
+    // 若 Web 链路也启动，会与原生心跳同时写 device_tracker：两边阈值/精度闸门不同，
+    // 丢星时 Web 侧会推 100~250m 误差的网络点，把「离家」翻成「在家」，随后原生 GPS
+    // 又推回「离家」，形成几分钟一次的在家/离家横跳。
+    stopLocSync()
+    return
+  }
   if (!canRun()) { stopLocSync(); return }
   if (!trackingEnabled()) { stopLocSync(); return }
   if (locTimer) return // 已在运行

@@ -1087,7 +1087,8 @@ public class NativeBridge {
 
     /**
      * 网络定位兜底（Wi-Fi/基站）：卫星无 fix 时用，室内可立即出点。
-     * 精度闸门 250m 以内的点才采信，避免粗点把「在家」误判为「离家」。
+     * 精度闸门 100m 以内才采信（与 NativeSensorReporter.NET_ACC_MAX_M 一致）：
+     * HA 按坐标落 zone、不校验精度，100m 以上的粗点会把「在家」误判成「离家」，反之亦然。
      */
     private void networkOnce(final String req, final LocationManager lm, final Handler handler) {
         final Location[] best = { null };
@@ -1097,7 +1098,7 @@ public class NativeBridge {
             @Override
             public void onLocationChanged(Location loc) {
                 if (loc == null || !isFreshFix(loc, 120_000L)) return;
-                if (loc.hasAccuracy() && loc.getAccuracy() > 250f) return;
+                if (loc.hasAccuracy() && loc.getAccuracy() > 100f) return;
                 if (best[0] == null || loc.getAccuracy() < best[0].getAccuracy()) best[0] = loc;
                 // 精度已到 Wi-Fi 级（≤100m）可提前结束
                 if (best[0] != null && best[0].getAccuracy() <= 100f && finishRef[0] != null) {
