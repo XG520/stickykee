@@ -1,4 +1,4 @@
-﻿package handler
+package handler
 
 import (
 	"context"
@@ -16,8 +16,10 @@ import (
 	"stickykee/server/internal/store"
 )
 
-// FinanceSync 把账本概览发布为 HA 的四个传感器实体：
-// sensor.hc_finance_expense / income / budget_left / balance。
+// FinanceSync 把账本概览与「计划」发布为 HA 传感器实体：
+//   - 记账：支出、收入、结余、预算剩余、预算使用率、总资产；
+//   - 计划：启用中的周期账单数量、月度总额、下一次执行日期。
+//
 // 复用 stickykee_server_<instance_id> 虚拟设备，但使用独立注册缓存命名空间 fin_reg，
 // 避免覆盖生日（bdReg）与库存（inventory_reg）的 sensor 列表。
 type FinanceSync struct {
@@ -98,8 +100,12 @@ func (h *FinanceSync) adminRest(ctx context.Context, instanceID int64) *client.R
 }
 
 // ensureReg 确保虚拟设备已注册（HA 对同一 device_id 幂等）。
+// 与生日同步一致：缓存的 webhook 可能因 HA 删除设备/恢复备份而失效，
+// 若直接复用，后续 register_sensor / update_sensor_states 会全部失败，
+// 表现为 HA 里始终看不到账本实体。因此先探活，失效则重新注册。
 func (h *FinanceSync) ensureReg(ctx context.Context, instanceID int64, rest *client.Rest) (*financeReg, error) {
-	if reg := h.readReg(ctx, instanceID); reg.WebhookID != "" {
+	reg := h.readReg(ctx, instanceID)
+	if reg.WebhookID != "" && probeWebhookAlive(ctx, rest, reg.WebhookID) {
 		return &reg, nil
 	}
 	payload := map[string]any{
@@ -123,8 +129,9 @@ func (h *FinanceSync) ensureReg(ctx context.Context, instanceID int64, rest *cli
 	if resp.WebhookID == "" {
 		return nil, errors.New("mobile_app registration returned no webhook_id")
 	}
-	reg := financeReg{WebhookID: resp.WebhookID}
+	reg = financeReg{WebhookID: resp.WebhookID}
 	h.saveReg(ctx, instanceID, reg)
+	slog.Info("finance server device registered", "instance", instanceID, "webhook_id", resp.WebhookID)
 	return &reg, nil
 }
 
@@ -133,7 +140,7 @@ func yuan(cents int64) float64 {
 	return math.Round(float64(cents)) / 100
 }
 
-// SyncInstance 统计并推送某实例的账本传感器。
+// SyncInstance 统计并推送某实例的账本 + 计划传感器。
 func (h *FinanceSync) SyncInstance(ctx context.Context, instanceID int64) {
 	rest := h.adminRest(ctx, instanceID)
 	if rest == nil {
@@ -144,12 +151,64 @@ func (h *FinanceSync) SyncInstance(ctx context.Context, instanceID int64) {
 		slog.Warn("finance sync: register failed", "instance", instanceID, "err", err.Error())
 		return
 	}
-	month := time.Now().Format("2006-01")
+	now := time.Now()
+	month := now.Format("2006-01")
 	st, err := h.fin.Stats(ctx, instanceID, month)
 	if err != nil {
 		slog.Warn("finance sync: stats failed", "instance", instanceID, "err", err.Error())
 		return
 	}
+
+	// 计划：启用中的周期账单数量、月度总额与下一次执行日期。
+	recs, err := h.fin.ListRecurring(ctx, instanceID)
+	if err != nil {
+		slog.Warn("finance sync: recurring failed", "instance", instanceID, "err", err.Error())
+		recs = nil
+	}
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	enabledCount := 0
+	var recurringTotal int64
+	var nextDate time.Time
+	var nextRec *store.FinRecurring
+	recurringItems := make([]map[string]any, 0, len(recs))
+	for i := range recs {
+		r := recs[i]
+		if !r.Enabled {
+			continue
+		}
+		enabledCount++
+		recurringTotal += r.Amount
+		d := nextRecurringDate(r.DayOfMonth, r.LastRunMonth, now)
+		if nextDate.IsZero() || d.Before(nextDate) {
+			nextDate = d
+			nextRec = &recs[i]
+		}
+		if len(recurringItems) < 20 {
+			recurringItems = append(recurringItems, map[string]any{
+				"name":      r.Name,
+				"type":      r.Type,
+				"amount":    yuan(r.Amount),
+				"day":       r.DayOfMonth,
+				"next_date": d.Format("2006-01-02"),
+			})
+		}
+	}
+	nextState := "unknown"
+	nextAttrs := map[string]any{"count": enabledCount}
+	if len(recurringItems) > 0 {
+		nextAttrs["items"] = recurringItems
+	}
+	if nextRec != nil {
+		nextState = nextDate.Format("2006-01-02")
+		nextAttrs["name"] = nextRec.Name
+		nextAttrs["amount"] = yuan(nextRec.Amount)
+		daysLeft := int(nextDate.Sub(today).Hours() / 24)
+		if daysLeft < 0 {
+			daysLeft = 0
+		}
+		nextAttrs["days_left"] = daysLeft
+	}
+
 	sensors := []map[string]any{
 		{
 			"type":                "sensor",
@@ -169,10 +228,26 @@ func (h *FinanceSync) SyncInstance(ctx context.Context, instanceID int64) {
 		},
 		{
 			"type":                "sensor",
+			"unique_id":           "hc_fin_net",
+			"name":                "本月结余",
+			"icon":                "mdi:scale-balance",
+			"unit_of_measurement": "元",
+			"state_class":         "measurement",
+		},
+		{
+			"type":                "sensor",
 			"unique_id":           "hc_fin_budget_left",
 			"name":                "本月预算剩余",
 			"icon":                "mdi:wallet",
 			"unit_of_measurement": "元",
+			"state_class":         "measurement",
+		},
+		{
+			"type":                "sensor",
+			"unique_id":           "hc_fin_budget_pct",
+			"name":                "预算使用率",
+			"icon":                "mdi:gauge",
+			"unit_of_measurement": "%",
 			"state_class":         "measurement",
 		},
 		{
@@ -182,6 +257,28 @@ func (h *FinanceSync) SyncInstance(ctx context.Context, instanceID int64) {
 			"icon":                "mdi:bank",
 			"unit_of_measurement": "元",
 			"state_class":         "measurement",
+		},
+		{
+			"type":                "sensor",
+			"unique_id":           "hc_fin_recurring_count",
+			"name":                "周期账单数",
+			"icon":                "mdi:calendar-clock",
+			"unit_of_measurement": "条",
+			"state_class":         "measurement",
+		},
+		{
+			"type":                "sensor",
+			"unique_id":           "hc_fin_recurring_total",
+			"name":                "周期账单总额",
+			"icon":                "mdi:calendar-multiple",
+			"unit_of_measurement": "元",
+			"state_class":         "measurement",
+		},
+		{
+			"type":      "sensor",
+			"unique_id": "hc_fin_recurring_next",
+			"name":      "下次周期账单",
+			"icon":      "mdi:calendar-arrow-right",
 		},
 	}
 	for _, sensor := range sensors {
@@ -219,6 +316,13 @@ func (h *FinanceSync) SyncInstance(ctx context.Context, instanceID int64) {
 				"attributes": map[string]any{"month": month},
 			},
 			{
+				"type":       "sensor",
+				"unique_id":  "hc_fin_net",
+				"state":      yuan(st.Income - st.Expense),
+				"icon":       "mdi:scale-balance",
+				"attributes": map[string]any{"month": month},
+			},
+			{
 				"type":      "sensor",
 				"unique_id": "hc_fin_budget_left",
 				"state":     yuan(st.BudgetLeft),
@@ -230,11 +334,43 @@ func (h *FinanceSync) SyncInstance(ctx context.Context, instanceID int64) {
 				},
 			},
 			{
+				"type":      "sensor",
+				"unique_id": "hc_fin_budget_pct",
+				"state":     st.BudgetPct,
+				"icon":      "mdi:gauge",
+				"attributes": map[string]any{
+					"month":        month,
+					"budget_total": yuan(st.BudgetTotal),
+					"budget_left":  yuan(st.BudgetLeft),
+				},
+			},
+			{
 				"type":       "sensor",
 				"unique_id":  "hc_fin_balance",
 				"state":      yuan(st.Balance),
 				"icon":       "mdi:bank",
 				"attributes": map[string]any{"by_account": byAccount},
+			},
+			{
+				"type":       "sensor",
+				"unique_id":  "hc_fin_recurring_count",
+				"state":      enabledCount,
+				"icon":       "mdi:calendar-clock",
+				"attributes": map[string]any{"month": month, "items": recurringItems},
+			},
+			{
+				"type":       "sensor",
+				"unique_id":  "hc_fin_recurring_total",
+				"state":      yuan(recurringTotal),
+				"icon":       "mdi:calendar-multiple",
+				"attributes": map[string]any{"month": month, "count": enabledCount},
+			},
+			{
+				"type":       "sensor",
+				"unique_id":  "hc_fin_recurring_next",
+				"state":      nextState,
+				"icon":       "mdi:calendar-arrow-right",
+				"attributes": nextAttrs,
 			},
 		},
 	}
@@ -253,6 +389,35 @@ func (h *FinanceSync) SyncInstance(ctx context.Context, instanceID int64) {
 			}
 		}
 	}
+}
+
+// nextRecurringDate 计算周期账单的下一次执行日期：
+//   - 本月已执行（last_run_month=本月）→ 下月同一天；
+//   - 本月未执行且日期已过 → 今天（等待补跑）；
+//   - 否则 → 本月该天。
+//
+// 日期超出当月天数时回退到当月最后一天（与自动记账逻辑一致）。
+func nextRecurringDate(day int, lastRun string, now time.Time) time.Time {
+	if lastRun == now.Format("2006-01") {
+		return dayInMonth(now.Year(), now.Month()+1, day, now.Location())
+	}
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	cur := dayInMonth(now.Year(), now.Month(), day, now.Location())
+	if cur.Before(today) {
+		return today
+	}
+	return cur
+}
+
+func dayInMonth(year int, month time.Month, day int, loc *time.Location) time.Time {
+	last := time.Date(year, month+1, 0, 0, 0, 0, 0, loc).Day()
+	if day < 1 {
+		day = 1
+	}
+	if day > last {
+		day = last
+	}
+	return time.Date(year, month, day, 0, 0, 0, 0, loc)
 }
 
 // notifyBudget 推送一条预算超支持久通知。
@@ -284,9 +449,10 @@ func (h *FinanceSync) RequestSync(instanceID int64) {
 	go h.SyncInstance(context.Background(), instanceID)
 }
 
-// StartTicker 每小时生成周期账单并全量同步一次（兼作 HA 重启后的自愈兜底）。
+// StartTicker 启动时先补跑周期账单并全量同步一次，之后每小时同步（兼作 HA 重启后的自愈兜底）。
 func (h *FinanceSync) StartTicker(ctx context.Context) {
 	_, _ = h.fin.RunRecurring(context.Background())
+	h.SyncAll(context.Background())
 	t := time.NewTicker(time.Hour)
 	defer t.Stop()
 	for {

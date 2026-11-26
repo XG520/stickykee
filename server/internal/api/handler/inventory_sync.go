@@ -1,4 +1,4 @@
-﻿package handler
+package handler
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -16,8 +17,8 @@ import (
 	"stickykee/server/internal/store"
 )
 
-// InventorySync 把库存统计同步为 HA 的两个传感器实体：
-// sensor.hc_inventory_total（在库总件数）与 sensor.hc_inventory_expiring（临期件数）。
+// InventorySync 把库存与购物清单统计发布为 HA 传感器实体：
+// 库存总数、库存价值、临期件数、需补货件数、待购清单项数。
 // 复用生日功能的 mobile_app 虚拟设备（device_id = stickykee_server_<instance_id>），
 // 但使用独立的注册缓存命名空间，避免覆盖生日传感器的 webhook 记录。
 type InventorySync struct {
@@ -108,8 +109,11 @@ func (h *InventorySync) adminRest(ctx context.Context, instanceID int64) *client
 }
 
 // ensureReg 确保虚拟设备已注册（幂等；HA 对同一 device_id 返回同一 webhook_id）。
+// 缓存 webhook 失效（HA 删除设备/恢复备份）时自动重新注册；否则后续
+// register_sensor / update_sensor_states 会持续失败，HA 里看不到库存实体。
 func (h *InventorySync) ensureReg(ctx context.Context, instanceID int64, rest *client.Rest) (*inventoryReg, error) {
-	if reg := h.readReg(ctx, instanceID); reg.WebhookID != "" {
+	reg := h.readReg(ctx, instanceID)
+	if reg.WebhookID != "" && probeWebhookAlive(ctx, rest, reg.WebhookID) {
 		return &reg, nil
 	}
 	payload := map[string]any{
@@ -133,12 +137,13 @@ func (h *InventorySync) ensureReg(ctx context.Context, instanceID int64, rest *c
 	if resp.WebhookID == "" {
 		return nil, errors.New("mobile_app registration returned no webhook_id")
 	}
-	reg := inventoryReg{WebhookID: resp.WebhookID}
+	reg = inventoryReg{WebhookID: resp.WebhookID}
 	h.saveReg(ctx, instanceID, reg)
+	slog.Info("inventory server device registered", "instance", instanceID, "webhook_id", resp.WebhookID)
 	return &reg, nil
 }
 
-// SyncInstance 统计并推送某实例的库存传感器。
+// SyncInstance 统计并推送某实例的库存 + 购物清单传感器。
 func (h *InventorySync) SyncInstance(ctx context.Context, instanceID int64) {
 	rest := h.adminRest(ctx, instanceID)
 	if rest == nil {
@@ -155,6 +160,18 @@ func (h *InventorySync) SyncInstance(ctx context.Context, instanceID int64) {
 		slog.Warn("inventory sync: stats failed", "instance", instanceID, "err", err.Error())
 		return
 	}
+	shopping, err := h.inv.ListShopping(ctx, instanceID, false)
+	if err != nil {
+		slog.Warn("inventory sync: shopping failed", "instance", instanceID, "err", err.Error())
+		shopping = nil
+	}
+	shoppingNames := make([]string, 0, len(shopping))
+	for _, s := range shopping {
+		if len(shoppingNames) >= 20 {
+			break
+		}
+		shoppingNames = append(shoppingNames, s.Name)
+	}
 	sensors := []map[string]any{
 		{
 			"type":                "sensor",
@@ -166,10 +183,34 @@ func (h *InventorySync) SyncInstance(ctx context.Context, instanceID int64) {
 		},
 		{
 			"type":                "sensor",
+			"unique_id":           "hc_inv_value",
+			"name":                "库存价值",
+			"icon":                "mdi:cash-multiple",
+			"unit_of_measurement": "元",
+			"state_class":         "measurement",
+		},
+		{
+			"type":                "sensor",
 			"unique_id":           "hc_inv_expiring",
 			"name":                "库存临期",
 			"icon":                "mdi:clock-alert-outline",
 			"unit_of_measurement": "件",
+			"state_class":         "measurement",
+		},
+		{
+			"type":                "sensor",
+			"unique_id":           "hc_inv_low_stock",
+			"name":                "库存需补货",
+			"icon":                "mdi:cart-alert",
+			"unit_of_measurement": "件",
+			"state_class":         "measurement",
+		},
+		{
+			"type":                "sensor",
+			"unique_id":           "hc_inv_shopping",
+			"name":                "待购清单",
+			"icon":                "mdi:cart-outline",
+			"unit_of_measurement": "项",
 			"state_class":         "measurement",
 		},
 	}
@@ -198,6 +239,15 @@ func (h *InventorySync) SyncInstance(ctx context.Context, instanceID int64) {
 			},
 			{
 				"type":      "sensor",
+				"unique_id": "hc_inv_value",
+				"state":     round2(st.TotalValue),
+				"icon":      "mdi:cash-multiple",
+				"attributes": map[string]any{
+					"item_count": st.ItemCount,
+				},
+			},
+			{
+				"type":      "sensor",
 				"unique_id": "hc_inv_expiring",
 				"state":     st.Expiring,
 				"icon":      "mdi:clock-alert-outline",
@@ -206,11 +256,35 @@ func (h *InventorySync) SyncInstance(ctx context.Context, instanceID int64) {
 					"window_days": days,
 				},
 			},
+			{
+				"type":      "sensor",
+				"unique_id": "hc_inv_low_stock",
+				"state":     st.LowStock,
+				"icon":      "mdi:cart-alert",
+				"attributes": map[string]any{
+					"expiring": st.Expiring,
+					"expired":  st.Expired,
+				},
+			},
+			{
+				"type":      "sensor",
+				"unique_id": "hc_inv_shopping",
+				"state":     len(shopping),
+				"icon":      "mdi:cart-outline",
+				"attributes": map[string]any{
+					"items": shoppingNames,
+				},
+			},
 		},
 	}
 	if err := rest.PostJSON(ctx, "/api/webhook/"+reg.WebhookID, payload, nil); err != nil {
 		slog.Warn("inventory sync: push failed", "instance", instanceID, "err", err.Error())
 	}
+}
+
+// round2 保留两位小数（库存价值本身以元为单位）。
+func round2(v float64) float64 {
+	return math.Round(v*100) / 100
 }
 
 // RequestSync 在库存变更后触发一次异步同步（5s 去抖，避免连续操作放大 HA 请求）。
@@ -228,8 +302,9 @@ func (h *InventorySync) RequestSync(instanceID int64) {
 	go h.SyncInstance(context.Background(), instanceID)
 }
 
-// StartTicker 每小时全量同步一次（同时充当 HA 重启后的自愈兜底）。
+// StartTicker 启动时先全量同步一次，之后每小时同步（兼作 HA 重启后的自愈兜底）。
 func (h *InventorySync) StartTicker(ctx context.Context) {
+	h.SyncAll(context.Background())
 	t := time.NewTicker(time.Hour)
 	defer t.Stop()
 	for {

@@ -1,4 +1,4 @@
-﻿package handler
+package handler
 
 import (
 	"bytes"
@@ -758,6 +758,7 @@ func (h *Finance) CreateRecurring(w http.ResponseWriter, r *http.Request) {
 		finErr(w, err)
 		return
 	}
+	h.changed(id)
 	WriteJSON(w, 201, x)
 }
 
@@ -782,6 +783,7 @@ func (h *Finance) UpdateRecurring(w http.ResponseWriter, r *http.Request) {
 		finErr(w, err)
 		return
 	}
+	h.changed(id)
 	WriteJSON(w, 200, x)
 }
 
@@ -800,6 +802,7 @@ func (h *Finance) DeleteRecurring(w http.ResponseWriter, r *http.Request) {
 		finErr(w, err)
 		return
 	}
+	h.changed(id)
 	WriteJSON(w, 200, true)
 }
 
