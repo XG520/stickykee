@@ -272,6 +272,7 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 				r.Get("/reports", finance.ListReports)
 				r.Post("/reports", finance.CreateReport)
 				r.Post("/reports/preview", finance.ReportPreview)
+				r.Post("/reports/data", finance.ReportDataPreview)
 				r.Get("/reports/{id}", finance.GetReport)
 				r.Get("/reports/{id}/transactions", finance.ReportTransactions)
 				r.Get("/reports/{id}/export", finance.ReportExport)

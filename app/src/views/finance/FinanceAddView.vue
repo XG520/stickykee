@@ -6,8 +6,8 @@
         <span class="material-symbols-outlined">{{ editing ? 'close' : 'arrow_back' }}</span>
       </button>
       <div class="flex-1 min-w-0">
-        <div class="text-[10px] tracking-[0.14em] uppercase text-muted font-body">{{ editing ? '编辑账目' : '记一笔' }}</div>
-        <h1 class="font-headline text-base font-semibold leading-tight truncate">{{ editing ? '修改这一笔' : '快速记一笔' }}</h1>
+        <div class="text-[10px] tracking-[0.14em] uppercase text-muted font-body">{{ editing ? '编辑账目' : copySource ? '复制账目' : '记一笔' }}</div>
+        <h1 class="font-headline text-base font-semibold leading-tight truncate">{{ editing ? '修改这一笔' : copySource ? '复制并新建' : '快速记一笔' }}</h1>
       </div>
       <button
         class="h-9 px-3 rounded-full border border-border bg-surface-alt text-[11px] text-muted font-body flex items-center gap-1 disabled:opacity-50"
@@ -235,13 +235,14 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/api'
 import UiSelect from '@/components/ui/UiSelect.vue'
-import { financeEditing, bumpFinanceVersion } from '@/store/finance'
+import { financeCopy, financeEditing, bumpFinanceVersion } from '@/store/finance'
 import { PAY_METHOD_OPTIONS, pad2, payMethodLabel } from '@/utils/finance'
 
 defineOptions({ name: 'FinanceAddView' })
 
 const router = useRouter()
 const editing = financeEditing.value
+const copySource = financeCopy.value
 
 const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'del']
 const currencies = ['CNY', 'USD', 'EUR', 'JPY', 'HKD', 'GBP']
@@ -405,14 +406,17 @@ async function loadAccounts() {
 }
 
 function resetFromEditing() {
-  const tx = editing
+  const tx = editing || copySource
   if (tx) {
     type.value = tx.type === 'income' ? 'income' : 'expense'
     const cents = Number(tx.orig_amount) > 0 ? Number(tx.orig_amount) : Number(tx.amount || 0)
     amount.value = (cents / 100).toFixed(2).replace(/\.?0+$/, '') || '0'
     accountId.value = tx.account_id || 0
     categoryId.value = tx.category_id || 0
-    date.value = (tx.occurred_at || '').slice(0, 10) || todayString()
+    // 编辑保留原日期；复制默认记到今天
+    date.value = editing
+      ? ((tx.occurred_at || '').slice(0, 10) || todayString())
+      : todayString()
     note.value = tx.note || ''
     tags.value = tx.tags || ''
     currency.value = tx.currency || 'CNY'
@@ -477,8 +481,9 @@ async function onImage(e) {
 }
 
 function close() {
-  if (editing) {
+  if (editing || copySource) {
     financeEditing.value = null
+    financeCopy.value = null
     router.back()
     return
   }
@@ -537,6 +542,7 @@ async function save() {
     localStorage.setItem('hc_fin_last_account', String(accountId.value))
     bumpFinanceVersion()
     financeEditing.value = null
+    financeCopy.value = null
     router.replace('/inventory/finance/ledger')
   } catch (e) {
     error.value = e.message || '保存失败'
@@ -565,13 +571,14 @@ function onKeydown(e) {
 onMounted(async () => {
   resetFromEditing()
   await Promise.all([loadCategories(), loadAccounts()])
-  if (editing) syncDrill()
+  if (editing || copySource) syncDrill()
   document.addEventListener('keydown', onKeydown)
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', onKeydown)
   financeEditing.value = null
+  financeCopy.value = null
 })
 </script>
 

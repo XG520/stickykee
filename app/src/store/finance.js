@@ -20,6 +20,8 @@ watch(financeMonth, (v) => {
 })
 
 export const financeEditing = ref(null)
+// 复制一笔的源流水：与「编辑」区分，保存时走新建而不是更新。
+export const financeCopy = ref(null)
 export const financeVersion = ref(0)
 
 export function shiftFinanceMonth(n) {

@@ -32,7 +32,13 @@ const routes = [
 const router = createRouter({
   history: createWebHistory(),
   routes,
-  scrollBehavior() {
+  scrollBehavior(to, from, savedPosition) {
+    if (savedPosition) return savedPosition
+    const inFinance = (r) => r.path.startsWith('/inventory/finance')
+    // 账本内部 tab 切换（记一笔全屏页除外）保持各自滚动位置，由页面 onActivated 恢复。
+    if (inFinance(to) && inFinance(from) && to.name !== 'finance-add' && from.name !== 'finance-add') {
+      return false
+    }
     return { top: 0 }
   },
 })

@@ -276,6 +276,7 @@ export const api = {
   financeBudgets: (month = '') => api.get(`/finance/budgets${month ? `?month=${month}` : ''}`),
   setFinanceBudgets: (month, items) => api.put(`/finance/budgets?month=${month}`, { items }),
   financeTrend: (months = 6) => api.get(`/finance/trend?months=${months}`),
+  financeReportData: (filters) => api.post('/finance/reports/data', { filters }),
   financeExport: (month = '') => api.get(`/finance/export${month ? `?month=${month}` : ''}`),
   financeRecognize: (image) => api.post('/finance/recognize', { image }),
   financeNotification: (p) => api.post('/finance/notification', p),

@@ -704,6 +704,28 @@ func (h *Finance) ReportPreview(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, 200, s)
 }
 
+// ReportDataPreview POST /finance/reports/data 实时计算报表完整数据（不落库）
+// 供图表页在周/月/年等任意区间直接绘图，避免为了预览而创建一条已保存报表。
+func (h *Finance) ReportDataPreview(w http.ResponseWriter, r *http.Request) {
+	id, ok := h.active(w, r)
+	if !ok {
+		return
+	}
+	var p struct {
+		Filters store.ReportFilter `json:"filters"`
+	}
+	if err := DecodeBody(r, &p); err != nil {
+		WriteErr(w, 400, "bad_request", "参数格式错误")
+		return
+	}
+	d, err := h.repo.ReportData(r.Context(), id, p.Filters)
+	if err != nil {
+		finErr(w, err)
+		return
+	}
+	WriteJSON(w, 200, d)
+}
+
 // ── 周期账单 ──────────────────────────────────────────────────────
 
 // ListRecurring GET /finance/recurring

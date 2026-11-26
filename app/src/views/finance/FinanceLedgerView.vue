@@ -100,7 +100,7 @@
     <!-- 按日流水 -->
     <div v-if="groups.length" class="space-y-3">
       <div v-for="g in groups" :key="g.date" class="space-y-1.5">
-        <div class="flex items-center justify-between text-[11px] font-body text-muted px-1">
+        <div class="hc-day-head flex items-center justify-between text-[11px] font-body text-muted px-1">
           <span>{{ g.label }}</span>
           <span v-if="g.expense > 0">支出 {{ money(g.expense) }}</span>
         </div>
@@ -266,6 +266,9 @@
         <button class="hc-sheet-row" @click="editTx(menuTx)">
           <span class="material-symbols-outlined text-base">edit</span>编辑
         </button>
+        <button class="hc-sheet-row" @click="copyTx(menuTx)">
+          <span class="material-symbols-outlined text-base">content_copy</span>复制一笔
+        </button>
         <button class="hc-sheet-row text-error" @click="remove(menuTx)">
           <span class="material-symbols-outlined text-base">delete</span>删除
         </button>
@@ -278,11 +281,11 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onActivated, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onDeactivated, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/api'
 import FinanceHeader from '@/components/finance/FinanceHeader.vue'
-import { financeEditing, financeMonth, shiftFinanceMonth } from '@/store/finance'
+import { financeCopy, financeEditing, financeMonth, shiftFinanceMonth } from '@/store/finance'
 import { currentMonth, money, monthText, payMethodLabel, shortMoney } from '@/utils/finance'
 import { confirmAction } from '@/composables/useConfirm'
 import { syncAutoFinanceConfig } from '@/utils/autoFinance'
@@ -565,7 +568,16 @@ function resetFilters() {
 function editTx(tx) {
   menuTx.value = null
   if (!tx || tx.type === 'transfer') return
+  financeCopy.value = null
   financeEditing.value = tx
+  router.push('/inventory/finance/add')
+}
+
+function copyTx(tx) {
+  menuTx.value = null
+  if (!tx || tx.type === 'transfer') return
+  financeEditing.value = null
+  financeCopy.value = tx
   router.push('/inventory/finance/add')
 }
 
@@ -602,16 +614,21 @@ watch(financeMonth, () => {
 })
 
 let activatedOnce = false
+let savedScroll = 0
 onMounted(() => {
   syncAutoFinanceConfig()
   reload()
 })
-onActivated(() => {
+onDeactivated(() => {
+  savedScroll = window.scrollY
+})
+onActivated(async () => {
   if (!activatedOnce) {
     activatedOnce = true
     return
   }
-  reload()
+  await reload()
+  nextTick(() => requestAnimationFrame(() => window.scrollTo({ top: savedScroll })))
 })
 </script>
 
@@ -671,6 +688,17 @@ onActivated(() => {
   display: inline-flex;
   align-items: center;
   gap: 2px;
+}
+/* 日头吸顶在全局顶栏（约 64px）下方 */
+.hc-day-head {
+  position: sticky;
+  top: calc(64px + env(safe-area-inset-top));
+  z-index: 10;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  background: rgb(var(--c-background) / .92);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 .hc-sheet-row {
   width: 100%;

@@ -8,6 +8,22 @@
 
     <div v-if="error" class="text-xs text-error font-body">{{ error }}</div>
 
+    <!-- 月份切换：预算按所选月份展示 -->
+    <div class="flex items-center gap-0.5">
+      <button class="hc-ic-sm" aria-label="上个月" @click="shiftFinanceMonth(-1)">
+        <span class="material-symbols-outlined">chevron_left</span>
+      </button>
+      <div class="text-sm font-medium font-body min-w-[92px] text-center">{{ monthText(financeMonth) }}</div>
+      <button class="hc-ic-sm" aria-label="下个月" @click="shiftFinanceMonth(1)">
+        <span class="material-symbols-outlined">chevron_right</span>
+      </button>
+      <button
+        v-if="financeMonth !== currentMonthValue"
+        class="ml-1 h-7 px-2.5 rounded-full text-[11px] text-primary border border-primary/35 bg-primary/5 font-body whitespace-nowrap"
+        @click="financeMonth = currentMonthValue"
+      >本月</button>
+    </div>
+
     <!-- 本月预算 -->
     <section class="rounded-2xl bg-surface border border-border p-4 space-y-3">
       <div class="flex items-center justify-between">
@@ -112,9 +128,11 @@ import api from '@/api'
 import FinanceHeader from '@/components/finance/FinanceHeader.vue'
 import BudgetDialog from '@/components/finance/BudgetDialog.vue'
 import AccountManager from '@/components/finance/AccountManager.vue'
-import { financeMonth } from '@/store/finance'
-import { money, monthText } from '@/utils/finance'
+import { financeMonth, shiftFinanceMonth } from '@/store/finance'
+import { currentMonth, money, monthText } from '@/utils/finance'
 import { confirmAction } from '@/composables/useConfirm'
+
+const currentMonthValue = currentMonth()
 
 const stats = ref({})
 const categories = ref([])
@@ -200,4 +218,15 @@ onMounted(load)
   flex-shrink: 0;
 }
 .hc-ic:hover { background: rgb(var(--c-surface-alt)); }
+.hc-ic-sm {
+  width: 34px;
+  height: 34px;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: rgb(var(--c-muted));
+  flex-shrink: 0;
+}
+.hc-ic-sm:hover { background: rgb(var(--c-surface-alt)); color: rgb(var(--c-on-surface)); }
 </style>

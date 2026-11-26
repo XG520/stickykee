@@ -1,22 +1,33 @@
 <template>
   <div class="py-2 space-y-3 max-w-3xl mx-auto">
-    <FinanceHeader title="图表" subtitle="看清钱花在哪里" />
+    <FinanceHeader title="图表" subtitle="看清每个周期的钱花在哪里" />
 
-    <!-- 月份 -->
+    <!-- 时间维度 -->
+    <div class="grid grid-cols-3 gap-1 p-1 rounded-2xl bg-surface-alt">
+      <button
+        v-for="d in dims"
+        :key="d.value"
+        class="hc-seg"
+        :class="dim === d.value ? 'bg-surface text-on-surface shadow-sm' : 'text-muted'"
+        @click="dim = d.value"
+      >{{ d.label }}</button>
+    </div>
+
+    <!-- 周期切换 -->
     <div class="flex items-center justify-between gap-2">
-      <div class="flex items-center gap-0.5">
-        <button class="hc-ic-sm" aria-label="上个月" @click="shiftFinanceMonth(-1)">
+      <div class="flex items-center gap-0.5 min-w-0">
+        <button class="hc-ic-sm" aria-label="上一周期" @click="movePeriod(-1)">
           <span class="material-symbols-outlined">chevron_left</span>
         </button>
-        <div class="text-sm font-medium font-body min-w-[92px] text-center">{{ monthText(financeMonth) }}</div>
-        <button class="hc-ic-sm" aria-label="下个月" @click="shiftFinanceMonth(1)">
+        <div class="text-sm font-medium font-body min-w-[104px] text-center truncate">{{ rangeLabel }}</div>
+        <button class="hc-ic-sm" aria-label="下一周期" @click="movePeriod(1)">
           <span class="material-symbols-outlined">chevron_right</span>
         </button>
         <button
-          v-if="financeMonth !== currentMonthValue"
+          v-if="!isCurrentPeriod"
           class="ml-1 h-7 px-2.5 rounded-full text-[11px] text-primary border border-primary/35 bg-primary/5 font-body whitespace-nowrap"
-          @click="goCurrentMonth"
-        >本月</button>
+          @click="goCurrent"
+        >本期</button>
       </div>
     </div>
 
@@ -34,21 +45,15 @@
       >收入</button>
     </div>
 
-    <!-- 时间维度：P0 仅月，周/年置灰 -->
-    <div class="flex items-center gap-1.5">
-      <button class="hc-chip" disabled title="即将支持">周</button>
-      <button class="hc-chip hc-chip--on">月</button>
-      <button class="hc-chip" disabled title="即将支持">年</button>
-      <span class="ml-auto text-[11px] text-muted font-body">{{ monthText(financeMonth) }}</span>
-    </div>
-
     <!-- 总额 -->
     <section class="rounded-2xl bg-surface border border-border p-4">
       <div class="text-[11px] text-muted font-body">总{{ type === 'income' ? '收入' : '支出' }}</div>
       <div class="mt-1 font-headline text-[30px] leading-none font-semibold tabular-nums" :class="type === 'income' ? 'text-accent' : ''">
         {{ money(total) }}
       </div>
-      <div class="mt-2 text-[11px] text-muted font-body">日均 {{ money(dailyAvg) }} · 共 {{ count }} 笔</div>
+      <div class="mt-2 text-[11px] text-muted font-body">
+        日均 {{ money(dailyAvg) }} · 共 {{ count }} 笔 · {{ avgDays }} 天
+      </div>
     </section>
 
     <div v-if="error" class="text-xs text-error font-body">{{ error }}</div>
@@ -77,7 +82,7 @@
       </div>
 
       <div v-if="catRows.length" class="space-y-2.5">
-        <div v-for="(c, i) in catRows" :key="c.id" class="space-y-1">
+        <div v-for="(c, i) in catRows" :key="c.category_id || c.name" class="space-y-1">
           <div class="flex items-center justify-between gap-2 text-xs font-body">
             <span class="flex items-center gap-1.5 min-w-0">
               <i class="w-2 h-2 rounded-full inline-block flex-shrink-0" :style="{ background: colorOf(i) }"></i>
@@ -90,16 +95,16 @@
           </div>
         </div>
       </div>
-      <div v-else class="text-xs text-muted font-body py-4 text-center">本月暂无{{ type === 'income' ? '收入' : '支出' }}</div>
+      <div v-else class="text-xs text-muted font-body py-4 text-center">当前周期暂无{{ type === 'income' ? '收入' : '支出' }}</div>
     </section>
 
     <!-- 趋势 -->
     <section class="rounded-2xl bg-surface border border-border p-4 space-y-3">
       <div class="flex items-center justify-between">
-        <div class="text-sm font-medium font-body">近 6 月趋势</div>
+        <div class="text-sm font-medium font-body">{{ dim === 'year' ? '月度' : '每日' }}趋势</div>
         <span class="text-[11px] text-muted font-body">{{ type === 'income' ? '收入' : '支出' }}</span>
       </div>
-      <div v-if="trend.length" class="relative">
+      <div v-if="seq.length" class="relative">
         <svg viewBox="0 0 300 120" class="w-full h-[140px]" preserveAspectRatio="none" aria-hidden="true">
           <line x1="0" y1="100" x2="300" y2="100" stroke="rgb(var(--c-border))" stroke-width="1" />
           <polyline
@@ -119,56 +124,66 @@
             r="2.6"
             :fill="type === 'income' ? 'rgb(var(--c-accent))' : 'rgb(var(--c-primary))'"
           >
-            <title>{{ p.month }} {{ money(p.value) }}</title>
+            <title>{{ p.label }} {{ money(p.value) }}</title>
           </circle>
         </svg>
-        <div class="flex justify-between mt-1 text-[10px] text-muted font-body">
-          <span v-for="p in trend" :key="p.month">{{ p.month.slice(5) }}月</span>
+        <div class="relative h-3 mt-1">
+          <span
+            v-for="(l, i) in xLabels"
+            :key="i"
+            class="absolute -translate-x-1/2 text-[9px] text-muted font-body whitespace-nowrap"
+            :style="{ left: l.pct + '%' }"
+          >{{ l.text }}</span>
         </div>
       </div>
       <div v-else class="text-xs text-muted font-body py-4 text-center">暂无趋势数据</div>
     </section>
 
-    <!-- 预算 -->
-    <section v-if="Number(stats.budget_total) > 0" class="rounded-2xl bg-surface border border-border p-4 space-y-2">
+    <!-- 预算（仅月） -->
+    <section v-if="dim === 'month' && Number(budgetStats.budget_total) > 0" class="rounded-2xl bg-surface border border-border p-4 space-y-2">
       <div class="flex items-center justify-between text-xs font-body">
         <span class="text-muted">本月预算</span>
-        <span :class="Number(stats.budget_left) < 0 ? 'text-error' : 'text-muted'">
-          已用 {{ money(stats.expense) }} / {{ money(stats.budget_total) }}
+        <span :class="Number(budgetStats.budget_left) < 0 ? 'text-error' : 'text-muted'">
+          已用 {{ money(budgetStats.expense) }} / {{ money(budgetStats.budget_total) }}
         </span>
       </div>
       <div class="h-2 rounded-full bg-surface-alt overflow-hidden">
         <div
           class="h-full rounded-full"
-          :class="Number(stats.budget_left) < 0 ? 'bg-error' : 'bg-primary'"
-          :style="{ width: Math.min(100, Math.max(0, Number(stats.budget_pct) || 0)) + '%' }"
+          :class="Number(budgetStats.budget_left) < 0 ? 'bg-error' : 'bg-primary'"
+          :style="{ width: Math.min(100, Math.max(0, Number(budgetStats.budget_pct) || 0)) + '%' }"
         ></div>
       </div>
-      <div class="text-[11px] font-body" :class="Number(stats.budget_left) < 0 ? 'text-error' : 'text-muted'">
-        {{ Number(stats.budget_left) < 0 ? '已超支 ' + money(-stats.budget_left) : '剩余 ' + money(stats.budget_left) }}
+      <div class="text-[11px] font-body" :class="Number(budgetStats.budget_left) < 0 ? 'text-error' : 'text-muted'">
+        {{ Number(budgetStats.budget_left) < 0 ? '已超支 ' + money(-budgetStats.budget_left) : '剩余 ' + money(budgetStats.budget_left) }}
       </div>
     </section>
   </div>
 </template>
 
 <script setup>
-import { computed, onActivated, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onDeactivated, onMounted, ref, watch } from 'vue'
 import api from '@/api'
 import FinanceHeader from '@/components/finance/FinanceHeader.vue'
 import { financeMonth, shiftFinanceMonth } from '@/store/finance'
-import { currentMonth, money, monthText } from '@/utils/finance'
+import { currentMonth, money, monthText, pad2 } from '@/utils/finance'
 
 defineOptions({ name: 'FinanceChartsView' })
 
-const currentMonthValue = currentMonth()
+const dims = [
+  { value: 'week', label: '周' },
+  { value: 'month', label: '月' },
+  { value: 'year', label: '年' },
+]
 
 const type = ref('expense')
-const stats = ref({})
-const trend = ref([])
-const incomeRows = ref([])
-const expenseCount = ref(0)
-const incomeCount = ref(0)
+const dim = ref('month')
+const anchor = ref(new Date())
+const report = ref({})
+const budgetStats = ref({})
 const error = ref('')
+
+const currentMonthValue = currentMonth()
 
 const segmentColors = [
   'rgb(var(--c-primary))',
@@ -179,24 +194,78 @@ const segmentColors = [
   'rgb(var(--c-success))',
 ]
 
-const total = computed(() => Number(type.value === 'income' ? stats.value.income : stats.value.expense) || 0)
-const count = computed(() => (type.value === 'income' ? incomeCount.value : expenseCount.value))
-const daysInMonth = computed(() => {
-  const [y, m] = financeMonth.value.split('-').map(Number)
-  if (!y || !m) return 30
-  return new Date(y, m, 0).getDate()
-})
-const dailyAvg = computed(() => {
-  const now = new Date()
-  const isCurrent = financeMonth.value === `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-  const days = isCurrent ? Math.max(1, now.getDate()) : daysInMonth.value
-  return Math.round(total.value / days)
+function parseDate(s) {
+  return new Date(s + 'T00:00:00')
+}
+function dateStr(d) {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+}
+function addDays(d, n) {
+  const x = new Date(d)
+  x.setDate(x.getDate() + n)
+  return x
+}
+function startOfWeek(d) {
+  const x = new Date(d)
+  x.setHours(0, 0, 0, 0)
+  const day = (x.getDay() + 6) % 7 // 周一为 0
+  x.setDate(x.getDate() - day)
+  return x
+}
+function isLeap(y) {
+  return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0
+}
+
+const range = computed(() => {
+  if (dim.value === 'month') {
+    const [y, m] = financeMonth.value.split('-').map(Number)
+    const end = new Date(y, m, 0)
+    return { start: `${financeMonth.value}-01`, end: dateStr(end), days: end.getDate() }
+  }
+  if (dim.value === 'week') {
+    const start = startOfWeek(anchor.value)
+    const end = addDays(start, 6)
+    return { start: dateStr(start), end: dateStr(end), days: 7 }
+  }
+  const y = anchor.value.getFullYear()
+  return { start: `${y}-01-01`, end: `${y}-12-31`, days: isLeap(y) ? 366 : 365 }
 })
 
-const catRows = computed(() => {
-  if (type.value === 'expense') return (stats.value.by_category || []).slice(0, 8)
-  return incomeRows.value.slice(0, 8)
+const rangeLabel = computed(() => {
+  if (dim.value === 'month') return monthText(financeMonth.value)
+  if (dim.value === 'year') return `${anchor.value.getFullYear()}年`
+  const s = parseDate(range.value.start)
+  const e = parseDate(range.value.end)
+  const sameYear = s.getFullYear() === e.getFullYear()
+  const left = `${sameYear ? '' : s.getFullYear() + '年'}${s.getMonth() + 1}月${s.getDate()}日`
+  const right = `${e.getMonth() + 1}月${e.getDate()}日`
+  return `${left} - ${right}`
 })
+
+const isCurrentPeriod = computed(() => {
+  if (dim.value === 'month') return financeMonth.value === currentMonthValue
+  if (dim.value === 'year') return anchor.value.getFullYear() === new Date().getFullYear()
+  return startOfWeek(new Date()).getTime() === startOfWeek(anchor.value).getTime()
+})
+
+const total = computed(() => Number(type.value === 'income'
+  ? (report.value.summary || {}).income
+  : (report.value.summary || {}).expense) || 0)
+const count = computed(() => Number((report.value.summary || {}).count) || 0)
+
+// 日均按「已经过去的天数」计算，避免月初把未来天数算进分母。
+const avgDays = computed(() => {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const start = parseDate(range.value.start)
+  const end = parseDate(range.value.end)
+  if (start > today) return 1
+  const effEnd = end < today ? end : today
+  return Math.max(1, Math.floor((effEnd - start) / 86400000) + 1)
+})
+const dailyAvg = computed(() => Math.round(total.value / avgDays.value))
+
+const catRows = computed(() => (report.value.by_category || []).slice(0, 8))
 
 const donut = computed(() => {
   const rows = catRows.value
@@ -215,115 +284,140 @@ const donut = computed(() => {
   })
 })
 
-const trendPoints = computed(() => {
-  if (!trend.value.length) return ''
+// 序列：年 → 12 个月；周/月 → 每日（服务端已零值填充）
+const seq = computed(() => {
   const key = type.value === 'income' ? 'income' : 'expense'
-  const values = trend.value.map((p) => Number(p[key] || 0))
-  const max = Math.max(1, ...values)
-  const n = values.length
-  return values
-    .map((v, i) => {
-      const x = n === 1 ? 150 : (i / (n - 1)) * 290 + 5
-      const y = 100 - (v / max) * 88
-      return `${x},${y}`
+  if (dim.value === 'year') {
+    const map = {}
+    for (const m of report.value.by_month || []) map[m.month] = m
+    const y = anchor.value.getFullYear()
+    return Array.from({ length: 12 }, (_, i) => {
+      const row = map[`${y}-${pad2(i + 1)}`] || {}
+      return Number(row[key] || 0)
     })
-    .join(' ')
+  }
+  const map = {}
+  for (const d of report.value.by_day || []) map[d.day] = d
+  const start = parseDate(range.value.start)
+  return Array.from({ length: range.value.days }, (_, i) => {
+    const row = map[dateStr(addDays(start, i))] || {}
+    return Number(row[key] || 0)
+  })
 })
 
-const trendDots = computed(() => {
-  if (!trend.value.length) return []
-  const key = type.value === 'income' ? 'income' : 'expense'
-  const values = trend.value.map((p) => Number(p[key] || 0))
-  const max = Math.max(1, ...values)
+const points = computed(() => {
+  const values = seq.value
   const n = values.length
-  return trend.value.map((p, i) => ({
-    month: p.month,
-    value: Number(p[key] || 0),
-    x: n === 1 ? 150 : (i / (n - 1)) * 290 + 5,
-    y: 100 - (Number(p[key] || 0) / max) * 88,
-  }))
+  const max = Math.max(1, ...values)
+  const start = dim.value === 'year' ? null : parseDate(range.value.start)
+  return values.map((v, i) => {
+    let label
+    if (dim.value === 'year') {
+      label = `${i + 1}月`
+    } else {
+      const d = addDays(start, i)
+      label = `${d.getMonth() + 1}/${d.getDate()}`
+    }
+    return {
+      x: n === 1 ? 150 : (i / (n - 1)) * 290 + 5,
+      y: 100 - (v / max) * 88,
+      value: v,
+      label,
+    }
+  })
+})
+const trendPoints = computed(() => points.value.map((p) => `${p.x},${p.y}`).join(' '))
+const trendDots = computed(() => (seq.value.length <= 12 ? points.value : []))
+
+const xLabels = computed(() => {
+  const len = seq.value.length
+  if (!len) return []
+  const pct = (i) => (len === 1 ? 50 : (i / (len - 1)) * 100)
+  if (dim.value === 'year') {
+    return seq.value.map((_, i) => ({ text: String(i + 1), pct: pct(i) }))
+  }
+  if (dim.value === 'week') {
+    const start = parseDate(range.value.start)
+    return seq.value.map((_, i) => {
+      const d = addDays(start, i)
+      return { text: `${d.getMonth() + 1}/${d.getDate()}`, pct: pct(i) }
+    })
+  }
+  const start = parseDate(range.value.start)
+  const picks = len <= 7
+    ? seq.value.map((_, i) => i)
+    : [0, Math.round((len - 1) * 0.25), Math.round((len - 1) * 0.5), Math.round((len - 1) * 0.75), len - 1]
+  const seen = new Set()
+  return picks
+    .filter((i) => (seen.has(i) ? false : seen.add(i)))
+    .map((i) => ({ text: String(addDays(start, i).getDate()), pct: pct(i) }))
 })
 
 function colorOf(i) {
   return segmentColors[i % segmentColors.length]
 }
 
-async function loadStats() {
-  try {
-    const res = await api.financeStats(financeMonth.value)
-    stats.value = res.data || {}
-  } catch (e) {
-    error.value = e.message || ''
-  }
-}
-
-async function loadTrend() {
-  try {
-    const res = await api.financeTrend(6)
-    trend.value = res.data || []
-  } catch (e) {
-    error.value = e.message || ''
-  }
-}
-
-// 收入分类占比：stats 仅返回支出分类，收入按月拉取流水后在前端聚合（每月收入笔数通常很少）。
-async function loadIncome() {
-  const all = []
-  let page = 1
-  try {
-    for (;;) {
-      const res = await api.financeTransactions({ month: financeMonth.value, type: 'income', page, page_size: 200 })
-      const d = res.data || {}
-      all.push(...(d.items || []))
-      if (all.length >= (d.total || 0) || page >= 5) break
-      page += 1
-    }
-    const map = new Map()
-    for (const tx of all) {
-      const key = tx.category_id || 0
-      const row = map.get(key) || { id: key, name: tx.category_name || '未分类', amount: 0 }
-      row.amount += Number(tx.amount || 0)
-      map.set(key, row)
-    }
-    const sum = all.reduce((n, tx) => n + Number(tx.amount || 0), 0) || 1
-    incomeRows.value = [...map.values()]
-      .map((r) => ({ ...r, percent: (r.amount / sum) * 100 }))
-      .sort((a, b) => b.amount - a.amount)
-  } catch (e) {
-    error.value = e.message || ''
-  }
-}
-
-async function loadCounts() {
-  try {
-    const [exp, inc] = await Promise.all([
-      api.financeTransactions({ month: financeMonth.value, type: 'expense', page: 1, page_size: 1 }),
-      api.financeTransactions({ month: financeMonth.value, type: 'income', page: 1, page_size: 1 }),
-    ])
-    expenseCount.value = (exp.data || {}).total || 0
-    incomeCount.value = (inc.data || {}).total || 0
-  } catch { /* 计数失败不影响图表主体 */ }
-}
-
 async function load() {
   error.value = ''
-  await Promise.all([loadStats(), loadTrend(), loadIncome(), loadCounts()])
+  try {
+    const filters = { start: range.value.start, end: range.value.end, types: [type.value] }
+    const tasks = [api.financeReportData(filters)]
+    if (dim.value === 'month') tasks.push(api.financeStats(financeMonth.value))
+    const [dataRes, statsRes] = await Promise.all(tasks)
+    report.value = dataRes.data || {}
+    if (statsRes) budgetStats.value = statsRes.data || {}
+  } catch (e) {
+    error.value = e.message || '加载失败'
+  }
 }
 
-function goCurrentMonth() {
-  financeMonth.value = currentMonthValue
+function movePeriod(dir) {
+  if (dim.value === 'month') {
+    shiftFinanceMonth(dir)
+    return
+  }
+  if (dim.value === 'week') {
+    anchor.value = addDays(anchor.value, dir * 7)
+  } else {
+    anchor.value = new Date(anchor.value.getFullYear() + dir, 0, 1)
+  }
+  load()
 }
 
-watch(financeMonth, load)
+function goCurrent() {
+  if (dim.value === 'month') {
+    financeMonth.value = currentMonthValue
+    return
+  }
+  if (dim.value === 'week') {
+    anchor.value = new Date()
+  } else {
+    anchor.value = new Date(new Date().getFullYear(), 0, 1)
+  }
+  load()
+}
 
+watch(type, load)
+watch(dim, (v) => {
+  if (v === 'week') anchor.value = new Date()
+  else if (v === 'year') anchor.value = new Date(Number(financeMonth.value.slice(0, 4)), 0, 1)
+  load()
+})
+watch(financeMonth, () => {
+  if (dim.value === 'month') load()
+})
+
+let savedScroll = 0
 let activatedOnce = false
 onMounted(load)
-onActivated(() => {
+onDeactivated(() => { savedScroll = window.scrollY })
+onActivated(async () => {
   if (!activatedOnce) {
     activatedOnce = true
     return
   }
-  load()
+  await load()
+  nextTick(() => requestAnimationFrame(() => window.scrollTo({ top: savedScroll })))
 })
 </script>
 
@@ -350,21 +444,4 @@ onActivated(() => {
   font-family: var(--font-body);
   transition: background-color .18s, color .18s;
 }
-
-.hc-chip {
-  height: 30px;
-  padding: 0 14px;
-  border-radius: 9999px;
-  border: 1px solid rgb(var(--c-border));
-  background: rgb(var(--c-surface-alt));
-  color: rgb(var(--c-muted));
-  font-size: 12px;
-  font-family: var(--font-body);
-}
-.hc-chip--on {
-  background: rgb(var(--c-primary));
-  border-color: rgb(var(--c-primary));
-  color: rgb(var(--c-on-primary));
-}
-.hc-chip:disabled { opacity: .4; }
 </style>
