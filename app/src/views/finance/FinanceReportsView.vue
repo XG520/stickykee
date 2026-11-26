@@ -20,13 +20,13 @@
         class="w-full h-11 px-3 rounded-xl bg-surface-alt border border-border text-sm text-on-surface outline-none focus:border-primary placeholder:text-faint"
       />
 
-      <div class="grid grid-cols-2 gap-3">
+      <div class="grid grid-cols-1 min-[360px]:grid-cols-2 gap-3">
         <label class="block text-xs text-muted font-body">
           开始日期
           <input
             v-model="form.start"
             type="date"
-            class="mt-1 w-full h-10 px-2.5 rounded-lg bg-surface-alt border border-border text-sm text-on-surface outline-none focus:border-primary"
+            class="mt-1 w-full min-w-0 h-11 px-2.5 rounded-lg bg-surface-alt border border-border text-sm text-on-surface outline-none focus:border-primary"
           />
         </label>
         <label class="block text-xs text-muted font-body">
@@ -34,7 +34,7 @@
           <input
             v-model="form.end"
             type="date"
-            class="mt-1 w-full h-10 px-2.5 rounded-lg bg-surface-alt border border-border text-sm text-on-surface outline-none focus:border-primary"
+            class="mt-1 w-full min-w-0 h-11 px-2.5 rounded-lg bg-surface-alt border border-border text-sm text-on-surface outline-none focus:border-primary"
           />
         </label>
       </div>
@@ -111,7 +111,11 @@
               {{ rangeText(detail.filters) }} · {{ typeLabel(detail.filters && detail.filters.types) }}
             </div>
           </div>
-          <button class="text-muted hover:text-on-surface" @click="closeDetail">
+          <button
+            class="w-11 h-11 -mr-2 -mt-1 rounded-full flex items-center justify-center text-muted hover:text-on-surface hover:bg-surface-alt transition-colors flex-shrink-0"
+            aria-label="关闭"
+            @click="closeDetail"
+          >
             <span class="material-symbols-outlined">close</span>
           </button>
         </div>
