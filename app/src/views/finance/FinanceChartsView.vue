@@ -158,6 +158,18 @@
         {{ Number(budgetStats.budget_left) < 0 ? '已超支 ' + money(-budgetStats.budget_left) : '剩余 ' + money(budgetStats.budget_left) }}
       </div>
     </section>
+
+    <!-- 已保存报表入口 -->
+    <router-link
+      to="/inventory/finance/reports"
+      class="flex items-center justify-between gap-2 rounded-2xl bg-surface border border-border p-4"
+    >
+      <span class="flex items-center gap-2 text-sm font-body">
+        <span class="material-symbols-outlined text-muted">bookmarks</span>
+        已保存报表
+      </span>
+      <span class="material-symbols-outlined text-muted">chevron_right</span>
+    </router-link>
   </div>
 </template>
 

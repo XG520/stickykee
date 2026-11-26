@@ -23,6 +23,7 @@ const routes = [
       { path: 'add', name: 'finance-add', component: () => import('@/views/finance/FinanceAddView.vue'), meta: { title: '记一笔' } },
       { path: 'plan', name: 'finance-plan', component: () => import('@/views/finance/FinancePlanView.vue'), meta: { title: '计划' } },
       { path: 'me', name: 'finance-me', component: () => import('@/views/finance/FinanceMeView.vue'), meta: { title: '我的' } },
+      { path: 'reports', name: 'finance-reports', component: () => import('@/views/finance/FinanceReportsView.vue'), meta: { title: '已保存报表' } },
     ],
   },
   { path: '/scenes', name: 'scenes', component: () => import('@/views/ScenesView.vue'), meta: { title: '场景' } },
@@ -34,9 +35,9 @@ const router = createRouter({
   routes,
   scrollBehavior(to, from, savedPosition) {
     if (savedPosition) return savedPosition
-    const inFinance = (r) => r.path.startsWith('/inventory/finance')
-    // 账本内部 tab 切换（记一笔全屏页除外）保持各自滚动位置，由页面 onActivated 恢复。
-    if (inFinance(to) && inFinance(from) && to.name !== 'finance-add' && from.name !== 'finance-add') {
+    // 账本内部 tab 切换保持各自滚动位置（仅 keep-alive 的明细/图表），由页面 onActivated 恢复。
+    const keepScroll = new Set(['finance-ledger', 'finance-charts'])
+    if (keepScroll.has(to.name) && keepScroll.has(from.name)) {
       return false
     }
     return { top: 0 }

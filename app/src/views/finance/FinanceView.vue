@@ -15,6 +15,6 @@ import { useRoute } from 'vue-router'
 import FinanceTabBar from '@/components/finance/FinanceTabBar.vue'
 
 const route = useRoute()
-// 记一笔为全屏页，不渲染账本底栏。
-const showTab = computed(() => route.name !== 'finance-add')
+// 记一笔为全屏页，已保存报表为独立子页，均不渲染账本底栏。
+const showTab = computed(() => !['finance-add', 'finance-reports'].includes(route.name))
 </script>

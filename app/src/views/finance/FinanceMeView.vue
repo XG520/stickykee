@@ -52,6 +52,11 @@
         <span class="flex-1 text-left">周期账单</span>
         <span class="material-symbols-outlined text-base text-muted">chevron_right</span>
       </button>
+      <button class="hc-row" @click="router.push('/inventory/finance/reports')">
+        <span class="material-symbols-outlined text-base text-muted">bookmarks</span>
+        <span class="flex-1 text-left">已保存报表</span>
+        <span class="material-symbols-outlined text-base text-muted">chevron_right</span>
+      </button>
       <button class="hc-row" @click="importOpen = true">
         <span class="material-symbols-outlined text-base text-muted">upload_file</span>
         <span class="flex-1 text-left">导入账单</span>
