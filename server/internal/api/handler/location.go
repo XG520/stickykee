@@ -4,11 +4,56 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"strconv"
+	"sync"
 	"time"
 
 	"stickykee/server/internal/ha"
 	"stickykee/server/internal/ha/client"
 )
+
+// 位置跳变诊断：记录每台设备上一次成功上报的坐标。
+// 位移明显不合理（≥1km 且 5 分钟内）时用 Warn 打日志（默认级别可见），
+// 其余推送用 Debug 记录；用于定位「几分钟内在家/离家横跳」这类问题。
+var (
+	locMu    sync.Mutex
+	lastLocs = make(map[string]locSample)
+)
+
+type locSample struct {
+	lat, lng float64
+	at       time.Time
+}
+
+const (
+	locJumpMinMeters = 1000.0
+	locJumpWindow    = 5 * time.Minute
+)
+
+func logLocationPush(instanceID int64, devID string, p locationPayload) {
+	key := strconv.FormatInt(instanceID, 10) + "/" + devID
+	now := time.Now()
+	locMu.Lock()
+	prev, ok := lastLocs[key]
+	lastLocs[key] = locSample{lat: p.Lat, lng: p.Lng, at: now}
+	locMu.Unlock()
+	if !ok {
+		slog.Debug("location push", "instance", instanceID, "device", devID,
+			"lat", p.Lat, "lng", p.Lng, "acc", p.Accuracy)
+		return
+	}
+	moved := haversineMeters(prev.lat, prev.lng, p.Lat, p.Lng)
+	dt := now.Sub(prev.at)
+	if moved >= locJumpMinMeters && dt <= locJumpWindow {
+		slog.Warn("location jump: implausible displacement",
+			"instance", instanceID, "device", devID,
+			"moved_m", int(moved), "elapsed_s", int(dt.Seconds()),
+			"acc", int(p.Accuracy), "lat", p.Lat, "lng", p.Lng)
+		return
+	}
+	slog.Debug("location push", "instance", instanceID, "device", devID,
+		"moved_m", int(moved), "acc", int(p.Accuracy))
+}
 
 // Location 处理浏览器定位同步到 Home Assistant。
 //
@@ -101,6 +146,8 @@ func (h *Location) Update(w http.ResponseWriter, r *http.Request) {
 		WriteErr(w, 502, "ha_unreachable", "HA 连接失败: "+err.Error())
 		return
 	}
+
+	logLocationPush(id, dev.DevID, p)
 
 	active, _ := h.manager.ActiveID(ctx)
 	WriteMeta(w, 200, map[string]any{

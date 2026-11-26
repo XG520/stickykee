@@ -134,11 +134,14 @@ public final class NativeSensorReporter {
     // 注意：Android 的 NETWORK_PROVIDER 不是「公网 IP 定位」，而是系统定位服务基于
     // Wi-Fi 接入点/基站算出的点；按 Wi-Fi 级精度（≤100m）才采信，基站粗点直接丢弃。
     private static final float NET_ACC_MAX_M = 100f;                   // 网络定位精度差于 100m 不采信
-    // 网络点可信性：最近 10 分钟内有过卫星/融合定位时，网络点偏离该锚点超过 300m 视为错误定位。
+    // 卫星/融合点质量闸门：精度差于此视为不可信。系统融合定位在部分机型会给出公里级
+    // 错点却仍标一个较小的 accuracy，若直接采信会把「离家」瞬间翻成「在家」。
+    private static final float GPS_ACC_MAX_M = 150f;
+    // 网络点可信性：最近 10 分钟内有过卫星/融合定位时，网络点偏离该锚点超过 200m 视为错误定位。
     // 常见成因：Wi-Fi/基站库把某个 AP 映射到几公里外的地址，但仍回报较好精度，HA 只按坐标
     // 算 zone（不看精度），于是一次错误网络点即可把「离家」翻成「在家」，下次 GPS 心跳再翻回来。
     private static final long GPS_ANCHOR_KEEP_MS = 10 * 60 * 1000L;
-    private static final float NET_JUMP_MAX_M = 300f;
+    private static final float NET_JUMP_MAX_M = 200f;
 
     // ---- 公网 IP：多源探测 + 5 分钟缓存（避免频繁外网请求）----
     private static final int IP_CACHE_MS = 5 * 60 * 1000;
@@ -203,6 +206,12 @@ public final class NativeSensorReporter {
     private static volatile long latestNetFixAt = 0L;
     private static volatile Location lastGpsFix;   // 最近一次卫星/融合定位（网络点可信性锚点）
     private static volatile long lastGpsFixAt = 0L;
+    // 锚点持久化（进程被 ROM 回收后重建仍能继续校验网络点；节流 60s 写一次）
+    private static final String KEY_ANCHOR_LAT = "gps_anchor_lat";
+    private static final String KEY_ANCHOR_LNG = "gps_anchor_lng";
+    private static final String KEY_ANCHOR_AT = "gps_anchor_at";
+    private static final long ANCHOR_PERSIST_INTERVAL_MS = 60 * 1000L;
+    private static volatile long anchorPersistAt = 0L;
     private static volatile boolean locCarMode = false; // 当前监听的定位档位（汽车高频/常规）
 
     /** 手动上报结果回调（在后台线程触发，调用方负责切回 UI 线程派发事件）。 */
@@ -287,6 +296,7 @@ public final class NativeSensorReporter {
 
     private static synchronized void startLocationTracking(Context ctx, SharedPreferences p) {
         if (locTrackingOn) return;
+        restoreAnchor(p); // 进程重建后恢复网络点校验锚点
         LocationManager lm = (LocationManager) ctx.getSystemService(Context.LOCATION_SERVICE);
         if (lm == null) return;
         Set<String> keys = parseKeys(p.getString(KEY_KEYS, ""));
@@ -315,14 +325,16 @@ public final class NativeSensorReporter {
                     // 新鲜度检查全部失效——出门后冷启动时旧的家坐标会被当实时点推给
                     // device_tracker。只接受 fix 自身时间戳 30s 内的新鲜点。
                     if (!isFreshFix(loc, TRACK_FRESH_MS)) return;
+                    if (!gpsQualityOk(loc)) return; // 融合定位偶发公里级错点，精度不可信时不采信
                     Location prev = latestFix;
                     if (prev == null || loc.getTime() >= prev.getTime()) {
                         latestFix = loc;
                         latestFixAt = System.currentTimeMillis();
                     }
-                    // 卫星/融合点作为网络点的可信性锚点（判断网络点是否跳飞）
+                    // 卫星/融合点作为网络点的可信性锚点（判断网络点是否跳飞），并节流持久化
                     lastGpsFix = loc;
                     lastGpsFixAt = System.currentTimeMillis();
+                    persistAnchor(p, loc);
                     return;
                 }
                 if (!isFreshFix(loc, TRACK_CACHE_MAX_AGE_MS)) return;
@@ -1103,18 +1115,18 @@ public final class NativeSensorReporter {
 
         // 2) 系统最后已知卫星 / 融合点
         Location gps = lastKnownFresh(lm, LocationManager.GPS_PROVIDER, TRACK_CACHE_MAX_AGE_MS, 0f);
-        if (gps != null) return gps;
+        if (gps != null && gpsQualityOk(gps)) return gps;
         Location fusedKnown = lastKnownFresh(lm, FUSED_PROVIDER, TRACK_CACHE_MAX_AGE_MS, 0f);
-        if (fusedKnown != null) return fusedKnown;
+        if (fusedKnown != null && gpsQualityOk(fusedKnown)) return fusedKnown;
 
         // 3) 卫星单次冷取
         Location fresh = requestSingleFix(lm, LocationManager.GPS_PROVIDER,
                 8000, TRACK_FRESH_MS, 0f);
-        if (fresh != null) return fresh;
+        if (fresh != null && gpsQualityOk(fresh)) return fresh;
         if (supportsFused(lm)) {
             Location fused = requestSingleFix(lm, FUSED_PROVIDER,
                     6000, TRACK_FRESH_MS, 0f);
-            if (fused != null) return fused;
+            if (fused != null && gpsQualityOk(fused)) return fused;
         }
 
         // 4) 网络定位兜底（室内唯一可用的即时通道；Wi-Fi 级精度才采信）
@@ -1130,6 +1142,46 @@ public final class NativeSensorReporter {
         Location netSingle = requestSingleFix(lm, LocationManager.NETWORK_PROVIDER,
                 5000, TRACK_CACHE_MAX_AGE_MS, NET_ACC_MAX_M);
         return (netSingle != null && networkTrusted(netSingle)) ? netSingle : null;
+    }
+
+    /**
+     * 卫星/融合点质量闸门：精度差于 {@link #GPS_ACC_MAX_M} 视为不可信。
+     * 网络点仍走 {@link #accuracyOk}（100m）+ {@link #networkTrusted} 两道校验。
+     */
+    private static boolean gpsQualityOk(Location loc) {
+        if (loc == null) return false;
+        return !loc.hasAccuracy() || loc.getAccuracy() <= GPS_ACC_MAX_M;
+    }
+
+    /** 节流持久化网络点校验锚点（进程被回收后仍可继续校验）。 */
+    private static void persistAnchor(SharedPreferences p, Location loc) {
+        long now = System.currentTimeMillis();
+        if (now - anchorPersistAt < ANCHOR_PERSIST_INTERVAL_MS) return;
+        anchorPersistAt = now;
+        try {
+            p.edit().putFloat(KEY_ANCHOR_LAT, (float) loc.getLatitude())
+                    .putFloat(KEY_ANCHOR_LNG, (float) loc.getLongitude())
+                    .putLong(KEY_ANCHOR_AT, now).apply();
+        } catch (Exception ignored) {
+        }
+    }
+
+    /** 进程重建后从 prefs 恢复锚点（只在有效期内、且内存中尚无锚点时）。 */
+    private static void restoreAnchor(SharedPreferences p) {
+        if (lastGpsFix != null) return;
+        long at;
+        try {
+            at = p.getLong(KEY_ANCHOR_AT, 0L);
+        } catch (Exception e) {
+            return;
+        }
+        if (at <= 0 || System.currentTimeMillis() - at > GPS_ANCHOR_KEEP_MS) return;
+        Location l = new Location("anchor");
+        l.setLatitude(p.getFloat(KEY_ANCHOR_LAT, 0f));
+        l.setLongitude(p.getFloat(KEY_ANCHOR_LNG, 0f));
+        l.setTime(at);
+        lastGpsFix = l;
+        lastGpsFixAt = at;
     }
 
     /**
