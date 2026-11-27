@@ -169,13 +169,26 @@ func (h *Auth) Me(w http.ResponseWriter, r *http.Request) {
 }
 
 // issueSession 生成 token、写入会话并返回登录态。
+// 登录响应与 /auth/me 保持一致：一并返回记账权限，否则前端 setAuth 会把权限置为 false，
+// 登录后记账入口要等下一次 /me（刷新或 WS reload）才出现，表现为「页面出来了但记账区很久才显示」。
 func (h *Auth) issueSession(w http.ResponseWriter, ctx context.Context, username string, isAdmin bool) {
 	token := newToken()
 	if err := h.repo.CreateSession(ctx, token, username, time.Now().Add(sessionTTL)); err != nil {
 		WriteErr(w, 500, "internal", "session create failed")
 		return
 	}
-	WriteJSON(w, 200, map[string]any{"token": token, "username": username, "is_admin": isAdmin})
+	// 登录时 ctx 尚无身份，不能直接用 ReadFinancePerm 的管理员兜底：按 isAdmin 显式处理。
+	perm := FinancePerm{View: isAdmin, Operate: isAdmin}
+	if !isAdmin {
+		perm = ReadStoredFinancePerm(ctx, h.userPrefs, username)
+	}
+	WriteJSON(w, 200, map[string]any{
+		"token":           token,
+		"username":        username,
+		"is_admin":        isAdmin,
+		"finance_view":    perm.Allows(false),
+		"finance_operate": perm.Operate,
+	})
 }
 
 type credentials struct {
