@@ -41,13 +41,12 @@ type Birthdays struct {
 	repo      *store.InstanceRepo
 	userPrefs *store.UserPrefs
 	users     *store.UserRepo
+	// dev 服务器虚拟设备（与记账/库存/计划共用同一条 HA 注册，实体归同一设备）。
+	dev *ServerDevice
 
 	// lastPush 记录每个 (instance_id, username) 上次推送的 (days,next_date,at)，
 	// 倒计时不变化时跳过推送，避免每小时重复写 HA 状态刷 last_updated。
 	lastPush sync.Map
-
-	// lastName 记录每个实例上次同步到 HA 的设备名（变化时才发 update_registration）。
-	lastName sync.Map
 
 	// reqSync 用户触发同步的限频状态（username → *bdSyncReq）。
 	reqSync sync.Map
@@ -76,8 +75,8 @@ type bdLastPush struct {
 const bdStaleAfter = 6 * time.Hour
 
 // NewBirthdays 构造 handler。
-func NewBirthdays(manager *ha.Manager, repo *store.InstanceRepo, userPrefs *store.UserPrefs, users *store.UserRepo) *Birthdays {
-	return &Birthdays{manager: manager, repo: repo, userPrefs: userPrefs, users: users}
+func NewBirthdays(manager *ha.Manager, repo *store.InstanceRepo, userPrefs *store.UserPrefs, users *store.UserRepo, dev *ServerDevice) *Birthdays {
+	return &Birthdays{manager: manager, repo: repo, userPrefs: userPrefs, users: users, dev: dev}
 }
 
 // BirthdayItem 生日条目（与前端 birthday.js 的数据结构一致）。
@@ -229,115 +228,14 @@ func birthdaySnapshot(items []BirthdayItem, now time.Time) (int, map[string]any,
 	}, true
 }
 
-// ---- HA 实例级注册（每 HA 实例一条，存于实例 prefs；所有账号的生日共用） ----
+// ---- HA 实例级注册（每 HA 实例一条，所有账号共用） ----
 // 注册与推送统一使用**管理员 token**（取第一个配置了 ha_token 的管理员账号）：
 // server 侧虚拟设备只需要一份 HA 管理员 token 即可注册并推送所有用户的实体，
 // 设备归属与权限保持一致，与目标用户是否配置个人 token 无关。
-// 每个 HA 实例**只注册一次**（键按 instance_id），之后缓存 webhook，
-// 所有账号复用同一个 webhook_id 登记各自的 birthday_<username> 传感器。
+// 虚拟设备与 webhook 由 ServerDevice 统一管理：生日 / 记账 / 库存 / 计划共用
+// 同一条 mobile_app 注册，HA 中归到同一台设备下。
 
-const bdRegKeyPrefix = "server_birthday_reg_" // + <instance_id>
-
-type bdReg struct {
-	WebhookID  string `json:"webhook_id"`
-	Registered bool   `json:"registered"`
-}
-
-func bdRegKeyForInstance(instanceID int64) string {
-	return fmt.Sprintf("%s%d", bdRegKeyPrefix, instanceID)
-}
-
-// 注册与 webhook 缓存存在 user_prefs，但 per-instance 注册不是 per-user：
-// 选一个固定用户名（后端虚拟 user）来存，避免不同用户各自写一份。
-const bdRegBackendUser = "__server__"
-
-func (h *Birthdays) readReg(ctx context.Context, instanceID int64) bdReg {
-	var r bdReg
-	if v := h.userPrefs.Get(ctx, bdRegBackendUser, bdRegKeyForInstance(instanceID)); v != "" {
-		_ = json.Unmarshal([]byte(v), &r)
-	}
-	return r
-}
-
-func (h *Birthdays) saveReg(ctx context.Context, instanceID int64, r bdReg) {
-	b, _ := json.Marshal(r)
-	_ = h.userPrefs.Set(ctx, bdRegBackendUser, bdRegKeyForInstance(instanceID), string(b))
-}
-
-// serverDeviceNameKey 全局 pref：HA 侧虚拟设备显示名（管理员可自定义；空则回退系统英文名 + " Server"）。
-const serverDeviceNameKey = "server_device_name"
-
-// deviceName 解析 HA 虚拟设备名：server_device_name 自定义值优先，空则用 site_name_en + " Server"。
-func (h *Birthdays) deviceName(ctx context.Context) string {
-	if v, _ := h.repo.GetPref(ctx, serverDeviceNameKey); strings.TrimSpace(v) != "" {
-		return strings.TrimSpace(v)
-	}
-	devName, _ := h.repo.GetPref(ctx, "site_name_en")
-	if devName == "" {
-		devName = "Sticky Kee"
-	}
-	return strings.TrimSpace(devName) + " Server"
-}
-
-// ensureReg 为某 HA 实例确保后端虚拟设备与生日传感器命名空间已注册。
-// 使用传入用户 token（需要有 HA 管理员权限）；webhook 失效（HA 侧删除设备）时自动重注册。
-// HA 的 mobile_app 注册对同一 device_id 幂等（返回同一 webhook_id），删库重部署不会重复建设备。
-// device_name 取自 server_device_name（可自定义）或全局 site_name_en（防多台测试服务器同名冲突）。
-func (h *Birthdays) ensureReg(ctx context.Context, instanceID int64, rest *client.Rest) (*bdReg, error) {
-	reg := h.readReg(ctx, instanceID)
-	want := h.deviceName(ctx)
-	if reg.WebhookID != "" && probeWebhookAlive(ctx, rest, reg.WebhookID) {
-		h.syncDeviceName(ctx, rest, &reg, instanceID, want)
-		return &reg, nil
-	}
-	payload := map[string]any{
-		"app_id":              "stickykee",
-		"app_name":            "stickykee",
-		"app_version":         Version,
-		"device_id":           fmt.Sprintf("stickykee_server_%d", instanceID),
-		"device_name":         want,
-		"manufacturer":        "stickykee",
-		"model":               "server",
-		"os_name":             "stickykee",
-		"os_version":          Version,
-		"supports_encryption": false,
-	}
-	var resp struct {
-		WebhookID string `json:"webhook_id"`
-	}
-	if err := rest.PostJSON(ctx, "/api/mobile_app/registrations", payload, &resp); err != nil {
-		return nil, err
-	}
-	if resp.WebhookID == "" {
-		return nil, errors.New("mobile_app registration returned no webhook_id")
-	}
-	reg = bdReg{WebhookID: resp.WebhookID, Registered: true}
-	h.saveReg(ctx, instanceID, reg)
-	h.lastName.Store(instanceID, want)
-	// webhook 新建/重建（HA 侧删过设备）：清本实例推送缓存，强制全量重推状态——
-	// 否则「倒计时未变跳过」会让重建后的实体永远停在 unknown。
-	h.clearInstancePush(instanceID)
-	slog.Info("birthday server device registered", "instance", instanceID, "webhook_id", resp.WebhookID)
-	return &reg, nil
-}
-
-// syncDeviceName 设备名与期望值不一致时，经 update_registration 改名（已注册设备支持自定义名）。
-func (h *Birthdays) syncDeviceName(ctx context.Context, rest *client.Rest, reg *bdReg, instanceID int64, want string) {
-	if prev, ok := h.lastName.Load(instanceID); ok && prev == want {
-		return
-	}
-	if err := rest.PostJSON(ctx, "/api/webhook/"+reg.WebhookID, map[string]any{
-		"type": "update_registration",
-		"data": map[string]any{"device_name": want},
-	}, nil); err != nil {
-		slog.Warn("birthday sync: rename device failed", "instance", instanceID, "err", err.Error())
-		return
-	}
-	h.lastName.Store(instanceID, want)
-	slog.Info("birthday server device renamed", "instance", instanceID, "name", want)
-}
-
-// clearInstancePush 清除某实例全部账号的推送缓存（webhook 重建后强制重推）。
+// clearInstancePush 清除某实例全部账号的推送缓存（设备重建后强制重推）。
 func (h *Birthdays) clearInstancePush(instanceID int64) {
 	prefix := fmt.Sprintf("%d:", instanceID)
 	h.lastPush.Range(func(k, _ any) bool {
@@ -462,10 +360,15 @@ func (h *Birthdays) syncOne(ctx context.Context, instanceID int64, username stri
 	if rest == nil {
 		return // 无可用管理员 token → 跳过（与目标用户是否配 token 无关）
 	}
-	reg, err := h.ensureReg(ctx, instanceID, rest)
+	webhookID, fresh, err := h.dev.Ensure(ctx, instanceID, rest)
 	if err != nil {
 		slog.Warn("birthday sync: register failed", "instance", instanceID, "user", username, "err", err.Error())
 		return
+	}
+	// 设备重建（HA 侧删过设备）：清本实例推送缓存，强制全量重推状态——
+	// 否则「倒计时未变跳过」会让重建后的实体永远停在 unknown。
+	if fresh {
+		h.clearInstancePush(instanceID)
 	}
 	// 先登记 sensor 实体（幂等；已存在 HA 会按更新处理，带 null 清理旧元数据）。
 	// 每个账号两个实体：倒计时（天数）+ 日期（下次生日公历日期），名称带用户名前缀以便区分。
@@ -486,7 +389,7 @@ func (h *Birthdays) syncOne(ctx context.Context, instanceID int64, username stri
 		},
 	}
 	for _, sensor := range sensors {
-		if err := rest.PostJSON(ctx, "/api/webhook/"+reg.WebhookID,
+		if err := rest.PostJSON(ctx, "/api/webhook/"+webhookID,
 			map[string]any{"type": "register_sensor", "data": sensor}, nil); err != nil {
 			if !strings.Contains(err.Error(), "already_registered") {
 				slog.Warn("birthday sync: register sensor failed", "instance", instanceID, "user", username, "err", err.Error())
@@ -543,7 +446,7 @@ func (h *Birthdays) syncOne(ctx context.Context, instanceID int64, username stri
 		}
 	}
 	payload := map[string]any{"type": "update_sensor_states", "data": []map[string]any{entry, dateEntry}}
-	if err := rest.PostJSON(ctx, "/api/webhook/"+reg.WebhookID, payload, nil); err != nil {
+	if err := rest.PostJSON(ctx, "/api/webhook/"+webhookID, payload, nil); err != nil {
 		slog.Warn("birthday sync: push failed", "instance", instanceID, "user", username, "err", err.Error())
 	}
 }

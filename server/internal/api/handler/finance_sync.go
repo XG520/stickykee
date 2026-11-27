@@ -2,8 +2,6 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -20,66 +18,31 @@ import (
 //   - 记账：支出、收入、结余、预算剩余、预算使用率、总资产；
 //   - 计划：启用中的周期账单数量、月度总额、下一次执行日期。
 //
-// 复用 stickykee_server_<instance_id> 虚拟设备，但使用独立注册缓存命名空间 fin_reg，
-// 避免覆盖生日（bdReg）与库存（inventory_reg）的 sensor 列表。
+// 复用服务器虚拟设备（ServerDevice）：与生日、库存、计划共用同一条 HA 注册，
+// 实体全部归到同一台设备下。
 type FinanceSync struct {
 	manager   *ha.Manager
-	inst      *store.InstanceRepo
 	users     *store.UserRepo
 	userPrefs *store.UserPrefs
 	fin       *store.FinanceRepo
+	dev       *ServerDevice
 
 	mu       sync.Mutex
 	lastSync map[int64]time.Time
 }
 
-const (
-	financeRegBackendUser = "__server__"
-	financeSyncMinGap     = 5 * time.Second
-)
-
-type financeReg struct {
-	WebhookID string `json:"webhook_id"`
-}
+const financeSyncMinGap = 5 * time.Second
 
 // NewFinanceSync 构造同步器。
-func NewFinanceSync(manager *ha.Manager, inst *store.InstanceRepo, users *store.UserRepo, userPrefs *store.UserPrefs, fin *store.FinanceRepo) *FinanceSync {
+func NewFinanceSync(manager *ha.Manager, users *store.UserRepo, userPrefs *store.UserPrefs, fin *store.FinanceRepo, dev *ServerDevice) *FinanceSync {
 	return &FinanceSync{
 		manager:   manager,
-		inst:      inst,
 		users:     users,
 		userPrefs: userPrefs,
 		fin:       fin,
+		dev:       dev,
 		lastSync:  map[int64]time.Time{},
 	}
-}
-
-func financeRegKey(instanceID int64) string {
-	return fmt.Sprintf("fin_reg_%d", instanceID)
-}
-
-func (h *FinanceSync) readReg(ctx context.Context, instanceID int64) financeReg {
-	var r financeReg
-	if v := h.userPrefs.Get(ctx, financeRegBackendUser, financeRegKey(instanceID)); v != "" {
-		_ = json.Unmarshal([]byte(v), &r)
-	}
-	return r
-}
-
-func (h *FinanceSync) saveReg(ctx context.Context, instanceID int64, r financeReg) {
-	b, _ := json.Marshal(r)
-	_ = h.userPrefs.Set(ctx, financeRegBackendUser, financeRegKey(instanceID), string(b))
-}
-
-func (h *FinanceSync) deviceName(ctx context.Context) string {
-	if v, _ := h.inst.GetPref(ctx, "server_device_name"); strings.TrimSpace(v) != "" {
-		return strings.TrimSpace(v)
-	}
-	name, _ := h.inst.GetPref(ctx, "site_name_en")
-	if name == "" {
-		name = "Sticky Kee"
-	}
-	return strings.TrimSpace(name) + " Server"
 }
 
 // adminRest 取一个配了 token 的管理员连接。
@@ -99,42 +62,6 @@ func (h *FinanceSync) adminRest(ctx context.Context, instanceID int64) *client.R
 	return nil
 }
 
-// ensureReg 确保虚拟设备已注册（HA 对同一 device_id 幂等）。
-// 与生日同步一致：缓存的 webhook 可能因 HA 删除设备/恢复备份而失效，
-// 若直接复用，后续 register_sensor / update_sensor_states 会全部失败，
-// 表现为 HA 里始终看不到账本实体。因此先探活，失效则重新注册。
-func (h *FinanceSync) ensureReg(ctx context.Context, instanceID int64, rest *client.Rest) (*financeReg, error) {
-	reg := h.readReg(ctx, instanceID)
-	if reg.WebhookID != "" && probeWebhookAlive(ctx, rest, reg.WebhookID) {
-		return &reg, nil
-	}
-	payload := map[string]any{
-		"app_id":              "stickykee",
-		"app_name":            "stickykee",
-		"app_version":         Version,
-		"device_id":           fmt.Sprintf("stickykee_server_%d", instanceID),
-		"device_name":         h.deviceName(ctx),
-		"manufacturer":        "stickykee",
-		"model":               "server",
-		"os_name":             "stickykee",
-		"os_version":          Version,
-		"supports_encryption": false,
-	}
-	var resp struct {
-		WebhookID string `json:"webhook_id"`
-	}
-	if err := rest.PostJSON(ctx, "/api/mobile_app/registrations", payload, &resp); err != nil {
-		return nil, err
-	}
-	if resp.WebhookID == "" {
-		return nil, errors.New("mobile_app registration returned no webhook_id")
-	}
-	reg = financeReg{WebhookID: resp.WebhookID}
-	h.saveReg(ctx, instanceID, reg)
-	slog.Info("finance server device registered", "instance", instanceID, "webhook_id", resp.WebhookID)
-	return &reg, nil
-}
-
 // yuan 把分转换为元（保留两位小数），避免 3280 分发成 3280 元。
 func yuan(cents int64) float64 {
 	return math.Round(float64(cents)) / 100
@@ -146,7 +73,7 @@ func (h *FinanceSync) SyncInstance(ctx context.Context, instanceID int64) {
 	if rest == nil {
 		return
 	}
-	reg, err := h.ensureReg(ctx, instanceID, rest)
+	webhookID, _, err := h.dev.Ensure(ctx, instanceID, rest)
 	if err != nil {
 		slog.Warn("finance sync: register failed", "instance", instanceID, "err", err.Error())
 		return
@@ -282,7 +209,7 @@ func (h *FinanceSync) SyncInstance(ctx context.Context, instanceID int64) {
 		},
 	}
 	for _, sensor := range sensors {
-		if err := rest.PostJSON(ctx, "/api/webhook/"+reg.WebhookID,
+		if err := rest.PostJSON(ctx, "/api/webhook/"+webhookID,
 			map[string]any{"type": "register_sensor", "data": sensor}, nil); err != nil {
 			if !strings.Contains(err.Error(), "already_registered") {
 				slog.Warn("finance sync: register sensor failed", "instance", instanceID, "err", err.Error())
@@ -374,7 +301,7 @@ func (h *FinanceSync) SyncInstance(ctx context.Context, instanceID int64) {
 			},
 		},
 	}
-	if err := rest.PostJSON(ctx, "/api/webhook/"+reg.WebhookID, payload, nil); err != nil {
+	if err := rest.PostJSON(ctx, "/api/webhook/"+webhookID, payload, nil); err != nil {
 		slog.Warn("finance sync: push failed", "instance", instanceID, "err", err.Error())
 	}
 	// 预算超支：按月+分类去重推送持久通知（同一 notification_id 覆盖更新，不重复堆叠）。

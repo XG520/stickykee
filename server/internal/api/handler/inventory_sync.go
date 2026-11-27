@@ -2,8 +2,6 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -19,67 +17,33 @@ import (
 
 // InventorySync 把库存与购物清单统计发布为 HA 传感器实体：
 // 库存总数、库存价值、临期件数、需补货件数、待购清单项数。
-// 复用生日功能的 mobile_app 虚拟设备（device_id = stickykee_server_<instance_id>），
-// 但使用独立的注册缓存命名空间，避免覆盖生日传感器的 webhook 记录。
+// 复用服务器虚拟设备（ServerDevice）：与生日、记账、计划共用同一条 HA 注册，
+// 实体全部归到同一台设备下。
 type InventorySync struct {
 	manager   *ha.Manager
 	inst      *store.InstanceRepo
 	users     *store.UserRepo
 	userPrefs *store.UserPrefs
 	inv       *store.InventoryRepo
+	dev       *ServerDevice
 
 	mu       sync.Mutex
 	lastSync map[int64]time.Time
 }
 
-const (
-	inventoryRegBackendUser = "__server__"
-	inventorySyncMinGap     = 5 * time.Second
-)
-
-type inventoryReg struct {
-	WebhookID string `json:"webhook_id"`
-}
+const inventorySyncMinGap = 5 * time.Second
 
 // NewInventorySync 构造同步器。
-func NewInventorySync(manager *ha.Manager, inst *store.InstanceRepo, users *store.UserRepo, userPrefs *store.UserPrefs, inv *store.InventoryRepo) *InventorySync {
+func NewInventorySync(manager *ha.Manager, inst *store.InstanceRepo, users *store.UserRepo, userPrefs *store.UserPrefs, inv *store.InventoryRepo, dev *ServerDevice) *InventorySync {
 	return &InventorySync{
 		manager:   manager,
 		inst:      inst,
 		users:     users,
 		userPrefs: userPrefs,
 		inv:       inv,
+		dev:       dev,
 		lastSync:  map[int64]time.Time{},
 	}
-}
-
-func inventoryRegKey(instanceID int64) string {
-	return fmt.Sprintf("inventory_reg_%d", instanceID)
-}
-
-func (h *InventorySync) readReg(ctx context.Context, instanceID int64) inventoryReg {
-	var r inventoryReg
-	if v := h.userPrefs.Get(ctx, inventoryRegBackendUser, inventoryRegKey(instanceID)); v != "" {
-		_ = json.Unmarshal([]byte(v), &r)
-	}
-	return r
-}
-
-func (h *InventorySync) saveReg(ctx context.Context, instanceID int64, r inventoryReg) {
-	b, _ := json.Marshal(r)
-	_ = h.userPrefs.Set(ctx, inventoryRegBackendUser, inventoryRegKey(instanceID), string(b))
-}
-
-// deviceName 与生日功能保持同一虚拟设备名，避免在 HA 里出现两个同名设备。
-func (h *InventorySync) deviceName(ctx context.Context) string {
-	if v, _ := h.inst.GetPref(ctx, "server_device_name"); strings.TrimSpace(v) != "" {
-		return strings.TrimSpace(v)
-	}
-	name, _ := h.inst.GetPref(ctx, "site_name_en")
-	if name == "" {
-		name = "Sticky Kee"
-	}
-	return strings.TrimSpace(name) + " Server"
 }
 
 func (h *InventorySync) expiringDays(ctx context.Context) int {
@@ -108,48 +72,13 @@ func (h *InventorySync) adminRest(ctx context.Context, instanceID int64) *client
 	return nil
 }
 
-// ensureReg 确保虚拟设备已注册（幂等；HA 对同一 device_id 返回同一 webhook_id）。
-// 缓存 webhook 失效（HA 删除设备/恢复备份）时自动重新注册；否则后续
-// register_sensor / update_sensor_states 会持续失败，HA 里看不到库存实体。
-func (h *InventorySync) ensureReg(ctx context.Context, instanceID int64, rest *client.Rest) (*inventoryReg, error) {
-	reg := h.readReg(ctx, instanceID)
-	if reg.WebhookID != "" && probeWebhookAlive(ctx, rest, reg.WebhookID) {
-		return &reg, nil
-	}
-	payload := map[string]any{
-		"app_id":              "stickykee",
-		"app_name":            "stickykee",
-		"app_version":         Version,
-		"device_id":           fmt.Sprintf("stickykee_server_%d", instanceID),
-		"device_name":         h.deviceName(ctx),
-		"manufacturer":        "stickykee",
-		"model":               "server",
-		"os_name":             "stickykee",
-		"os_version":          Version,
-		"supports_encryption": false,
-	}
-	var resp struct {
-		WebhookID string `json:"webhook_id"`
-	}
-	if err := rest.PostJSON(ctx, "/api/mobile_app/registrations", payload, &resp); err != nil {
-		return nil, err
-	}
-	if resp.WebhookID == "" {
-		return nil, errors.New("mobile_app registration returned no webhook_id")
-	}
-	reg = inventoryReg{WebhookID: resp.WebhookID}
-	h.saveReg(ctx, instanceID, reg)
-	slog.Info("inventory server device registered", "instance", instanceID, "webhook_id", resp.WebhookID)
-	return &reg, nil
-}
-
 // SyncInstance 统计并推送某实例的库存 + 购物清单传感器。
 func (h *InventorySync) SyncInstance(ctx context.Context, instanceID int64) {
 	rest := h.adminRest(ctx, instanceID)
 	if rest == nil {
 		return
 	}
-	reg, err := h.ensureReg(ctx, instanceID, rest)
+	webhookID, _, err := h.dev.Ensure(ctx, instanceID, rest)
 	if err != nil {
 		slog.Warn("inventory sync: register failed", "instance", instanceID, "err", err.Error())
 		return
@@ -215,7 +144,7 @@ func (h *InventorySync) SyncInstance(ctx context.Context, instanceID int64) {
 		},
 	}
 	for _, sensor := range sensors {
-		if err := rest.PostJSON(ctx, "/api/webhook/"+reg.WebhookID,
+		if err := rest.PostJSON(ctx, "/api/webhook/"+webhookID,
 			map[string]any{"type": "register_sensor", "data": sensor}, nil); err != nil {
 			if !strings.Contains(err.Error(), "already_registered") {
 				slog.Warn("inventory sync: register sensor failed", "instance", instanceID, "err", err.Error())
@@ -277,7 +206,7 @@ func (h *InventorySync) SyncInstance(ctx context.Context, instanceID int64) {
 			},
 		},
 	}
-	if err := rest.PostJSON(ctx, "/api/webhook/"+reg.WebhookID, payload, nil); err != nil {
+	if err := rest.PostJSON(ctx, "/api/webhook/"+webhookID, payload, nil); err != nil {
 		slog.Warn("inventory sync: push failed", "instance", instanceID, "err", err.Error())
 	}
 }

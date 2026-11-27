@@ -70,8 +70,11 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 	instances := handler.NewInstances(repo, manager, hb)
 	entities := handler.NewEntities(manager, userPrefs)
 	services := handler.NewServices(manager)
+	// 服务器虚拟设备：生日 / 记账 / 库存 / 计划等后端发布的实体统一注册到同一台
+	// HA 设备（同一条 mobile_app webhook），避免各模块各自注册互相轮换 webhook。
+	serverDev := handler.NewServerDevice(repo, userPrefs)
 	// 账号级生日（存取 + HA 传感器同步）：prefs 写入回调与管理员接口都依赖它
-	birthdays := handler.NewBirthdays(manager, repo, userPrefs, userRepo)
+	birthdays := handler.NewBirthdays(manager, repo, userPrefs, userRepo, serverDev)
 	prefs := handler.NewPrefs(repo, userPrefs, manager, hb, birthdays)
 	ai := handler.NewAI(userPrefs, repo)
 	// AI 诊断：默认关闭；开启后收集日志，到期后台自动生成报告。
@@ -99,10 +102,10 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 	location := handler.NewLocation(manager, sensors)
 	media := handler.NewMedia(manager)
 	// 库存 / 食品库：本地 SQLite 存储 + HA 总数/临期传感器同步
-	inventorySync := handler.NewInventorySync(manager, repo, userRepo, userPrefs, invRepo)
+	inventorySync := handler.NewInventorySync(manager, repo, userRepo, userPrefs, invRepo, serverDev)
 	inventory := handler.NewInventory(invRepo, finRepo, repo, inventorySync, ai)
 	// 账本：本地 SQLite 存储 + HA 收支/预算/资产传感器同步
-	financeSync := handler.NewFinanceSync(manager, repo, userRepo, userPrefs, finRepo)
+	financeSync := handler.NewFinanceSync(manager, userRepo, userPrefs, finRepo, serverDev)
 	finance := handler.NewFinance(finRepo, repo, financeSync, ai)
 
 	// 语音通话：内存房间 + 信令事件推送（媒体经 /ws 二进制中继，不经 P2P）。
