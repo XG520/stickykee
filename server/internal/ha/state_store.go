@@ -30,16 +30,33 @@ func (s *StateStore) SetOnChange(fn func(string)) {
 }
 
 // Replace 全量替换快照。合成通知独立于 get_states，重灌进新快照避免被清掉。
+// 对新增/状态变化的实体触发 onChange：realtime 每次建连（含用户首次配置 HA token 后
+// 才新建的连接）都经 get_states 全量 Replace。此前 Replace 不通知，导致「WS 先于快照
+// 就绪连上」的端永远等不到首帧全量（普通用户配置 token 后立即重连即命中）；现在首次
+// 同步（旧快照为空）会把全量实体入列广播，重连时旧快照已存在则仅变化实体入列，
+// 避免每次重连都全量广播。
 func (s *StateStore) Replace(all []model.EntityState) {
 	s.mu.Lock()
-	s.entities = make(map[string]model.EntityState, len(all)+len(s.notifs))
+	old := s.entities
+	next := make(map[string]model.EntityState, len(all)+len(s.notifs))
+	changed := make([]string, 0, len(all))
 	for _, e := range all {
-		s.entities[e.EntityID] = e
+		next[e.EntityID] = e
+		if prev, ok := old[e.EntityID]; !ok || !sameState(prev, e) {
+			changed = append(changed, e.EntityID)
+		}
 	}
 	for id, e := range s.notifs {
-		s.entities[id] = e
+		next[id] = e
 	}
+	s.entities = next
+	fn := s.onChange
 	s.mu.Unlock()
+	if fn != nil {
+		for _, id := range changed {
+			fn(id)
+		}
+	}
 }
 
 // SetNotifications 全量替换合成通知集合。仅用于订阅初始的 current 推送；
