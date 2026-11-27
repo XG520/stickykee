@@ -23,15 +23,15 @@ COPY --from=builder /out/stickynuo-server /app/stickynuo-server
 RUN mkdir -p /app/data && chown -R app:app /app
 USER app
 
-ENV SN_HTTP_ADDR=:8080 \
+ENV SN_HTTP_ADDR=:18480 \
     SN_DB_PATH=/app/data/stickynuo.db \
     SN_STANDALONE=0 \
     TZ=Asia/Shanghai
 
-EXPOSE 8080
+EXPOSE 18480
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget -qO- http://localhost:8080/healthz || exit 1
+  CMD wget -qO- http://localhost:18480/healthz || exit 1
 
 # App 安装包下载（/api/v1/app/download）：默认随仓库根 Dockerfile（前后端单镜像）
 # 打包发布。纯后端镜像构建上下文不含 release/，如需提供下载，把 APK 拷进本目录后

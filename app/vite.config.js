@@ -52,7 +52,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: process.env.SN_BACKEND || 'http://localhost:8080',
+        target: process.env.SN_BACKEND || 'http://localhost:18480',
         changeOrigin: true,
         ws: true,
       },

@@ -8,7 +8,7 @@ import (
 
 // Config 后端服务运行配置。
 type Config struct {
-	HTTPAddr    string // HTTP 监听地址，如 :8080
+	HTTPAddr    string // HTTP 监听地址，如 :18480
 	DBPath      string // SQLite 数据库文件路径
 	LogLevel    string // 日志级别
 	SeedURL     string // 可选：种子 HA 实例地址
@@ -22,7 +22,7 @@ type Config struct {
 func Load() *Config {
 	dbPath := getenv("SN_DB_PATH", "data/stickykee.db")
 	return &Config{
-		HTTPAddr:    getenv("SN_HTTP_ADDR", ":8080"),
+		HTTPAddr:    getenv("SN_HTTP_ADDR", ":18480"),
 		DBPath:      dbPath,
 		LogLevel:    getenv("SN_LOG_LEVEL", "info"),
 		SeedURL:     os.Getenv("HA_DEFAULT_URL"),

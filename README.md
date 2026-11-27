@@ -76,26 +76,26 @@ docker build -t stickykee:latest .
 
 # 3. 运行容器
 docker run -d --name stickykee \
-  -p 8080:8080 \
+  --network host \
   -v stickykee-data:/data \
   -e TZ=Asia/Shanghai \
   --restart unless-stopped \
   stickykee:latest
 ```
 
-访问 `http://<主机IP>:8080` 即可使用。
+访问 `http://<主机IP>:18480` 即可使用。
 
 ### 方式二：本地开发
 
 ```powershell
-# 前端（vite dev server，/api 代理到 localhost:8080）
+# 前端（vite dev server，/api 代理到 localhost:18480）
 cd app
 npm install          # 使用 npmmirror 国内源
 npm run dev          # http://localhost:5173
 
 # 后端（另开终端）
 cd server
-go run ./cmd/server/main.go    # 监听 :8080，数据库 data/stickynuo.db
+go run ./cmd/server/main.go    # 监听 :18480，数据库 data/stickynuo.db
 ```
 
 登录后在「设置 → Home Assistant 连接」配置 HA 地址与个人 Token。
@@ -113,7 +113,7 @@ go run ./cmd/server/main.go    # 监听 :8080，数据库 data/stickynuo.db
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `SN_HTTP_ADDR` | `:8080` | HTTP 监听地址 |
+| `SN_HTTP_ADDR` | `:18480` | HTTP 监听地址 |
 | `SN_DB_PATH` | `data/stickynuo.db` | SQLite 数据库路径 |
 | `SN_STATIC_DIR` | 空（不托管） | 设为前端 `dist/` 目录后由后端托管网页 |
 | `SN_LOG_LEVEL` | `info` | 日志级别：debug / info / warn / error |
@@ -172,20 +172,20 @@ $env:JAVA_HOME = "C:\path\to\jdk-17"
 
 ```nginx
 location /api/v1/ws {
-    proxy_pass http://127.0.0.1:8080;
+    proxy_pass http://127.0.0.1:18480;
     proxy_http_version 1.1;
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection "upgrade";
     proxy_read_timeout 3600s;
 }
 location / {
-    proxy_pass http://127.0.0.1:8080;
+    proxy_pass http://127.0.0.1:18480;
 }
 ```
 
 ## 常见问题
 
-- **端口占用**：`bind: Only one usage of each socket address` 表示 8080 已被旧实例占用，先停掉旧进程再启动
+- **端口占用**：`bind: Only one usage of each socket address` 表示 18480 已被旧实例占用，先停掉旧进程再启动
 - **数据库锁**：同一 `SN_DB_PATH` 不要被多个后端实例同时使用
 - **镜像源**：项目默认配置国内源（npm npmmirror、Go goproxy.cn、Gradle 阿里云/腾讯云），无需额外设置
 

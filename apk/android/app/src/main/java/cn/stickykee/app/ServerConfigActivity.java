@@ -556,7 +556,7 @@ public class ServerConfigActivity extends AppCompatActivity {
 
     private String detectLanServer() {
         String[] prefixes = {"192.168.1", "192.168.0", "10.0.0", "172.16.0"};
-        int[] ports = {8080, 8123, 80};
+        int[] ports = {18480, 8080, 8123, 80};
         java.util.List<String> candidates = new java.util.ArrayList<>();
         for (String p : prefixes) {
             for (int i = 1; i <= 254; i += 25) {

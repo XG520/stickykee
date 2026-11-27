@@ -93,7 +93,7 @@ get() { # get KEY [DEFAULT]
 
 load_env() {
   if [[ ! -f "$ENV_FILE" ]]; then
-    warn "未找到 $ENV_FILE —— 使用内置默认（stickykee / 8080 / stickykee-data:/data / TZ=Asia/Shanghai）"
+    warn "未找到 $ENV_FILE —— 使用内置默认（stickykee / 18480 / stickykee-data:/data / TZ=Asia/Shanghai）"
   else
     log "加载配置：$ENV_FILE"
     local line k v
@@ -114,7 +114,6 @@ load_env() {
   CONTAINER="$(get CONTAINER stickykee)"
   IMAGE="$(get IMAGE stickykee:latest)"
   BUILDER="$(get BUILDER stickykee-apk-builder:latest)"
-  PORT_MAP="$(get PORT_MAP 8080:8080)"
   VOLUME="$(get VOLUME stickykee-data:/data)"
   RESTART="$(get RESTART unless-stopped)"
   TZ="$(get TZ Asia/Shanghai)"
@@ -225,13 +224,16 @@ inject_apk() {
 }
 
 deploy_container() {
-  local args=(--restart "$RESTART" -p "$PORT_MAP" -v "$VOLUME" -e "TZ=$TZ")
+  # host 网络：容器复用宿主机网络栈（不再做端口映射）。
+  # 桥接网络下 HA 看到的来源是 172.x 容器网段，开启「仅限本地访问」的 HA 用户会被
+  # 判定为非本地而统一 401；host 模式下源地址就是宿主机内网 IP，与 HA 同网段。
+  local args=(--restart "$RESTART" --network host -v "$VOLUME" -e "TZ=$TZ")
   local v
   v="$(get SN_LOG_LEVEL "")"
   [[ -n "$v" ]] && args+=(-e "SN_LOG_LEVEL=$v")
   args+=("$IMAGE")
 
-  log "部署容器 $CONTAINER"
+  log "部署容器 $CONTAINER（host 网络，直接占用宿主机 18480）"
   # 先用 docker create 校验参数与镜像（不绑定端口、不影响旧容器），
   # 校验通过才替换旧容器——避免「先删后建」在 run 失败时造成服务中断。
   local new="${CONTAINER}-new" cid
@@ -275,7 +277,7 @@ status() {
   docker ps -a --filter "name=$CONTAINER" --format '  {{.Names}}  {{.Status}}  {{.Size}}' 2>/dev/null || true
   log "健康检查"
   local body
-  body="$(curl -fsS "http://127.0.0.1:$(get PORT 8080)/healthz" 2>/dev/null || echo '（无法访问 /healthz，容器可能未运行）')"
+  body="$(curl -fsS "http://127.0.0.1:$(get PORT 18480)/healthz" 2>/dev/null || echo '（无法访问 /healthz，容器可能未运行）')"
   echo "  $body"
   log "内置版本"
   echo "  release/app_version.txt：$(cat "$ROOT/release/app_version.txt" 2>/dev/null || echo 缺失)"
@@ -314,5 +316,5 @@ esac
 
 case "$CMD" in
   update|apk|frontend|backend|build|restart|prune|stop)
-    log "完成。访问 http://<主机IP>:$(get PORT 8080)" ;;
+    log "完成。访问 http://<主机IP>:$(get PORT 18480)" ;;
 esac

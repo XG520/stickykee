@@ -208,7 +208,7 @@
                     android:paddingRight="12dp"
                     android:textColor="@color/sc_text"
                     android:textSize="14sp"
-                    android:hint="192.168.1.100:8080"
+                    android:hint="192.168.1.100:18480"
                     android:inputType="text"
                     android:imeOptions="actionDone"
                     android:maxLines="1" />

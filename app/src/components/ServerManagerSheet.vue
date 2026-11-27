@@ -14,7 +14,7 @@
               <span class="material-symbols-outlined text-xl">close</span>
             </button>
           </div>
-          <p class="text-muted text-xs mb-4">{{ view === 'list' ? networkHint : '冒号、斜杠请用半角；地址含端口，如 192.168.1.100:8080' }}</p>
+          <p class="text-muted text-xs mb-4">{{ view === 'list' ? networkHint : '冒号、斜杠请用半角；地址含端口，如 192.168.1.100:18480' }}</p>
 
           <!-- ============ 列表视图 ============ -->
           <template v-if="view === 'list'">
@@ -88,7 +88,7 @@
                       class="px-3 py-2.5 text-xs font-semibold transition-colors"
                       :class="scheme === s ? 'bg-primary/20 text-primary' : 'bg-background text-muted'">{{ s }}://</button>
                   </div>
-                  <input v-model="form.host" type="text" inputmode="url" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="192.168.1.100:8080"
+                  <input v-model="form.host" type="text" inputmode="url" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="192.168.1.100:18480"
                     class="flex-1 min-w-0 bg-background border border-border rounded-xl px-3 py-2.5 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
                 </div>
               </div>
@@ -317,7 +317,7 @@ async function autoDetect() {
   formMsg.value = '正在识别内网服务器…'
   try {
     const prefixes = ['192.168.1', '192.168.0', '10.0.0', '172.16.0']
-    const ports = [8080, 8123, 80]
+    const ports = [18480, 8080, 8123, 80]
     const candidates = []
     prefixes.forEach(p => {
       for (let i = 1; i <= 254; i += 25) ports.forEach(port => candidates.push(`http://${p}.${i}:${port}`))

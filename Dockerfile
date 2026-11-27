@@ -2,7 +2,7 @@
 # 归祺 Sticky Kee —— 前后端单镜像（Go 直接托管前端静态产物，同源免代理）。
 # 在仓库根（本文件所在目录）执行：
 #   docker build -t stickynuo:latest .
-#   docker run -d --name stickynuo -p 8080:8080 -v stickynuo-data:/data \
+#   docker run -d --name stickynuo --network host -v stickynuo-data:/data \
 #     -e SN_JWT_SECRET=<改成随机串> --restart unless-stopped stickynuo:latest
 
 # ---------- 前端构建（npmmirror 国内源） ----------
@@ -60,14 +60,14 @@ COPY release/stickykee-app.apk /var/apk/stickykee-app.apk
 # release/app_version.txt（该文件仍由 bump-version.ps1 维护，供本地打包流程使用）。
 COPY --from=apkver /tmp/app_version.txt /var/apk/app_version.txt
 # 数据库、聊天图片（/data/uploads/im）、图标缓存（/data/icons）都在 /data 下
-ENV SN_HTTP_ADDR=:8080 \
+ENV SN_HTTP_ADDR=:18480 \
     SN_DB_PATH=/data/stickynuo.db \
     SN_STATIC_DIR=/app/dist \
     SN_APK_FILE=/var/apk/stickykee-app.apk \
     SN_APK_VERSION_FILE=/var/apk/app_version.txt
 VOLUME /data
-EXPOSE 8080
+EXPOSE 18480
 USER sn
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s \
-  CMD wget -q -O /dev/null http://127.0.0.1:8080/healthz || exit 1
+  CMD wget -q -O /dev/null http://127.0.0.1:18480/healthz || exit 1
 ENTRYPOINT ["/app/stickynuo"]

@@ -234,7 +234,7 @@
         </div>
         <!-- Key 使用要点：局域网 IP 访问时白名单会拦截；手机必须能访问外网 -->
         <p class="text-muted text-xs font-body leading-relaxed">
-          地图由高德 JS API 渲染，Key 必须是「Web端(JS API)」类型。若用局域网地址访问（如 192.168.x.x:8080），Key 请勿设置域名白名单，否则地图会被拒绝；手机也需能访问外网才能加载高德地图。
+          地图由高德 JS API 渲染，Key 必须是「Web端(JS API)」类型。若用局域网地址访问（如 192.168.x.x:18480），Key 请勿设置域名白名单，否则地图会被拒绝；手机也需能访问外网才能加载高德地图。
         </p>
         <!-- 设备追踪开关：APK 默认开启，网页端默认关闭；切换即时生效（不刷新/不重登） -->
         <div class="rounded-xl bg-background border border-border px-1.5 py-1">

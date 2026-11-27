@@ -845,7 +845,7 @@ public class NativeBridge {
     private volatile boolean watchBouncing = false; // 已发起退回，防止重复弹配置页
     private ScheduledFuture<?> watchFuture = null; // 当前运行中的定时任务，onPause 时 cancel
 
-    /** 启动连接看门狗，base 为服务器根地址（如 http://192.168.1.10:8080）。重复调用会重置。
+    /** 启动连接看门狗，base 为服务器根地址（如 http://192.168.1.10:18480）。重复调用会重置。
      *  注意：不改 watchPaused——前台/后台只由 onResume/onPause 决定，
      *  避免 Activity 在后台时被 JS 调用 connWatch 误启动后台探测。 */
     @JavascriptInterface

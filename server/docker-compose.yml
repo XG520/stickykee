@@ -5,10 +5,11 @@ services:
       dockerfile: Dockerfile
     container_name: stickynuo-server
     restart: unless-stopped
-    ports:
-      - "8080:8080"
+    # host 网络：容器直接使用宿主机网络栈，HA 看到的内网来源 IP 才不会被
+    # 「仅限本地访问」拦截；同时无需端口映射（容器内 :18480 即宿主机 18480）。
+    network_mode: host
     environment:
-      SN_HTTP_ADDR: ":8080"
+      SN_HTTP_ADDR: ":18480"
       SN_DB_PATH: "/app/data/stickynuo.db"
       SN_LOG_LEVEL: "${SN_LOG_LEVEL:-info}"
       # 注释即可用环境变量注入默认 HA 实例
