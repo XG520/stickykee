@@ -774,7 +774,7 @@ func (r *FinanceRepo) CreateTransaction(ctx context.Context, instanceID int64, i
 	res, err := r.db.ExecContext(ctx,
 		`INSERT INTO fin_transactions(instance_id, type, amount, account_id, category_id, currency,
 			orig_amount, fx_rate, note, tags, source, pay_method, occurred_at, created_by)
-		 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		instanceID, in.Type, in.Amount, in.AccountID, in.CategoryID, in.Currency,
 		in.OrigAmount, in.FxRate, in.Note, in.Tags, "manual", in.PayMethod, in.OccurredAt, user)
 	if err != nil {

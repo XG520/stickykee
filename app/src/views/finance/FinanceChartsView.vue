@@ -75,58 +75,106 @@
       >收入</button>
     </div>
 
+    <!-- 分类筛选：选定后总额与趋势只统计该分类 -->
+    <div v-if="allCats.length" class="hc-scroll flex gap-1.5 overflow-x-auto pb-0.5">
+      <button
+        class="hc-catchip"
+        :class="!selectedCategory ? 'hc-catchip--on' : ''"
+        :aria-pressed="!selectedCategory"
+        @click="clearCategory"
+      >全部分类</button>
+      <button
+        v-for="(c, i) in allCats"
+        :key="categoryIdOf(c) + '-' + (c.name || '')"
+        class="hc-catchip"
+        :class="isSelected(c) ? 'hc-catchip--on' : ''"
+        :aria-pressed="isSelected(c)"
+        @click="toggleCategory(c)"
+      >
+        <i class="w-2 h-2 rounded-full flex-shrink-0" :style="{ background: colorOf(i) }"></i>
+        <span class="truncate max-w-[88px]">{{ c.name || '未分类' }}</span>
+      </button>
+    </div>
+
     <!-- 总额 -->
     <section class="rounded-2xl bg-surface border border-border p-4">
-      <div class="text-[11px] text-muted font-body">总{{ type === 'income' ? '收入' : '支出' }}</div>
+      <div class="flex items-center justify-between gap-2">
+        <div class="min-w-0 text-[11px] text-muted font-body truncate">
+          <template v-if="selectedCategory">{{ selectedCategory.name }} · </template>总{{ type === 'income' ? '收入' : '支出' }}
+        </div>
+        <div v-if="selectedCategory" class="flex items-center gap-1 flex-shrink-0">
+          <button class="hc-mini" @click="openSelectedDetail">明细</button>
+          <button class="hc-mini hc-mini--icon" aria-label="清除分类筛选" @click="clearCategory">
+            <span class="material-symbols-outlined text-base">close</span>
+          </button>
+        </div>
+      </div>
       <div class="mt-1 font-headline text-[30px] lg:text-[34px] leading-none font-semibold tabular-nums" :class="type === 'income' ? 'text-accent' : ''">
         {{ money(total) }}
       </div>
       <div class="mt-2 text-[11px] text-muted font-body">
         日均 {{ money(dailyAvg) }} · 共 {{ count }} 笔 · {{ avgDays }} 天
       </div>
+      <div v-if="selectedCategory" class="mt-1 text-[10px] text-muted font-body">
+        仅统计「{{ selectedCategory.name }}」，可继续切换时间段
+      </div>
     </section>
 
     <div v-if="error" class="text-xs text-error font-body">{{ error }}</div>
     </div>
 
-    <!-- 分类占比（扇区与列表项均可点击看明细） -->
+    <!-- 分类占比：点击扇区筛选分类，点击列表查看该分类明细 -->
     <section class="rounded-2xl lg:rounded-3xl bg-surface border border-border p-4 lg:p-5 space-y-3 lg:col-span-5 lg:col-start-8 lg:row-start-1">
-      <div class="text-sm font-medium font-body">分类{{ type === 'income' ? '收入' : '支出' }}</div>
-
-      <div v-if="catRows.length" class="flex justify-center">
-        <svg viewBox="0 0 100 100" class="w-32 h-32 -rotate-90" role="img" :aria-label="`分类${type === 'income' ? '收入' : '支出'}占比环图`">
-          <circle cx="50" cy="50" r="40" fill="none" stroke="rgb(var(--c-surface-alt))" stroke-width="14" />
-          <circle
-            v-for="(s, i) in donut"
-            :key="i"
-            cx="50"
-            cy="50"
-            r="40"
-            fill="none"
-            :stroke="s.color"
-            stroke-width="14"
-            :stroke-dasharray="s.dash"
-            :stroke-dashoffset="s.offset"
-            stroke-linecap="butt"
-            class="donut-seg cursor-pointer"
-            tabindex="0"
-            role="button"
-            :aria-label="`${catRows[i].name || '未分类'} ${money(catRows[i].amount)}，点击查看明细`"
-            @click="openCategory(i)"
-            @keydown.enter="openCategory(i)"
-          >
-            <title>{{ (catRows[i].name || '未分类') + ' ' + money(catRows[i].amount) }}</title>
-          </circle>
-        </svg>
+      <div class="flex items-center justify-between gap-2">
+        <div class="text-sm font-medium font-body">分类{{ type === 'income' ? '收入' : '支出' }}</div>
+        <span class="text-[10px] text-muted font-body flex-shrink-0">点扇区筛选 · 点列表看明细</span>
       </div>
 
-      <div v-if="catRows.length" class="space-y-1">
+      <div v-if="catRows.length" class="flex justify-center">
+        <div class="relative w-32 h-32">
+          <svg viewBox="0 0 100 100" class="w-full h-full -rotate-90" role="img" :aria-label="`分类${type === 'income' ? '收入' : '支出'}占比环图`">
+            <circle cx="50" cy="50" r="40" fill="none" stroke="rgb(var(--c-surface-alt))" stroke-width="14" />
+            <circle
+              v-for="(s, i) in donut"
+              :key="i"
+              cx="50"
+              cy="50"
+              r="40"
+              fill="none"
+              :stroke="s.color"
+              :stroke-width="isSelected(catRows[i]) ? 17 : 14"
+              :stroke-dasharray="s.dash"
+              :stroke-dashoffset="s.offset"
+              :opacity="selectedInDonut && !isSelected(catRows[i]) ? 0.28 : 1"
+              stroke-linecap="butt"
+              class="donut-seg cursor-pointer"
+              tabindex="0"
+              role="button"
+              :aria-pressed="isSelected(catRows[i])"
+              :aria-label="`${catRows[i].name || '未分类'} ${money(catRows[i].amount)}，${isSelected(catRows[i]) ? '取消筛选' : '筛选该分类'}`"
+              @click="selectDonutCategory(i)"
+              @keydown.enter="selectDonutCategory(i)"
+            >
+              <title>{{ (catRows[i].name || '未分类') + ' ' + money(catRows[i].amount) }}</title>
+            </circle>
+          </svg>
+          <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none px-4 text-center">
+            <div class="text-[10px] text-muted font-body max-w-full truncate">{{ selectedCategory ? selectedCategory.name : '分类' }}</div>
+            <div class="text-base font-semibold tabular-nums leading-tight">
+              {{ selectedCategory ? selectedPct + '%' : allCats.length + ' 类' }}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="allCats.length" class="space-y-1">
         <button
-          v-for="(c, i) in catRows"
-          :key="c.category_id || c.name"
+          v-for="(c, i) in allCats"
+          :key="categoryIdOf(c) + '-' + (c.name || '')"
           class="hc-catrow"
+          :class="isSelected(c) ? 'hc-catrow--on' : ''"
           :aria-label="`查看${c.name || '未分类'}明细，${money(c.amount)}`"
-          @click="openCategory(i)"
+          @click="openCategoryDetail(c, i)"
         >
           <div class="flex items-center justify-between gap-2 text-xs font-body">
             <span class="flex items-center gap-1.5 min-w-0">
@@ -145,9 +193,11 @@
 
     <!-- 趋势（数据点可点击看当日/当月明细） -->
     <section class="rounded-2xl lg:rounded-3xl bg-surface border border-border p-4 lg:p-5 space-y-3 lg:col-span-7 lg:col-start-1 lg:row-start-2">
-      <div class="flex items-center justify-between">
-        <div class="text-sm font-medium font-body">{{ trendUnit === 'month' ? '月度' : '每日' }}趋势</div>
-        <span class="text-[11px] text-muted font-body">{{ type === 'income' ? '收入' : '支出' }} · 点击图形查看明细</span>
+      <div class="flex items-center justify-between gap-2">
+        <div class="text-sm font-medium font-body min-w-0 truncate">
+          <template v-if="selectedCategory">{{ selectedCategory.name }} · </template>{{ trendUnit === 'month' ? '月度' : '每日' }}趋势
+        </div>
+        <span class="text-[11px] text-muted font-body flex-shrink-0">点击图形查看明细</span>
       </div>
       <div v-if="seq.length" class="relative">
         <svg viewBox="0 0 300 120" class="w-full h-[140px] lg:h-[220px]" preserveAspectRatio="none" role="img" :aria-label="`每日${type === 'income' ? '收入' : '支出'}趋势折线图`">
@@ -332,6 +382,8 @@ const anchor = ref(new Date())
 const customStart = ref(`${currentMonth()}-01`)
 const customEnd = ref(todayStr())
 const report = ref({})
+const filteredReport = ref({})
+const selectedCategory = ref(null) // { id, name }；null = 全部分类
 const budgetStats = ref({})
 const error = ref('')
 
@@ -420,10 +472,13 @@ const isCurrentPeriod = computed(() => {
   return startOfWeek(new Date()).getTime() === startOfWeek(anchor.value).getTime()
 })
 
+// 选中分类时总额/趋势使用过滤后的数据；环形图与分类列表仍用全量数据以便切换。
+const view = computed(() => (selectedCategory.value ? filteredReport.value : report.value))
+
 const total = computed(() => Number(type.value === 'income'
-  ? (report.value.summary || {}).income
-  : (report.value.summary || {}).expense) || 0)
-const count = computed(() => Number((report.value.summary || {}).count) || 0)
+  ? (view.value.summary || {}).income
+  : (view.value.summary || {}).expense) || 0)
+const count = computed(() => Number((view.value.summary || {}).count) || 0)
 
 // 日均按「已经过去的天数」计算，避免月初把未来天数算进分母。
 const avgDays = computed(() => {
@@ -437,7 +492,15 @@ const avgDays = computed(() => {
 })
 const dailyAvg = computed(() => Math.round(total.value / avgDays.value))
 
-const catRows = computed(() => (report.value.by_category || []).slice(0, 8))
+const allCats = computed(() => report.value.by_category || [])
+const catRows = computed(() => allCats.value.slice(0, 8))
+const selectedInDonut = computed(() => catRows.value.some((c) => isSelected(c)))
+const selectedPct = computed(() => {
+  const sel = selectedCategory.value
+  if (!sel) return 0
+  const row = allCats.value.find((c) => categoryIdOf(c) === sel.id)
+  return row ? Math.round(Number(row.percent) || 0) : 0
+})
 
 const donut = computed(() => {
   const rows = catRows.value
@@ -460,7 +523,7 @@ const donut = computed(() => {
 const seq = computed(() => {
   const key = type.value === 'income' ? 'income' : 'expense'
   if (trendUnit.value === 'month') {
-    const rows = report.value.by_month || []
+    const rows = view.value.by_month || []
     if (dim.value === 'year') {
       const map = {}
       for (const m of rows) map[m.month] = m
@@ -470,7 +533,7 @@ const seq = computed(() => {
     return rows.map((m) => Number(m[key] || 0))
   }
   const map = {}
-  for (const d of report.value.by_day || []) map[d.day] = d
+  for (const d of view.value.by_day || []) map[d.day] = d
   const start = parseDate(range.value.start)
   return Array.from({ length: range.value.days }, (_, i) => Number((map[dateStr(addDays(start, i))] || {})[key] || 0))
 })
@@ -496,7 +559,7 @@ watch(() => seq.value, tweenTo)
 const pointLabels = computed(() => {
   const n = seq.value.length
   if (trendUnit.value === 'month') {
-    const rows = report.value.by_month || []
+    const rows = view.value.by_month || []
     return Array.from({ length: n }, (_, i) => {
       if (dim.value === 'year') return `${i + 1}月`
       const m = rows[i] || {}
@@ -573,15 +636,25 @@ function timeLabel(s) {
   return v.slice(5, 16)
 }
 
+function categoryFilter(sel) {
+  if (!sel) return null
+  return sel.id ? { categories: [sel.id] } : { no_category: true }
+}
+
 async function load() {
   if (dim.value === 'custom' && (!customStart.value || !customEnd.value)) return
   error.value = ''
   try {
     const filters = { start: range.value.start, end: range.value.end, types: [type.value] }
-    const tasks = [api.financeReportData(filters)]
+    const cat = categoryFilter(selectedCategory.value)
+    const tasks = [
+      api.financeReportData(filters),
+      cat ? api.financeReportData({ ...filters, ...cat }) : Promise.resolve(null),
+    ]
     if (dim.value === 'month') tasks.push(api.financeStats(financeMonth.value))
-    const [dataRes, statsRes] = await Promise.all(tasks)
+    const [dataRes, catRes, statsRes] = await Promise.all(tasks)
     report.value = dataRes.data || {}
+    filteredReport.value = catRes ? (catRes.data || {}) : {}
     if (statsRes) budgetStats.value = statsRes.data || {}
   } catch (e) {
     error.value = e.message || '加载失败'
@@ -632,7 +705,11 @@ function onCustomDateChange(which) {
   if (dim.value === 'custom') load()
 }
 
-watch(type, load)
+watch(type, () => {
+  selectedCategory.value = null
+  filteredReport.value = {}
+  load()
+})
 watch(dim, (v, old) => {
   if (v === 'week') anchor.value = new Date()
   else if (v === 'year') anchor.value = new Date(Number(financeMonth.value.slice(0, 4)), 0, 1)
@@ -704,11 +781,42 @@ function closeDetail() {
   detail.value = null
 }
 
-// 分类扇区 / 列表项点击：弹出该分类在当前区间的明细。
-function openCategory(i) {
+// 分类扇区点击：筛选/取消筛选该分类（明细通过列表项或总额卡「明细」查看）。
+function selectDonutCategory(i) {
   const c = catRows.value[i]
+  if (c) toggleCategory(c)
+}
+
+function categoryIdOf(c) {
+  return Number(c && c.category_id) || 0
+}
+
+function isSelected(c) {
+  return !!selectedCategory.value && categoryIdOf(c) === selectedCategory.value.id
+}
+
+function toggleCategory(c) {
   if (!c) return
-  const id = Number(c.category_id) || 0
+  const id = categoryIdOf(c)
+  if (selectedCategory.value && selectedCategory.value.id === id) {
+    clearCategory()
+    return
+  }
+  selectedCategory.value = { id, name: c.name || '未分类' }
+  load()
+}
+
+function clearCategory() {
+  if (!selectedCategory.value) return
+  selectedCategory.value = null
+  filteredReport.value = {}
+  load()
+}
+
+// 分类列表点击：弹出该分类在当前区间的明细。
+function openCategoryDetail(c, i) {
+  if (!c) return
+  const id = categoryIdOf(c)
   openDetail({
     title: c.name || '未分类',
     color: colorOf(i),
@@ -723,10 +831,20 @@ function openCategory(i) {
   })
 }
 
+// 总额卡「明细」：查看当前已选分类的流水。
+function openSelectedDetail() {
+  const sel = selectedCategory.value
+  if (!sel) return
+  const i = allCats.value.findIndex((c) => categoryIdOf(c) === sel.id)
+  const row = i >= 0 ? allCats.value[i] : { category_id: sel.id, name: sel.name, amount: total.value }
+  openCategoryDetail(row, i >= 0 ? i : 0)
+}
+
 // 趋势数据点点击：弹出当日（或当月）的明细。
 function openPoint(i) {
   const label = pointLabels.value[i]
   if (!label) return
+  const catFilter = categoryFilter(selectedCategory.value) || {}
   let title
   let filters
   if (trendUnit.value === 'month') {
@@ -735,18 +853,19 @@ function openPoint(i) {
       y = anchor.value.getFullYear()
       m = i + 1
     } else {
-      const row = (report.value.by_month || [])[i] || {}
+      const row = (view.value.by_month || [])[i] || {}
       y = Number(String(row.month || '0').slice(0, 4))
       m = Number(String(row.month || '0').slice(5))
     }
     title = `${y}年${m}月`
-    filters = { start: `${y}-${pad2(m)}-01`, end: dateStr(new Date(y, m, 0)), types: [type.value] }
+    filters = { start: `${y}-${pad2(m)}-01`, end: dateStr(new Date(y, m, 0)), types: [type.value], ...catFilter }
   } else {
     const d = addDays(parseDate(range.value.start), i)
     title = `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
     const ds = dateStr(d)
-    filters = { start: ds, end: ds, types: [type.value] }
+    filters = { start: ds, end: ds, types: [type.value], ...catFilter }
   }
+  if (selectedCategory.value) title += ` · ${selectedCategory.value.name}`
   openDetail({
     title,
     amount: Number(seq.value[i] || 0),
@@ -804,6 +923,50 @@ onActivated(async () => {
   transition: background-color .18s, color .18s;
 }
 
+/* 分类筛选 chips：横向滚动但隐藏滚动条 */
+.hc-scroll { scrollbar-width: none; -ms-overflow-style: none; }
+.hc-scroll::-webkit-scrollbar { display: none; }
+
+.hc-catchip {
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 9999px;
+  border: 1px solid rgb(var(--c-border));
+  background: rgb(var(--c-surface-alt));
+  color: rgb(var(--c-muted));
+  font-size: 11px;
+  font-family: var(--font-body);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  transition: background-color .15s, color .15s, border-color .15s;
+}
+.hc-catchip:hover { color: rgb(var(--c-on-surface)); }
+.hc-catchip--on {
+  background: rgb(var(--c-primary));
+  border-color: rgb(var(--c-primary));
+  color: rgb(var(--c-on-primary));
+}
+
+/* 总额卡迷你操作按钮 */
+.hc-mini {
+  height: 28px;
+  padding: 0 9px;
+  border-radius: 9999px;
+  border: 1px solid rgb(var(--c-border));
+  color: rgb(var(--c-muted));
+  background: rgb(var(--c-surface-alt));
+  font-size: 10px;
+  font-family: var(--font-body);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+.hc-mini:hover { color: rgb(var(--c-on-surface)); }
+.hc-mini--icon { width: 28px; padding: 0; }
+
 /* 自定义日期选择器：44px 高度保证移动端触控热区 */
 .hc-date {
   width: 100%;
@@ -833,6 +996,7 @@ onActivated(async () => {
   transition: background-color .15s;
 }
 .hc-catrow:hover { background: rgb(var(--c-surface-alt)); }
+.hc-catrow--on { background: rgb(var(--c-primary) / .08); }
 
 /* 环形图扇区与进度条的平滑过渡 */
 .donut-seg {
