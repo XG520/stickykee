@@ -9,6 +9,7 @@
       :class="isActive(t) ? 'bg-surface text-primary shadow-sm' : 'text-muted hover:text-on-surface'"
     >{{ t.label }}</router-link>
     <router-link
+      v-if="canOperate"
       to="/inventory/finance/add"
       class="ml-1 px-4 py-2 rounded-xl bg-primary text-on-primary text-sm font-body font-medium flex items-center gap-1"
     >
@@ -38,6 +39,7 @@
 
       <div class="relative flex flex-col items-center justify-end h-full pb-1.5">
         <router-link
+          v-if="canOperate"
           to="/inventory/finance/add"
           aria-label="记一笔"
           class="absolute -top-6 w-14 h-14 rounded-full bg-primary text-on-primary flex items-center justify-center shadow-lg active:scale-95 transition-transform"
@@ -66,9 +68,13 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import { useRoute } from 'vue-router'
+import { auth } from '@/store'
 
 const route = useRoute()
+// 只有获得「操作」权限才显示记一笔入口（查看权限不可写）
+const canOperate = computed(() => auth.financeOperate)
 
 const tabs = [
   { to: '/inventory/finance/ledger', label: '明细', name: 'finance-ledger' },

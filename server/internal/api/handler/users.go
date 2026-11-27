@@ -44,23 +44,28 @@ func (h *Users) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	type view struct {
-		ID          int64  `json:"id"`
-		Username    string `json:"username"`
-		IsAdmin     bool   `json:"is_admin"`
-		CreatedAt   string `json:"created_at"`
-		MapUseAdmin bool   `json:"map_use_admin"`
-		HasHAToken  bool   `json:"has_ha_token"`
+		ID             int64  `json:"id"`
+		Username       string `json:"username"`
+		IsAdmin        bool   `json:"is_admin"`
+		CreatedAt      string `json:"created_at"`
+		MapUseAdmin    bool   `json:"map_use_admin"`
+		HasHAToken     bool   `json:"has_ha_token"`
+		FinanceView    bool   `json:"finance_view"`
+		FinanceOperate bool   `json:"finance_operate"`
 	}
 	out := make([]view, 0, len(list))
 	for _, u := range list {
 		mc := parseMapConfig(h.userPrefs.Get(r.Context(), u.Username, "map_config"))
+		perm := ReadStoredFinancePerm(r.Context(), h.userPrefs, u.Username)
 		out = append(out, view{
-			ID:          u.ID,
-			Username:    u.Username,
-			IsAdmin:     u.IsAdmin,
-			CreatedAt:   u.CreatedAt,
-			MapUseAdmin: boolVal(mc["use_admin"]),
-			HasHAToken:  h.userPrefs.Get(r.Context(), u.Username, "ha_token") != "",
+			ID:             u.ID,
+			Username:       u.Username,
+			IsAdmin:        u.IsAdmin,
+			CreatedAt:      u.CreatedAt,
+			MapUseAdmin:    boolVal(mc["use_admin"]),
+			HasHAToken:     h.userPrefs.Get(r.Context(), u.Username, "ha_token") != "",
+			FinanceView:    perm.Allows(false),
+			FinanceOperate: perm.Operate,
 		})
 	}
 	WriteJSON(w, 200, out)
@@ -186,6 +191,53 @@ func (h *Users) SetMapPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	WriteJSON(w, 200, map[string]any{"username": username, "use_admin": *p.UseAdmin})
+}
+
+// SetFinancePerm PUT /users/{username}/finance —— 管理员为该用户分配记账查看/操作权限。
+// 操作权限隐含查看权限；管理员自身恒为全权限，不落库。
+func (h *Users) SetFinancePerm(w http.ResponseWriter, r *http.Request) {
+	if !h.requireAdmin(w, r) {
+		return
+	}
+	username := chi.URLParam(r, "username")
+	if _, err := h.repo.GetByUsername(r.Context(), username); err != nil {
+		WriteErr(w, 404, "not_found", "user not found")
+		return
+	}
+	var p struct {
+		View    *bool `json:"view"`
+		Operate *bool `json:"operate"`
+	}
+	if err := DecodeBody(r, &p); err != nil {
+		WriteErr(w, 400, "bad_request", "bad payload")
+		return
+	}
+	cur := ReadStoredFinancePerm(r.Context(), h.userPrefs, username)
+	if p.View != nil {
+		cur.View = *p.View
+	}
+	if p.Operate != nil {
+		cur.Operate = *p.Operate
+	}
+	if cur.Operate {
+		cur.View = true
+	}
+	if err := WriteFinancePerm(r.Context(), h.userPrefs, username, cur); err != nil {
+		WriteErr(w, 500, "internal", err.Error())
+		return
+	}
+	// 权限变化即时生效：通知该用户在线端重新拉取登录态（前端据此隐藏/显示记账入口）。
+	if h.hb != nil {
+		if b, err := json.Marshal(map[string]any{"type": "reload", "reason": "finance_perm"}); err == nil {
+			h.hb.BroadcastUser(username, b)
+		}
+	}
+	slog.Info("admin set finance permission", "user", username, "view", cur.View, "operate", cur.Operate)
+	WriteJSON(w, 200, map[string]any{
+		"username": username,
+		"view":     cur.View,
+		"operate":  cur.Operate,
+	})
 }
 
 // SetHAToken PUT /users/{username}/ha —— 管理员代配（或清除）该用户的 HA 个人 token。

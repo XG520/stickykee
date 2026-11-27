@@ -31,6 +31,9 @@ export const haTokenKnown = ref(cachedHAToken !== null)
 export const auth = reactive({
   user: null,     // 当前登录用户名；null=未登录
   isAdmin: false,
+  // 记账模块权限（管理员恒为 true；普通用户默认 false，须管理员授权）
+  financeView: false,
+  financeOperate: false,
   checked: false, // 是否已执行过登录态探测
 })
 
@@ -172,6 +175,12 @@ function setToken(t, remember = false) {
 function setAuth(u) {
   auth.user = u?.username ?? null
   auth.isAdmin = !!u?.is_admin
+  auth.financeView = !!u?.finance_view
+  auth.financeOperate = !!u?.finance_operate
+  // 权限被收回时若正停留在账本页，立即退出（后端已 403，避免看到空白页）
+  if (!auth.financeView && typeof location !== 'undefined' && location.pathname.startsWith('/inventory/finance')) {
+    location.replace('/inventory')
+  }
   auth.checked = true
   // 前台保活服务跟随登录态：登录后启动（后台收通知/来电依赖实时连接），登出停止
   try {
@@ -596,6 +605,8 @@ function connectWS() {
       // 后端已按新 token 重建 HA 连接，重连即获得全量快照，无需杀进程重进。
       else if (m.type === 'reload') {
         refreshHATokenStatus()
+        // 记账权限变更：重新拉取登录态，前端立即隐藏/显示记账入口
+        if (m.reason === 'finance_perm') loadMe()
         if (ws) { try { ws.close() } catch {} }
         ws = null
         retry = 1

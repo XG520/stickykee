@@ -15,12 +15,13 @@ const routes = [
   {
     path: '/inventory/finance',
     component: () => import('@/views/finance/FinanceView.vue'),
-    meta: { title: '账本', hideGlobalTab: true },
+    // finance: 需管理员授权的记账查看权限；financeOperate: 记一笔需要操作权限
+    meta: { title: '账本', hideGlobalTab: true, finance: true },
     children: [
       { path: '', redirect: '/inventory/finance/ledger' },
       { path: 'ledger', name: 'finance-ledger', component: () => import('@/views/finance/FinanceLedgerView.vue'), meta: { title: '账本' } },
       { path: 'charts', name: 'finance-charts', component: () => import('@/views/finance/FinanceChartsView.vue'), meta: { title: '图表' } },
-      { path: 'add', name: 'finance-add', component: () => import('@/views/finance/FinanceAddView.vue'), meta: { title: '记一笔' } },
+      { path: 'add', name: 'finance-add', component: () => import('@/views/finance/FinanceAddView.vue'), meta: { title: '记一笔', financeOperate: true } },
       { path: 'plan', name: 'finance-plan', component: () => import('@/views/finance/FinancePlanView.vue'), meta: { title: '计划' } },
       { path: 'me', name: 'finance-me', component: () => import('@/views/finance/FinanceMeView.vue'), meta: { title: '我的' } },
       { path: 'reports', name: 'finance-reports', component: () => import('@/views/finance/FinanceReportsView.vue'), meta: { title: '已保存报表' } },
@@ -79,6 +80,11 @@ router.beforeEach(async (to) => {
   if (to.meta.public) return true
   if (!auth.checked) await loadMe()
   if (!auth.user) return { path: '/login', query: { redirect: to.fullPath } }
+  // 记账模块：无查看权限不可进入；记一笔等写操作入口需要操作权限。
+  if (to.meta.finance) {
+    if (!auth.financeView) return { path: '/inventory' }
+    if (to.meta.financeOperate && !auth.financeOperate) return { path: '/inventory/finance/ledger' }
+  }
   return true
 })
 

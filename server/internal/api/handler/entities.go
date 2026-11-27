@@ -8,15 +8,19 @@ import (
 	"stickykee/server/internal/ha"
 	"stickykee/server/internal/ha/client"
 	"stickykee/server/internal/ha/model"
+	"stickykee/server/internal/store"
 )
 
 // Entities 提供实体查询与开关控制。
 type Entities struct {
-	manager *ha.Manager
+	manager   *ha.Manager
+	userPrefs *store.UserPrefs
 }
 
 // NewEntities 构造 handler。
-func NewEntities(manager *ha.Manager) *Entities { return &Entities{manager: manager} }
+func NewEntities(manager *ha.Manager, userPrefs *store.UserPrefs) *Entities {
+	return &Entities{manager: manager, userPrefs: userPrefs}
+}
 
 // List GET /instances/{id}/entities?room=&domain=&type=
 func (h *Entities) List(w http.ResponseWriter, r *http.Request) {
@@ -62,6 +66,10 @@ func (h *Entities) List(w http.ResponseWriter, r *http.Request) {
 		if q != "" && !strings.Contains(strings.ToLower(d.EntityID+d.FriendlyName), q) {
 			continue
 		}
+		// 记账相关实体（账本同步的传感器）仅对有查看权限的用户可见。
+		if !FinanceEntityVisible(r.Context(), h.userPrefs, d.FriendlyName) {
+			continue
+		}
 		out = append(out, d)
 	}
 	active, _ := h.manager.ActiveID(r.Context())
@@ -96,8 +104,13 @@ func (h *Entities) Get(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, s := range states {
 		if s.EntityID == entityID {
+			disp := model.ParseDisplay(s)
+			if !FinanceEntityVisible(r.Context(), h.userPrefs, disp.FriendlyName) {
+				WriteErr(w, 403, "forbidden", "未获得记账模块授权，请联系管理员")
+				return
+			}
 			active, _ := h.manager.ActiveID(r.Context())
-			WriteMeta(w, 200, model.ParseDisplay(s), active)
+			WriteMeta(w, 200, disp, active)
 			return
 		}
 	}
@@ -121,12 +134,31 @@ func (h *Entities) Toggle(w http.ResponseWriter, r *http.Request) {
 		haErr(w, err)
 		return
 	}
+	if h.financeBlocked(r, id, entityID) {
+		WriteErr(w, 403, "forbidden", "未获得记账模块授权，请联系管理员")
+		return
+	}
 	if err := rst.Toggle(r.Context(), entityID); err != nil {
 		WriteErr(w, 502, "ha_unreachable", err.Error())
 		return
 	}
 	active, _ := h.manager.ActiveID(r.Context())
 	WriteMeta(w, 200, map[string]any{"toggled": entityID}, active)
+}
+
+// financeBlocked 判断实体是否属于记账相关且当前用户无权访问。
+// 快照不可用（含实例未同步）时按放行处理：记账传感器本身不可切换，不会泄露数据。
+func (h *Entities) financeBlocked(r *http.Request, id int64, entityID string) bool {
+	states, err := h.manager.Snapshot(r.Context(), id)
+	if err != nil {
+		return false
+	}
+	for _, s := range states {
+		if s.EntityID == entityID {
+			return !FinanceEntityVisible(r.Context(), h.userPrefs, model.ParseDisplay(s).FriendlyName)
+		}
+	}
+	return false
 }
 
 // snapshotStates 优先返回实例的实时快照缓存；缓存为空（尚未同步）时回退 REST 直连。

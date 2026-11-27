@@ -11,6 +11,7 @@ import (
 	"stickykee/server/internal/call"
 	"stickykee/server/internal/ha"
 	"stickykee/server/internal/ha/model"
+	"stickykee/server/internal/store"
 
 	"github.com/gorilla/websocket"
 )
@@ -32,20 +33,21 @@ var upgrader = websocket.Upgrader{
 // WS 处理前端 WebSocket：注册到 Hub，并把实例实时状态广播扇出给当前连接。
 type WS struct {
 	manager      *ha.Manager
+	userPrefs    *store.UserPrefs
 	log          *slog.Logger
 	authenticate func(token string) (auth.Identity, bool) // 校验会话 token，返回身份
 	audio        func(user string, frame []byte)          // 通话语音二进制帧路由（可为 nil）
-	callRooms    *call.Manager // 通话房间表，连接时补发振铃/通话状态（可为 nil）
+	callRooms    *call.Manager                            // 通话房间表，连接时补发振铃/通话状态（可为 nil）
 }
 
 // NewWS 构造 WS handler。audio 用于把客户端上行语音帧交给 call.Manager 中继；
 // callRooms 用于连接时补发本用户通话房间状态（后台端重连接后仍振铃）。
-func NewWS(manager *ha.Manager, log *slog.Logger, authenticate func(token string) (auth.Identity, bool),
+func NewWS(manager *ha.Manager, userPrefs *store.UserPrefs, log *slog.Logger, authenticate func(token string) (auth.Identity, bool),
 	audio func(user string, frame []byte), callRooms *call.Manager) *WS {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &WS{manager: manager, log: log, authenticate: authenticate, audio: audio, callRooms: callRooms}
+	return &WS{manager: manager, userPrefs: userPrefs, log: log, authenticate: authenticate, audio: audio, callRooms: callRooms}
 }
 
 // ServeHTTP GET /api/v1/ws?instance={id}&token={token}
@@ -78,6 +80,8 @@ func (h *WS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// 后端 HA 连接按 (instance, user) 隔离：把已认证身份写入 ctx，
 	// 供 manager.Live/Rest 解析该用户的个人 HA token（无 token 即禁用）。
 	ctx := auth.WithIdentity(r.Context(), ident)
+	// 记账权限在连接建立时确定一次：权限变更会广播 reload 让前端重连，无需逐帧查库。
+	allowFinance := ReadFinancePerm(ctx, h.userPrefs, ident.Username).Allows(false)
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -102,6 +106,9 @@ func (h *WS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if store != nil {
 		if snap := model.ParseDisplays(store.Snapshot()); len(snap) > 0 {
 			if b, merr := json.Marshal(map[string]any{"type": "state", "seq": h.manager.Seq(ctx, instanceID), "data": snap}); merr == nil {
+				if !allowFinance {
+					b = filterFinanceEntities(b)
+				}
 				_ = conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
 				if werr := conn.WriteMessage(websocket.TextMessage, b); werr != nil {
 					conn.Close()
@@ -141,8 +148,12 @@ func (h *WS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			case <-client.Closed():
 				return
 			case msg := <-client.SendChan():
+				payload := msg.Data
+				if msg.Typ == websocket.TextMessage && !allowFinance {
+					payload = filterFinanceEntities(payload)
+				}
 				_ = conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
-				if err := conn.WriteMessage(msg.Typ, msg.Data); err != nil {
+				if err := conn.WriteMessage(msg.Typ, payload); err != nil {
 					return
 				}
 			case <-ticker.C:
@@ -188,6 +199,36 @@ func (h *WS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	<-writeDone
+}
+
+// filterFinanceEntities 从推送给前端的 state 消息中剔除记账相关实体
+// （无记账查看权限的用户不应通过实时通道看到账本传感器）。
+func filterFinanceEntities(raw []byte) []byte {
+	var probe struct {
+		Type string                `json:"type"`
+		Seq  json.RawMessage       `json:"seq"`
+		Data []model.DisplayEntity `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &probe); err != nil || probe.Type != "state" || len(probe.Data) == 0 {
+		return raw
+	}
+	kept := make([]model.DisplayEntity, 0, len(probe.Data))
+	dropped := false
+	for _, d := range probe.Data {
+		if IsFinanceEntityName(d.FriendlyName) {
+			dropped = true
+			continue
+		}
+		kept = append(kept, d)
+	}
+	if !dropped {
+		return raw
+	}
+	out, err := json.Marshal(map[string]any{"type": "state", "seq": probe.Seq, "data": kept})
+	if err != nil {
+		return raw
+	}
+	return out
 }
 
 func writeJSON(conn *websocket.Conn, v any) error {

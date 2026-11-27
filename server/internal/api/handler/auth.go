@@ -18,11 +18,14 @@ import (
 
 // Auth 处理用户注册/登录/登出/改密与状态查询。
 type Auth struct {
-	repo *store.UserRepo
+	repo      *store.UserRepo
+	userPrefs *store.UserPrefs
 }
 
 // NewAuth 构造 handler。
-func NewAuth(repo *store.UserRepo) *Auth { return &Auth{repo: repo} }
+func NewAuth(repo *store.UserRepo, userPrefs *store.UserPrefs) *Auth {
+	return &Auth{repo: repo, userPrefs: userPrefs}
+}
 
 // sessionTTL 会话有效期。
 const sessionTTL = 30 * 24 * time.Hour
@@ -155,7 +158,14 @@ func (h *Auth) Me(w http.ResponseWriter, r *http.Request) {
 		WriteErr(w, 401, "unauthorized", "user not found")
 		return
 	}
-	WriteJSON(w, 200, map[string]any{"username": u.Username, "is_admin": u.IsAdmin})
+	// 记账权限随登录态返回：管理员恒为 true；普通用户默认 false（须管理员授权）。
+	perm := ReadFinancePerm(r.Context(), h.userPrefs, u.Username)
+	WriteJSON(w, 200, map[string]any{
+		"username":        u.Username,
+		"is_admin":        u.IsAdmin,
+		"finance_view":    perm.Allows(false),
+		"finance_operate": perm.Operate,
+	})
 }
 
 // issueSession 生成 token、写入会话并返回登录态。

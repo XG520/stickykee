@@ -1518,6 +1518,18 @@
             </div>
           </div>
 
+          <!-- 记账权限：查看 / 操作（管理员恒为全权限，需管理员显式授权） -->
+          <div class="flex items-center gap-2 bg-background border border-border rounded-lg px-3 py-1.5">
+            <span class="text-muted text-xs">记账</span>
+            <span v-if="u.is_admin" class="text-xs text-primary font-medium">全权限</span>
+            <div v-else class="flex rounded-md overflow-hidden border border-border text-xs">
+              <button type="button" class="px-2 py-1 font-semibold transition-colors" :class="u.finance_view ? 'bg-primary text-on-primary' : 'text-muted bg-background'"
+                @click="toggleFinancePerm(u, 'view')">查看</button>
+              <button type="button" class="px-2 py-1 font-semibold transition-colors" :class="u.finance_operate ? 'bg-primary text-on-primary' : 'text-muted bg-background'"
+                @click="toggleFinancePerm(u, 'operate')">操作</button>
+            </div>
+          </div>
+
           <!-- HA 个人 Token：管理员代配/清除，即时生效 -->
           <div class="flex items-center gap-2">
             <span class="px-2 py-1 rounded text-xs flex items-center gap-1"
@@ -3018,6 +3030,21 @@ async function setUserMapPolicy(u, useAdmin) {
     await api.setUserMapPolicy(u.username, useAdmin)
     u.map_use_admin = useAdmin
     uflash(useAdmin ? `「${u.username}」将使用管理员的高德 Key` : `「${u.username}」将使用本人的高德 Key`)
+  } catch (e) { uflash(e.message, true) }
+}
+// 记账权限：查看/操作按需开关；操作权限隐含查看（关闭查看同时收回操作）。
+async function toggleFinancePerm(u, kind) {
+  if (u.is_admin) return
+  const p = kind === 'view'
+    ? (u.finance_view ? { view: false, operate: false } : { view: true })
+    : (u.finance_operate ? { operate: false } : { operate: true, view: true })
+  try {
+    const { data } = await api.setUserFinancePerm(u.username, p)
+    u.finance_view = !!data.view
+    u.finance_operate = !!data.operate
+    uflash(u.finance_view
+      ? `「${u.username}」记账权限：${u.finance_operate ? '查看+操作' : '仅查看'}`
+      : `「${u.username}」记账权限已关闭`)
   } catch (e) { uflash(e.message, true) }
 }
 async function removeUser(u) {

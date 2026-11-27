@@ -7,6 +7,7 @@
         <p class="mt-0.5 text-[11px] text-muted font-body">{{ todayLabel }}</p>
       </div>
       <button
+        v-if="auth.financeView"
         class="h-9 px-3 rounded-full bg-surface-alt border border-border text-[11px] text-muted font-body flex items-center gap-1"
         @click="go('/inventory/finance/ledger')"
       >
@@ -17,8 +18,9 @@
 
     <div v-if="error" class="text-xs text-error font-body">{{ error }}</div>
 
-    <!-- 账本主卡：视觉焦点 -->
+    <!-- 账本主卡：视觉焦点（需管理员授权的记账查看权限） -->
     <button
+      v-if="auth.financeView"
       class="w-full text-left rounded-3xl bg-surface border border-border p-5 transition-transform active:scale-[.98]"
       @click="go('/inventory/finance/ledger')"
     >
@@ -109,7 +111,7 @@
         <span class="hc-quick__icon"><span class="material-symbols-outlined text-xl">qr_code_scanner</span></span>
         <span class="hc-quick__label">扫码入库</span>
       </button>
-      <button class="hc-quick" @click="go('/inventory/finance/add')">
+      <button v-if="auth.financeOperate" class="hc-quick" @click="go('/inventory/finance/add')">
         <span class="hc-quick__icon hc-quick__icon--primary"><span class="material-symbols-outlined text-xl">add</span></span>
         <span class="hc-quick__label">记一笔</span>
       </button>
@@ -131,6 +133,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/api'
+import { auth } from '@/store'
 import { financeMonth } from '@/store/finance'
 import { money, monthText, pad2 } from '@/utils/finance'
 
@@ -175,8 +178,10 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
+    // 无记账查看权限时不请求账本数据（后端也会 403），避免首页报错。
+    const finPromise = auth.financeView ? api.financeStats(financeMonth.value) : Promise.resolve({ data: {} })
     const [fin, invRes, shop] = await Promise.all([
-      api.financeStats(financeMonth.value),
+      finPromise,
       api.inventoryStats(3),
       api.inventoryShopping(false),
     ])

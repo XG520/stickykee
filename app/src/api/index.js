@@ -220,6 +220,8 @@ export const api = {
   createUser: (b) => api.post('/users', b),
   updateUser: (username, b) => api.put(`/users/${username}`, b),
   setUserMapPolicy: (username, useAdmin) => api.put(`/users/${username}/map`, { use_admin: useAdmin }),
+  // 记账模块授权（管理员）：{ view, operate }；operate 隐含 view
+  setUserFinancePerm: (username, p) => api.put(`/users/${encodeURIComponent(username)}/finance`, p),
   setUserHAToken: (username, token) => api.put(`/users/${username}/ha`, { token }),
   // 账号级生日（管理员代设）：GET 读列表，PUT 传数组；保存后服务端同步该账号 HA 生日传感器
   getUserBirthdays: (username) => api.get(`/users/${encodeURIComponent(username)}/birthdays`),

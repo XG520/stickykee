@@ -66,9 +66,9 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 	r.Get("/api/v1/im-files/*", im.ImageFiles)
 
 	// 资源 handlers
-	authHandler := handler.NewAuth(userRepo)
+	authHandler := handler.NewAuth(userRepo, userPrefs)
 	instances := handler.NewInstances(repo, manager, hb)
-	entities := handler.NewEntities(manager)
+	entities := handler.NewEntities(manager, userPrefs)
 	services := handler.NewServices(manager)
 	// 账号级生日（存取 + HA 传感器同步）：prefs 写入回调与管理员接口都依赖它
 	birthdays := handler.NewBirthdays(manager, repo, userPrefs, userRepo)
@@ -88,8 +88,8 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 			hb.BroadcastUser(user, msg)
 		}
 	}, hb.BroadcastUserBinary)
-	ws := handler.NewWS(manager, nil, authOpt.Authenticate, callManager.AudioRoute, callManager)
-	agg := handler.NewAggregate(manager)
+	ws := handler.NewWS(manager, userPrefs, nil, authOpt.Authenticate, callManager.AudioRoute, callManager)
+	agg := handler.NewAggregate(manager, userPrefs)
 	automation := handler.NewAutomation(manager)
 	devices := handler.NewDevices(repo, userPrefs, manager)
 	registrations := handler.NewRegisteredEntities(manager, iconRepo)
@@ -244,51 +244,58 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 			})
 
 			// 账本（P1：账户、分类、流水、转账、本月概览）
+			// 权限：查看类接口要求 finance_view，写操作要求 finance_operate；
+			// 管理员恒有全部权限，普通用户默认无权限（须管理员在用户管理中授权）。
 			r.Route("/finance", func(r chi.Router) {
-				r.Get("/accounts", finance.ListAccounts)
-				r.Post("/accounts", finance.CreateAccount)
-				r.Put("/accounts/{id}", finance.UpdateAccount)
-				r.Delete("/accounts/{id}", finance.DeleteAccount)
+				r.Group(func(r chi.Router) {
+					r.Use(handler.RequireFinance(userPrefs, false))
+					r.Get("/accounts", finance.ListAccounts)
+					r.Get("/categories", finance.ListCategories)
+					r.Get("/transactions", finance.ListTransactions)
+					r.Get("/stats", finance.Stats)
+					r.Get("/budgets", finance.ListBudgets)
+					r.Get("/trend", finance.Trend)
+					r.Get("/export", finance.Export)
+					r.Get("/reports", finance.ListReports)
+					r.Post("/reports/preview", finance.ReportPreview)
+					r.Post("/reports/data", finance.ReportDataPreview)
+					r.Get("/reports/{id}", finance.GetReport)
+					r.Get("/reports/{id}/transactions", finance.ReportTransactions)
+					r.Get("/reports/{id}/export", finance.ReportExport)
+					r.Get("/recurring", finance.ListRecurring)
+				})
+				r.Group(func(r chi.Router) {
+					r.Use(handler.RequireFinance(userPrefs, true))
+					r.Post("/accounts", finance.CreateAccount)
+					r.Put("/accounts/{id}", finance.UpdateAccount)
+					r.Delete("/accounts/{id}", finance.DeleteAccount)
 
-				r.Get("/categories", finance.ListCategories)
-				r.Post("/categories", finance.CreateCategory)
-				r.Put("/categories/{id}", finance.UpdateCategory)
-				r.Delete("/categories/{id}", finance.DeleteCategory)
+					r.Post("/categories", finance.CreateCategory)
+					r.Put("/categories/{id}", finance.UpdateCategory)
+					r.Delete("/categories/{id}", finance.DeleteCategory)
 
-				r.Get("/transactions", finance.ListTransactions)
-				r.Post("/transactions", finance.CreateTransaction)
-				r.Put("/transactions/{id}", finance.UpdateTransaction)
-				r.Delete("/transactions/{id}", finance.DeleteTransaction)
-				r.Post("/transactions/{id}/restore", finance.RestoreTransaction)
+					r.Post("/transactions", finance.CreateTransaction)
+					r.Put("/transactions/{id}", finance.UpdateTransaction)
+					r.Delete("/transactions/{id}", finance.DeleteTransaction)
+					r.Post("/transactions/{id}/restore", finance.RestoreTransaction)
 
-				r.Post("/transfer", finance.CreateTransfer)
-				r.Get("/stats", finance.Stats)
+					r.Post("/transfer", finance.CreateTransfer)
+					r.Put("/budgets", finance.SetBudgets)
 
-				r.Get("/budgets", finance.ListBudgets)
-				r.Put("/budgets", finance.SetBudgets)
-				r.Get("/trend", finance.Trend)
-				r.Get("/export", finance.Export)
+					// 报表：保存/删除 + 明细/CSV 导出在查看组内
+					r.Post("/reports", finance.CreateReport)
+					r.Delete("/reports/{id}", finance.DeleteReport)
 
-				// 报表：多维筛选生成 + 可视化详情 + 明细/CSV 导出
-				r.Get("/reports", finance.ListReports)
-				r.Post("/reports", finance.CreateReport)
-				r.Post("/reports/preview", finance.ReportPreview)
-				r.Post("/reports/data", finance.ReportDataPreview)
-				r.Get("/reports/{id}", finance.GetReport)
-				r.Get("/reports/{id}/transactions", finance.ReportTransactions)
-				r.Get("/reports/{id}/export", finance.ReportExport)
-				r.Delete("/reports/{id}", finance.DeleteReport)
+					r.Post("/recurring", finance.CreateRecurring)
+					r.Put("/recurring/{id}", finance.UpdateRecurring)
+					r.Delete("/recurring/{id}", finance.DeleteRecurring)
 
-				r.Get("/recurring", finance.ListRecurring)
-				r.Post("/recurring", finance.CreateRecurring)
-				r.Put("/recurring/{id}", finance.UpdateRecurring)
-				r.Delete("/recurring/{id}", finance.DeleteRecurring)
+					r.Post("/recognize", finance.Recognize)
 
-				r.Post("/recognize", finance.Recognize)
-
-				// 自动记账：安卓通知监听（准实时）+ 官方账单 CSV 导入（非实时）
-				r.Post("/notification", finance.Notification)
-				r.Post("/import", finance.Import)
+					// 自动记账：安卓通知监听（准实时）+ 官方账单 CSV 导入（非实时）
+					r.Post("/notification", finance.Notification)
+					r.Post("/import", finance.Import)
+				})
 			})
 
 			// 用户间消息 & 仪表盘共享（全部登录可见，action 端做归属校验）
@@ -325,6 +332,8 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 				r.Put("/{username}", users.Update)
 				r.Put("/{username}/map", users.SetMapPolicy)
 				r.Put("/{username}/ha", users.SetHAToken)
+				// 记账模块授权：管理员按用户分配查看/操作权限
+				r.Put("/{username}/finance", users.SetFinancePerm)
 				// 账号级生日：管理员代设（数组）；保存后服务端立即同步该账号 HA 生日传感器
 				r.Get("/{username}/birthdays", birthdays.GetFor)
 				r.Put("/{username}/birthdays", birthdays.SetFor)

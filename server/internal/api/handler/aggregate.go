@@ -1,22 +1,29 @@
 ﻿package handler
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
 	"time"
 
+	"stickykee/server/internal/auth"
 	"stickykee/server/internal/ha"
 	"stickykee/server/internal/ha/model"
+	"stickykee/server/internal/store"
 )
 
 // Aggregate 提供场景/自动化/能耗/历史/日志等聚合接口。
 type Aggregate struct {
-	manager *ha.Manager
+	manager   *ha.Manager
+	userPrefs *store.UserPrefs
 }
 
 // NewAggregate 构造 handler。
-func NewAggregate(manager *ha.Manager) *Aggregate { return &Aggregate{manager: manager} }
+func NewAggregate(manager *ha.Manager, userPrefs *store.UserPrefs) *Aggregate {
+	return &Aggregate{manager: manager, userPrefs: userPrefs}
+}
 
 // rest 解析实例 id 并确保可访问；失败返回 ok=false 且已写错误。
 func (h *Aggregate) rest(w http.ResponseWriter, r *http.Request) (int64, bool) {
@@ -101,10 +108,21 @@ func (h *Aggregate) History(w http.ResponseWriter, r *http.Request) {
 		entities = []string{e}
 	}
 	rst, _ := h.manager.Rest(r.Context(), id)
+	// 记账相关实体的历史属于账本数据：无查看权限时直接拒绝，未指定实体则事后过滤。
+	blocked := h.financeBlockedIDs(r.Context(), id)
+	if len(entities) > 0 {
+		if _, hit := blocked[entities[0]]; hit {
+			WriteErr(w, 403, "forbidden", "未获得记账模块授权，请联系管理员")
+			return
+		}
+	}
 	hist, err := rst.GetHistory(r.Context(), entities, start, end)
 	if err != nil {
 		WriteErr(w, 502, "ha_unreachable", err.Error())
 		return
+	}
+	if len(entities) == 0 && len(blocked) > 0 {
+		hist = filterBlockedHistory(hist, blocked)
 	}
 	active, _ := h.manager.ActiveID(r.Context())
 	WriteMeta(w, 200, hist, active)
@@ -127,6 +145,12 @@ func (h *Aggregate) Statistics(w http.ResponseWriter, r *http.Request) {
 		end = time.Now()
 	}
 	meta := r.URL.Query().Get("statistic_ids")
+	if meta != "" {
+		if _, hit := h.financeBlockedIDs(r.Context(), id)[meta]; hit {
+			WriteErr(w, 403, "forbidden", "未获得记账模块授权，请联系管理员")
+			return
+		}
+	}
 	payload := map[string]any{
 		"statistic_ids": []string{},
 		"start_time":    start.Format(time.RFC3339),
@@ -169,6 +193,10 @@ func (h *Aggregate) SumStatistics(w http.ResponseWriter, r *http.Request) {
 	}
 	var ids []string
 	if s := r.URL.Query().Get("statistic_ids"); s != "" {
+		if _, hit := h.financeBlockedIDs(r.Context(), id)[s]; hit {
+			WriteErr(w, 403, "forbidden", "未获得记账模块授权，请联系管理员")
+			return
+		}
 		ids = []string{s}
 	}
 	raw, err := h.manager.CallCommand(r.Context(), id, "recorder/statistics_during_period", map[string]any{
@@ -229,4 +257,41 @@ func parseTime(s string) time.Time {
 		return t
 	}
 	return time.Time{}
+}
+
+// financeBlockedIDs 返回当前用户无权访问的记账相关实体 ID 集合；
+// 有查看权限（含管理员）时返回空集合。基于实例实时快照的显示名判定。
+func (h *Aggregate) financeBlockedIDs(ctx context.Context, instanceID int64) map[string]struct{} {
+	out := map[string]struct{}{}
+	username, ok := auth.User(ctx)
+	if !ok || ReadFinancePerm(ctx, h.userPrefs, username).Allows(false) {
+		return out
+	}
+	states, err := h.manager.Snapshot(ctx, instanceID)
+	if err != nil {
+		return out
+	}
+	for _, s := range states {
+		if IsFinanceEntityName(model.ParseDisplay(s).FriendlyName) {
+			out[s.EntityID] = struct{}{}
+		}
+	}
+	return out
+}
+
+// filterBlockedHistory 从 HA 历史响应中剔除被屏蔽实体的分组（未指定 entity 时的全量拉取）。
+func filterBlockedHistory(raw []json.RawMessage, blocked map[string]struct{}) []json.RawMessage {
+	out := make([]json.RawMessage, 0, len(raw))
+	for _, item := range raw {
+		var rows []struct {
+			EntityID string `json:"entity_id"`
+		}
+		if err := json.Unmarshal(item, &rows); err == nil && len(rows) > 0 {
+			if _, hit := blocked[rows[0].EntityID]; hit {
+				continue
+			}
+		}
+		out = append(out, item)
+	}
+	return out
 }
