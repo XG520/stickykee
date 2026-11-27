@@ -1,8 +1,8 @@
 <template>
-  <!-- 桌面端的账本导航由「生活」工作台左侧二级导航承担，这里只保留移动端专属 5 位底栏 -->
+  <!-- 桌面端（≥1024）由「生活」工作台左侧二级导航承担；平板与手机保留底部 5 位栏 -->
 
   <nav
-    class="md:hidden fixed bottom-0 left-0 right-0 z-[60] bg-surface/95 backdrop-blur-md border-t border-border"
+    class="lg:hidden fixed bottom-0 left-0 right-0 z-[60] bg-surface/95 backdrop-blur-md border-t border-border"
     style="padding-bottom: env(safe-area-inset-bottom)"
   >
     <div class="max-w-lg mx-auto grid grid-cols-5 items-end h-16">

@@ -2,7 +2,7 @@
   <!-- 桌面端「生活」工作台外壳：左侧二级导航 + 右侧内容区；移动端保持原有单列页面 -->
   <div class="lg:flex lg:items-start lg:gap-6 xl:gap-8">
     <aside class="hidden lg:flex lg:w-[218px] xl:w-[236px] shrink-0 lg:sticky lg:top-20 self-start flex-col">
-      <div class="rounded-3xl bg-surface border border-border px-3 py-4">
+      <div class="rounded-3xl bg-surface border border-border px-3 py-4 lg:max-h-[calc(100dvh-6rem)] lg:overflow-y-auto">
         <div class="px-2 flex items-start justify-between gap-2">
           <div class="min-w-0">
             <h1 class="font-headline text-xl font-semibold leading-tight">生活</h1>

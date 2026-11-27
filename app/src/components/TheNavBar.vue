@@ -1,11 +1,11 @@
 <template>
-  <nav class="hidden md:flex items-center gap-1">
+  <nav class="hidden md:flex items-center gap-1 overflow-x-auto" style="scrollbar-width: none">
     <router-link
       v-for="item in items"
       :key="item.to"
       :to="item.to"
       :class="[
-        'flex items-center gap-1.5 px-4 py-2 rounded-full font-body text-sm font-medium transition-colors duration-200',
+        'flex items-center gap-1.5 px-3 xl:px-4 py-2 rounded-full font-body text-[13px] xl:text-sm font-medium transition-colors duration-200 whitespace-nowrap shrink-0',
         isActive(item.to)
           ? 'bg-surface-alt text-primary border border-border'
           : 'text-muted hover:text-on-surface hover:bg-surface-alt',
@@ -43,3 +43,7 @@ function isActive(to) {
   return route.path === to
 }
 </script>
+
+<style scoped>
+nav::-webkit-scrollbar { display: none; }
+</style>

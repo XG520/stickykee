@@ -78,7 +78,7 @@
         <article
           v-for="r in reports"
           :key="r.id"
-          class="rounded-2xl bg-surface border border-border p-4 cursor-pointer active:bg-surface-alt transition-colors"
+          class="rounded-2xl bg-surface border border-border p-4 cursor-pointer active:bg-surface-alt hover:bg-surface-alt/60 hover:border-primary/30 transition-colors"
           @click="openReport(r)"
         >
           <div class="flex items-start justify-between gap-2">

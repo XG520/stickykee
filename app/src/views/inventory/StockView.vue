@@ -9,7 +9,7 @@
       <button class="hc-icon-btn" :class="searchOpen ? 'text-primary' : ''" aria-label="搜索" @click="toggleSearch">
         <span class="material-symbols-outlined">search</span>
       </button>
-      <button class="h-9 px-3 rounded-full bg-primary text-on-primary text-xs font-body flex items-center gap-1" @click="openCreate">
+      <button class="h-9 lg:h-10 px-3 rounded-full bg-primary text-on-primary text-xs font-body flex items-center gap-1" @click="openCreate">
         <span class="material-symbols-outlined text-base">add</span>添加
       </button>
     </header>
@@ -58,20 +58,20 @@
 
     <!-- 概览 + 筛选 -->
     <div class="bg-surface border border-border rounded-2xl p-4 lg:p-5 space-y-3">
-      <div class="grid grid-cols-3 gap-2">
-        <div>
+      <div class="grid grid-cols-3 gap-2 lg:grid-cols-1 lg:gap-2.5">
+        <div class="min-w-0 lg:flex lg:items-baseline lg:justify-between lg:gap-3">
           <div class="text-[11px] text-muted font-body">在库</div>
-          <div class="mt-1 font-headline text-xl font-semibold tabular-nums leading-none">{{ fmt(stats.total) }}</div>
+          <div class="mt-1 lg:mt-0 font-headline text-xl lg:text-[19px] font-semibold tabular-nums leading-none truncate">{{ fmt(stats.total) }}</div>
         </div>
-        <div>
+        <div class="min-w-0 lg:flex lg:items-baseline lg:justify-between lg:gap-3">
           <div class="text-[11px] text-muted font-body">价值</div>
-          <div class="mt-1 font-headline text-xl font-semibold tabular-nums leading-none">{{ fmt(stats.total_value) }}</div>
+          <div class="mt-1 lg:mt-0 font-headline text-xl lg:text-[19px] font-semibold tabular-nums leading-none truncate">{{ fmt(stats.total_value) }}</div>
         </div>
-        <div>
+        <div class="min-w-0 lg:flex lg:items-baseline lg:justify-between lg:gap-3">
           <div class="text-[11px] text-muted font-body">临期</div>
-          <div class="mt-1 font-headline text-xl font-semibold tabular-nums leading-none text-error">
+          <div class="mt-1 lg:mt-0 font-headline text-xl lg:text-[19px] font-semibold tabular-nums leading-none text-error truncate">
             {{ stats.expiring || 0 }}
-            <span v-if="Number(stats.expired) > 0" class="text-[10px] font-body text-muted ml-1">过期 {{ stats.expired }}</span>
+            <span v-if="Number(stats.expired) > 0" class="text-[10px] font-body text-muted ml-1 whitespace-nowrap">过期 {{ stats.expired }}</span>
           </div>
         </div>
       </div>
@@ -191,16 +191,16 @@
             </div>
           </div>
           <div class="flex items-center gap-2">
-            <button class="text-muted hover:text-primary" @click="openEdit(detailItem)">
+            <button class="text-muted hover:text-primary lg:w-10 lg:h-10 lg:rounded-full lg:flex lg:items-center lg:justify-center lg:hover:bg-surface-alt lg:transition-colors" @click="openEdit(detailItem)">
               <span class="material-symbols-outlined">edit</span>
             </button>
-            <button class="text-muted hover:text-primary" title="加入购物清单" @click="toShopping(detailItem)">
+            <button class="text-muted hover:text-primary lg:w-10 lg:h-10 lg:rounded-full lg:flex lg:items-center lg:justify-center lg:hover:bg-surface-alt lg:transition-colors" title="加入购物清单" @click="toShopping(detailItem)">
               <span class="material-symbols-outlined">add_shopping_cart</span>
             </button>
-            <button class="text-muted hover:text-error" @click="removeItem(detailItem)">
+            <button class="text-muted hover:text-error lg:w-10 lg:h-10 lg:rounded-full lg:flex lg:items-center lg:justify-center lg:hover:bg-error/10 lg:transition-colors" @click="removeItem(detailItem)">
               <span class="material-symbols-outlined">delete</span>
             </button>
-            <button class="text-muted hover:text-on-surface" @click="detailItem = null">
+            <button class="text-muted hover:text-on-surface lg:w-10 lg:h-10 lg:rounded-full lg:flex lg:items-center lg:justify-center lg:hover:bg-surface-alt lg:transition-colors" @click="detailItem = null">
               <span class="material-symbols-outlined">close</span>
             </button>
           </div>

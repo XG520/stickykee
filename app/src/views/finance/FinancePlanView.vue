@@ -6,13 +6,12 @@
       </button>
     </FinanceHeader>
 
-    <!-- 桌面端双栏：左侧预算，右侧周期账单 -->
-    <div class="space-y-3 lg:grid lg:grid-cols-12 lg:gap-5 lg:space-y-0 lg:items-start">
-    <div class="space-y-3 lg:col-span-7 lg:col-start-1 lg:row-start-1">
     <div v-if="error" class="text-xs text-error font-body">{{ error }}</div>
 
+    <!-- 桌面端双栏：月份条/预算在左，周期账单在右；右卡与预算卡顶部对齐 -->
+    <div class="space-y-3 lg:grid lg:grid-cols-12 lg:gap-x-5 lg:gap-y-3 lg:space-y-0 lg:items-start">
     <!-- 月份切换：预算按所选月份展示 -->
-    <div class="flex items-center gap-0.5">
+    <div class="flex items-center gap-0.5 lg:col-span-7 lg:col-start-1 lg:row-start-1">
       <button class="hc-ic-sm" aria-label="上个月" @click="shiftFinanceMonth(-1)">
         <span class="material-symbols-outlined">chevron_left</span>
       </button>
@@ -26,6 +25,8 @@
         @click="financeMonth = currentMonthValue"
       >本月</button>
     </div>
+
+    <div class="space-y-3 lg:col-span-7 lg:col-start-1 lg:row-start-2">
 
     <!-- 本月预算 -->
     <section class="rounded-2xl bg-surface border border-border p-4 space-y-3">
@@ -85,7 +86,7 @@
     </div>
 
     <!-- 周期账单 -->
-    <section class="rounded-2xl lg:rounded-3xl bg-surface border border-border p-4 lg:p-5 space-y-3 lg:col-span-5 lg:col-start-8 lg:row-start-1">
+    <section class="rounded-2xl lg:rounded-3xl bg-surface border border-border p-4 lg:p-5 space-y-3 lg:col-span-5 lg:col-start-8 lg:row-start-2">
       <div class="flex items-center justify-between">
         <div class="text-sm font-medium font-body">周期账单</div>
         <button class="text-[11px] text-primary font-body" @click="openManager('recurring')">新增</button>

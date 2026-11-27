@@ -2,10 +2,11 @@
   <div class="py-2 space-y-3 max-w-3xl mx-auto lg:max-w-none">
     <FinanceHeader title="我的" subtitle="资产、账户与数据" />
 
+    <div v-if="error" class="text-xs text-error font-body">{{ error }}</div>
+
     <!-- 桌面端双栏：左侧资产/账户，右侧功能入口 -->
     <div class="space-y-3 lg:grid lg:grid-cols-12 lg:gap-5 lg:space-y-0 lg:items-start">
     <div class="space-y-3 lg:col-span-7 lg:col-start-1 lg:row-start-1">
-    <div v-if="error" class="text-xs text-error font-body">{{ error }}</div>
 
     <!-- 资产总览 -->
     <section class="rounded-2xl bg-surface border border-border p-4">

@@ -54,9 +54,9 @@
     <!-- 桌面端：左侧流水、右侧吸顶汇总 -->
     <div class="space-y-3 lg:grid lg:grid-cols-12 lg:gap-5 lg:space-y-0 lg:items-start">
     <!-- 汇总卡 -->
-    <section class="rounded-2xl lg:rounded-3xl bg-surface border border-border p-4 lg:p-5 lg:col-span-4 lg:col-start-9 lg:row-start-1 lg:sticky lg:top-20">
-      <div class="text-[11px] text-muted font-body">{{ monthText(financeMonth) }}支出</div>
-      <div class="mt-1 font-headline text-[30px] lg:text-[34px] leading-none font-semibold tabular-nums">{{ money(stats.expense) }}</div>
+    <section class="min-w-0 rounded-2xl lg:rounded-3xl bg-surface border border-border p-4 lg:p-5 lg:col-span-4 lg:col-start-9 lg:row-start-1 lg:sticky lg:top-20">
+      <div class="text-[11px] text-muted font-body truncate">{{ monthText(financeMonth) }}支出</div>
+      <div class="mt-1 font-headline text-[30px] lg:text-[32px] xl:text-[34px] leading-none font-semibold tabular-nums truncate">{{ money(stats.expense) }}</div>
       <div class="mt-2.5 flex items-center gap-3 text-[11px] font-body text-muted">
         <span>收入 <span class="text-accent font-medium">{{ money(stats.income) }}</span></span>
         <span>结余 <span :class="balance >= 0 ? 'text-accent' : 'text-error'" class="font-medium">{{ money(balance) }}</span></span>

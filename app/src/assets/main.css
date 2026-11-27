@@ -405,6 +405,21 @@ html.theme-china body::after {
     padding-bottom: 96px;
   }
 
+  /* 桌面端没有全局底部 Tab，去掉为移动端预留的高度与 884px 最小高度，
+     避免短页面出现无意义的整页滚动和大块底部空白 */
+  @media (min-width: 1024px) {
+    body {
+      min-height: 100dvh;
+      padding-bottom: 0;
+    }
+  }
+
+  /* 键盘焦点统一可见，保证桌面端可操作性 */
+  :focus-visible {
+    outline: 2px solid rgb(var(--c-primary) / .75);
+    outline-offset: 2px;
+  }
+
   /* 主题兜底：强制 body 背景/文字跟随 --c-* 变量（防止工具链使用旧 tailwind 配置时主题失效） */
   body {
     background-color: rgb(var(--c-background) / 1);

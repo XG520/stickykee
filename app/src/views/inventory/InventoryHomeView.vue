@@ -1,5 +1,5 @@
 <template>
-  <div class="py-2 space-y-4 max-w-3xl mx-auto">
+  <div class="py-2 space-y-4 max-w-3xl mx-auto lg:max-w-none">
     <!-- 标题 -->
     <header class="flex items-end justify-between gap-3">
       <div>
@@ -7,7 +7,10 @@
           <span class="lg:hidden">生活</span>
           <span class="hidden lg:inline">概览</span>
         </h1>
-        <p class="mt-0.5 text-[11px] text-muted font-body">{{ todayLabel }}</p>
+        <p class="mt-0.5 text-[11px] text-muted font-body">
+          <span class="lg:hidden">{{ todayLabel }}</span>
+          <span class="hidden lg:inline">库存、购物与账本总览</span>
+        </p>
       </div>
       <button
         v-if="auth.financeView"
@@ -75,12 +78,12 @@
       </button>
 
       <!-- 快捷操作：移动端仍为四宫格，桌面端升为独立卡片 -->
-      <div class="col-span-2 order-4 lg:col-span-4 lg:col-start-9 lg:row-start-1 pt-1 lg:pt-0 rounded-2xl lg:rounded-3xl lg:bg-surface lg:border lg:border-border lg:p-4">
+      <div class="col-span-2 order-4 lg:col-span-4 lg:col-start-9 lg:row-start-1 pt-1 lg:pt-0 rounded-2xl lg:rounded-3xl lg:bg-surface lg:border lg:border-border lg:p-4 lg:flex lg:flex-col">
         <div class="hidden lg:flex items-center justify-between mb-3">
           <span class="text-sm font-medium font-body">快捷操作</span>
           <span class="material-symbols-outlined text-muted text-base">bolt</span>
         </div>
-        <div class="grid grid-cols-4 lg:grid-cols-2 gap-2 lg:gap-3">
+        <div class="grid grid-cols-4 lg:grid-cols-2 gap-2 lg:gap-3 lg:flex-1 lg:content-center">
           <button class="hc-quick" @click="go('/inventory/stock?scan=1')">
             <span class="hc-quick__icon"><span class="material-symbols-outlined text-xl">qr_code_scanner</span></span>
             <span class="hc-quick__label">扫码入库</span>

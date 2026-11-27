@@ -97,7 +97,7 @@
     </div>
 
     <!-- 总额 -->
-    <section class="rounded-2xl bg-surface border border-border p-4">
+    <section class="min-w-0 rounded-2xl bg-surface border border-border p-4">
       <div class="flex items-center justify-between gap-2">
         <div class="min-w-0 text-[11px] text-muted font-body truncate">
           <template v-if="selectedCategory">{{ selectedCategory.name }} · </template>总{{ type === 'income' ? '收入' : '支出' }}
@@ -109,7 +109,7 @@
           </button>
         </div>
       </div>
-      <div class="mt-1 font-headline text-[30px] lg:text-[34px] leading-none font-semibold tabular-nums" :class="type === 'income' ? 'text-accent' : ''">
+      <div class="mt-1 font-headline text-[30px] lg:text-[34px] leading-none font-semibold tabular-nums truncate" :class="type === 'income' ? 'text-accent' : ''">
         {{ money(total) }}
       </div>
       <div class="mt-2 text-[11px] text-muted font-body">

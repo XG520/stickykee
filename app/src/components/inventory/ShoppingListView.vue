@@ -9,7 +9,7 @@
         class="w-full px-3 py-2.5 rounded-xl bg-surface-alt border border-border text-sm text-on-surface outline-none focus:border-primary transition-colors"
         @keyup.enter="add"
       />
-      <div class="flex items-center gap-2">
+      <div class="flex flex-wrap items-center gap-2">
         <label class="text-xs text-muted font-body whitespace-nowrap">数量</label>
         <input
           v-model.number="qty"
@@ -18,8 +18,8 @@
           step="1"
           class="w-16 px-2 py-2 rounded-xl bg-surface-alt border border-border text-sm text-on-surface outline-none focus:border-primary"
         />
-        <button class="px-4 py-2 rounded-xl bg-primary text-white text-sm font-body" @click="add">添加</button>
-        <label class="text-xs text-muted font-body flex items-center gap-1.5 ml-auto whitespace-nowrap">
+        <button class="px-4 py-2 lg:h-10 rounded-xl bg-primary text-white text-sm font-body" @click="add">添加</button>
+        <label class="text-xs text-muted font-body flex items-center gap-1.5 ml-auto whitespace-nowrap lg:ml-0 lg:w-full">
           <input v-model="showDone" type="checkbox" @change="load" />
           显示已完成
         </label>
@@ -36,16 +36,18 @@
           :key="it.id"
           class="flex items-center gap-3 bg-surface border border-border rounded-xl px-3 py-2 lg:px-4 lg:py-3 hover:bg-surface-alt/50 transition-colors"
         >
-          <input type="checkbox" :checked="it.done" @change="toggle(it)" />
+          <label class="shrink-0 flex items-center justify-center cursor-pointer lg:w-9 lg:h-9 lg:rounded-full lg:hover:bg-surface-alt lg:transition-colors">
+            <input type="checkbox" class="w-4 h-4" style="accent-color: rgb(var(--c-primary))" :checked="it.done" @change="toggle(it)" />
+          </label>
           <div class="flex-1 min-w-0">
-            <span class="text-sm font-body" :class="it.done ? 'line-through text-muted' : 'text-on-background'">{{ it.name }}</span>
-            <span class="text-xs text-muted font-body ml-2">{{ fmt(it.quantity) }} {{ it.unit }}</span>
-            <span v-if="it.note" class="text-xs text-muted font-body ml-2">· {{ it.note }}</span>
+            <span class="text-sm font-body break-words" :class="it.done ? 'line-through text-muted' : 'text-on-background'">{{ it.name }}</span>
+            <span class="text-xs text-muted font-body ml-2 whitespace-nowrap">{{ fmt(it.quantity) }} {{ it.unit }}</span>
+            <span v-if="it.note" class="text-xs text-muted font-body ml-2 break-words">· {{ it.note }}</span>
           </div>
-          <button v-if="!it.done" class="text-muted hover:text-primary" title="入库" @click="openPurchase(it)">
+          <button v-if="!it.done" class="text-muted hover:text-primary lg:w-9 lg:h-9 lg:rounded-full lg:flex lg:items-center lg:justify-center lg:hover:bg-surface-alt lg:transition-colors" title="入库" @click="openPurchase(it)">
             <span class="material-symbols-outlined text-base">inventory_2</span>
           </button>
-          <button class="text-muted hover:text-error" @click="remove(it)">
+          <button class="text-muted hover:text-error lg:w-9 lg:h-9 lg:rounded-full lg:flex lg:items-center lg:justify-center lg:hover:bg-error/10 lg:transition-colors" @click="remove(it)">
             <span class="material-symbols-outlined text-base">delete</span>
           </button>
         </div>
