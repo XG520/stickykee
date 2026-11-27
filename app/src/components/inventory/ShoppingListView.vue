@@ -1,6 +1,8 @@
 <template>
-  <div class="space-y-3">
-    <div class="space-y-2">
+  <div class="space-y-3 lg:space-y-0 lg:grid lg:grid-cols-12 lg:gap-5 lg:items-start">
+    <!-- 添加表单：桌面端为右侧常驻卡片，移动端保持顶部输入区 -->
+    <div class="space-y-2 lg:order-2 lg:col-span-4 lg:sticky lg:top-20 lg:rounded-3xl lg:bg-surface lg:border lg:border-border lg:p-4">
+      <div class="hidden lg:block text-sm font-medium font-body pb-1">添加购物项</div>
       <input
         v-model="name"
         placeholder="添加到购物清单…"
@@ -24,30 +26,33 @@
       </div>
     </div>
 
-    <div v-if="error" class="text-xs text-error font-body">{{ error }}</div>
+    <!-- 清单：桌面端为左侧宽列表 -->
+    <div class="lg:order-1 lg:col-span-8 space-y-2">
+      <div v-if="error" class="text-xs text-error font-body">{{ error }}</div>
 
-    <div v-if="items.length" class="space-y-2">
-      <div
-        v-for="it in items"
-        :key="it.id"
-        class="flex items-center gap-3 bg-surface border border-border rounded-xl px-3 py-2"
-      >
-        <input type="checkbox" :checked="it.done" @change="toggle(it)" />
-        <div class="flex-1 min-w-0">
-          <span class="text-sm font-body" :class="it.done ? 'line-through text-muted' : 'text-on-background'">{{ it.name }}</span>
-          <span class="text-xs text-muted font-body ml-2">{{ fmt(it.quantity) }} {{ it.unit }}</span>
-          <span v-if="it.note" class="text-xs text-muted font-body ml-2">· {{ it.note }}</span>
+      <div v-if="items.length" class="space-y-2">
+        <div
+          v-for="it in items"
+          :key="it.id"
+          class="flex items-center gap-3 bg-surface border border-border rounded-xl px-3 py-2 lg:px-4 lg:py-3 hover:bg-surface-alt/50 transition-colors"
+        >
+          <input type="checkbox" :checked="it.done" @change="toggle(it)" />
+          <div class="flex-1 min-w-0">
+            <span class="text-sm font-body" :class="it.done ? 'line-through text-muted' : 'text-on-background'">{{ it.name }}</span>
+            <span class="text-xs text-muted font-body ml-2">{{ fmt(it.quantity) }} {{ it.unit }}</span>
+            <span v-if="it.note" class="text-xs text-muted font-body ml-2">· {{ it.note }}</span>
+          </div>
+          <button v-if="!it.done" class="text-muted hover:text-primary" title="入库" @click="openPurchase(it)">
+            <span class="material-symbols-outlined text-base">inventory_2</span>
+          </button>
+          <button class="text-muted hover:text-error" @click="remove(it)">
+            <span class="material-symbols-outlined text-base">delete</span>
+          </button>
         </div>
-        <button v-if="!it.done" class="text-muted hover:text-primary" title="入库" @click="openPurchase(it)">
-          <span class="material-symbols-outlined text-base">inventory_2</span>
-        </button>
-        <button class="text-muted hover:text-error" @click="remove(it)">
-          <span class="material-symbols-outlined text-base">delete</span>
-        </button>
       </div>
-    </div>
-    <div v-else class="text-center py-16 text-sm text-muted font-body">
-      {{ loading ? '加载中…' : '清单是空的，缺什么就加什么' }}
+      <div v-else class="text-center py-16 text-sm text-muted font-body">
+        {{ loading ? '加载中…' : '清单是空的，缺什么就加什么' }}
+      </div>
     </div>
 
     <!-- 入库 -->

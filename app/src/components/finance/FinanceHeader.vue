@@ -1,16 +1,17 @@
 <template>
-  <header class="flex items-center gap-2 min-h-12">
+  <!-- 桌面端由「生活」工作台左侧导航承担页面切换，返回按钮仅在移动端显示 -->
+  <header class="flex items-center gap-2 min-h-12 lg:min-h-14">
     <button
       v-if="back"
-      class="hc-hdr-btn -ml-2"
+      class="hc-hdr-btn -ml-2 lg:hidden"
       :aria-label="backLabel"
       @click="goBack"
     >
       <span class="material-symbols-outlined">arrow_back</span>
     </button>
     <div class="flex-1 min-w-0">
-      <h1 class="font-headline text-lg font-semibold truncate">{{ title }}</h1>
-      <p v-if="subtitle" class="mt-0.5 text-[11px] text-muted font-body truncate">{{ subtitle }}</p>
+      <h1 class="font-headline text-lg lg:text-2xl font-semibold truncate">{{ title }}</h1>
+      <p v-if="subtitle" class="mt-0.5 text-[11px] lg:text-xs text-muted font-body truncate">{{ subtitle }}</p>
     </div>
     <slot />
   </header>

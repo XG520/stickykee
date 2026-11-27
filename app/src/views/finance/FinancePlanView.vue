@@ -1,11 +1,14 @@
 <template>
-  <div class="py-2 space-y-3 max-w-3xl mx-auto">
+  <div class="py-2 space-y-3 max-w-3xl mx-auto lg:max-w-none">
     <FinanceHeader title="计划" subtitle="预算与周期账单">
       <button class="hc-ic" aria-label="预算设置" @click="budgetOpen = true">
         <span class="material-symbols-outlined">savings</span>
       </button>
     </FinanceHeader>
 
+    <!-- 桌面端双栏：左侧预算，右侧周期账单 -->
+    <div class="space-y-3 lg:grid lg:grid-cols-12 lg:gap-5 lg:space-y-0 lg:items-start">
+    <div class="space-y-3 lg:col-span-7 lg:col-start-1 lg:row-start-1">
     <div v-if="error" class="text-xs text-error font-body">{{ error }}</div>
 
     <!-- 月份切换：预算按所选月份展示 -->
@@ -79,8 +82,10 @@
       </div>
     </section>
 
+    </div>
+
     <!-- 周期账单 -->
-    <section class="rounded-2xl bg-surface border border-border p-4 space-y-3">
+    <section class="rounded-2xl lg:rounded-3xl bg-surface border border-border p-4 lg:p-5 space-y-3 lg:col-span-5 lg:col-start-8 lg:row-start-1">
       <div class="flex items-center justify-between">
         <div class="text-sm font-medium font-body">周期账单</div>
         <button class="text-[11px] text-primary font-body" @click="openManager('recurring')">新增</button>
@@ -110,6 +115,7 @@
       </div>
       <div v-else class="text-xs text-muted font-body py-3 text-center">暂无周期账单</div>
     </section>
+    </div>
 
     <BudgetDialog v-model="budgetOpen" :month="financeMonth" :categories="categories" @saved="load" />
     <AccountManager

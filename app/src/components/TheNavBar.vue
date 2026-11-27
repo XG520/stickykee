@@ -38,6 +38,8 @@ const items = [
 ]
 
 function isActive(to) {
+  // 生活模块包含库存/购物/账本等子页，进入任一子页都点亮顶部「生活」。
+  if (to === '/inventory') return route.path === '/inventory' || route.path.startsWith('/inventory/')
   return route.path === to
 }
 </script>

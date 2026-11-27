@@ -1,5 +1,5 @@
 <template>
-  <div class="py-2 space-y-3 max-w-3xl mx-auto">
+  <div class="py-2 space-y-3 max-w-3xl mx-auto lg:max-w-none">
     <FinanceHeader title="账本" subtitle="记好每一笔，心里有数">
       <button class="hc-ic" :class="searchOpen ? 'text-primary' : ''" aria-label="搜索" @click="toggleSearch">
         <span class="material-symbols-outlined">search</span>
@@ -51,10 +51,12 @@
       </span>
     </div>
 
+    <!-- 桌面端：左侧流水、右侧吸顶汇总 -->
+    <div class="space-y-3 lg:grid lg:grid-cols-12 lg:gap-5 lg:space-y-0 lg:items-start">
     <!-- 汇总卡 -->
-    <section class="rounded-2xl bg-surface border border-border p-4">
+    <section class="rounded-2xl lg:rounded-3xl bg-surface border border-border p-4 lg:p-5 lg:col-span-4 lg:col-start-9 lg:row-start-1 lg:sticky lg:top-20">
       <div class="text-[11px] text-muted font-body">{{ monthText(financeMonth) }}支出</div>
-      <div class="mt-1 font-headline text-[30px] leading-none font-semibold tabular-nums">{{ money(stats.expense) }}</div>
+      <div class="mt-1 font-headline text-[30px] lg:text-[34px] leading-none font-semibold tabular-nums">{{ money(stats.expense) }}</div>
       <div class="mt-2.5 flex items-center gap-3 text-[11px] font-body text-muted">
         <span>收入 <span class="text-accent font-medium">{{ money(stats.income) }}</span></span>
         <span>结余 <span :class="balance >= 0 ? 'text-accent' : 'text-error'" class="font-medium">{{ money(balance) }}</span></span>
@@ -75,6 +77,8 @@
       </div>
     </section>
 
+    <!-- 右侧主列：筛选 + 流水 -->
+    <div class="space-y-3 lg:col-span-8 lg:col-start-1 lg:row-start-1">
     <!-- 生效筛选 -->
     <div v-if="hasFilters || dayFilter" class="flex flex-wrap items-center gap-1.5">
       <button v-if="dayFilter" class="hc-fchip" @click="clearDay">
@@ -104,11 +108,11 @@
           <span>{{ g.label }}</span>
           <span v-if="g.expense > 0">支出 {{ money(g.expense) }}</span>
         </div>
-        <div class="bg-surface border border-border rounded-2xl divide-y divide-border overflow-hidden">
+        <div class="bg-surface border border-border rounded-2xl lg:rounded-3xl divide-y divide-border overflow-hidden">
           <div
             v-for="tx in g.items"
             :key="tx.id"
-            class="flex items-center gap-3 px-3 py-2.5 cursor-pointer active:bg-surface-alt transition-colors"
+            class="flex items-center gap-3 px-3 py-2.5 lg:px-4 lg:py-3 cursor-pointer active:bg-surface-alt hover:bg-surface-alt/60 transition-colors"
             @click="editTx(tx)"
           >
             <div
@@ -140,6 +144,8 @@
     </div>
     <div v-else class="text-center py-16 text-sm text-muted font-body">
       {{ emptyHint }}
+    </div>
+    </div>
     </div>
 
     <!-- 收支日历 Sheet -->

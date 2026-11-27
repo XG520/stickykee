@@ -1,5 +1,5 @@
 <template>
-  <div class="py-2 space-y-3 max-w-3xl mx-auto">
+  <div class="py-2 space-y-3 max-w-3xl mx-auto lg:max-w-none">
     <FinanceHeader
       title="已保存报表"
       subtitle="固化筛选条件，随时回看"
@@ -8,6 +8,9 @@
       use-history
     />
 
+    <!-- 桌面端双栏：左侧新建、右侧已保存 -->
+    <div class="space-y-3 lg:grid lg:grid-cols-12 lg:gap-5 lg:space-y-0 lg:items-start">
+    <div class="space-y-3 lg:col-span-5 lg:col-start-1 lg:row-start-1 lg:sticky lg:top-20">
     <div v-if="error" class="text-xs text-error font-body">{{ error }}</div>
 
     <!-- 新建报表 -->
@@ -57,8 +60,10 @@
       </button>
     </section>
 
+    </div>
+
     <!-- 已保存列表 -->
-    <section class="space-y-2">
+    <section class="space-y-2 lg:col-span-7 lg:col-start-6 lg:row-start-1">
       <div class="flex items-center justify-between px-1">
         <div class="text-sm font-medium font-body">已保存</div>
         <div class="text-[11px] text-muted font-body">{{ reports.length }} 份</div>
@@ -94,6 +99,7 @@
         </article>
       </div>
     </section>
+    </div>
 
     <!-- 详情 Sheet -->
     <div

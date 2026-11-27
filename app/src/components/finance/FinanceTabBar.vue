@@ -1,23 +1,6 @@
 <template>
-  <!-- 桌面端：顶部横向页签 -->
-  <nav class="hidden md:flex items-center gap-1 p-1 mb-4 rounded-2xl bg-surface-alt border border-border w-fit">
-    <router-link
-      v-for="t in tabs"
-      :key="t.to"
-      :to="t.to"
-      class="px-4 py-2 rounded-xl text-sm font-body transition-colors"
-      :class="isActive(t) ? 'bg-surface text-primary shadow-sm' : 'text-muted hover:text-on-surface'"
-    >{{ t.label }}</router-link>
-    <router-link
-      v-if="canOperate"
-      to="/inventory/finance/add"
-      class="ml-1 px-4 py-2 rounded-xl bg-primary text-on-primary text-sm font-body font-medium flex items-center gap-1"
-    >
-      <span class="material-symbols-outlined text-base">add</span>记一笔
-    </router-link>
-  </nav>
+  <!-- 桌面端的账本导航由「生活」工作台左侧二级导航承担，这里只保留移动端专属 5 位底栏 -->
 
-  <!-- 移动端：专属 5 位底栏，中间为记账 FAB -->
   <nav
     class="md:hidden fixed bottom-0 left-0 right-0 z-[60] bg-surface/95 backdrop-blur-md border-t border-border"
     style="padding-bottom: env(safe-area-inset-bottom)"
@@ -75,13 +58,6 @@ import { auth } from '@/store'
 const route = useRoute()
 // 只有获得「操作」权限才显示记一笔入口（查看权限不可写）
 const canOperate = computed(() => auth.financeOperate)
-
-const tabs = [
-  { to: '/inventory/finance/ledger', label: '明细', name: 'finance-ledger' },
-  { to: '/inventory/finance/charts', label: '图表', name: 'finance-charts' },
-  { to: '/inventory/finance/plan', label: '计划', name: 'finance-plan' },
-  { to: '/inventory/finance/me', label: '我的', name: 'finance-me' },
-]
 
 const leftTabs = [
   { to: '/inventory/finance/ledger', label: '明细', icon: 'receipt_long', name: 'finance-ledger' },

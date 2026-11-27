@@ -1,10 +1,10 @@
 <template>
-  <div class="py-2 pb-4 space-y-3 max-w-3xl mx-auto">
-    <header class="flex items-center gap-2 min-h-12">
-      <button class="hc-icon-btn -ml-2" aria-label="返回生活" @click="router.push('/inventory')">
+  <div class="py-2 pb-4 space-y-3 max-w-3xl mx-auto lg:max-w-none">
+    <header class="flex items-center gap-2 min-h-12 lg:min-h-14">
+      <button class="hc-icon-btn -ml-2 lg:hidden" aria-label="返回生活" @click="router.push('/inventory')">
         <span class="material-symbols-outlined">arrow_back</span>
       </button>
-      <h1 class="flex-1 min-w-0 font-headline text-lg font-semibold truncate">购物清单</h1>
+      <h1 class="flex-1 min-w-0 font-headline text-lg lg:text-2xl font-semibold truncate">购物清单</h1>
     </header>
 
     <ShoppingListView @changed="onChanged" />

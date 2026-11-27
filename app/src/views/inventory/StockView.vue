@@ -1,11 +1,11 @@
 <template>
-  <div class="py-2 pb-4 space-y-3 max-w-5xl mx-auto">
+  <div class="py-2 pb-4 space-y-3 max-w-5xl mx-auto lg:max-w-none">
     <!-- 头部 -->
-    <header class="flex items-center gap-2 min-h-12">
-      <button class="hc-icon-btn -ml-2" aria-label="返回生活" @click="router.push('/inventory')">
+    <header class="flex items-center gap-2 min-h-12 lg:min-h-14">
+      <button class="hc-icon-btn -ml-2 lg:hidden" aria-label="返回生活" @click="router.push('/inventory')">
         <span class="material-symbols-outlined">arrow_back</span>
       </button>
-      <h1 class="flex-1 min-w-0 font-headline text-lg font-semibold truncate">库存</h1>
+      <h1 class="flex-1 min-w-0 font-headline text-lg lg:text-2xl font-semibold truncate">库存</h1>
       <button class="hc-icon-btn" :class="searchOpen ? 'text-primary' : ''" aria-label="搜索" @click="toggleSearch">
         <span class="material-symbols-outlined">search</span>
       </button>
@@ -34,8 +34,11 @@
       </button>
     </div>
 
-    <!-- 位置 chips -->
-    <div class="flex items-center gap-1.5 overflow-x-auto pb-0.5" style="scrollbar-width: none">
+    <!-- 主体：移动端保持「筛选 → 概览 → 快捷 → 列表」；桌面端左侧列表、右侧信息栏 -->
+    <div class="space-y-3 lg:grid lg:grid-cols-12 lg:gap-5 lg:space-y-0 lg:items-start">
+      <div class="space-y-3 lg:col-span-4 lg:col-start-9 lg:row-start-1 lg:sticky lg:top-20">
+        <!-- 位置 chips -->
+        <div class="flex items-center gap-1.5 overflow-x-auto pb-0.5 lg:flex-wrap lg:overflow-visible" style="scrollbar-width: none">
       <button
         class="hc-chip"
         :class="selectedLocation === 0 ? 'hc-chip--on' : ''"
@@ -54,7 +57,7 @@
     </div>
 
     <!-- 概览 + 筛选 -->
-    <div class="bg-surface border border-border rounded-2xl p-4 space-y-3">
+    <div class="bg-surface border border-border rounded-2xl p-4 lg:p-5 space-y-3">
       <div class="grid grid-cols-3 gap-2">
         <div>
           <div class="text-[11px] text-muted font-body">在库</div>
@@ -96,35 +99,44 @@
       </div>
     </div>
 
-    <!-- 快捷操作 -->
-    <div class="grid grid-cols-4 gap-2">
-      <button class="hc-quick" @click="openStocktake">
-        <span class="hc-quick__icon"><span class="material-symbols-outlined text-xl">fact_check</span></span>
-        <span class="hc-quick__label">盘点</span>
-      </button>
-      <button class="hc-quick" @click="scanBarcode">
-        <span class="hc-quick__icon"><span class="material-symbols-outlined text-xl">qr_code_scanner</span></span>
-        <span class="hc-quick__label">扫码</span>
-      </button>
-      <label class="hc-quick cursor-pointer">
-        <span class="hc-quick__icon"><span class="material-symbols-outlined text-xl">photo_camera</span></span>
-        <span class="hc-quick__label">拍照</span>
-        <input type="file" accept="image/*" capture="environment" class="hidden" @change="onPickImage" />
-      </label>
-      <button class="hc-quick" @click="exportCsv">
-        <span class="hc-quick__icon"><span class="material-symbols-outlined text-xl">download</span></span>
-        <span class="hc-quick__label">导出</span>
-      </button>
-    </div>
+      <!-- 快捷操作 -->
+      <div class="lg:rounded-2xl lg:bg-surface lg:border lg:border-border lg:p-4">
+        <div class="hidden lg:flex items-center justify-between mb-3">
+          <span class="text-sm font-medium font-body">快捷操作</span>
+          <span class="material-symbols-outlined text-muted text-base">bolt</span>
+        </div>
+        <div class="grid grid-cols-4 lg:grid-cols-2 gap-2">
+          <button class="hc-quick" @click="openStocktake">
+            <span class="hc-quick__icon"><span class="material-symbols-outlined text-xl">fact_check</span></span>
+            <span class="hc-quick__label">盘点</span>
+          </button>
+          <button class="hc-quick" @click="scanBarcode">
+            <span class="hc-quick__icon"><span class="material-symbols-outlined text-xl">qr_code_scanner</span></span>
+            <span class="hc-quick__label">扫码</span>
+          </button>
+          <label class="hc-quick cursor-pointer">
+            <span class="hc-quick__icon"><span class="material-symbols-outlined text-xl">photo_camera</span></span>
+            <span class="hc-quick__label">拍照</span>
+            <input type="file" accept="image/*" capture="environment" class="hidden" @change="onPickImage" />
+          </label>
+          <button class="hc-quick" @click="exportCsv">
+            <span class="hc-quick__icon"><span class="material-symbols-outlined text-xl">download</span></span>
+            <span class="hc-quick__label">导出</span>
+          </button>
+        </div>
+      </div>
+      </div>
 
-    <div v-if="error" class="text-xs text-error font-body">{{ error }}</div>
+      <!-- 左侧：物品列表 -->
+      <div class="space-y-3 lg:col-span-8 lg:col-start-1 lg:row-start-1">
+        <div v-if="error" class="text-xs text-error font-body">{{ error }}</div>
 
     <!-- 列表 -->
-    <div v-if="items.length" class="bg-surface border border-border rounded-2xl divide-y divide-border overflow-hidden">
+    <div v-if="items.length" class="bg-surface border border-border rounded-2xl lg:rounded-3xl divide-y divide-border overflow-hidden">
       <article
         v-for="it in items"
         :key="it.id"
-        class="relative flex items-center gap-3 px-4 py-3 cursor-pointer active:bg-surface-alt transition-colors"
+        class="relative flex items-center gap-3 px-4 py-3 lg:px-5 lg:py-4 cursor-pointer active:bg-surface-alt hover:bg-surface-alt/60 transition-colors"
         @click="openDetail(it)"
       >
         <span v-if="it.low_stock" class="absolute left-0 top-3 bottom-3 w-[3px] rounded-full bg-error"></span>
@@ -160,6 +172,8 @@
         class="mt-3 px-4 py-2 rounded-xl bg-primary text-on-primary text-xs font-body"
         @click="openCreate"
       >添加第一件物品</button>
+    </div>
+      </div>
     </div>
 
     <!-- 物品详情 -->
@@ -856,5 +870,14 @@ onMounted(async () => {
   font-size: 11px;
   color: rgb(var(--c-muted));
   font-family: var(--font-body);
+}
+@media (min-width: 1024px) {
+  .hc-quick__icon {
+    width: 56px;
+    height: 56px;
+  }
+  .hc-quick__label {
+    font-size: 12px;
+  }
 }
 </style>

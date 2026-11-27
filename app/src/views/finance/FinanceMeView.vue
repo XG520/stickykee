@@ -1,7 +1,10 @@
 <template>
-  <div class="py-2 space-y-3 max-w-3xl mx-auto">
+  <div class="py-2 space-y-3 max-w-3xl mx-auto lg:max-w-none">
     <FinanceHeader title="我的" subtitle="资产、账户与数据" />
 
+    <!-- 桌面端双栏：左侧资产/账户，右侧功能入口 -->
+    <div class="space-y-3 lg:grid lg:grid-cols-12 lg:gap-5 lg:space-y-0 lg:items-start">
+    <div class="space-y-3 lg:col-span-7 lg:col-start-1 lg:row-start-1">
     <div v-if="error" class="text-xs text-error font-body">{{ error }}</div>
 
     <!-- 资产总览 -->
@@ -35,8 +38,10 @@
       <div v-else class="text-xs text-muted font-body py-2">还没有账户</div>
     </section>
 
+    </div>
+
     <!-- 功能入口 -->
-    <section class="rounded-2xl bg-surface border border-border overflow-hidden divide-y divide-border">
+    <section class="rounded-2xl lg:rounded-3xl bg-surface border border-border overflow-hidden divide-y divide-border lg:col-span-5 lg:col-start-8 lg:row-start-1">
       <button class="hc-row" @click="openManager('account')">
         <span class="material-symbols-outlined text-base text-muted">account_balance_wallet</span>
         <span class="flex-1 text-left">账户管理</span>
@@ -78,6 +83,7 @@
         <span class="material-symbols-outlined text-base text-muted">chevron_right</span>
       </button>
     </section>
+    </div>
 
     <AccountManager
       v-model="managerOpen"

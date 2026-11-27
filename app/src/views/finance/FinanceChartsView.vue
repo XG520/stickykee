@@ -1,7 +1,10 @@
 <template>
-  <div class="py-2 space-y-3 max-w-3xl mx-auto">
+  <div class="py-2 space-y-3 max-w-3xl mx-auto lg:max-w-none">
     <FinanceHeader title="图表" subtitle="看清每个周期的钱花在哪里" />
 
+    <!-- 桌面端双栏：左侧控制+趋势，右侧占比/预算/报表 -->
+    <div class="space-y-3 lg:grid lg:grid-cols-12 lg:gap-5 lg:space-y-0 lg:items-start">
+    <div class="space-y-3 lg:col-span-7 lg:col-start-1 lg:row-start-1">
     <!-- 时间维度 -->
     <div class="grid grid-cols-3 gap-1 p-1 rounded-2xl bg-surface-alt">
       <button
@@ -48,7 +51,7 @@
     <!-- 总额 -->
     <section class="rounded-2xl bg-surface border border-border p-4">
       <div class="text-[11px] text-muted font-body">总{{ type === 'income' ? '收入' : '支出' }}</div>
-      <div class="mt-1 font-headline text-[30px] leading-none font-semibold tabular-nums" :class="type === 'income' ? 'text-accent' : ''">
+      <div class="mt-1 font-headline text-[30px] lg:text-[34px] leading-none font-semibold tabular-nums" :class="type === 'income' ? 'text-accent' : ''">
         {{ money(total) }}
       </div>
       <div class="mt-2 text-[11px] text-muted font-body">
@@ -57,9 +60,10 @@
     </section>
 
     <div v-if="error" class="text-xs text-error font-body">{{ error }}</div>
+    </div>
 
     <!-- 分类占比 -->
-    <section class="rounded-2xl bg-surface border border-border p-4 space-y-3">
+    <section class="rounded-2xl lg:rounded-3xl bg-surface border border-border p-4 lg:p-5 space-y-3 lg:col-span-5 lg:col-start-8 lg:row-start-1">
       <div class="text-sm font-medium font-body">分类{{ type === 'income' ? '收入' : '支出' }}</div>
 
       <div v-if="catRows.length" class="flex justify-center">
@@ -99,13 +103,13 @@
     </section>
 
     <!-- 趋势 -->
-    <section class="rounded-2xl bg-surface border border-border p-4 space-y-3">
+    <section class="rounded-2xl lg:rounded-3xl bg-surface border border-border p-4 lg:p-5 space-y-3 lg:col-span-7 lg:col-start-1 lg:row-start-2">
       <div class="flex items-center justify-between">
         <div class="text-sm font-medium font-body">{{ dim === 'year' ? '月度' : '每日' }}趋势</div>
         <span class="text-[11px] text-muted font-body">{{ type === 'income' ? '收入' : '支出' }}</span>
       </div>
       <div v-if="seq.length" class="relative">
-        <svg viewBox="0 0 300 120" class="w-full h-[140px]" preserveAspectRatio="none" aria-hidden="true">
+        <svg viewBox="0 0 300 120" class="w-full h-[140px] lg:h-[220px]" preserveAspectRatio="none" aria-hidden="true">
           <line x1="0" y1="100" x2="300" y2="100" stroke="rgb(var(--c-border))" stroke-width="1" />
           <polyline
             :points="trendPoints"
@@ -140,7 +144,7 @@
     </section>
 
     <!-- 预算（仅月） -->
-    <section v-if="dim === 'month' && Number(budgetStats.budget_total) > 0" class="rounded-2xl bg-surface border border-border p-4 space-y-2">
+    <section v-if="dim === 'month' && Number(budgetStats.budget_total) > 0" class="rounded-2xl bg-surface border border-border p-4 space-y-2 lg:col-span-5 lg:col-start-8 lg:row-start-2">
       <div class="flex items-center justify-between text-xs font-body">
         <span class="text-muted">本月预算</span>
         <span :class="Number(budgetStats.budget_left) < 0 ? 'text-error' : 'text-muted'">
@@ -162,7 +166,7 @@
     <!-- 已保存报表入口 -->
     <router-link
       to="/inventory/finance/reports"
-      class="flex items-center justify-between gap-2 rounded-2xl bg-surface border border-border p-4"
+      class="flex items-center justify-between gap-2 rounded-2xl bg-surface border border-border p-4 hover:border-primary/35 transition-colors lg:col-span-5 lg:col-start-8 lg:row-start-3"
     >
       <span class="flex items-center gap-2 text-sm font-body">
         <span class="material-symbols-outlined text-muted">bookmarks</span>
@@ -170,6 +174,7 @@
       </span>
       <span class="material-symbols-outlined text-muted">chevron_right</span>
     </router-link>
+    </div>
   </div>
 </template>
 
