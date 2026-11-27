@@ -31,7 +31,8 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 	r.Use(middleware.Recoverer)
 	// 诊断开关：无会话时仅为一次原子判断，不做任何日志记录。
 	r.Use(diagRecorder)
-	r.Use(middleware.Timeout(60 * time.Second))
+	// /ws 是常驻长连接，不能套 60s 超时（见 timeoutExceptWS）。
+	r.Use(timeoutExceptWS(60 * time.Second))
 
 	// 传输压缩：实体全量 JSON 体积最大，gzip 后通常只剩两三成，首屏收益最明显。
 	// 放在 etagJSON 之外层，先算好 ETag / 再压缩输出；图片与 WebSocket 升级不受影响。
@@ -342,9 +343,36 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 	return r
 }
 
+// wsPath 前端实时通道路径。
+const wsPath = "/api/v1/ws"
+
+// timeoutExceptWS 给普通请求套请求超时，跳过 WebSocket 长连接。
+// chi 的 Timeout 在 handler 返回时若已超过时限会补写 504：对 /ws 而言 handler
+// 要等到客户端断开才返回，于是每条正常的长连接在关闭时都会向已 hijack 的连接
+// 补写 504（同时触发 "WriteHeader on hijacked connection" 警告），把日志与监控
+// 污染成「504 阻塞数十分钟」的假故障。另外 60s 后取消请求 ctx 也与长连接语义冲突。
+func timeoutExceptWS(d time.Duration) func(http.Handler) http.Handler {
+	timed := middleware.Timeout(d)
+	return func(next http.Handler) http.Handler {
+		nextTimed := timed(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == wsPath {
+				next.ServeHTTP(w, r)
+				return
+			}
+			nextTimed.ServeHTTP(w, r)
+		})
+	}
+}
+
 // diagRecorder 记录 4xx/5xx 与慢请求到运行日志，避免正常请求产生噪声。
 func diagRecorder(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// /ws 是连接期间一直阻塞的长连接，耗时与状态码都没有参考意义，不记。
+		if r.URL.Path == wsPath {
+			next.ServeHTTP(w, r)
+			return
+		}
 		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 		start := time.Now()
 		next.ServeHTTP(ww, r)

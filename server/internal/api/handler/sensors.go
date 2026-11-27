@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"stickykee/server/internal/ha"
 	"stickykee/server/internal/ha/client"
@@ -176,7 +178,9 @@ func (h *Sensors) Report(w http.ResponseWriter, r *http.Request) {
 		WriteErr(w, 502, "mobile_app_unavailable", "mobile_app 集成不可用（默认由 default_config 启用，请检查 HA 配置是否移除了 default_config）")
 		return
 	}
-	slog.Info("mobile_app device registered", "instance", id, "device", dev.DevID, "webhook_id", reg.WebhookID)
+	// 注册成功的 Info 日志只在真正发生注册时记录（见 doRegister），
+	// 心跳上报每次都打会把日志刷屏。
+	slog.Debug("mobile_app registration ensured", "instance", id, "device", dev.DevID, "webhook_id", reg.WebhookID)
 
 	// 4. 按 sensor_config 过滤：仅登记/上报已启用的传感器。
 	enabled := h.enabledSensors(ctx, username, body.DeviceID)
@@ -262,14 +266,42 @@ func (h *Sensors) webhookAlive(ctx context.Context, rest *client.Rest, reg *mobi
 	return probeWebhookAlive(ctx, rest, reg.WebhookID)
 }
 
+// probeAliveTTL 探活结果的信任期。APK 每 60s 上报一次传感器，若每次都发
+// get_config 探测，等于每台设备每分钟多一次 HA 请求；5 分钟内复用作废。
+// 失效仍会被后续 pushStates 的 4xx/410 兜住并触发重注册，不依赖探测本身。
+const probeAliveTTL = 5 * time.Minute
+
+var (
+	probeAliveMu sync.Mutex
+	probeAliveAt = map[string]time.Time{} // webhookID -> 上次确认仍有效的时间
+)
+
 // probeWebhookAlive 探测某个 webhook 是否仍然有效（包级工具，账号级生日传感器同步复用）。
+// 有效结果缓存 {@link probeAliveTTL}；失效结果不缓存（下次调用继续探测并重注册）。
+func probeWebhookAlive(ctx context.Context, rest *client.Rest, webhookID string) bool {
+	probeAliveMu.Lock()
+	at, ok := probeAliveAt[webhookID]
+	probeAliveMu.Unlock()
+	if ok && time.Since(at) < probeAliveTTL {
+		return true
+	}
+	if !probeWebhookAliveRemote(ctx, rest, webhookID) {
+		return false
+	}
+	probeAliveMu.Lock()
+	probeAliveAt[webhookID] = time.Now()
+	probeAliveMu.Unlock()
+	return true
+}
+
+// probeWebhookAliveRemote 真正向 HA 发 get_config 探测。
 //   - 网络层失败（连接/超时）：视为仍有效，避免 HA 短暂不可达时误删缓存反复注册；
 //   - HTTP 4xx/410：设备已删除/集成不可用 → 失效需重新注册；
 //   - HTTP 200：仍须校验响应体中存在 hass_device_id。
 //     设备被删除后该 webhook 已被注销：HA 重启前其 webhook 端点恒返回 200 且响应体为空
 //     （HA webhook 组件「始终返回 200 以隐藏 hook 是否存在」），此时响应体无 hass_device_id → 失效；
 //     HA 重启后会将其重新注册为返回 410 的「Deleted Webhook」→ 同样失效。
-func probeWebhookAlive(ctx context.Context, rest *client.Rest, webhookID string) bool {
+func probeWebhookAliveRemote(ctx context.Context, rest *client.Rest, webhookID string) bool {
 	status, resp, err := rest.ProbeWebhook(ctx, "/api/webhook/"+webhookID, map[string]any{"type": "get_config"})
 	if err != nil {
 		// 网络层失败 → 无法判定，保守视为仍有效
@@ -425,6 +457,8 @@ func (h *Sensors) doRegister(ctx context.Context, username string, rest *client.
 	if err := h.saveRegs(ctx, username, regs); err != nil {
 		return nil, err
 	}
+	slog.Info("mobile_app device registered", "user", username, "device", dev.DevID,
+		"webhook_id", resp.WebhookID, "reregister", had)
 	return &reg, nil
 }
 
