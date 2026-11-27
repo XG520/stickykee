@@ -279,6 +279,7 @@ export const api = {
   setFinanceBudgets: (month, items) => api.put(`/finance/budgets?month=${month}`, { items }),
   financeTrend: (months = 6) => api.get(`/finance/trend?months=${months}`),
   financeReportData: (filters) => api.post('/finance/reports/data', { filters }),
+  financeReportTransactions: (filters, page = 1, pageSize = 20) => api.post('/finance/reports/transactions', { filters, page, page_size: pageSize }),
   financeReports: () => api.get('/finance/reports'),
   createFinanceReport: (p) => api.post('/finance/reports', p),
   financeReport: (id) => api.get(`/finance/reports/${id}`),

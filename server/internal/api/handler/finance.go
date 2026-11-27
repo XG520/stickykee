@@ -726,6 +726,30 @@ func (h *Finance) ReportDataPreview(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, 200, d)
 }
 
+// ReportTransactionsFilter POST /finance/reports/transactions 按任意筛选条件分页取流水明细（不落库）
+// 供图表页点击分类/趋势点后弹出对应时间段内的明细列表。
+func (h *Finance) ReportTransactionsFilter(w http.ResponseWriter, r *http.Request) {
+	id, ok := h.active(w, r)
+	if !ok {
+		return
+	}
+	var p struct {
+		Filters  store.ReportFilter `json:"filters"`
+		Page     int                `json:"page"`
+		PageSize int                `json:"page_size"`
+	}
+	if err := DecodeBody(r, &p); err != nil {
+		WriteErr(w, 400, "bad_request", "参数格式错误")
+		return
+	}
+	pg, err := h.repo.ListReportTransactions(r.Context(), id, p.Filters, p.Page, p.PageSize)
+	if err != nil {
+		finErr(w, err)
+		return
+	}
+	WriteJSON(w, 200, pg)
+}
+
 // ── 周期账单 ──────────────────────────────────────────────────────
 
 // ListRecurring GET /finance/recurring

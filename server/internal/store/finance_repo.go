@@ -1495,6 +1495,7 @@ type ReportFilter struct {
 	End        string   `json:"end"`   // yyyy-mm-dd
 	Types      []string `json:"types"` // 收支类型：expense / income（空=全部）
 	Categories []int64  `json:"categories"`
+	NoCategory bool     `json:"no_category"` // 仅匹配未分类流水（category_id=0）
 	PayMethods []string `json:"pay_methods"`
 	AccountIDs []int64  `json:"account_ids"`
 }
@@ -1645,6 +1646,9 @@ func (f *ReportFilter) reportWhere(instanceID int64) (string, []any) {
 		where = append(where, "(t.category_id IN "+ph+" OR c.parent_id IN "+ph+")")
 		args = append(args, toAnyIDs(f.Categories)...)
 		args = append(args, toAnyIDs(f.Categories)...)
+	}
+	if f.NoCategory {
+		where = append(where, "t.category_id=0")
 	}
 	if len(f.PayMethods) > 0 {
 		where = append(where, "t.pay_method IN "+inPlaceholders(len(f.PayMethods)))
