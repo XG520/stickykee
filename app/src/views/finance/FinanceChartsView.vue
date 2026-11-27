@@ -130,8 +130,8 @@
         <span class="text-[10px] text-muted font-body flex-shrink-0">点扇区筛选 · 点列表看明细</span>
       </div>
 
-      <div v-if="catRows.length" class="flex justify-center">
-        <div class="relative w-32 h-32">
+      <div v-if="catRows.length" class="flex justify-center py-0.5">
+        <div class="hc-donut relative w-32 h-32" :class="{ 'hc-donut--zoom': selectedInDonut }">
           <svg viewBox="0 0 100 100" class="w-full h-full -rotate-90" role="img" :aria-label="`分类${type === 'income' ? '收入' : '支出'}占比环图`">
             <circle cx="50" cy="50" r="40" fill="none" stroke="rgb(var(--c-surface-alt))" stroke-width="14" />
             <circle
@@ -335,7 +335,14 @@
             <span class="material-symbols-outlined text-lg">{{ type === 'income' ? 'arrow_upward' : 'arrow_downward' }}</span>
           </div>
           <div class="flex-1 min-w-0">
-            <div class="text-sm font-body truncate">{{ tx.note || tx.category_name || (type === 'income' ? '收入' : '支出') }}</div>
+            <div class="flex items-center gap-1.5 min-w-0">
+              <span class="text-sm font-body truncate">{{ tx.note || tx.category_name || (type === 'income' ? '收入' : '支出') }}</span>
+              <!-- 记录创建者：辅助信息，字号为主内容的 71%（10px），柔和次要色 -->
+              <span
+                v-if="creatorOf(tx)"
+                class="shrink-0 max-w-[6rem] truncate text-[10px] leading-4 text-faint font-body"
+              >{{ creatorOf(tx) }}</span>
+            </div>
             <div class="text-[11px] text-muted font-body truncate">
               {{ timeLabel(tx.occurred_at) }}
               <template v-if="tx.category_name"> · {{ tx.category_name }}</template>
@@ -634,6 +641,11 @@ function timeLabel(s) {
   const v = String(s || '')
   if (v.length < 10) return v
   return v.slice(5, 16)
+}
+
+// 记录创建者用户名；历史流水或自动记账没有创建者时不展示
+function creatorOf(tx) {
+  return String((tx && tx.created_by) || '').trim()
 }
 
 function categoryFilter(sel) {
@@ -1001,8 +1013,21 @@ onActivated(async () => {
 /* 环形图扇区与进度条的平滑过渡 */
 .donut-seg {
   transition: stroke-dasharray .55s ease, stroke-dashoffset .55s ease, opacity .18s ease;
+  /* 去掉移动端 WebView 点击时的黄色方块高亮，并让点按立即响应 */
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  outline: none;
 }
 .donut-seg:hover { opacity: .75; }
+/* 点击扇区后整体放大：提高后续点选的精准度，放大期间仍可正常点选与查看明细 */
+.hc-donut {
+  transform: scale(1);
+  transform-origin: center;
+  transition: transform .28s cubic-bezier(.22, .61, .36, 1);
+  -webkit-tap-highlight-color: transparent;
+}
+.hc-donut--zoom { transform: scale(1.15); }
+.hc-donut svg { -webkit-tap-highlight-color: transparent; }
 .hc-bar { transition: width .55s ease; }
 
 /* 趋势数据点热区：平时透明，悬停高亮 */
