@@ -190,12 +190,25 @@ function setAuth(u) {
   } catch { /* 忽略 */ }
 }
 
+// 登录后用 /auth/me 校正一次用户态：登录响应若缺少权限字段（例如旧服务端），
+// 普通用户切回管理员后会一直隐藏记账入口，必须刷新页面才出现。失败时保留登录响应，不影响登录。
+async function refreshAuthFromServer() {
+  try {
+    const { data } = await api.me()
+    if (data?.username) setAuth(data)
+  } catch { /* 忽略：以登录响应为准 */ }
+}
+
 // 登录/注册：成功后写入 token 与用户态。
 export async function authLogin(username, password, remember = false) {
   const { data } = await api.login({ username, password })
   setToken(data.token, remember)
   setAuth(data)
-  await handshake().catch(() => { /* 握手失败不阻塞登录，读消息时会重试 */ })
+  // 握手（聊天加密）与权限校正并行，避免给登录额外增加一段串行等待。
+  await Promise.all([
+    handshake().catch(() => { /* 握手失败不阻塞登录，读消息时会重试 */ }),
+    refreshAuthFromServer(),
+  ])
   return data
 }
 
@@ -203,7 +216,7 @@ export async function authRegister(username, password) {
   const { data } = await api.register({ username, password })
   setToken(data.token)
   setAuth(data)
-  await handshake().catch(() => {})
+  await Promise.all([handshake().catch(() => {}), refreshAuthFromServer()])
   return data
 }
 
