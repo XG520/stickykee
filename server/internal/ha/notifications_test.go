@@ -16,6 +16,33 @@ import (
 	"stickykee/server/internal/ha/model"
 )
 
+// Replace 必须在全量同步后把新增/变化实体交给 onChange 广播：
+// 用户首次配置 HA token 后 realtime 才建连，前端 WS 常先于快照就绪连上，
+// 若 Replace 不通知，该端永远等不到首帧全量（普通用户配置 token 后看不到实体的回归）。
+func TestReplaceNotifiesOnSync(t *testing.T) {
+	s := NewStateStore()
+	var mu sync.Mutex
+	got := map[string]int{}
+	s.SetOnChange(func(id string) { mu.Lock(); got[id]++; mu.Unlock() })
+	mk := func(id, state string) model.EntityState { return model.EntityState{EntityID: id, State: state} }
+
+	// 首次全量同步：快照由空转为全量，所有实体都应入列广播。
+	s.Replace([]model.EntityState{mk("light.a", "on"), mk("sensor.b", "1")})
+	if got["light.a"] != 1 || got["sensor.b"] != 1 {
+		t.Fatalf("first sync should notify all entities, got %v", got)
+	}
+	// 相同快照重灌（realtime 重连）：无变化实体不重复广播，避免全量风暴。
+	s.Replace([]model.EntityState{mk("light.a", "on"), mk("sensor.b", "1")})
+	if got["light.a"] != 1 || got["sensor.b"] != 1 {
+		t.Fatalf("identical resync should not re-notify, got %v", got)
+	}
+	// 状态变化：仅变化实体入列。
+	s.Replace([]model.EntityState{mk("light.a", "off"), mk("sensor.b", "1")})
+	if got["light.a"] != 2 || got["sensor.b"] != 1 {
+		t.Fatalf("only changed entity should be notified, got %v", got)
+	}
+}
+
 func TestNotificationEntities(t *testing.T) {
 	raw := json.RawMessage(`{
 		"Notice-01": {"notification_id":"Notice-01","title":"配置检查","message":"发现 2 项问题","created_at":"2026-10-09T12:00:00Z"},
