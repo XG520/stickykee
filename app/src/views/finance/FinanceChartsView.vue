@@ -124,7 +124,7 @@
     </div>
 
     <!-- 分类占比：点击扇区筛选分类，点击列表查看该分类明细 -->
-    <section class="rounded-2xl lg:rounded-3xl bg-surface border border-border p-4 lg:p-5 space-y-3 lg:col-span-5 lg:col-start-8 lg:row-start-1">
+    <section class="rounded-2xl lg:rounded-3xl bg-surface border border-border p-4 lg:p-5 space-y-3 lg:col-span-5 lg:col-start-8 lg:row-start-1 lg:flex lg:flex-col lg:min-h-0 lg:max-h-[calc(100dvh-6rem)]">
       <div class="flex items-center justify-between gap-2">
         <div class="text-sm font-medium font-body">分类{{ type === 'income' ? '收入' : '支出' }}</div>
         <span class="text-[10px] text-muted font-body flex-shrink-0">点扇区筛选 · 点列表看明细</span>
@@ -167,7 +167,8 @@
         </div>
       </div>
 
-      <div v-if="allCats.length" class="space-y-1">
+      <!-- 桌面端：卡片限高后分类列表内部滚动，避免撑爆网格行高把趋势图推下去 -->
+      <div v-if="allCats.length" class="hc-scroll space-y-1 lg:flex-1 lg:min-h-0 lg:overflow-y-auto">
         <button
           v-for="(c, i) in allCats"
           :key="categoryIdOf(c) + '-' + (c.name || '')"
@@ -248,7 +249,7 @@
     </section>
 
     <!-- 预算（仅月） -->
-    <section v-if="dim === 'month' && Number(budgetStats.budget_total) > 0" class="rounded-2xl bg-surface border border-border p-4 space-y-2 lg:col-span-5 lg:col-start-8 lg:row-start-2">
+    <section v-if="dim === 'month' && Number(budgetStats.budget_total) > 0" class="rounded-2xl bg-surface border border-border p-4 space-y-2 lg:col-span-5 lg:col-start-8 lg:row-start-2 lg:self-start">
       <div class="flex items-center justify-between text-xs font-body">
         <span class="text-muted">本月预算</span>
         <span :class="Number(budgetStats.budget_left) < 0 ? 'text-error' : 'text-muted'">
@@ -270,7 +271,7 @@
     <!-- 已保存报表入口 -->
     <router-link
       to="/inventory/finance/reports"
-      class="flex items-center justify-between gap-2 rounded-2xl bg-surface border border-border p-4 hover:border-primary/35 transition-colors lg:col-span-5 lg:col-start-8 lg:row-start-3"
+      class="flex items-center justify-between gap-2 rounded-2xl bg-surface border border-border p-4 hover:border-primary/35 transition-colors lg:col-span-5 lg:col-start-8 lg:row-start-3 lg:self-start"
     >
       <span class="flex items-center gap-2 text-sm font-body">
         <span class="material-symbols-outlined text-muted">bookmarks</span>
