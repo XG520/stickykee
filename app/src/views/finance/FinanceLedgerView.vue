@@ -122,7 +122,14 @@
               <span class="material-symbols-outlined text-lg">{{ iconOf(tx) }}</span>
             </div>
             <div class="flex-1 min-w-0">
-              <div class="text-sm truncate">{{ titleOf(tx) }}</div>
+              <div class="flex items-center gap-1.5 min-w-0">
+                <span class="text-sm truncate">{{ titleOf(tx) }}</span>
+                <!-- 记录创建者：辅助信息，字号为主内容的 71%（10px），柔和次要色 -->
+                <span
+                  v-if="creatorOf(tx)"
+                  class="shrink-0 max-w-[6rem] truncate text-[10px] leading-4 text-faint font-body"
+                >{{ creatorOf(tx) }}</span>
+              </div>
               <div class="text-[11px] text-muted font-body truncate">{{ subtitleOf(tx) }}</div>
             </div>
             <div class="text-right flex-shrink-0">
@@ -439,6 +446,11 @@ function titleOf(tx) {
   if (tx.type === 'transfer') return '转账'
   const c = categoryMap.value[tx.category_id]
   return (c && c.name) || tx.category_name || tx.note || '未分类'
+}
+
+// 记录创建者用户名；历史流水或自动记账没有创建者时不展示
+function creatorOf(tx) {
+  return String(tx.created_by || '').trim()
 }
 
 function subtitleOf(tx) {

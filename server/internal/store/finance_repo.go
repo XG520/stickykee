@@ -172,6 +172,13 @@ type FinTrendPoint struct {
 	Income  int64  `json:"income"`
 }
 
+// FinNoteSuggestion 历史备注推荐项：count 为使用次数，last_used_at 为最近一次记账时间。
+type FinNoteSuggestion struct {
+	Note       string `json:"note"`
+	Count      int    `json:"count"`
+	LastUsedAt string `json:"last_used_at"`
+}
+
 // FinRecurring 周期账单。
 type FinRecurring struct {
 	ID           int64  `json:"id"`
@@ -319,6 +326,23 @@ const finAccountSelect = `SELECT a.id, a.name, a.kind, a.currency, a.opening_bal
 		WHERE t.instance_id=a.instance_id AND t.deleted_at='' AND t.type='transfer' AND t.to_account_id=a.id),0)
 	FROM fin_accounts a`
 
+// finAccountListSelect 列表专用：先按账户聚合一次流水再 JOIN，避免每个账户重复 4 次全量相关子查询。
+const finAccountListSelect = `SELECT a.id, a.name, a.kind, a.currency, a.opening_balance, a.icon, a.sort, a.archived,
+	a.opening_balance + COALESCE(d.delta,0)
+	FROM fin_accounts a
+	LEFT JOIN (
+		SELECT acc AS account_id, SUM(delta) AS delta FROM (
+			SELECT account_id AS acc,
+				CASE type WHEN 'income' THEN amount WHEN 'expense' THEN -amount ELSE -amount END AS delta
+			FROM fin_transactions
+			WHERE instance_id=? AND deleted_at='' AND type IN ('income','expense','transfer')
+			UNION ALL
+			SELECT to_account_id AS acc, amount
+			FROM fin_transactions
+			WHERE instance_id=? AND deleted_at='' AND type='transfer' AND to_account_id>0
+		) GROUP BY acc
+	) d ON d.account_id=a.id`
+
 func scanFinAccount(row interface{ Scan(...any) error }) (FinAccount, error) {
 	var a FinAccount
 	var archived int
@@ -333,12 +357,12 @@ func (r *FinanceRepo) ListAccounts(ctx context.Context, instanceID int64, includ
 	if err := r.ensureDefaults(ctx, instanceID); err != nil {
 		return nil, err
 	}
-	q := finAccountSelect + ` WHERE a.instance_id=?`
+	q := finAccountListSelect + ` WHERE a.instance_id=?`
 	if !includeArchived {
 		q += ` AND a.archived=0`
 	}
 	q += ` ORDER BY a.archived, a.sort, a.id`
-	rows, err := r.db.QueryContext(ctx, q, instanceID)
+	rows, err := r.db.QueryContext(ctx, q, instanceID, instanceID, instanceID)
 	if err != nil {
 		return nil, err
 	}
@@ -625,11 +649,18 @@ func (r *FinanceRepo) ListTransactions(ctx context.Context, instanceID int64, f 
 	}
 	where := []string{"t.instance_id=?", "t.deleted_at=''"}
 	args := []any{instanceID}
-	if f.Month != "" {
+	if start, end, ok := monthRange(f.Month); ok {
+		// 用范围比较代替 substr(occurred_at,1,7)=?，可命中 (instance_id, occurred_at) 索引
+		where = append(where, "t.occurred_at >= ? AND t.occurred_at < ?")
+		args = append(args, start, end)
+	} else if f.Month != "" {
 		where = append(where, "substr(t.occurred_at,1,7)=?")
 		args = append(args, f.Month)
 	}
-	if f.Day != "" {
+	if start, end, ok := dayRange(f.Day); ok {
+		where = append(where, "t.occurred_at >= ? AND t.occurred_at < ?")
+		args = append(args, start, end)
+	} else if f.Day != "" {
 		where = append(where, "substr(t.occurred_at,1,10)=?")
 		args = append(args, f.Day)
 	}
@@ -906,16 +937,35 @@ func MonthOf(v string) string {
 	return time.Now().Format("2006-01")
 }
 
+// monthRange 返回某月 [start, end) 的日期边界，供 occurred_at 索引范围扫描。
+func monthRange(month string) (string, string, bool) {
+	t, err := time.Parse("2006-01", strings.TrimSpace(month))
+	if err != nil {
+		return "", "", false
+	}
+	return t.Format("2006-01-02"), t.AddDate(0, 1, 0).Format("2006-01-02"), true
+}
+
+// dayRange 返回某日 [start, end) 的时间边界，供 occurred_at 索引范围扫描。
+func dayRange(day string) (string, string, bool) {
+	t, err := time.Parse("2006-01-02", strings.TrimSpace(day))
+	if err != nil {
+		return "", "", false
+	}
+	return t.Format("2006-01-02 15:04"), t.AddDate(0, 0, 1).Format("2006-01-02 15:04"), true
+}
+
 // Stats 汇总某月收支、分类占比、账户余额与预算进度。
 func (r *FinanceRepo) Stats(ctx context.Context, instanceID int64, month string) (FinStats, error) {
 	month = MonthOf(month)
+	start, end, _ := monthRange(month)
 	st := FinStats{Month: month, ByCategory: []FinCategoryStat{}, ByDay: []FinDayStat{}, ByAccount: []FinAccount{}, Budgets: []FinBudgetProgress{}}
 	if err := r.db.QueryRowContext(ctx,
 		`SELECT COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END),0),
 			COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END),0)
 		 FROM fin_transactions
 		 WHERE instance_id=? AND deleted_at='' AND type IN ('expense','income')
-		   AND substr(occurred_at,1,7)=?`, instanceID, month).
+		   AND occurred_at >= ? AND occurred_at < ?`, instanceID, start, end).
 		Scan(&st.Expense, &st.Income); err != nil {
 		return st, err
 	}
@@ -923,8 +973,8 @@ func (r *FinanceRepo) Stats(ctx context.Context, instanceID int64, month string)
 		`SELECT t.category_id, COALESCE(c.name,'未分类'), SUM(t.amount)
 		 FROM fin_transactions t LEFT JOIN fin_categories c ON c.id=t.category_id
 		 WHERE t.instance_id=? AND t.deleted_at='' AND t.type='expense'
-		   AND substr(t.occurred_at,1,7)=?
-		 GROUP BY t.category_id ORDER BY SUM(t.amount) DESC`, instanceID, month)
+		   AND t.occurred_at >= ? AND t.occurred_at < ?
+		 GROUP BY t.category_id ORDER BY SUM(t.amount) DESC`, instanceID, start, end)
 	if err != nil {
 		return st, err
 	}
@@ -946,8 +996,8 @@ func (r *FinanceRepo) Stats(ctx context.Context, instanceID int64, month string)
 			COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END),0)
 		 FROM fin_transactions
 		 WHERE instance_id=? AND deleted_at='' AND type IN ('expense','income')
-		   AND substr(occurred_at,1,7)=?
-		 GROUP BY substr(occurred_at,1,10) ORDER BY 1`, instanceID, month)
+		   AND occurred_at >= ? AND occurred_at < ?
+		 GROUP BY substr(occurred_at,1,10) ORDER BY 1`, instanceID, start, end)
 	if err != nil {
 		return st, err
 	}
@@ -981,12 +1031,12 @@ func (r *FinanceRepo) Stats(ctx context.Context, instanceID int64, month string)
 				WHERE b.instance_id=c.instance_id AND b.month=? AND b.category_id=c.id), c.monthly_budget),
 			COALESCE((SELECT SUM(t.amount) FROM fin_transactions t
 				WHERE t.instance_id=c.instance_id AND t.deleted_at='' AND t.type='expense'
-				  AND substr(t.occurred_at,1,7)=?
+				  AND t.occurred_at >= ? AND t.occurred_at < ?
 				  AND (t.category_id=c.id OR t.category_id IN
 				       (SELECT id FROM fin_categories WHERE parent_id=c.id))),0)
 		 FROM fin_categories c
 		 WHERE c.instance_id=? AND c.type='expense' AND c.parent_id=0
-		 ORDER BY c.sort, c.id`, month, month, instanceID)
+		 ORDER BY c.sort, c.id`, month, start, end, instanceID)
 	if err != nil {
 		return st, err
 	}
@@ -1229,8 +1279,8 @@ func (r *FinanceRepo) Trend(ctx context.Context, instanceID int64, months int) (
 			COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END),0)
 		 FROM fin_transactions
 		 WHERE instance_id=? AND deleted_at='' AND type IN ('expense','income')
-		   AND substr(occurred_at,1,7)>=?
-		 GROUP BY m`, instanceID, start)
+		   AND occurred_at >= ?
+		 GROUP BY m`, instanceID, start+"-01")
 	if err != nil {
 		return nil, err
 	}
@@ -1258,12 +1308,50 @@ func (r *FinanceRepo) Trend(ctx context.Context, instanceID int64, months int) (
 	return out, nil
 }
 
+// SuggestNotes 基于历史流水备注生成推荐：默认取高频备注，q 非空时按包含匹配过滤。
+func (r *FinanceRepo) SuggestNotes(ctx context.Context, instanceID int64, q string, limit int) ([]FinNoteSuggestion, error) {
+	q = strings.TrimSpace(q)
+	if limit <= 0 || limit > 20 {
+		limit = 8
+	}
+	sqlText := `SELECT note, COUNT(1), MAX(occurred_at)
+		FROM fin_transactions
+		WHERE instance_id=? AND deleted_at='' AND note<>''`
+	args := []any{instanceID}
+	if q != "" {
+		sqlText += ` AND note LIKE ? ESCAPE '\'`
+		args = append(args, "%"+escapeLike(q)+"%")
+	}
+	sqlText += ` GROUP BY note ORDER BY COUNT(1) DESC, MAX(occurred_at) DESC LIMIT ?`
+	args = append(args, limit)
+	rows, err := r.db.QueryContext(ctx, sqlText, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []FinNoteSuggestion{}
+	for rows.Next() {
+		var s FinNoteSuggestion
+		if err := rows.Scan(&s.Note, &s.Count, &s.LastUsedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
+// escapeLike 转义 LIKE 通配符，避免用户输入的 % 和 _ 被当成通配符。
+func escapeLike(s string) string {
+	return strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(s)
+}
+
 // MonthTransactions 返回某月全部流水（导出用，不分页）。
 func (r *FinanceRepo) MonthTransactions(ctx context.Context, instanceID int64, month string) ([]FinTransaction, error) {
 	month = MonthOf(month)
+	start, end, _ := monthRange(month)
 	rows, err := r.db.QueryContext(ctx,
-		finTxSelect+` WHERE t.instance_id=? AND t.deleted_at='' AND substr(t.occurred_at,1,7)=?
-		 ORDER BY t.occurred_at, t.id`, instanceID, month)
+		finTxSelect+` WHERE t.instance_id=? AND t.deleted_at='' AND t.occurred_at >= ? AND t.occurred_at < ?
+		 ORDER BY t.occurred_at, t.id`, instanceID, start, end)
 	if err != nil {
 		return nil, err
 	}

@@ -195,8 +195,26 @@
             v-model="note"
             placeholder="如：午饭 / 地铁 / 工资"
             class="mt-1 w-full px-3 py-2 rounded-lg bg-surface-alt border border-border text-sm text-on-surface outline-none focus:border-primary"
+            @focus="loadNoteSuggestions(note)"
           />
         </label>
+
+        <!-- 历史备注推荐：点击直接填入，减少重复输入 -->
+        <div v-if="visibleNoteSuggestions.length" class="space-y-1">
+          <div class="text-[10px] text-muted font-body">历史备注</div>
+          <div class="flex flex-wrap gap-1.5">
+            <button
+              v-for="s in visibleNoteSuggestions"
+              :key="s.note"
+              type="button"
+              class="hc-chip max-w-full"
+              @click="note = s.note"
+            >
+              <span class="truncate">{{ s.note }}</span>
+              <span v-if="s.count > 1" class="ml-1 text-[10px] opacity-60 shrink-0">×{{ s.count }}</span>
+            </button>
+          </div>
+        </div>
 
         <div class="grid grid-cols-2 gap-3">
           <label class="text-xs text-muted font-body">
@@ -231,7 +249,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/api'
 import UiSelect from '@/components/ui/UiSelect.vue'
@@ -270,6 +288,8 @@ const candidates = ref([])
 const recognizing = ref(false)
 const recognizeError = ref('')
 const fileInput = ref(null)
+const noteSuggestions = ref([])
+let noteSuggestTimer = 0
 
 const currencySymbol = computed(() => currencySymbols[currency.value] || currency.value)
 const accountOptions = computed(() => (accounts.value || []).map((a) => ({ label: a.name, value: a.id })))
@@ -307,6 +327,11 @@ const cnyPreview = computed(() => {
   if (!(rate > 0)) return 0
   return Math.round(Number(amount.value || 0) * 100 * rate)
 })
+
+// 历史备注推荐（排除与当前输入完全相同的项）
+const visibleNoteSuggestions = computed(() =>
+  noteSuggestions.value.filter((s) => s.note !== note.value.trim()),
+)
 
 function todayString() {
   const d = new Date()
@@ -388,6 +413,15 @@ async function loadCategories() {
     syncDrill()
   } catch (e) {
     error.value = e.message || '分类加载失败'
+  }
+}
+
+async function loadNoteSuggestions(q = '') {
+  try {
+    const res = await api.financeNoteSuggestions(String(q || '').trim(), 8)
+    noteSuggestions.value = (res.data || []).filter((s) => s && s.note)
+  } catch {
+    // 推荐失败不影响记账主流程，静默降级为手动输入
   }
 }
 
@@ -568,6 +602,17 @@ function onKeydown(e) {
   }
 }
 
+// 进入「补充信息」即预取历史备注；输入时按内容做防抖匹配
+watch(moreOpen, (open) => {
+  if (open) loadNoteSuggestions(note.value)
+})
+
+watch(note, (v) => {
+  if (!moreOpen.value) return
+  window.clearTimeout(noteSuggestTimer)
+  noteSuggestTimer = window.setTimeout(() => loadNoteSuggestions(v), 300)
+})
+
 onMounted(async () => {
   resetFromEditing()
   await Promise.all([loadCategories(), loadAccounts()])
@@ -577,6 +622,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', onKeydown)
+  window.clearTimeout(noteSuggestTimer)
   financeEditing.value = null
   financeCopy.value = null
 })

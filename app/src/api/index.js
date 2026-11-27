@@ -269,6 +269,7 @@ export const api = {
   updateFinanceCategory: (id, p) => api.put(`/finance/categories/${id}`, p),
   deleteFinanceCategory: (id) => api.del(`/finance/categories/${id}`),
   financeTransactions: (q = {}) => api.get(`/finance/transactions?${new URLSearchParams(q)}`),
+  financeNoteSuggestions: (q = '', limit = 8) => api.get(`/finance/notes/suggestions?q=${encodeURIComponent(q)}&limit=${limit}`),
   createFinanceTransaction: (p) => api.post('/finance/transactions', p),
   updateFinanceTransaction: (id, p) => api.put(`/finance/transactions/${id}`, p),
   deleteFinanceTransaction: (id) => api.del(`/finance/transactions/${id}`),

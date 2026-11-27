@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -22,11 +24,19 @@ func Open(path string) (*Store, error) {
 			return nil, fmt.Errorf("create db dir: %w", err)
 		}
 	}
-	dsn := fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)", path)
+	// busy_timeout：写锁被占用时最多等待 5s 再报错，避免并发写直接抛 SQLITE_BUSY；
+	// synchronous(NORMAL)：WAL 下兼顾安全与写入吞吐；
+	// _txlock=immediate：事务开始即取写锁，避免「先读后写」升级锁时立即失败。
+	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"+
+		"&_pragma=synchronous(NORMAL)&_pragma=foreign_keys(1)&_txlock=immediate", path)
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
+	// SQLite 单文件只有一个写者，限制连接数避免大量连接争抢写锁；空闲连接及时回收以便 WAL checkpoint。
+	db.SetMaxOpenConns(8)
+	db.SetMaxIdleConns(4)
+	db.SetConnMaxIdleTime(5 * time.Minute)
 	if err := migrate(db); err != nil {
 		db.Close()
 		return nil, err
@@ -256,6 +266,9 @@ func migrate(db *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS idx_fin_tx_time ON fin_transactions(instance_id, occurred_at);`,
 		`CREATE INDEX IF NOT EXISTS idx_fin_tx_category ON fin_transactions(instance_id, category_id, occurred_at);`,
 		`CREATE INDEX IF NOT EXISTS idx_fin_tx_account ON fin_transactions(instance_id, account_id, occurred_at);`,
+		// 备注推荐索引：只覆盖有效且有备注的流水，便于按 (instance_id, note) 分组统计历史备注
+		`CREATE INDEX IF NOT EXISTS idx_fin_tx_note
+			ON fin_transactions(instance_id, note, occurred_at) WHERE note <> '' AND deleted_at = '';`,
 		// 库存自动记账幂等：同一批次/清单项只生成一笔（软删除后释放，可重新记账）
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_fin_tx_ref
 			ON fin_transactions(instance_id, ref_type, ref_id)
@@ -366,6 +379,16 @@ func hasColumn(db *sql.DB, table, column string) (bool, error) {
 
 // DB 暴露底层连接（供仓储使用）。
 func (s *Store) DB() *sql.DB { return s.db }
+
+// IsBusy 判断是否为 SQLite 写锁竞争错误；调用方可据此返回「稍后重试」而不是原始驱动报错。
+func IsBusy(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "SQLITE_BUSY") || strings.Contains(msg, "database is locked") ||
+		strings.Contains(msg, "database table is locked")
+}
 
 // Close 关闭数据库。
 func (s *Store) Close() error { return s.db.Close() }

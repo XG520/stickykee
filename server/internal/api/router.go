@@ -255,6 +255,7 @@ func Router(repo *store.InstanceRepo, userRepo *store.UserRepo, userPrefs *store
 					r.Get("/accounts", finance.ListAccounts)
 					r.Get("/categories", finance.ListCategories)
 					r.Get("/transactions", finance.ListTransactions)
+					r.Get("/notes/suggestions", finance.SuggestNotes)
 					r.Get("/stats", finance.Stats)
 					r.Get("/budgets", finance.ListBudgets)
 					r.Get("/trend", finance.Trend)

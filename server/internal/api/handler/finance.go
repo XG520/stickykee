@@ -48,6 +48,11 @@ func finErr(w http.ResponseWriter, err error) {
 		WriteErr(w, 404, "not_found", "记录不存在")
 		return
 	}
+	// SQLite 写锁竞争：返回可重试的提示，避免把驱动原文透给前端
+	if store.IsBusy(err) {
+		WriteErr(w, 503, "db_busy", "数据库繁忙，请稍后重试")
+		return
+	}
 	WriteErr(w, 400, "bad_request", err.Error())
 }
 
@@ -263,6 +268,22 @@ func (h *Finance) ListTransactions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	WriteJSON(w, 200, page)
+}
+
+// SuggestNotes GET /finance/notes/suggestions?q=&limit=
+// 基于历史流水备注给出推荐，供记账页备注输入框自动补全。
+func (h *Finance) SuggestNotes(w http.ResponseWriter, r *http.Request) {
+	id, ok := h.active(w, r)
+	if !ok {
+		return
+	}
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	list, err := h.repo.SuggestNotes(r.Context(), id, r.URL.Query().Get("q"), limit)
+	if err != nil {
+		WriteErr(w, 500, "internal", err.Error())
+		return
+	}
+	WriteJSON(w, 200, list)
 }
 
 // CreateTransaction POST /finance/transactions
