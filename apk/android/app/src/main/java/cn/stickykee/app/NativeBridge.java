@@ -27,6 +27,8 @@ import android.media.RingtoneManager;
 import android.media.audiofx.AcousticEchoCanceler;
 import android.media.audiofx.AutomaticGainControl;
 import android.media.audiofx.NoiseSuppressor;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -821,12 +823,16 @@ public class NativeBridge {
     }
 
     // ==================== 连接看门狗 ====================
-    // 服务不可达（后端宕机/反代 502/断网）时自动退回壳页地址配置。
-    // 壳页 go() 跳转服务器前调用 connWatch 启动；原生线程持续探测 /healthz，
-    // 连续 2 次非 200（含连接异常）即 Toast 提示并 loadUrl 回壳页。
-    // 注意：不能放在前端 JS 判断——502 错误页是网关返回的静态 HTML，前端脚本不会执行。
-    // 生命周期：onPause 停看门狗（Doze 会掐断后台网络，探测必失败），
-    // onResume 延迟 12 秒恢复（给移动数据/WS 重连足够时间从 Doze 恢复）。
+    // 服务不可达（后端宕机/反代 502/断网）时自动退回原生地址配置页。
+    // 判定原则：只有「真的连不上」才退回，前台正常使用中的瞬时抖动一律容忍。
+    //   1) 任何 HTTP 响应（2xx/3xx/4xx）都说明服务可达；仅连接异常/超时与 5xx 计为失败。
+    //   2) 单次失败先在 1.2 秒后复探一次，过滤 WiFi 省电/信道扫描/路由抖动造成的瞬时丢包。
+    //   3) 连续失败需达到 WATCH_FAIL_LIMIT 次且持续 >= WATCH_FAIL_WINDOW_MS 才退回。
+    //   4) 设备当前没有可用网络（飞行模式/信号空洞）时不计失败，等网络恢复。
+    //   5) 只在前台探测：onPause 取消定时任务，onResume 重新排表（先 cancel 旧任务，
+    //      否则每次回前台都会叠一个 ticker，多个 ticker 共享失败计数，单次抖动即误判掉线）。
+    private static final int WATCH_FAIL_LIMIT = 5;            // 连续失败次数阈值
+    private static final long WATCH_FAIL_WINDOW_MS = 45000L;  // 持续失败最短时长（覆盖路由器重启/后端发版窗口）
     private final ScheduledExecutorService watchPool = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r, "conn-watch");
         t.setDaemon(true);
@@ -834,15 +840,22 @@ public class NativeBridge {
     });
     private volatile String watchUrl = null;
     private volatile int watchFails = 0;
+    private volatile long watchFirstFailAt = 0L; // 本轮连续失败的起点（elapsedRealtime）
+    private volatile boolean watchPaused = true;  // Activity 是否在后台（后台不探测）
+    private volatile boolean watchBouncing = false; // 已发起退回，防止重复弹配置页
     private ScheduledFuture<?> watchFuture = null; // 当前运行中的定时任务，onPause 时 cancel
 
-    /** 启动连接看门狗，base 为服务器根地址（如 http://192.168.1.10:8080）。重复调用会重置。 */
+    /** 启动连接看门狗，base 为服务器根地址（如 http://192.168.1.10:8080）。重复调用会重置。
+     *  注意：不改 watchPaused——前台/后台只由 onResume/onPause 决定，
+     *  避免 Activity 在后台时被 JS 调用 connWatch 误启动后台探测。 */
     @JavascriptInterface
     public void connWatch(final String base) {
         stopConnWatchInternal();
         if (base == null || base.isEmpty()) return;
         watchUrl = base.endsWith("/") ? base : base + "/";
         watchFails = 0;
+        watchFirstFailAt = 0L;
+        watchBouncing = false;
         watchFuture = watchPool.scheduleWithFixedDelay(this::watchTick, 3, 4, TimeUnit.SECONDS);
     }
 
@@ -854,18 +867,28 @@ public class NativeBridge {
 
     /** 生命周期：Activity 进入后台（onPause）时调用，停掉看门狗避免 Doze 网络掐断导致误判。 */
     public void onPause() {
+        watchPaused = true;
         if (watchFuture != null) {
             watchFuture.cancel(false);
             watchFuture = null;
         }
         // watchUrl 保留：onResume 用它恢复看门狗
         watchFails = 0;
+        watchFirstFailAt = 0L;
     }
 
     /** 生命周期：Activity 回到前台（onResume）时调用，延迟 12 秒恢复看门狗（给网络/WS 重连留时间）。 */
     public void onResume() {
+        watchPaused = false;
         if (watchUrl == null) return;
+        // 必须取消已有任务后再排新的：connWatch（onCreate 直达链路）已经排过一次，
+        // 不取消会留下一个永不停的 ticker，前台/后台反复叠加导致单次抖动就被判掉线。
+        if (watchFuture != null) {
+            watchFuture.cancel(false);
+            watchFuture = null;
+        }
         watchFails = 0;
+        watchFirstFailAt = 0L;
         // 12 秒 grace：蜂窝数据从 Doze 恢复 + WS 重连 + 后端 ready 至少 8-10 秒
         watchFuture = watchPool.scheduleWithFixedDelay(this::watchTick, 12, 4, TimeUnit.SECONDS);
     }
@@ -877,20 +900,72 @@ public class NativeBridge {
         }
         watchUrl = null;
         watchFails = 0;
+        watchFirstFailAt = 0L;
+        watchBouncing = false;
     }
 
     private void watchTick() {
+        if (watchPaused || watchBouncing) return;
         final String base = watchUrl;
         if (base == null) return;
-        int status = httpStatus(base + "healthz", 3000);
-        if (status == 200) {
+        // 设备当前没有可用网络：不计失败（用户进电梯/地下室时不该被踢回配置页），等网络恢复
+        if (!hasActiveNetwork()) {
             watchFails = 0;
+            watchFirstFailAt = 0L;
             return;
         }
+        if (watchReachable(base)) {
+            watchFails = 0;
+            watchFirstFailAt = 0L;
+            return;
+        }
+        // 首次失败先等 1.2 秒复探一次：瞬时丢包（WiFi 省电、信道扫描、路由抖动）不应计入
+        try {
+            Thread.sleep(1200);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return;
+        }
+        if (watchPaused || !base.equals(watchUrl)) return;
+        if (watchReachable(base)) {
+            watchFails = 0;
+            watchFirstFailAt = 0L;
+            return;
+        }
+        final long now = SystemClock.elapsedRealtime();
+        if (watchFails == 0) watchFirstFailAt = now;
         watchFails++;
-        if (watchFails < 2) return; // 容忍单次抖动（后端重启/WiFi 切换）
-        stopConnWatchInternal();
+        if (watchFails < WATCH_FAIL_LIMIT) return;
+        if (now - watchFirstFailAt < WATCH_FAIL_WINDOW_MS) return;
+        // 退回前最后复核：已回后台 / 网络已断 / 服务已恢复，都不退回
+        if (watchPaused || !hasActiveNetwork() || watchReachable(base)) {
+            watchFails = 0;
+            watchFirstFailAt = 0L;
+            return;
+        }
+        if (watchBouncing) return;
+        stopConnWatchInternal(); // 清空探测目标并停表（会复位 watchBouncing）
+        watchBouncing = true;
         bounceToShell();
+    }
+
+    /** 服务是否可达：任何 HTTP 响应（含 3xx/4xx）都算通，仅连接异常/超时与 5xx 视为不可达。 */
+    private boolean watchReachable(String base) {
+        int status = httpStatus(base + "healthz", 3000);
+        return status > 0 && status < 500;
+    }
+
+    /** 设备当前是否有可用网络（拿不到状态时按有网处理，交由探测结果判定）。 */
+    private boolean hasActiveNetwork() {
+        try {
+            ConnectivityManager cm = (ConnectivityManager) activity.getApplicationContext()
+                    .getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm == null) return true;
+            NetworkInfo ni = cm.getActiveNetworkInfo();
+            return ni != null && ni.isConnected();
+        } catch (Exception e) {
+            return true;
+        }
     }
 
     /** 原生 HTTP 状态码探测；连接异常返回 -1。 */

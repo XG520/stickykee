@@ -10,12 +10,15 @@
       </div>
     </div>
     <button
-      class="relative w-9 h-5 rounded-full shrink-0 transition-colors duration-200"
+      class="relative w-[42px] h-[25px] rounded-full shrink-0 transition-colors duration-200 before:absolute before:-inset-2.5 before:content-['']"
       :class="[modelValue ? 'bg-primary' : 'bg-faint', disabled ? 'cursor-not-allowed' : 'cursor-pointer']"
       :disabled="disabled"
+      role="switch"
+      :aria-checked="modelValue"
       @click="!disabled && $emit('update:modelValue', !modelValue)"
     >
-      <span class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-on-primary shadow transition-transform duration-200" :class="modelValue ? 'translate-x-4' : ''"></span>
+      <span class="absolute top-[3px] left-[3px] w-[19px] h-[19px] rounded-full bg-[#e9e6df] shadow transition-transform duration-200"
+        :class="modelValue ? 'translate-x-[17px] !bg-on-primary' : ''"></span>
     </button>
   </div>
 </template>

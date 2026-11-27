@@ -5,7 +5,7 @@
   <!-- ===== 手机端 / APK：大标题 + 四组分段导航（吸顶，分组内再二级切换） =====
        吸顶偏移按帧跟随顶部导航的实际底边：导航在视口内时紧贴其下，
        导航滚出视口后偏移归零直接贴顶，避免在页面中间留出一条「悬浮」空档。 -->
-  <div ref="barEl" class="lg:hidden sticky z-30 -mx-6 px-6 pt-2.5 pb-2 hc-set-bar" :style="{ top: stickyTop + 'px' }">
+  <div ref="barEl" class="lg:hidden sticky z-30 -mx-4 px-4 sm:-mx-6 sm:px-6 pt-2.5 pb-2 hc-set-bar" :style="{ top: stickyTop + 'px' }">
     <div class="flex items-end justify-between gap-3 mb-2">
       <h2 class="hc-set-title-lg">设置</h2>
       <span class="hc-set-crumb truncate">{{ curMeta.title }}</span>
@@ -58,7 +58,7 @@
       </nav>
 
     <!-- ===== 接口与密钥：集中管理所有服务地址与 Key ===== -->
-    <div v-show="activeTab === 'api'" class="space-y-4 sm:space-y-6">
+    <div v-show="activeTab === 'api'" class="space-y-3 sm:space-y-6">
     <!-- 我的 HA Token：地址管理员全局配置，密钥属个人（所有用户可见，可自配或管理员代配） -->
     <section id="sec-ha-token" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
       <div class="flex items-center gap-2.5 mb-3">
@@ -382,7 +382,7 @@
     </div>
 
     <!-- ===== 连接与设备 ===== -->
-    <div v-show="activeTab === 'connect'" class="space-y-4 sm:space-y-6">
+    <div v-show="activeTab === 'connect'" class="space-y-3 sm:space-y-6">
     <!-- 通话铃声（仅 APK）：来电铃声与呼叫彩铃，走系统铃声音量流 -->
     <section v-if="canPickRing" id="sec-ring" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
       <div class="flex items-center gap-2.5 mb-3">
@@ -594,7 +594,7 @@
     </div>
 
     <!-- ===== 个性化 ===== -->
-    <div v-show="activeTab === 'personal'" class="space-y-4 sm:space-y-6">
+    <div v-show="activeTab === 'personal'" class="space-y-3 sm:space-y-6">
     <!-- 主题风格 -->
     <section id="sec-theme" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
       <div class="flex items-center gap-2.5 mb-4">
@@ -607,38 +607,24 @@
         </div>
       </div>
 
-      <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
-        <button
-          v-for="t in themeOptions"
-          :key="t.key"
-          @click="themeKey = t.key"
-          class="relative flex flex-col gap-2 p-3 rounded-xl border-2 transition-all duration-200 hover:scale-[1.02] text-left"
-          :class="themeKey === t.key ? 'border-primary bg-primary/10' : 'border-transparent hover:border-border bg-surface'"
-        >
-          <!-- 实时迷你预览：预设主题直接作用域引用 .theme-<key> 变量集；自定义主题用派生变量 inline。
-               预览内展示 标题/次要文字/按钮/图标/状态点/边框/底色分层，选中前即可判断可识别性 -->
-          <div class="tp-bg" :class="t.key !== 'custom' ? 'theme-' + t.key : ''" :style="t.key === 'custom' ? customPreviewVars : undefined">
-            <div class="tp-card">
-              <div class="flex items-center justify-between">
-                <span class="tp-title">Aa</span>
-                <span class="material-symbols-outlined tp-icon">bolt</span>
-              </div>
-              <span class="tp-muted">辅助说明文字</span>
-              <div class="flex items-center gap-1.5 mt-1.5">
-                <span class="tp-btn">按钮</span>
-                <span class="tp-dot" style="background: rgb(var(--c-success))"></span>
-                <span class="tp-dot" style="background: rgb(var(--c-warning))"></span>
-                <span class="tp-dot" style="background: rgb(var(--c-error))"></span>
-              </div>
-            </div>
-            <span v-if="t.key !== 'custom'" class="tp-aa" title="正文/次要文字/主色文字均达 WCAG AA ≥4.5:1">AA</span>
+      <!-- 4 列主题色卡：点选即时预览，名称与说明见下方当前主题描述 -->
+      <ChoiceGrid v-model="themeKey" :items="themeChoices" class="mb-2" />
+      <p class="text-muted text-xs mb-4">{{ themeDesc }}</p>
+
+      <!-- 背景动效：所有主题通用（预设 / 自定义均可叠加），颜色自动取自当前主题变量 -->
+      <div class="pt-3 mb-4 border-t border-border">
+        <div class="flex flex-wrap items-center gap-3">
+          <div class="flex items-center gap-2 flex-shrink-0">
+            <span class="material-symbols-outlined text-accent text-lg">animation</span>
+            <span class="text-on-surface text-xs font-medium">背景动效</span>
           </div>
-          <span class="text-sm font-semibold" :class="themeKey === t.key ? 'text-primary' : 'text-on-surface'">{{ t.name }}</span>
-          <span class="text-xs text-muted">{{ t.desc }}</span>
-          <div v-if="themeKey === t.key" class="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-primary flex items-center justify-center">
-            <svg class="w-3 h-3 text-on-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
-          </div>
-        </button>
+          <UiSelect v-model="bgFx" class="w-44" :options="bgFxOptions" />
+          <template v-if="bgFx !== 'none'">
+            <input v-model.number="bgFxStrength" type="range" min="0.15" max="1" step="0.05" class="flex-1 min-w-28 accent-primary" title="动效强度">
+            <span class="text-muted text-xs w-9 text-right">{{ Math.round(bgFxStrength * 100) }}%</span>
+          </template>
+          <span v-else class="text-muted text-[10px]">每个主题均可叠加；动画颜色自动取自当前主题，系统「减弱动效」时自动静止</span>
+        </div>
       </div>
 
       <!-- 自定义主题：完整调色板（实时预览，保存后成为专属主题） -->
@@ -673,19 +659,6 @@
           </div>
           <p class="text-muted text-[10px] mt-1.5">使用「AI 助手」页配置的模型；生成后自动校验并修复低对比度颜色，实时预览，自动保存</p>
         </div>
-        <!-- 背景动效：白名单动画层，颜色取自当前主题变量；AI 生成主题时可能一并指定 -->
-        <div class="mb-4 flex flex-wrap items-center gap-3">
-          <div class="flex items-center gap-2 flex-shrink-0">
-            <span class="material-symbols-outlined text-accent text-lg">animation</span>
-            <span class="text-on-surface text-xs font-medium">背景动效</span>
-          </div>
-          <UiSelect v-model="bgFx" class="w-44" :options="bgFxOptions" />
-          <template v-if="bgFx !== 'none'">
-            <input v-model.number="bgFxStrength" type="range" min="0.15" max="1" step="0.05" class="flex-1 min-w-28 accent-primary" title="动效强度">
-            <span class="text-muted text-xs w-9 text-right">{{ Math.round(bgFxStrength * 100) }}%</span>
-          </template>
-          <span v-else class="text-muted text-[10px]">动画颜色自动取自当前调色板，系统「减弱动效」时自动静止</span>
-        </div>
         <div class="space-y-2.5">
           <div v-for="k in CUSTOM_COLOR_KEYS" :key="k.key" class="flex items-center gap-3">
             <div class="w-32 sm:w-40 flex-shrink-0">
@@ -693,7 +666,7 @@
               <p class="text-muted text-[10px] leading-tight">{{ k.desc }}</p>
             </div>
             <input type="color" v-model="customColors[k.key]" class="w-8 h-8 rounded-lg cursor-pointer border border-border bg-transparent flex-shrink-0">
-            <input type="text" v-model="customColors[k.key]" class="flex-1 bg-background border border-border rounded-lg px-3 py-1.5 text-on-surface text-xs font-mono focus:border-primary focus:outline-none transition-colors">
+            <input type="text" v-model="customColors[k.key]" class="flex-1 min-w-0 bg-background border border-border rounded-lg px-3 py-1.5 text-on-surface text-xs font-mono focus:border-primary focus:outline-none transition-colors">
             <!-- 对比度徽章：AAA 优 / AA 达标 / 弱 不达标（悬停看具体比值与标准） -->
             <span v-if="contrastBadges[k.key]" class="tp-badge flex-shrink-0" :class="'tp-badge--' + contrastBadges[k.key].level"
               :title="`对其背景对比度 ${contrastBadges[k.key].ratio ?? '—'}:1（需 ≥${contrastBadges[k.key].min}:1）`">
@@ -763,27 +736,26 @@
         <div class="flex flex-wrap items-center gap-3">
           <span class="text-muted text-sm">自定义颜色</span>
           <input type="color" v-model="customColor" class="w-8 h-8 rounded-lg cursor-pointer border border-border bg-transparent">
-          <input type="text" v-model="customColor" class="flex-1 min-w-24 bg-background border border-border rounded-lg px-3 py-1.5 text-on-surface text-sm font-mono focus:border-primary focus:outline-none transition-colors">
+          <input type="text" v-model="customColor" class="flex-1 min-w-0 bg-background border border-border rounded-lg px-3 py-1.5 text-on-surface text-sm font-mono focus:border-primary focus:outline-none transition-colors">
           <button v-if="customColor" @click="customColor = ''" class="px-3 py-1.5 rounded-lg bg-surface border border-border text-muted hover:text-on-surface text-sm transition-colors">恢复默认色</button>
         </div>
       </div>
     </section>
 
     <!-- 顶栏品牌显示：中/英文名称与图标各自显隐（个人显示偏好，不改全局名称与图标本身） -->
-    <section id="sec-brand" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
-      <div class="flex items-center gap-2.5 mb-2">
-        <div class="w-8 h-8 rounded-xl bg-info/20 flex items-center justify-center">
-          <span class="material-symbols-outlined text-info text-lg">branding_watermark</span>
-        </div>
-        <div>
-          <h2 class="font-headline text-on-background text-base font-semibold">顶栏品牌显示</h2>
-          <p class="text-muted text-xs mt-0.5">只保留一个名称时自动放大并垂直居中拉满；隐藏不修改名称与图标本身</p>
-        </div>
-      </div>
-      <ToggleRow v-model="brandIcon" icon="bolt" title="显示系统图标" desc="顶栏左侧的品牌图标" color="bg-primary/15 text-primary" />
-      <ToggleRow v-model="brandCn" icon="translate" title="显示中文名称" desc="顶栏主标题" color="bg-accent/15 text-accent" />
-      <ToggleRow v-model="brandEn" icon="abc" title="显示英文名称" desc="顶栏副标题" color="bg-success/15 text-success" />
-    </section>
+    <SettingGroup id="sec-brand" icon="branding_watermark" title="顶栏品牌显示"
+      desc="只保留一个名称时自动放大并垂直居中拉满；隐藏不修改名称与图标本身"
+      class="scroll-mt-36 lg:scroll-mt-24">
+      <SettingRow icon="bolt" title="显示系统图标" desc="顶栏左侧的品牌图标">
+        <ToggleSwitch v-model="brandIcon" />
+      </SettingRow>
+      <SettingRow icon="translate" title="显示中文名称" desc="顶栏主标题">
+        <ToggleSwitch v-model="brandCn" />
+      </SettingRow>
+      <SettingRow icon="abc" title="显示英文名称" desc="顶栏副标题">
+        <ToggleSwitch v-model="brandEn" />
+      </SettingRow>
+    </SettingGroup>
 
     <!-- 字体大小 -->
     <section id="sec-font" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
@@ -796,23 +768,8 @@
           <p class="text-muted text-xs mt-0.5">调整界面文字的显示大小</p>
         </div>
       </div>
-      <div class="grid grid-cols-3 gap-3">
-        <button
-          v-for="f in fontSizes"
-          :key="f.key"
-          @click="fontSize = f.key"
-          class="flex flex-col items-center gap-2 py-4 rounded-xl border-2 bg-surface hover:bg-surface-hover transition-all duration-200"
-          :class="fontSize === f.key ? 'border-primary bg-primary/10' : 'border-transparent'"
-        >
-          <div class="flex flex-col items-center gap-1">
-            <span class="text-muted text-xs">A</span>
-            <span class="text-sm" :class="fontSize === f.key ? 'text-primary' : 'text-on-surface'">Aa</span>
-            <span class="text-muted text-xs">Aa</span>
-          </div>
-          <span class="text-sm font-medium" :class="fontSize === f.key ? 'text-primary' : 'text-on-surface'">{{ f.name }}</span>
-          <span class="text-muted text-xs">{{ f.note }}</span>
-        </button>
-      </div>
+      <Segmented v-model="fontSize" :options="fontOptions" />
+      <p class="text-muted text-xs mt-2.5">{{ fontSizeNote }}</p>
     </section>
 
     <!-- 仪表盘列数 -->
@@ -991,7 +948,7 @@
     </div>
 
     <!-- ===== AI 诊断 ===== -->
-    <div v-show="activeTab === 'diag'" class="space-y-4 sm:space-y-6">
+    <div v-show="activeTab === 'diag'" class="space-y-3 sm:space-y-6">
       <section id="sec-diag" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
         <div class="flex items-center gap-2.5 mb-4">
           <div class="w-8 h-8 rounded-xl bg-accent/20 flex items-center justify-center">
@@ -1105,7 +1062,7 @@
     </div>
 
     <!-- ===== 运行日志 ===== -->
-    <div v-show="activeTab === 'logs'" class="space-y-4 sm:space-y-6">
+    <div v-show="activeTab === 'logs'" class="space-y-3 sm:space-y-6">
       <section id="sec-logs" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
         <div class="flex items-center gap-2.5 mb-4">
           <div class="w-8 h-8 rounded-xl bg-info/20 flex items-center justify-center">
@@ -1226,7 +1183,7 @@
     </div>
 
     <!-- ===== 账户 ===== -->
-    <div v-show="activeTab === 'account'" class="space-y-4 sm:space-y-6">
+    <div v-show="activeTab === 'account'" class="space-y-3 sm:space-y-6">
     <!-- 账号与安全 -->
     <section id="sec-account" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
       <div class="flex items-center gap-2.5 mb-4">
@@ -1245,22 +1202,25 @@
         </div>
       </div>
 
-      <form @submit.prevent="doChangePassword" class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <form id="pw-form" @submit.prevent="doChangePassword" class="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <input v-model="pw.oldPassword" type="password" placeholder="当前密码" autocomplete="current-password"
           class="bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
         <input v-model="pw.newPassword" type="password" placeholder="新密码（至少 6 位）" autocomplete="new-password"
           class="bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
         <input v-model="pw.confirm" type="password" placeholder="确认新密码" autocomplete="new-password"
           class="bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
-        <button type="submit" class="sm:col-span-2 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-on-primary text-sm font-semibold transition-all duration-200 flex items-center justify-center gap-2">
-          <span class="material-symbols-outlined text-lg">lock_reset</span> 修改密码
-        </button>
+      </form>
+      <p v-if="pwMsg" class="mt-3 text-xs font-body" :class="pwErr ? 'text-error' : 'text-success'">{{ pwMsg }}</p>
+      <SettingsActionBar>
         <button type="button" @click="doLogout"
           class="py-2.5 rounded-xl border border-border text-error hover:bg-error/10 text-sm font-semibold transition-all duration-200 flex items-center justify-center gap-2">
           <span class="material-symbols-outlined text-lg">logout</span> 退出登录
         </button>
-      </form>
-      <p v-if="pwMsg" class="mt-3 text-xs font-body" :class="pwErr ? 'text-error' : 'text-success'">{{ pwMsg }}</p>
+        <button type="submit" form="pw-form"
+          class="py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-on-primary text-sm font-semibold transition-all duration-200 flex items-center justify-center gap-2">
+          <span class="material-symbols-outlined text-lg">lock_reset</span> 修改密码
+        </button>
+      </SettingsActionBar>
     </section>
 
     <!-- 系统信息：前后端版本号，用于确认部署是否已更新 -->
@@ -1366,7 +1326,7 @@
     </div>
 
     <!-- ===== 用户管理（仅管理员） ===== -->
-    <div v-if="auth.isAdmin" v-show="activeTab === 'users'" class="space-y-4 sm:space-y-6">
+    <div v-if="auth.isAdmin" v-show="activeTab === 'users'" class="space-y-3 sm:space-y-6">
     <!-- 系统名称（全局）：改后所有用户的顶栏/登录页/浏览器标题同步更新 -->
     <section id="sec-sysname" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
       <div class="flex items-center gap-2.5 mb-3">
@@ -1400,7 +1360,7 @@
       <p v-if="siteNameMsg" class="mt-2 text-xs font-body" :class="siteNameErr ? 'text-error' : 'text-success'">{{ siteNameMsg }}</p>
     </section>
     <!-- 系统图标（全局）：Material Symbol 名，改后顶栏/登录页同步更新 -->
-    <section id="sec-sysicon" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24 mt-4">
+    <section id="sec-sysicon" class="hc-set-card rounded-2xl p-4 sm:p-6 scroll-mt-36 lg:scroll-mt-24">
       <div class="flex items-center gap-2.5 mb-3">
         <div class="w-8 h-8 rounded-xl bg-accent/20 flex items-center justify-center">
           <span class="material-symbols-outlined text-accent text-lg">palette</span>
@@ -1435,10 +1395,10 @@
         <span class="text-muted text-xs leading-relaxed">PNG/SVG/WebP ≤256KB{{ siteIconImg ? '；当前为自定义图片，选择 Material 图标保存后恢复' : '' }}</span>
         <input ref="iconFileEl" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" class="hidden" @change="onIconFile">
       </div>
-      <!-- 常用图标快捷按钮：手机端 40px 触控目标（8 列排布），桌面端紧凑 36px -->
+      <!-- 常用图标快捷按钮：手机端 6 列（360px 下仍 ≥40px 触控），桌面端紧凑 36px -->
       <div class="mt-3">
         <div class="text-muted text-xs mb-1.5">常用图标</div>
-        <div class="grid grid-cols-8 gap-2 sm:flex sm:flex-wrap">
+        <div class="grid grid-cols-6 gap-2 sm:flex sm:flex-wrap">
           <button v-for="s in SITE_ICON_SUGGESTIONS" :key="s" @click="siteIconDraft = s"
             class="w-full aspect-square sm:w-9 sm:h-9 rounded-lg bg-background border border-border flex items-center justify-center hover:border-primary hover:bg-primary/10 transition-colors"
             :title="s">
@@ -1465,7 +1425,7 @@
           class="bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
         <input v-model="newUser.password" type="password" placeholder="密码（至少 6 位）" autocomplete="new-password"
           class="bg-background border border-border rounded-xl px-3 py-2 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
-        <button type="submit" class="px-4 py-2 rounded-xl bg-primary justify-center hover:bg-primary-hover text-on-primary text-sm font-semibold transition-all flex items-center gap-2">
+        <button type="submit" class="min-h-[44px] px-4 py-2 rounded-xl bg-primary justify-center hover:bg-primary-hover text-on-primary text-sm font-semibold transition-all flex items-center gap-2">
           <span class="material-symbols-outlined text-lg">person_add</span> 创建用户
         </button>
         <label class="col-span-full flex items-center gap-2.5 cursor-pointer select-none">
@@ -1479,85 +1439,88 @@
       <!-- 用户列表 -->
       <div class="mt-4 space-y-2">
         <div v-for="u in users" :key="u.username"
-          class="rounded-xl bg-surface border border-border p-3 flex flex-wrap items-center gap-3">
-          <span class="w-8 h-8 rounded-full flex items-center justify-center"
-            :class="u.username === auth.user ? 'bg-primary/20 text-primary' : 'bg-surface-hover text-muted'">
-            <span class="material-symbols-outlined text-base">person</span>
-          </span>
-          <div class="min-w-0 flex-1">
-            <div class="flex items-center gap-2">
-              <span class="text-on-surface text-sm font-medium">{{ u.username }}</span>
-              <span v-if="u.username === auth.user" class="text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-semibold">当前账号</span>
-              <span v-if="u.is_admin" class="text-[10px] px-1.5 py-0.5 rounded bg-warning/15 text-warning font-semibold">管理员</span>
+          class="rounded-xl bg-surface border border-border p-3">
+          <!-- 身份行：头像 + 用户名/角色 + 删除。姓名与徽标可换行，不再被右侧操作挤压成竖排 -->
+          <div class="flex items-start gap-2.5">
+            <span class="w-8 h-8 mt-0.5 rounded-full flex items-center justify-center shrink-0"
+              :class="u.username === auth.user ? 'bg-primary/20 text-primary' : 'bg-surface-hover text-muted'">
+              <span class="material-symbols-outlined text-base">person</span>
+            </span>
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span class="text-on-surface text-sm font-medium break-all">{{ u.username }}</span>
+                <span v-if="u.username === auth.user" class="whitespace-nowrap text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-semibold">当前账号</span>
+                <span v-if="u.is_admin" class="whitespace-nowrap text-[10px] px-1.5 py-0.5 rounded bg-warning/15 text-warning font-semibold">管理员</span>
+              </div>
+              <span class="block text-muted text-xs font-body mt-0.5 whitespace-nowrap">{{ (u.created_at || '').slice(0, 16).replace('T', ' ') }}</span>
             </div>
-            <span class="text-muted text-xs font-body">{{ (u.created_at || '').slice(0, 16).replace('T', ' ') }}</span>
+            <button @click="removeUser(u)" :disabled="u.username === auth.user"
+              class="shrink-0 -mt-1 -mr-1 w-10 h-10 rounded-lg flex items-center justify-center hover:bg-error/10 text-muted hover:text-error transition-colors disabled:opacity-40 disabled:pointer-events-none"
+              title="删除用户">
+              <span class="material-symbols-outlined text-lg">delete</span>
+            </button>
           </div>
 
+
+          <!-- 操作与权限行：手机端自动换行，每个控件保持自身宽度 -->
+          <div class="mt-2.5 flex flex-wrap items-center gap-2">
           <!-- 角色切换（永不操作自身） -->
           <div v-if="u.username !== auth.user">
             <button v-if="!u.is_admin" @click="toggleAdmin(u)"
-              class="px-2.5 py-1.5 rounded-lg bg-surface-hover hover:bg-surface border border-border text-xs text-on-surface transition-colors">设为管理员</button>
+              class="min-h-[36px] px-2.5 rounded-lg bg-surface-hover hover:bg-surface border border-border text-xs text-on-surface whitespace-nowrap transition-colors">设为管理员</button>
             <button v-else @click="toggleAdmin(u)"
-              class="px-2.5 py-1.5 rounded-lg border border-border text-xs text-error hover:bg-error/10 transition-colors">取消管理员</button>
+              class="min-h-[36px] px-2.5 rounded-lg border border-border text-xs text-error hover:bg-error/10 whitespace-nowrap transition-colors">取消管理员</button>
           </div>
 
           <!-- 重置密码 -->
           <button v-if="u.username !== auth.user" @click="resetUserPassword(u)"
-            class="px-2.5 py-1.5 rounded-lg bg-surface-hover hover:bg-surface border border-border text-xs text-on-surface transition-colors flex items-center gap-1">
+            class="min-h-[36px] px-2.5 rounded-lg bg-surface-hover hover:bg-surface border border-border text-xs text-on-surface whitespace-nowrap transition-colors flex items-center gap-1">
             <span class="material-symbols-outlined text-sm">lock_reset</span> 重置密码
           </button>
 
           <!-- 地图 Key 使用策略 -->
-          <div class="flex items-center gap-2 bg-background border border-border rounded-lg px-3 py-1.5">
-            <span class="text-muted text-xs">地图Key</span>
-            <div class="flex rounded-md overflow-hidden border border-border text-xs">
-              <button type="button" class="px-2 py-1 font-semibold transition-colors" :class="u.map_use_admin ? 'text-muted bg-background' : 'bg-primary text-on-primary'"
+          <div class="flex items-center gap-2 min-h-[36px] bg-background border border-border rounded-lg pl-2.5 pr-1.5">
+            <span class="text-muted text-xs whitespace-nowrap">地图Key</span>
+            <div class="flex h-7 rounded-md overflow-hidden border border-border text-xs">
+              <button type="button" class="px-2 font-semibold whitespace-nowrap transition-colors" :class="u.map_use_admin ? 'text-muted bg-background' : 'bg-primary text-on-primary'"
                 @click="setUserMapPolicy(u, false)">本人</button>
-              <button type="button" class="px-2 py-1 font-semibold transition-colors" :class="u.map_use_admin ? 'bg-primary text-on-primary' : 'text-muted bg-background'"
+              <button type="button" class="px-2 font-semibold whitespace-nowrap transition-colors" :class="u.map_use_admin ? 'bg-primary text-on-primary' : 'text-muted bg-background'"
                 @click="setUserMapPolicy(u, true)">管理员</button>
             </div>
           </div>
 
-          <!-- 记账权限：查看 / 操作（管理员恒为全权限，需管理员显式授权） -->
-          <div class="flex items-center gap-2 bg-background border border-border rounded-lg px-3 py-1.5">
-            <span class="text-muted text-xs">记账</span>
-            <span v-if="u.is_admin" class="text-xs text-primary font-medium">全权限</span>
-            <div v-else class="flex rounded-md overflow-hidden border border-border text-xs">
-              <button type="button" class="px-2 py-1 font-semibold transition-colors" :class="u.finance_view ? 'bg-primary text-on-primary' : 'text-muted bg-background'"
-                @click="toggleFinancePerm(u, 'view')">查看</button>
-              <button type="button" class="px-2 py-1 font-semibold transition-colors" :class="u.finance_operate ? 'bg-primary text-on-primary' : 'text-muted bg-background'"
-                @click="toggleFinancePerm(u, 'operate')">操作</button>
-            </div>
+          <!-- 记账权限：查看 / 操作（管理员恒为全权限；操作隐含查看） -->
+          <div class="flex items-center gap-2 min-h-[36px] bg-background border border-border rounded-lg px-2.5">
+            <span class="text-muted text-xs whitespace-nowrap">记账</span>
+            <span v-if="u.is_admin" class="text-xs text-primary font-medium whitespace-nowrap">全权限</span>
+            <PermissionChips v-else :view="!!u.finance_view" :operate="!!u.finance_operate"
+              @change="toggleFinancePerm(u, $event)" />
           </div>
 
           <!-- HA 个人 Token：管理员代配/清除，即时生效 -->
-          <div class="flex items-center gap-2">
-            <span class="px-2 py-1 rounded text-xs flex items-center gap-1"
+          <div class="flex items-center gap-2 min-h-[36px]">
+            <span class="px-2 h-7 rounded text-xs flex items-center gap-1 whitespace-nowrap"
               :class="u.has_ha_token ? 'bg-success/10 text-success' : 'bg-error/10 text-error'">
               <span class="material-symbols-outlined text-sm">{{ u.has_ha_token ? 'key' : 'key_off' }}</span>
               {{ u.has_ha_token ? 'HA Token 已配' : 'HA Token 未配' }}
             </span>
             <button type="button" @click="u._editHA = !u._editHA"
-              class="px-2.5 py-1.5 rounded-lg bg-surface-hover hover:bg-surface border border-border text-xs text-on-surface transition-colors">代配</button>
+              class="min-h-[36px] px-2.5 rounded-lg bg-surface-hover hover:bg-surface border border-border text-xs text-on-surface whitespace-nowrap transition-colors">代配</button>
           </div>
-          <div v-if="u._editHA" class="flex flex-col sm:flex-row gap-2 w-full max-w-md">
+          <div v-if="u._editHA" class="w-full flex flex-col sm:flex-row gap-2 mt-1">
             <input v-model="u._haToken" type="password" autocomplete="new-password"
               :placeholder="u.has_ha_token ? '输入新 Token 覆盖；留空则清除并禁用' : '粘贴该用户的 Long-Lived Token'"
-              class="flex-1 bg-background border border-border rounded-lg px-3 py-1.5 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
+              class="flex-1 min-w-0 bg-background border border-border rounded-lg px-3 py-1.5 text-sm text-on-surface placeholder:text-muted focus:border-primary focus:outline-none transition-colors">
             <button type="button" @click="setUserHAToken(u)"
               class="px-3 py-1.5 rounded-lg bg-primary hover:bg-primary-hover text-on-primary text-xs font-semibold transition-colors">保存</button>
           </div>
 
           <!-- 账号生日（管理员代设；保存后服务端同步该账号 HA 生日传感器） -->
           <button type="button" @click="openUserBirthdays(u)"
-            class="px-2.5 py-1.5 rounded-lg bg-surface-hover hover:bg-surface border border-border text-xs text-on-surface transition-colors flex items-center gap-1">
+            class="min-h-[36px] px-2.5 rounded-lg bg-surface-hover hover:bg-surface border border-border text-xs text-on-surface whitespace-nowrap transition-colors flex items-center gap-1">
             <span class="material-symbols-outlined text-sm">cake</span> 生日
           </button>
-
-          <button @click="removeUser(u)" :disabled="u.username === auth.user"
-            class="p-1.5 rounded-lg hover:bg-error/10 text-muted hover:text-error transition-colors disabled:opacity-40 disabled:pointer-events-none">
-            <span class="material-symbols-outlined text-lg">delete</span>
-          </button>
+          </div>
         </div>
         <p v-if="!users.length" class="text-muted text-sm font-body">暂无其他用户。首个注册用户为管理员，其余用户需在此创建。</p>
       </div>
@@ -1618,6 +1581,13 @@
 import { ref, reactive, watch, onMounted, onUnmounted, computed, nextTick } from 'vue'
 import { startDiagCapture, stopDiagCapture, drainDiagLogs, diagClientMeta } from '@/utils/diagnostics'
 import ToggleRow from '@/components/ToggleRow.vue'
+import SettingGroup from '@/components/settings/SettingGroup.vue'
+import SettingRow from '@/components/settings/SettingRow.vue'
+import ToggleSwitch from '@/components/settings/ToggleSwitch.vue'
+import Segmented from '@/components/settings/Segmented.vue'
+import ChoiceGrid from '@/components/settings/ChoiceGrid.vue'
+import PermissionChips from '@/components/settings/PermissionChips.vue'
+import SettingsActionBar from '@/components/settings/SettingsActionBar.vue'
 import SiteIcon from '@/components/SiteIcon.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import api, { getToken } from '@/api'
@@ -2266,17 +2236,9 @@ const themeKey = ref('default')
 const customColor = ref('')
 // 自定义主题调色板（11 个可调色项，实时预览）
 const customColors = reactive({ ...DEFAULT_CUSTOM_COLORS })
-// 「自定义」主题卡的迷你预览变量集（派生后 inline 到预览容器，与其他预览卡的 .theme-<key> 类等价）
-const customPreviewVars = computed(() => {
-  const vars = deriveCustomVars(customColors)
-  const out = {}
-  for (const [k, v] of Object.entries(vars)) out[k] = Array.isArray(v) ? v.join(' ') : v
-  return out
-})
-
 // ---- 我的主题库（命名主题：调色板 + 背景动效成套保存，prefs 键 saved_themes，可保留多套随时切换） ----
 const savedThemes = ref([])
-// 主题库卡片的迷你预览变量集（与 customPreviewVars 同一派生逻辑，作用于任意一套保存的配色）
+// 主题库卡片的迷你预览变量集（作用于任意一套保存的配色）
 function savedPreviewVars(t) {
   const vars = deriveCustomVars({ ...DEFAULT_CUSTOM_COLORS, ...(t.colors || {}) })
   const out = {}
@@ -2551,6 +2513,14 @@ function scrollToSection(id) {
 }
 // 9 套主题（与 src/themes.js THEMES 同源，新增主题只需维护 THEMES）
 const themeOptions = Object.values(THEMES)
+// 主题色卡（4 列）：名称 + 主题自带 swatches 渐变预览
+const themeChoices = computed(() =>
+  themeOptions.map((t) => ({ key: t.key, name: t.name, desc: t.desc, swatches: t.swatches }))
+)
+const themeDesc = computed(() => {
+  const t = THEMES[themeKey.value]
+  return t ? `${t.name} · ${t.desc}` : ''
+})
 const colors = [
   { name: '琥珀暖光', hex: '#F5A623' },
   { name: '薄荷清新', hex: '#5EC4B0' },
@@ -2570,10 +2540,12 @@ watch([themeKey, customColor, customColors], () => {
 
 const fontSize = ref('standard')
 const fontSizes = [
-  { key: 'compact', name: '紧凑', note: '适合大屏' },
-  { key: 'standard', name: '标准', note: '推荐' },
-  { key: 'loose', name: '宽松', note: '适合老年' },
+  { key: 'compact', name: '紧凑', note: '适合大屏，单屏显示更多内容' },
+  { key: 'standard', name: '标准', note: '推荐，常规手机阅读大小' },
+  { key: 'loose', name: '宽松', note: '适合老年用户与远距离查看' },
 ]
+const fontOptions = fontSizes.map((f) => ({ key: f.key, label: f.name }))
+const fontSizeNote = computed(() => (fontSizes.find((f) => f.key === fontSize.value) || {}).note || '')
 // 字体大小即时预览（根字号缩放，见 themes.js applyFontSize）
 watch(fontSize, (v) => applyFontSize(v))
 
@@ -3472,9 +3444,9 @@ onUnmounted(() => {
   transition: color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
 }
 .hc-set-segbtn.on {
-  color: rgb(var(--c-on-surface));
-  background: rgb(var(--c-surface));
-  box-shadow: 0 1px 3px rgb(var(--c-on-background) / 0.12);
+  color: rgb(var(--c-on-primary));
+  background: rgb(var(--c-primary));
+  box-shadow: 0 2px 8px rgb(var(--c-primary) / 0.22);
   font-weight: 600;
 }
 
@@ -3494,9 +3466,8 @@ onUnmounted(() => {
 .hc-set-tab:active { transform: scale(0.97); }
 .hc-set-tab:hover { color: rgb(var(--c-on-surface)); background: rgb(var(--c-surface) / 0.9); }
 .hc-set-tab.on {
-  color: rgb(var(--c-on-primary));
-  background: rgb(var(--c-primary));
-  box-shadow: 0 3px 12px rgb(var(--c-primary) / 0.3);
+  color: rgb(var(--c-primary));
+  background: rgb(var(--c-primary) / 0.12);
 }
 
 /* 手机端区块跳转胶囊 */
@@ -3593,10 +3564,11 @@ onUnmounted(() => {
   background: rgb(var(--c-surface) / 0.85);
 }
 
-/* 内容卡片：统一发丝边框，聚焦时边缘透出主题色 */
+/* 内容卡片：surface 底 + 发丝描边 + 内高光，聚焦时边缘透出主题色 */
 .hc-set-card {
-  background: rgb(var(--c-surface-alt));
-  border: 1px solid rgb(var(--c-border));
+  background: rgb(var(--c-surface));
+  border: 1px solid rgb(var(--c-border) / 0.65);
+  box-shadow: 0 1px 0 rgb(255 255 255 / 0.025) inset;
   transition: border-color 0.2s ease;
 }
 .hc-set-card:focus-within { border-color: rgb(var(--c-primary) / 0.35); }
@@ -3607,7 +3579,6 @@ onUnmounted(() => {
    并在底部让出全面屏手势条的安全区。 */
 @media (max-width: 1023px) {
   .hc-set-shell { padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
-
   /* 老车机 WebView（Chrome < 56）只认带前缀的 sticky，补一份回退 */
   .hc-set-bar { position: -webkit-sticky; position: sticky; }
 
@@ -3615,7 +3586,7 @@ onUnmounted(() => {
     border-radius: 16px;
     background: rgb(var(--c-surface));
     border-color: rgb(var(--c-border) / 0.65);
-    box-shadow: 0 1px 2px rgb(var(--c-on-background) / 0.05);
+    box-shadow: 0 1px 0 rgb(255 255 255 / 0.025) inset, 0 1px 2px rgb(var(--c-on-background) / 0.05);
     /* 长 URL / Key / 错误信息不撑破卡片 */
     overflow-wrap: anywhere;
     /* 锚点跳转要让开「顶部导航 + 吸顶分组条」的实际占位 */
@@ -3632,11 +3603,17 @@ onUnmounted(() => {
     border-bottom: 1px solid rgb(var(--c-border) / 0.55);
   }
 
-  /* 触控目标：输入类控件最小 40px（车机屏幕误触率高） */
+  /* 触控目标：输入类控件最小 44px（单手操作与车机误触） */
   .hc-set-card input:not([type='checkbox']):not([type='radio']):not([type='file']),
   .hc-set-card select,
-  .hc-set-card textarea { min-height: 40px; }
+  .hc-set-card textarea { min-height: 44px; }
   .hc-set-card textarea { min-height: 84px; }
+}
+
+/* <768px：全局底部 Tab 栏固定 64px 高且盖住视口底部，页面再让出一段，
+   避免最后一张设置卡与底部操作条被 Tab 栏遮挡 */
+@media (max-width: 767px) {
+  .hc-set-shell { padding-bottom: calc(40px + env(safe-area-inset-bottom, 0px)); }
 }
 
 /* 手机端标签栏 / 锚点栏：横向滚动但隐藏滚动条（避免占位导致高度抖动） */
