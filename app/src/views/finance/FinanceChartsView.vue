@@ -131,7 +131,7 @@
       </div>
 
       <div v-if="catRows.length" class="flex justify-center py-0.5">
-        <div class="hc-donut relative w-32 h-32" :class="{ 'hc-donut--zoom': selectedInDonut }">
+        <div class="hc-donut relative" :class="{ 'hc-donut--zoom': selectedInDonut }">
           <svg viewBox="0 0 100 100" class="w-full h-full -rotate-90" role="img" :aria-label="`分类${type === 'income' ? '收入' : '支出'}占比环图`">
             <circle cx="50" cy="50" r="40" fill="none" stroke="rgb(var(--c-surface-alt))" stroke-width="14" />
             <circle
@@ -1019,14 +1019,15 @@ onActivated(async () => {
   outline: none;
 }
 .donut-seg:hover { opacity: .75; }
-/* 点击扇区后整体放大：提高后续点选的精准度，放大期间仍可正常点选与查看明细 */
+/* 点击扇区后放大：直径与下方词条（分类行）等宽，词条随容器增高同步平滑下移。
+   宽高参与布局，下方列表跟随同一段过渡移动，不会出现跳变或遮挡。 */
 .hc-donut {
-  transform: scale(1);
-  transform-origin: center;
-  transition: transform .28s cubic-bezier(.22, .61, .36, 1);
+  width: 8rem;
+  aspect-ratio: 1 / 1;
+  transition: width .34s cubic-bezier(.4, 0, .2, 1);
   -webkit-tap-highlight-color: transparent;
 }
-.hc-donut--zoom { transform: scale(1.15); }
+.hc-donut--zoom { width: 100%; }
 .hc-donut svg { -webkit-tap-highlight-color: transparent; }
 .hc-bar { transition: width .55s ease; }
 
