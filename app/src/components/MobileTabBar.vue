@@ -1,5 +1,8 @@
 <template>
-  <nav class="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-surface/95 backdrop-blur-md border-t border-border">
+  <nav
+    class="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-surface/95 backdrop-blur-md border-t border-border"
+    style="padding-bottom: env(safe-area-inset-bottom)"
+  >
     <div class="max-w-lg mx-auto overflow-x-auto" style="scrollbar-width: none">
       <div class="flex items-center justify-around h-16 min-w-full">
         <router-link
@@ -36,6 +39,9 @@ const items = [
 ]
 
 function isActive(to) {
+  // 生活模块拆分为 /inventory、/inventory/stock、/inventory/shopping，
+  // 只要在生活模块内都点亮「生活」。
+  if (to === '/inventory') return route.path === '/inventory' || route.path.startsWith('/inventory/')
   return route.path === to
 }
 

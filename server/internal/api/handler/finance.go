@@ -1,4 +1,4 @@
-﻿package handler
+package handler
 
 import (
 	"bytes"
@@ -511,6 +511,221 @@ func (h *Finance) Export(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ── 报表 ──────────────────────────────────────────────────────────
+
+// ListReports GET /finance/reports
+func (h *Finance) ListReports(w http.ResponseWriter, r *http.Request) {
+	id, ok := h.active(w, r)
+	if !ok {
+		return
+	}
+	list, err := h.repo.ListReports(r.Context(), id)
+	if err != nil {
+		WriteErr(w, 500, "internal", err.Error())
+		return
+	}
+	WriteJSON(w, 200, list)
+}
+
+// CreateReport POST /finance/reports
+func (h *Finance) CreateReport(w http.ResponseWriter, r *http.Request) {
+	id, ok := h.active(w, r)
+	if !ok {
+		return
+	}
+	var p struct {
+		Name    string             `json:"name"`
+		Filters store.ReportFilter `json:"filters"`
+	}
+	if err := DecodeBody(r, &p); err != nil {
+		WriteErr(w, 400, "bad_request", "参数格式错误")
+		return
+	}
+	var user string
+	if u, ok := auth.From(r.Context()); ok {
+		user = u.Username
+	}
+	rep, err := h.repo.CreateReport(r.Context(), id, p.Name, p.Filters, user)
+	if err != nil {
+		finErr(w, err)
+		return
+	}
+	h.changed(id)
+	WriteJSON(w, 201, rep)
+}
+
+// GetReport GET /finance/reports/{id} 报表详情（汇总 + 序列 + 分类占比）
+func (h *Finance) GetReport(w http.ResponseWriter, r *http.Request) {
+	id, ok := h.active(w, r)
+	if !ok {
+		return
+	}
+	rid, ok := finID(r, "id")
+	if !ok {
+		WriteErr(w, 404, "not_found", "报表不存在")
+		return
+	}
+	rep, err := h.repo.GetReport(r.Context(), id, rid)
+	if err != nil {
+		finErr(w, err)
+		return
+	}
+	data, err := h.repo.ReportData(r.Context(), id, rep.Filters)
+	if err != nil {
+		finErr(w, err)
+		return
+	}
+	WriteJSON(w, 200, map[string]any{
+		"id":          rep.ID,
+		"name":        rep.Name,
+		"filters":     rep.Filters,
+		"summary":     data.Summary,
+		"by_day":      data.ByDay,
+		"by_month":    data.ByMonth,
+		"by_category": data.ByCategory,
+		"created_by":  rep.CreatedBy,
+		"created_at":  rep.CreatedAt,
+	})
+}
+
+// ReportTransactions GET /finance/reports/{id}/transactions?page=&page_size=
+func (h *Finance) ReportTransactions(w http.ResponseWriter, r *http.Request) {
+	id, ok := h.active(w, r)
+	if !ok {
+		return
+	}
+	rid, ok := finID(r, "id")
+	if !ok {
+		WriteErr(w, 404, "not_found", "报表不存在")
+		return
+	}
+	rep, err := h.repo.GetReport(r.Context(), id, rid)
+	if err != nil {
+		finErr(w, err)
+		return
+	}
+	page := int(finQueryInt(r, "page"))
+	per := int(finQueryInt(r, "page_size"))
+	p, err := h.repo.ListReportTransactions(r.Context(), id, rep.Filters, page, per)
+	if err != nil {
+		finErr(w, err)
+		return
+	}
+	WriteJSON(w, 200, p)
+}
+
+// ReportExport GET /finance/reports/{id}/export 报表明细 CSV
+func (h *Finance) ReportExport(w http.ResponseWriter, r *http.Request) {
+	id, ok := h.active(w, r)
+	if !ok {
+		return
+	}
+	rid, ok := finID(r, "id")
+	if !ok {
+		WriteErr(w, 404, "not_found", "报表不存在")
+		return
+	}
+	rep, err := h.repo.GetReport(r.Context(), id, rid)
+	if err != nil {
+		finErr(w, err)
+		return
+	}
+	list, err := h.repo.ExportReportTransactions(r.Context(), id, rep.Filters)
+	if err != nil {
+		finErr(w, err)
+		return
+	}
+	var buf bytes.Buffer
+	buf.WriteString("\uFEFF") // 带 BOM，Excel 打开中文不乱码
+	cw := csv.NewWriter(&buf)
+	_ = cw.Write([]string{"日期", "类型", "分类", "账户", "支付方式", "金额(元)", "原币金额", "汇率", "备注", "标签", "来源"})
+	for _, t := range list {
+		typ := "支出"
+		if t.Type == "income" {
+			typ = "收入"
+		}
+		orig := ""
+		rate := ""
+		if t.OrigAmount > 0 {
+			orig = store.FormatCents(t.OrigAmount)
+		}
+		if t.FxRate > 0 {
+			rate = strconv.FormatFloat(t.FxRate, 'f', 4, 64)
+		}
+		_ = cw.Write([]string{
+			t.OccurredAt, typ, t.CategoryName, t.AccountName,
+			store.PayMethodLabel(t.PayMethod), store.FormatCents(t.Amount), orig, rate, t.Note, t.Tags, t.Source,
+		})
+	}
+	cw.Flush()
+	WriteJSON(w, 200, map[string]any{
+		"filename": "report-" + rep.Filters.Start + "-" + rep.Filters.End + ".csv",
+		"content":  buf.String(),
+	})
+}
+
+// DeleteReport DELETE /finance/reports/{id}
+func (h *Finance) DeleteReport(w http.ResponseWriter, r *http.Request) {
+	id, ok := h.active(w, r)
+	if !ok {
+		return
+	}
+	rid, ok := finID(r, "id")
+	if !ok {
+		WriteErr(w, 404, "not_found", "报表不存在")
+		return
+	}
+	if err := h.repo.DeleteReport(r.Context(), id, rid); err != nil {
+		finErr(w, err)
+		return
+	}
+	h.changed(id)
+	WriteJSON(w, 200, true)
+}
+
+// ReportPreview POST /finance/reports/preview 实时预览汇总（不落库）
+func (h *Finance) ReportPreview(w http.ResponseWriter, r *http.Request) {
+	id, ok := h.active(w, r)
+	if !ok {
+		return
+	}
+	var p struct {
+		Filters store.ReportFilter `json:"filters"`
+	}
+	if err := DecodeBody(r, &p); err != nil {
+		WriteErr(w, 400, "bad_request", "参数格式错误")
+		return
+	}
+	s, err := h.repo.ReportSummary(r.Context(), id, p.Filters)
+	if err != nil {
+		finErr(w, err)
+		return
+	}
+	WriteJSON(w, 200, s)
+}
+
+// ReportDataPreview POST /finance/reports/data 实时计算报表完整数据（不落库）
+// 供图表页在周/月/年等任意区间直接绘图，避免为了预览而创建一条已保存报表。
+func (h *Finance) ReportDataPreview(w http.ResponseWriter, r *http.Request) {
+	id, ok := h.active(w, r)
+	if !ok {
+		return
+	}
+	var p struct {
+		Filters store.ReportFilter `json:"filters"`
+	}
+	if err := DecodeBody(r, &p); err != nil {
+		WriteErr(w, 400, "bad_request", "参数格式错误")
+		return
+	}
+	d, err := h.repo.ReportData(r.Context(), id, p.Filters)
+	if err != nil {
+		finErr(w, err)
+		return
+	}
+	WriteJSON(w, 200, d)
+}
+
 // ── 周期账单 ──────────────────────────────────────────────────────
 
 // ListRecurring GET /finance/recurring
@@ -543,6 +758,7 @@ func (h *Finance) CreateRecurring(w http.ResponseWriter, r *http.Request) {
 		finErr(w, err)
 		return
 	}
+	h.changed(id)
 	WriteJSON(w, 201, x)
 }
 
@@ -567,6 +783,7 @@ func (h *Finance) UpdateRecurring(w http.ResponseWriter, r *http.Request) {
 		finErr(w, err)
 		return
 	}
+	h.changed(id)
 	WriteJSON(w, 200, x)
 }
 
@@ -585,6 +802,7 @@ func (h *Finance) DeleteRecurring(w http.ResponseWriter, r *http.Request) {
 		finErr(w, err)
 		return
 	}
+	h.changed(id)
 	WriteJSON(w, 200, true)
 }
 

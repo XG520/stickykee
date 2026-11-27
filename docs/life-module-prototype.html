@@ -1,0 +1,1876 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>生活模块 · 多页面交互原型</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400..700&family=Source+Sans+3:wght@400..700&display=swap" rel="stylesheet" />
+<style>
+/* ============================================================
+   tokens · 与 app/src/assets/main.css 对齐，仅用于原型演示
+   ============================================================ */
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;background:#08090B;color:#F2F0EB;
+  font-family:'Source Sans 3','PingFang SC','HarmonyOS Sans','Microsoft YaHei',system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+input,select,textarea{font:inherit;color:inherit}
+svg{display:block}
+.icon{width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.icon.sm{width:16px;height:16px}
+.icon.lg{width:24px;height:24px}
+.icon.xl{width:28px;height:28px}
+.mono{font-family:'Space Grotesk','DIN Alternate','Bahnschrift','PingFang SC',sans-serif;font-variant-numeric:tabular-nums}
+
+/* ---------- 舞台 ---------- */
+.stage{min-height:100dvh;display:flex;align-items:center;justify-content:center;gap:48px;padding:32px;
+  background:
+    radial-gradient(900px 520px at 12% -8%, rgba(245,166,35,.10), transparent 60%),
+    radial-gradient(760px 520px at 108% 108%, rgba(94,196,176,.08), transparent 62%),
+    #08090B;}
+.brief{width:336px;flex:none;display:flex;flex-direction:column;gap:22px}
+.brief .tagline{display:inline-flex;align-items:center;gap:6px;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#F5A623}
+.brief .tagline::before{content:'';width:18px;height:1px;background:#F5A623}
+.brief h1{margin:10px 0 0;font-family:'Space Grotesk','PingFang SC',sans-serif;font-size:34px;line-height:1.15;letter-spacing:-.02em;font-weight:600}
+.brief .sub{margin:8px 0 0;font-size:13px;line-height:1.6;color:#8A8986;max-width:300px}
+.screen-nav{display:flex;flex-direction:column;gap:2px;border-top:1px solid #26272C;padding-top:10px}
+.screen-nav button{display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:8px;text-align:left;color:#8A8986;transition:.18s}
+.screen-nav button i{font-style:normal;font-family:'Space Grotesk',sans-serif;font-size:10px;color:#6E6D69;width:16px}
+.screen-nav button span{font-size:12.5px;color:#E8E5DD}
+.screen-nav button small{font-size:11px;color:#6E6D69;margin-left:auto}
+.screen-nav button:hover{background:#151619;color:#E8E5DD}
+.screen-nav button.active{background:#1E1F22;box-shadow:inset 0 0 0 1px #34353A;color:#F5A623}
+.screen-nav button.active i,.screen-nav button.active small{color:#F5A623}
+.theme-bar{display:flex;flex-direction:column;gap:8px}
+.theme-bar>span{font-size:11px;letter-spacing:.12em;color:#6E6D69;text-transform:uppercase}
+.swatches{display:flex;gap:6px}
+.swatches button{flex:1;display:flex;align-items:center;gap:5px;justify-content:center;padding:7px 4px;border-radius:8px;border:1px solid #26272C;color:#8A8986;font-size:11px}
+.swatches button::before{content:'';width:8px;height:8px;border-radius:50%;background:var(--sw)}
+.swatches button.active{border-color:#4A4B50;color:#F2F0EB;background:#151619}
+.principles{display:flex;flex-direction:column;gap:7px;font-size:12px;color:#8A8986;line-height:1.5}
+.principles b{color:#E8E5DD;font-weight:600}
+.footnote{font-size:11px;color:#5C5B58;line-height:1.6;border-top:1px solid #1C1D21;padding-top:12px}
+.device-wrap{position:relative;flex:none}
+
+/* ---------- 手机外壳 ---------- */
+.phone{
+  position:relative;width:390px;height:844px;border-radius:46px;overflow:hidden;
+  background:var(--bg);color:var(--on-bg);
+  border:9px solid #0C0D0F;
+  box-shadow:0 0 0 1px #2A2B30,0 40px 90px rgba(0,0,0,.65),0 2px 0 rgba(255,255,255,.04) inset;
+  transform-origin:top center;
+  --bg:#0E0F12;--surface:#1E1F22;--surface-alt:#26272C;--surface-hover:#2F3036;
+  --on-bg:#F2F0EB;--on-surface:#E8E5DD;--muted:#8A8986;--faint:#6E6D69;--border:#34353A;
+  --primary:#F5A623;--primary-hover:#FFB84D;--on-primary:#0E0F12;
+  --accent:#5EC4B0;--error:#E85D4C;--warning:#E8A84C;--success:#5EC4B0;--info:#6BA3D9;
+  --primary-soft:rgba(245,166,35,.14);--accent-soft:rgba(94,196,176,.14);--glow:rgba(245,166,35,.30);
+  --safe-bottom:18px;--tabbar-h:64px;--fin-tabbar-h:60px;
+}
+.phone[data-theme="aurora"]{
+  --bg:#090C1A;--surface:#181D34;--surface-alt:#212744;--surface-hover:#2A3050;
+  --on-bg:#E8F0FA;--on-surface:#E2E8F4;--muted:#949CBA;--faint:#646B8C;--border:#2C3354;
+  --primary:#5EEAD4;--primary-hover:#86EFC4;--on-primary:#060F14;
+  --accent:#A78BFA;--error:#F47272;--warning:#FBBF24;--success:#34D399;--info:#60A5FA;
+  --primary-soft:rgba(94,234,212,.14);--accent-soft:rgba(167,139,250,.16);--glow:rgba(94,234,212,.28);
+}
+.phone[data-theme="china"]{
+  --bg:#110D0B;--surface:#241E18;--surface-alt:#2E2720;--surface-hover:#393129;
+  --on-bg:#F5EEE2;--on-surface:#EDE5D8;--muted:#988C7A;--faint:#807366;--border:#3E342C;
+  --primary:#E45C40;--primary-hover:#F0684A;--on-primary:#FFFAF4;
+  --accent:#D4AF37;--error:#E2624E;--warning:#D6963A;--success:#68A280;--info:#7A8EC2;
+  --primary-soft:rgba(228,92,64,.16);--accent-soft:rgba(212,175,55,.16);--glow:rgba(228,92,64,.28);
+}
+.phone[data-theme="retro"]{
+  --bg:#F0E8D7;--surface:#FBF6EA;--surface-alt:#EAE0CC;--surface-hover:#E2D6C0;
+  --on-bg:#2E2114;--on-surface:#352617;--muted:#8A7358;--faint:#A08A6E;--border:#D8CBB4;
+  --primary:#A84C08;--primary-hover:#8F3F05;--on-primary:#FFF7EA;
+  --accent:#2F7D6A;--error:#C44536;--warning:#B07A1E;--success:#2F7D6A;--info:#2F6DAE;
+  --primary-soft:rgba(168,76,8,.12);--accent-soft:rgba(47,125,106,.12);--glow:rgba(168,76,8,.22);
+}
+.punch{position:absolute;top:13px;left:50%;transform:translateX(-50%);width:13px;height:13px;border-radius:50%;background:#070809;box-shadow:0 0 0 1px #1B1C20;z-index:80;pointer-events:none}
+.statusbar{position:absolute;top:0;left:0;right:0;height:44px;z-index:70;display:flex;align-items:center;justify-content:space-between;padding:0 26px;pointer-events:none;color:var(--on-bg);font-size:12.5px;font-weight:600}
+.statusbar .sicons{display:flex;align-items:center;gap:5px;opacity:.9}
+.statusbar .sicons i{display:block;width:3px;border-radius:1px;background:currentColor}
+.statusbar .batt{width:20px;height:10px;border:1.4px solid currentColor;border-radius:3px;position:relative;opacity:.9}
+.statusbar .batt::before{content:'';position:absolute;inset:1.5px;right:5px;background:currentColor;border-radius:1px}
+.statusbar .batt::after{content:'';position:absolute;right:-3.2px;top:2.4px;width:2px;height:4px;border-radius:0 1px 1px 0;background:currentColor}
+
+/* ---------- 页面骨架 ---------- */
+.app{position:absolute;inset:0;overflow:hidden}
+.screen{position:absolute;inset:0;display:none;flex-direction:column;background:var(--bg);color:var(--on-bg)}
+.screen.is-active{display:flex}
+.screen.is-entering{animation:screenIn .24s cubic-bezier(.2,.8,.2,1)}
+@keyframes screenIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.page-body{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:0 16px 24px;scrollbar-width:none;overscroll-behavior:contain}
+.page-body::-webkit-scrollbar{display:none}
+.screen.global .page-body{padding-bottom:calc(var(--tabbar-h) + var(--safe-bottom) + 20px)}
+.screen.finance .page-body{padding-bottom:calc(var(--fin-tabbar-h) + var(--safe-bottom) + 30px)}
+.screen[data-screen="add"]{background:var(--bg)}
+.page-head{flex:none;padding:calc(44px + 10px) 16px 6px;display:flex;align-items:flex-end;justify-content:space-between;gap:12px}
+.eyebrow{margin:0 0 2px;font-size:11px;letter-spacing:.08em;color:var(--muted)}
+.page-title{margin:0;font-family:'Space Grotesk','PingFang SC',sans-serif;font-size:26px;line-height:1.15;font-weight:600;letter-spacing:-.01em}
+.head-avatar{width:38px;height:38px;border-radius:50%;background:var(--surface-alt);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-family:'Space Grotesk',sans-serif;font-weight:600;color:var(--primary);font-size:14px}
+.sub-head{flex:none;padding:calc(44px + 6px) 12px 8px;display:flex;align-items:center;gap:4px;min-height:calc(44px + 56px)}
+.sub-title{margin:0;flex:1;font-size:18px;font-weight:600;font-family:'Space Grotesk','PingFang SC',sans-serif;letter-spacing:-.01em;padding-left:2px}
+.head-actions{display:flex;align-items:center;gap:2px;flex:none}
+.icon-btn{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:var(--muted);transition:background .16s,color .16s;position:relative}
+.icon-btn:hover{background:var(--surface-alt);color:var(--on-bg)}
+.icon-btn:active{transform:scale(.94)}
+.add-pill{display:inline-flex;align-items:center;gap:3px;height:34px;padding:0 12px;border-radius:999px;border:1px solid var(--primary);color:var(--primary);font-size:12px;font-weight:600}
+.add-pill:active{transform:scale(.96);background:var(--primary-soft)}
+.fin-head{flex:none;padding:calc(44px + 4px) 12px 4px;display:flex;align-items:center;gap:2px;min-height:calc(44px + 48px)}
+.fin-title{margin:0;flex:1;font-size:18px;font-weight:600;font-family:'Space Grotesk','PingFang SC',sans-serif;letter-spacing:-.01em;padding-left:2px}
+.badge-btn i{position:absolute;top:9px;right:9px;width:7px;height:7px;border-radius:50%;background:var(--primary);opacity:0}
+.badge-btn.on i{opacity:1}
+.mini-link{color:var(--muted);font-size:11px;display:inline-flex;align-items:center;gap:1px}
+.badge{display:inline-flex;align-items:center;gap:3px;height:18px;padding:0 7px;border-radius:999px;font-size:10px;font-weight:600;line-height:1}
+.badge.warn{background:rgba(232,168,76,.14);color:var(--warning)}
+.badge.err{background:rgba(232,93,76,.14);color:var(--error)}
+.badge.soft{background:var(--surface-alt);color:var(--muted)}
+.badge.primary{background:var(--primary-soft);color:var(--primary)}
+/* ---------- 通用卡片 / 列表 ---------- */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:16px}
+.section-head{display:flex;align-items:center;justify-content:space-between;padding:0 2px;margin:18px 0 8px}
+.section-head h2{margin:0;font-size:13px;font-weight:600;letter-spacing:.02em}
+.card-head{display:flex;align-items:center;justify-content:space-between;padding:2px 2px 10px}
+.card-head h3{margin:0;font-size:13px;font-weight:600}
+.card-head span{font-size:11px;color:var(--muted)}
+.list-card{padding:0 12px;overflow:hidden}
+.row{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:11px 2px;border-bottom:1px solid var(--border);min-height:56px}
+.row:last-child{border-bottom:0}
+.row:active{background:var(--surface-hover);border-radius:10px}
+.row-ic{width:34px;height:34px;border-radius:11px;background:var(--surface-alt);display:flex;align-items:center;justify-content:center;color:var(--muted);flex:none}
+.row-main{flex:1;min-width:0}
+.row-title{font-size:14px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row-sub{font-size:11px;color:var(--muted);line-height:1.4;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row-amt{font-size:14.5px;font-weight:600;text-align:right;flex:none}
+.row-amt.income{color:var(--accent)}
+.row-amt.expense{color:var(--on-bg)}
+.row-amt small{font-size:10px;color:var(--muted);font-weight:400;display:block}
+.empty{padding:52px 20px;text-align:center;color:var(--muted);font-size:12.5px}
+.empty .e-ic{width:52px;height:52px;border-radius:50%;background:var(--surface-alt);display:flex;align-items:center;justify-content:center;margin:0 auto 12px;color:var(--faint)}
+.empty b{display:block;color:var(--on-surface);font-size:14px;font-weight:600;margin-bottom:4px}
+/* ---------- 生活入口 ---------- */
+.hero-card{display:block;width:100%;text-align:left;padding:16px;border-radius:20px;border:1px solid var(--border);
+  background:
+    radial-gradient(320px 150px at 100% 0%, var(--primary-soft), transparent 70%),
+    linear-gradient(160deg, var(--surface) 0%, var(--surface) 55%, var(--surface-alt) 100%);
+  position:relative;overflow:hidden;transition:transform .16s}
+.hero-card:active{transform:scale(.985)}
+.hero-head{display:flex;align-items:center;justify-content:space-between;font-size:11.5px;color:var(--muted)}
+.hero-amount{display:flex;align-items:flex-start;gap:3px;margin-top:6px;font-family:'Space Grotesk','PingFang SC',sans-serif;font-variant-numeric:tabular-nums}
+.hero-amount .cur{font-size:16px;line-height:1.7;color:var(--muted);font-weight:500}
+.hero-amount b{font-size:31px;line-height:1.15;font-weight:600;letter-spacing:-.02em}
+.hero-meta{display:flex;align-items:center;gap:8px;margin-top:6px;font-size:11px;color:var(--muted);flex-wrap:wrap}
+.hero-meta b{font-weight:600;color:var(--on-surface)}
+.hero-meta b.pos{color:var(--accent)}
+.dot{width:2px;height:2px;border-radius:50%;background:var(--faint);display:inline-block}
+.spark{width:100%;height:46px;margin-top:10px;overflow:visible}
+.spark path.line{fill:none;stroke:var(--primary);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.spark path.area{fill:var(--primary-soft);stroke:none}
+.spark circle{fill:var(--primary);stroke:var(--surface);stroke-width:1.5}
+.duo{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+.mini-card{position:relative;text-align:left;padding:13px 13px 12px;border-radius:16px;border:1px solid var(--border);background:var(--surface);transition:transform .16s}
+.mini-card:active{transform:scale(.97)}
+.mini-card.alert{border-color:rgba(232,93,76,.34)}
+.mini-top{display:flex;align-items:center;justify-content:space-between;color:var(--muted)}
+.mini-ic{width:30px;height:30px;border-radius:9px;background:var(--surface-alt);display:flex;align-items:center;justify-content:center;color:var(--primary)}
+.mini-title{font-size:11.5px;color:var(--muted);margin-top:8px}
+.mini-value{font-family:'Space Grotesk','PingFang SC',sans-serif;font-size:21px;font-weight:600;line-height:1.2;margin-top:1px}
+.mini-value span{font-size:11px;color:var(--muted);font-weight:400;margin-left:2px}
+.mini-tags{display:flex;gap:4px;margin-top:7px;min-height:18px;flex-wrap:wrap}
+.quick-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:16px}
+.quick{display:flex;flex-direction:column;align-items:center;gap:6px;padding:6px 2px;border-radius:14px;font-size:10.5px;color:var(--muted)}
+.quick .q-ic{width:44px;height:44px;border-radius:14px;background:var(--surface-alt);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--on-surface)}
+.quick:active .q-ic{transform:scale(.94);background:var(--surface-hover)}
+.quick.primary .q-ic{background:var(--primary);border-color:var(--primary);color:var(--on-primary);box-shadow:0 6px 16px var(--glow)}
+.quick.primary{color:var(--primary)}
+/* ---------- 库存 ---------- */
+.search-wrap{flex:none;display:none;padding:0 16px 8px}
+.search-wrap.on{display:block;animation:screenIn .18s ease}
+.search-box{display:flex;align-items:center;gap:8px;height:42px;padding:0 12px;border-radius:12px;background:var(--surface);border:1px solid var(--border)}
+.search-box input{flex:1;min-width:0;background:none;border:0;outline:none;font-size:13px}
+.search-box input::placeholder{color:var(--faint)}
+.stat-card{display:flex;align-items:center;gap:2px;padding:13px 14px;position:relative}
+.stat{flex:1;min-width:0}
+.stat b{display:block;font-family:'Space Grotesk','PingFang SC',sans-serif;font-size:18px;font-weight:600;line-height:1.2}
+.stat span{font-size:10.5px;color:var(--muted)}
+.stat.warn b{color:var(--warning)}
+.stat-link{position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:10.5px;color:var(--primary);background:var(--primary-soft);padding:5px 8px;border-radius:999px}
+.chips{display:flex;gap:6px;overflow-x:auto;padding:12px 1px 2px;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:none;height:30px;padding:0 11px;border-radius:999px;border:1px solid var(--border);background:var(--surface-alt);color:var(--muted);font-size:11.5px;display:inline-flex;align-items:center;gap:4px}
+.chip.active{background:var(--primary);border-color:var(--primary);color:var(--on-primary);font-weight:600}
+.chip.ghost{border-style:dashed}
+.chip.sm{height:26px;font-size:10.5px;padding:0 9px}
+.list-stack{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.item-row{display:flex;align-items:center;gap:11px;padding:12px 13px;border-radius:14px;background:var(--surface);border:1px solid var(--border);text-align:left;position:relative;overflow:hidden}
+.item-row:active{transform:scale(.99);background:var(--surface-hover)}
+.item-row.low{border-color:rgba(232,93,76,.34)}
+.item-row.low::before{content:'';position:absolute;left:0;top:12px;bottom:12px;width:3px;border-radius:0 3px 3px 0;background:var(--error)}
+.item-ic{width:40px;height:40px;border-radius:12px;background:var(--surface-alt);display:flex;align-items:center;justify-content:center;color:var(--muted);flex:none}
+.item-main{flex:1;min-width:0}
+.item-name{font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item-sub{display:flex;align-items:center;gap:5px;margin-top:3px;font-size:10.5px;color:var(--muted);flex-wrap:wrap}
+.item-qty{text-align:right;flex:none;font-family:'Space Grotesk','PingFang SC',sans-serif}
+.item-qty b{font-size:18px;font-weight:600;line-height:1.1}
+.item-qty span{font-size:10px;color:var(--muted);margin-left:1px}
+/* ---------- 购物 ---------- */
+.progress-card{padding:14px;margin-top:4px}
+.progress-top{display:flex;align-items:flex-end;justify-content:space-between;gap:10px}
+.progress-top b{font-family:'Space Grotesk','PingFang SC',sans-serif;font-size:19px;font-weight:600}
+.progress-top span{font-size:11px;color:var(--muted)}
+.bar{height:6px;border-radius:999px;background:var(--surface-alt);overflow:hidden;margin-top:9px}
+.bar i{display:block;height:100%;border-radius:999px;background:var(--primary);transition:width .3s cubic-bezier(.2,.8,.2,1)}
+.check-row{display:flex;align-items:center;gap:11px;width:100%;padding:12px 4px;border-bottom:1px solid var(--border);text-align:left;min-height:52px}
+.check-row:last-child{border-bottom:0}
+.check{width:22px;height:22px;border-radius:50%;border:1.6px solid var(--border);flex:none;display:flex;align-items:center;justify-content:center;color:transparent;transition:.16s}
+.check-row.done .check{background:var(--accent);border-color:var(--accent);color:var(--on-primary)}
+.check-row.done .check-name{color:var(--muted);text-decoration:line-through}
+.check-name{flex:1;font-size:13.5px;min-width:0}
+.check-qty{font-size:11px;color:var(--muted);flex:none}
+.check-row .check{position:relative}
+.check-row .check::after{content:'';position:absolute;inset:-11px}
+/* ---------- 账本：月份 / 汇总 / 流水 ---------- */
+.month-strip{display:flex;align-items:center;gap:1px;margin:2px 0 8px}
+.month-strip .icon-btn{width:38px;height:38px;border-radius:10px}
+.month-label{font-size:14px;font-weight:600;padding:8px 4px;font-family:'Space Grotesk','PingFang SC',sans-serif}
+.month-now{height:26px;padding:0 9px;border-radius:999px;border:1px solid var(--border);color:var(--muted);font-size:10.5px;margin-right:4px}
+.ml-auto{margin-left:auto}
+.summary-card{padding:14px 15px 13px;border-radius:18px;position:relative;overflow:hidden;
+  background:radial-gradient(280px 130px at 100% -10%, var(--primary-soft), transparent 70%),var(--surface)}
+.sum-label{font-size:11px;color:var(--muted)}
+.sum-amount{display:flex;align-items:flex-start;gap:2px;margin-top:2px;font-family:'Space Grotesk','PingFang SC',sans-serif;font-variant-numeric:tabular-nums}
+.sum-amount span{font-size:15px;color:var(--muted);line-height:1.8}
+.sum-amount b{font-size:30px;line-height:1.15;font-weight:600;letter-spacing:-.02em}
+.sum-meta{display:flex;align-items:center;gap:12px;margin-top:3px;font-size:11px;color:var(--muted);flex-wrap:wrap}
+.sum-meta b{color:var(--on-surface);font-weight:600}
+.sum-meta b.income{color:var(--accent)}
+.budget-line{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:10px;color:var(--muted)}
+.budget-line .bar{flex:1;margin:0;height:5px}
+.budget-line .bar i{background:var(--primary)}
+.budget-line.over{color:var(--error)}
+.budget-line.over .bar i{background:var(--error)}
+.filter-chips{padding-top:9px;padding-bottom:0;flex-wrap:nowrap}
+.day-group{margin-top:10px}
+.day-head{display:flex;align-items:center;justify-content:space-between;padding:8px 3px 5px;font-size:10.5px;color:var(--muted);position:sticky;top:-1px;background:var(--bg);z-index:2}
+.day-head b{font-weight:600;color:var(--muted)}
+.tx-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden;padding:0 12px}
+.tx-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);cursor:pointer;min-height:56px}
+.tx-row:last-child{border-bottom:0}
+.tx-row:active{opacity:.75}
+.tx-ic{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex:none;background:var(--surface-alt);color:var(--muted)}
+.tx-ic.in{background:var(--accent-soft);color:var(--accent)}
+.tx-main{flex:1;min-width:0}
+.tx-title{font-size:13.5px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tx-sub{font-size:10.5px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tx-amt{font-size:14.5px;font-weight:600;font-family:'Space Grotesk','PingFang SC',sans-serif;font-variant-numeric:tabular-nums;flex:none}
+.tx-amt.expense{color:var(--on-bg)}
+.tx-amt.income{color:var(--accent)}
+.tx-more{width:32px;height:32px;border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--faint);flex:none}
+.tx-more:hover{background:var(--surface-alt);color:var(--on-bg)}
+.load-end{text-align:center;font-size:10.5px;color:var(--faint);padding:14px 0 4px}
+/* ---------- 图表 ---------- */
+.seg{display:grid;gap:3px;padding:3px;border-radius:13px;background:var(--surface-alt);border:1px solid var(--border)}
+.seg button{height:34px;border-radius:10px;font-size:12px;color:var(--muted);display:flex;align-items:center;justify-content:center;gap:4px;transition:.16s}
+.seg button.active{background:var(--surface);color:var(--primary);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.28)}
+.seg-type{grid-template-columns:1fr 1fr;margin-top:2px}
+.seg-type button{height:36px}
+.seg-range{grid-template-columns:1fr 1fr 1fr;margin-top:8px;background:transparent;border:0;padding:0;gap:6px}
+.seg-range button{height:30px;border-radius:999px;background:var(--surface-alt);border:1px solid var(--border);font-size:11px}
+.seg-range button.active{background:var(--primary);border-color:var(--primary);color:var(--on-primary)}
+.chart-summary{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin:14px 2px 8px;flex-wrap:wrap}
+.chart-summary .range{font-size:11px;color:var(--muted);width:100%}
+.chart-summary b{font-family:'Space Grotesk','PingFang SC',sans-serif;font-size:26px;font-weight:600;letter-spacing:-.01em}
+.chart-summary span{font-size:10.5px;color:var(--muted)}
+.donut-card{display:flex;align-items:center;gap:6px;padding:14px 13px}
+.donut-wrap{position:relative;width:146px;height:146px;flex:none}
+.donut-wrap svg{width:146px;height:146px}
+.donut-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none}
+.donut-center small{font-size:9.5px;color:var(--muted)}
+.donut-center b{font-family:'Space Grotesk','PingFang SC',sans-serif;font-size:19px;font-weight:600;font-variant-numeric:tabular-nums;margin-top:1px}
+.rank{flex:1;min-width:0;display:flex;flex-direction:column;gap:9px}
+.rank-row{display:flex;align-items:center;gap:7px;width:100%;text-align:left}
+.rank-dot{width:8px;height:8px;border-radius:3px;flex:none}
+.rank-name{font-size:11px;min-width:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rank-pct{font-size:10px;color:var(--muted);flex:none}
+.rank-amt{font-size:11px;font-weight:600;flex:none;font-variant-numeric:tabular-nums}
+.trend-card{padding:12px 13px 8px;margin-top:10px;position:relative}
+.trend-card svg{width:100%;height:168px;overflow:visible}
+.trend-grid{stroke:var(--border);stroke-width:1;stroke-dasharray:3 5;opacity:.7}
+.trend-area{fill:var(--primary-soft);stroke:none}
+.trend-line{fill:none;stroke:var(--primary);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.trend-pt{fill:var(--primary);stroke:var(--surface);stroke-width:1.6;cursor:pointer}
+.trend-pt:hover{r:5}
+.trend-axis{fill:var(--faint);font-size:8.5px;font-family:'Space Grotesk',sans-serif}
+.trend-tip{position:absolute;background:var(--surface-alt);border:1px solid var(--border);border-radius:10px;padding:7px 9px;font-size:10px;line-height:1.5;color:var(--on-surface);box-shadow:0 8px 22px rgba(0,0,0,.4);pointer-events:none;white-space:nowrap;z-index:5}
+.trend-tip b{font-family:'Space Grotesk',sans-serif;font-size:12px}
+.budget-card{padding:13px 14px;margin-top:10px}
+.budget-row{display:flex;align-items:center;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:8px}
+.budget-row:first-of-type{margin-top:0}
+.budget-row b{color:var(--on-surface);font-weight:600}
+.menu-row{display:flex;align-items:center;gap:10px;width:100%;padding:14px 14px;margin-top:10px;border-radius:14px;background:var(--surface);border:1px solid var(--border);font-size:12.5px;text-align:left}
+.menu-row span{flex:1}
+/* ---------- 记一笔 ---------- */
+.add-body{display:flex;flex-direction:column;padding-bottom:0;overflow:hidden}
+.add-type{margin-top:0;flex:none}
+.cat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding:10px 0 4px;flex:none}
+.cat{display:flex;flex-direction:column;align-items:center;gap:5px;padding:7px 2px;border-radius:14px;color:var(--muted);font-size:10px}
+.cat .c-ic{width:44px;height:44px;border-radius:50%;background:var(--surface-alt);border:1px solid transparent;display:flex;align-items:center;justify-content:center;color:var(--on-surface);transition:.16s}
+.cat.active .c-ic{background:var(--primary-soft);border-color:var(--primary);color:var(--primary)}
+.cat.active{color:var(--primary)}
+.cat:active .c-ic{transform:scale(.94)}
+.amount-bar{display:flex;align-items:center;justify-content:flex-end;gap:2px;flex:none;padding:6px 4px 10px;border-bottom:1px solid var(--border);font-family:'Space Grotesk','PingFang SC',sans-serif;font-variant-numeric:tabular-nums}
+.amount-bar .cur{font-size:16px;color:var(--muted);margin-right:2px}
+.amount-bar b{font-size:38px;line-height:1.1;font-weight:600;letter-spacing:-.02em}
+.amount-bar b.placeholder{color:var(--faint)}
+.caret{display:inline-block;width:2px;height:26px;background:var(--primary);margin-left:2px;border-radius:1px;animation:blink 1.1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+.amount-bar.shake{animation:shake .3s}
+@keyframes shake{20%{transform:translateX(-4px)}40%{transform:translateX(4px)}60%{transform:translateX(-3px)}80%{transform:translateX(2px)}}
+.meta-chips{display:flex;gap:6px;overflow-x:auto;padding:10px 0 8px;flex:none;scrollbar-width:none}
+.meta-chips::-webkit-scrollbar{display:none}
+.meta-chips button{flex:none;height:30px;padding:0 10px;border-radius:999px;border:1px solid var(--border);background:var(--surface-alt);color:var(--muted);font-size:11px;display:inline-flex;align-items:center;gap:4px;max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.meta-chips button:active{background:var(--surface-hover)}
+.save-btn{height:34px;padding:0 13px;border-radius:999px;background:var(--primary);color:var(--on-primary);font-size:12px;font-weight:600;margin-left:2px}
+.save-btn[disabled]{opacity:.38}
+.save-btn:active:not([disabled]){transform:scale(.96)}
+.keypad{flex:none;display:grid;grid-template-columns:repeat(4,1fr);grid-template-rows:repeat(4,52px);gap:5px;padding:8px 8px calc(10px + var(--safe-bottom));margin:0 -16px;background:var(--surface-alt);border-top:1px solid var(--border);border-radius:20px 20px 0 0}
+.key{display:flex;align-items:center;justify-content:center;border-radius:11px;background:var(--surface);border:1px solid var(--border);font-family:'Space Grotesk','PingFang SC',sans-serif;font-size:19px;font-weight:500;color:var(--on-bg);user-select:none}
+.key:active{background:var(--surface-hover);transform:scale(.97)}
+.key-sub{color:var(--muted)}
+.key-fn{color:var(--muted);font-size:16px}
+.key-done{grid-column:4;grid-row:2 / span 3;background:var(--primary);border-color:var(--primary);color:var(--on-primary);font-size:13px;font-weight:600;writing-mode:vertical-rl;letter-spacing:.18em}
+.key-done:active{background:var(--primary-hover)}
+/* ---------- 计划 / 我的 ---------- */
+.plan-sum{padding:15px;border-radius:18px;background:radial-gradient(260px 120px at 100% -10%, var(--primary-soft), transparent 70%),var(--surface)}
+.plan-sum .big{font-family:'Space Grotesk','PingFang SC',sans-serif;font-size:24px;font-weight:600;margin-top:2px}
+.plan-sum .sub{display:flex;justify-content:space-between;font-size:10.5px;color:var(--muted);margin-top:7px}
+.cat-budget{padding:11px 3px;border-bottom:1px solid var(--border);min-height:58px}
+.cat-budget:last-child{border-bottom:0}
+.cb-top{display:flex;align-items:center;justify-content:space-between;font-size:12px;gap:8px}
+.cb-top span{color:var(--muted);font-size:10.5px}
+.cb-top b{font-weight:600;font-variant-numeric:tabular-nums}
+.cat-budget .bar{height:5px;margin-top:7px}
+.cat-budget.over .bar i{background:var(--error)}
+.cat-budget.near .bar i{background:var(--warning)}
+.switch{width:40px;height:23px;border-radius:999px;background:var(--surface-alt);border:1px solid var(--border);position:relative;flex:none;transition:.2s}
+.switch::after{content:'';position:absolute;top:2px;left:2px;width:17px;height:17px;border-radius:50%;background:var(--muted);transition:.2s}
+.switch.on{background:var(--primary);border-color:var(--primary)}
+.switch.on::after{left:19px;background:var(--on-primary)}
+.asset-card{padding:16px;border-radius:18px;background:radial-gradient(300px 140px at 100% 0%, var(--accent-soft), transparent 72%),var(--surface)}
+.asset-label{font-size:11px;color:var(--muted)}
+.asset-total{font-family:'Space Grotesk','PingFang SC',sans-serif;font-size:28px;font-weight:600;letter-spacing:-.01em;margin-top:2px}
+.asset-accounts{display:flex;gap:6px;overflow-x:auto;margin-top:11px;padding-bottom:1px;scrollbar-width:none}
+.asset-accounts::-webkit-scrollbar{display:none}
+.acc-pill{flex:none;padding:7px 10px;border-radius:10px;background:var(--surface-alt);border:1px solid var(--border)}
+.acc-pill small{display:block;font-size:9.5px;color:var(--muted)}
+.acc-pill b{display:block;font-size:12px;font-weight:600;margin-top:1px;font-variant-numeric:tabular-nums}
+.menu-group{margin-top:14px}
+.menu-group>h3{margin:0 0 6px 3px;font-size:10px;letter-spacing:.12em;color:var(--faint);text-transform:uppercase;font-weight:600}
+.menu-list{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:0 12px;overflow:hidden}
+.menu-list .row{min-height:52px}
+.menu-list .row-ic{width:32px;height:32px;border-radius:9px;color:var(--primary);background:var(--primary-soft)}
+.menu-list .row-title{font-size:13px}
+.menu-list .row-sub{margin-top:0}
+.menu-list .chev{color:var(--faint)}
+.ver{text-align:center;font-size:10px;color:var(--faint);padding:18px 0 6px}
+/* ---------- 底栏 ---------- */
+.tabbar{display:none;position:absolute;left:0;right:0;bottom:0;z-index:50;background:var(--surface);border-top:1px solid var(--border);padding-bottom:var(--safe-bottom)}
+.phone[data-nav="global"] .tabbar.global{display:block}
+.phone[data-nav="finance"] .tabbar.finance-tab{display:block}
+.tabbar.global .g-inner{display:flex;align-items:center;justify-content:space-around;height:var(--tabbar-h);padding:0 2px}
+.gtab{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;flex:1;min-width:0;height:100%;color:var(--muted);font-size:9px}
+.gtab .icon{width:22px;height:22px}
+.gtab.active{color:var(--primary)}
+.gtab:active{opacity:.7}
+.finance-tab .f-inner{display:grid;grid-template-columns:repeat(5,1fr);align-items:end;height:var(--fin-tabbar-h);padding:0 4px;overflow:visible}
+.ftab{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;color:var(--muted);font-size:9.5px;height:100%;padding-bottom:4px}
+.ftab .icon{width:21px;height:21px}
+.ftab.active{color:var(--primary)}
+.ftab.fab{justify-content:flex-start;gap:1px;padding-bottom:4px}
+.fab-btn{width:54px;height:54px;border-radius:50%;background:var(--primary);color:var(--on-primary);display:flex;align-items:center;justify-content:center;transform:translateY(-17px);box-shadow:0 8px 20px var(--glow),0 0 0 5px var(--surface);transition:.16s}
+.fab-btn .icon{width:26px;height:26px;stroke-width:2.1}
+.ftab.fab:active .fab-btn{transform:translateY(-17px) scale(.94)}
+.fab-label{font-size:9.5px;color:var(--primary);font-weight:600;transform:translateY(-13px)}
+.home-ind{position:absolute;bottom:6px;left:50%;transform:translateX(-50%);width:128px;height:4px;border-radius:99px;background:var(--on-bg);opacity:.28;z-index:60;pointer-events:none}
+/* ---------- Sheet / Toast ---------- */
+.sheet-mask{position:absolute;inset:0;z-index:90;display:none;align-items:flex-end;background:rgba(0,0,0,.55);backdrop-filter:blur(2px)}
+.sheet-mask.open{display:flex;animation:fadeIn .18s ease}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+.sheet{width:100%;max-height:88%;overflow-y:auto;background:var(--surface);border-radius:24px 24px 0 0;border-top:1px solid var(--border);padding:8px 16px calc(16px + var(--safe-bottom));animation:sheetUp .26s cubic-bezier(.2,.8,.2,1)}
+@keyframes sheetUp{from{transform:translateY(40px)}to{transform:none}}
+.sheet-handle{width:36px;height:4px;border-radius:99px;background:var(--border);margin:0 auto 10px}
+.sheet-head{display:flex;align-items:center;justify-content:space-between;padding:2px 0 10px}
+.sheet-head h3{margin:0;font-size:15px;font-weight:600}
+.sheet-head .icon-btn{width:36px;height:36px}
+.sheet-label{font-size:10.5px;color:var(--muted);margin:12px 0 7px;letter-spacing:.04em}
+.opt-row{display:flex;flex-wrap:wrap;gap:6px}
+.opt{height:32px;padding:0 11px;border-radius:999px;background:var(--surface-alt);border:1px solid var(--border);color:var(--muted);font-size:11.5px}
+.opt.active{background:var(--primary-soft);border-color:var(--primary);color:var(--primary);font-weight:600}
+.sheet-actions{display:flex;gap:8px;margin-top:18px}
+.btn{flex:1;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600}
+.btn.ghost{background:var(--surface-alt);border:1px solid var(--border);color:var(--on-surface)}
+.btn.primary{background:var(--primary);color:var(--on-primary)}
+.btn.danger{background:rgba(232,93,76,.14);color:var(--error);border:1px solid rgba(232,93,76,.3)}
+.field{margin-bottom:12px}
+.field label{display:block;font-size:10.5px;color:var(--muted);margin-bottom:5px}
+.field input{width:100%;height:42px;border-radius:11px;background:var(--surface-alt);border:1px solid var(--border);padding:0 11px;font-size:13px;outline:none}
+.field input:focus{border-color:var(--primary)}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-top:4px}
+.cal-w{text-align:center;font-size:9.5px;color:var(--faint);padding:3px 0}
+.cal-d{height:38px;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;color:var(--on-surface);position:relative}
+.cal-d.has::after{content:'';position:absolute;bottom:5px;width:4px;height:4px;border-radius:50%;background:var(--primary)}
+.cal-d.sel{background:var(--primary);color:var(--on-primary)}
+.cal-d.sel::after{background:var(--on-primary)}
+.cal-d.blank{opacity:0;pointer-events:none}
+.toast{position:absolute;left:50%;bottom:calc(var(--fin-tabbar-h) + var(--safe-bottom) + 20px);transform:translate(-50%,8px);background:var(--surface-alt);border:1px solid var(--border);color:var(--on-surface);font-size:11.5px;padding:9px 14px;border-radius:999px;z-index:120;opacity:0;pointer-events:none;transition:.22s;white-space:nowrap;box-shadow:0 8px 22px rgba(0,0,0,.4)}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+@media (prefers-reduced-motion: reduce){*{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}}
+@media (max-width:1080px){
+  .brief{display:none}
+  .stage{display:block;padding:0;background:var(--bg)}
+  .device-wrap{width:100%!important;height:100dvh!important;display:flex;justify-content:center}
+  .phone{transform:none!important;width:100%;max-width:none;height:100dvh;border-radius:0;border:0;box-shadow:none;--safe-bottom:env(safe-area-inset-bottom,0px)}
+  .punch{display:none}
+  .hero-amount b{font-size:33px}
+  .keypad{grid-template-rows:repeat(4,54px)}
+}
+@media (max-width:370px){
+  .duo{gap:8px}
+  .mini-card{padding:11px}
+  .donut-wrap,.donut-wrap svg{width:128px;height:128px}
+  .sum-amount b{font-size:27px}
+  .hero-amount b{font-size:29px}
+  .cat .c-ic{width:40px;height:40px}
+}
+
+</style>
+</head>
+<body>
+<svg xmlns="http://www.w3.org/2000/svg" style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
+  <symbol id="i-chev-r" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></symbol>
+  <symbol id="i-chev-d" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-filter" viewBox="0 0 24 24"><path d="M4 7h16M7 12h10M10 17h4"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.4" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-cal" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="16" rx="3"/><path d="M8 3v4M16 3v4M3.5 10h17"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 10.5L12 4l8 6.5V20H4z"/><path d="M9.5 20v-6h5v6"/></symbol>
+  <symbol id="i-map" viewBox="0 0 24 24"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z"/><path d="M9 4v14M15 6v14"/></symbol>
+  <symbol id="i-floor" viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h2M13 8h2M9 12h2M13 12h2"/></symbol>
+  <symbol id="i-device" viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="3"/><path d="M11 18.5h2"/></symbol>
+  <symbol id="i-life" viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9H4z"/><path d="M9 20v-6h6v6"/></symbol>
+  <symbol id="i-scene" viewBox="0 0 24 24"><path d="M12 3l2.2 6.3L20.5 12l-6.3 2.2L12 20.5 9.8 14.2 3.5 12l6.3-2.7z"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12"/><path d="M4 6h.01M4 12h.01M4 18h.01"/></symbol>
+  <symbol id="i-pie" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4v8h8"/></symbol>
+  <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24"><path d="M4 8l8-4 8 4v8l-8 4-8-4z"/><path d="M4 8l8 4 8-4M12 12v8"/></symbol>
+  <symbol id="i-cart" viewBox="0 0 24 24"><circle cx="9" cy="20" r="1.3"/><circle cx="18" cy="20" r="1.3"/><path d="M3 4h2l2.4 10.4a2 2 0 002 1.6h7.2a2 2 0 002-1.6L21 8H6"/></symbol>
+  <symbol id="i-scan" viewBox="0 0 24 24"><path d="M4 8V5h3M20 8V5h-3M4 16v3h3M20 16v3h-3M4 12h16"/></symbol>
+  <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.2"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M4 19h16"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 20V9M7.5 13.5L12 9l4.5 4.5M4 5h16"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L20 8l-4-4L4 16z"/></symbol>
+  <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M3 7h18v12H3z"/><path d="M3 7l2-3h14l2 3M16 13h3"/></symbol>
+  <symbol id="i-card" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3 10h18"/></symbol>
+  <symbol id="i-cash" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-clipboard" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V2.5h6V4M9 10h6M9 14h6"/></symbol>
+  <symbol id="i-bowl" viewBox="0 0 24 24"><path d="M4 11h16a8 8 0 01-16 0z"/><path d="M8 7c0-1.5 1-2 1-3M12 7c0-1.5 1-2 1-3M16 7c0-1.5 1-2 1-3"/></symbol>
+  <symbol id="i-bus" viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="14" rx="2"/><path d="M5 12h14"/><circle cx="8" cy="19" r="1.4"/><circle cx="16" cy="19" r="1.4"/></symbol>
+  <symbol id="i-bag" viewBox="0 0 24 24"><path d="M6 8h12l1 12H5z"/><path d="M9 8V6a3 3 0 016 0v2"/></symbol>
+  <symbol id="i-game" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="9" rx="4"/><path d="M8 12.5h.01M10.5 10.5v4M6.5 10.5v4"/><circle cx="16" cy="11" r=".9" fill="currentColor" stroke="none"/><circle cx="18" cy="14" r=".9" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-health" viewBox="0 0 24 24"><path d="M12 20s-7-4.5-7-9a4 4 0 017-2.6A4 4 0 0119 11c0 4.5-7 9-7 9z"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5a2 2 0 012-2h12v18H6a2 2 0 01-2-2z"/><path d="M8 7h6"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16h12l-1.5-2.5V10a4.5 4.5 0 00-9 0v3.5z"/><path d="M10.5 19a1.5 1.5 0 003 0"/></symbol>
+  <symbol id="i-tag" viewBox="0 0 24 24"><path d="M4 4h7l9 9-7 7-9-9z"/><circle cx="8" cy="8" r="1.2"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s6-6.2 6-10a6 6 0 10-12 0c0 3.8 6 10 6 10z"/><circle cx="12" cy="11" r="2"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4.5l3 2"/></symbol>
+  <symbol id="i-repeat" viewBox="0 0 24 24"><path d="M4 9a4 4 0 014-4h9l-2.5-2.5M20 15a4 4 0 01-4 4H7l2.5 2.5"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M7 17L17 7M9 7h8v8"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M17 7L7 17M15 17H7V9"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 10-2.3 5.7M20 19v-5h-5"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M9.5 9.5a2.5 2.5 0 014.8 1c0 1.5-2.3 1.8-2.3 3.5"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-chart-line" viewBox="0 0 24 24"><path d="M4 17l5-5 4 3 6-7M4 21h16"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="M21 15l-5-5-9 10"/></symbol>
+</svg>
+
+<div class="stage">
+  <aside class="brief">
+    <div>
+      <span class="tagline">APK · 移动端重构</span>
+      <h1>生活模块<br />多页面交互原型</h1>
+      <p class="sub">参考鲨鱼记账的信息组织方式，把库存、购物清单、账本拆成独立页面；账本升级为带专属底栏的子应用。</p>
+    </div>
+    <nav class="screen-nav" id="screenNav">
+      <button data-go="life" class="active"><i>01</i><span>生活入口</span><small>聚合</small></button>
+      <button data-go="stock"><i>02</i><span>库存</span><small>独立页</small></button>
+      <button data-go="shopping"><i>03</i><span>购物清单</span><small>独立页</small></button>
+      <button data-go="ledger"><i>04</i><span>账本 · 明细</span><small>账本页签</small></button>
+      <button data-go="charts"><i>05</i><span>账本 · 图表</span><small>账本页签</small></button>
+      <button data-action="open-add"><i>06</i><span>记一笔</span><small>全屏</small></button>
+      <button data-go="plan"><i>07</i><span>账本 · 计划</span><small>账本页签</small></button>
+      <button data-go="me"><i>08</i><span>账本 · 我的</span><small>账本页签</small></button>
+    </nav>
+    <div class="theme-bar">
+      <span>主题令牌</span>
+      <div class="swatches" id="themeSwatches">
+        <button data-theme="default" class="active" style="--sw:#F5A623">默认</button>
+        <button data-theme="aurora" style="--sw:#5EEAD4">极光</button>
+        <button data-theme="china" style="--sw:#E45C40">中国风</button>
+        <button data-theme="retro" style="--sw:#A84C08">旧时光</button>
+      </div>
+    </div>
+    <div class="principles">
+      <div><b>三层导航</b>　全局 → 生活 → 账本子应用</div>
+      <div><b>一屏一任务</b>　明细 / 图表 / 记账 / 计划 / 我的</div>
+      <div><b>拇指操作</b>　记账 FAB 居中，键位 54px</div>
+      <div><b>令牌驱动</b>　切换主题不残留硬编码颜色</div>
+    </div>
+    <p class="footnote">按 390×844（覆盖 360–430px）设计。可直接点击底栏、月份箭头、筛选、日历、记账键盘与保存。</p>
+  </aside>
+
+  <div class="device-wrap" id="deviceWrap">
+    <div class="phone" id="phone" data-theme="default" data-nav="global">
+      <span class="punch"></span>
+      <div class="statusbar">
+        <span>11:07</span>
+        <span class="sicons">
+          <i style="height:5px"></i><i style="height:8px"></i><i style="height:11px"></i><i style="height:14px"></i>
+          <svg width="15" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 9a14 14 0 0118 0M6.5 12.5a9 9 0 0111 0M10 16a4 4 0 014 0"/></svg>
+          <span class="batt"></span>
+        </span>
+      </div>
+      <div class="app" id="app">
+
+        <!-- 01 生活入口 -->
+        <section class="screen is-active global" data-screen="life">
+          <header class="page-head">
+            <div><p class="eyebrow">11月26日 周三</p><h1 class="page-title">生活</h1></div>
+            <div class="head-avatar">S</div>
+          </header>
+          <div class="page-body">
+            <button class="hero-card" data-go="ledger">
+              <div class="hero-head"><span>本月支出</span><span class="mini-link">账本 <svg class="icon sm"><use href="#i-chev-r"/></svg></span></div>
+              <div class="hero-amount"><span class="cur">¥</span><b id="lifeExpense">1,846.80</b></div>
+              <div class="hero-meta"><span>收入 <b id="lifeIncome">¥16,682.42</b></span><i class="dot"></i><span>结余 <b class="pos" id="lifeBalance">+¥14,835.62</b></span></div>
+              <svg class="spark" id="lifeSpark" viewBox="0 0 320 46" preserveAspectRatio="none"></svg>
+            </button>
+            <div class="duo">
+              <button class="mini-card alert" data-go="stock">
+                <div class="mini-top"><span class="mini-ic"><svg class="icon"><use href="#i-box"/></svg></span><svg class="icon sm"><use href="#i-chev-r"/></svg></div>
+                <div class="mini-title">库存</div>
+                <div class="mini-value">21<span>件</span></div>
+                <div class="mini-tags"><span class="badge warn">临期 2</span><span class="badge err">补货 1</span></div>
+              </button>
+              <button class="mini-card" data-go="shopping">
+                <div class="mini-top"><span class="mini-ic"><svg class="icon"><use href="#i-cart"/></svg></span><svg class="icon sm"><use href="#i-chev-r"/></svg></div>
+                <div class="mini-title">购物清单</div>
+                <div class="mini-value">4<span>项待买</span></div>
+                <div class="mini-tags"><span class="badge soft">预计 ¥86</span></div>
+              </button>
+            </div>
+            <div class="quick-grid">
+              <button class="quick" data-toast="扫码入库（原型演示）"><span class="q-ic"><svg class="icon"><use href="#i-scan"/></svg></span>扫码入库</button>
+              <button class="quick primary" data-action="open-add"><span class="q-ic"><svg class="icon"><use href="#i-plus"/></svg></span>记一笔</button>
+              <button class="quick" data-toast="开始盘点（原型演示）"><span class="q-ic"><svg class="icon"><use href="#i-clipboard"/></svg></span>盘点</button>
+              <button class="quick" data-toast="添加购物项（原型演示）"><span class="q-ic"><svg class="icon"><use href="#i-cart"/></svg></span>加购物项</button>
+            </div>
+            <div class="section-head"><h2>最近账目</h2><button class="mini-link" data-go="ledger">全部 <svg class="icon sm"><use href="#i-chev-r"/></svg></button></div>
+            <div class="list-card" id="lifeRecent"></div>
+          </div>
+        </section>
+
+        <!-- 02 库存 -->
+        <section class="screen global" data-screen="stock">
+          <header class="sub-head">
+            <button class="icon-btn" data-go="life" aria-label="返回生活"><svg class="icon lg"><use href="#i-back"/></svg></button>
+            <h1 class="sub-title">库存</h1>
+            <div class="head-actions">
+              <button class="icon-btn" data-action="toggle-stock-search" aria-label="搜索"><svg class="icon"><use href="#i-search"/></svg></button>
+              <button class="add-pill" data-toast="添加物品（原型演示）"><svg class="icon sm"><use href="#i-plus"/></svg>添加</button>
+            </div>
+          </header>
+          <div class="search-wrap" id="stockSearch">
+            <div class="search-box"><svg class="icon sm" style="color:var(--muted)"><use href="#i-search"/></svg><input placeholder="搜索名称 / 条码" /></div>
+          </div>
+          <div class="page-body">
+            <div class="card stat-card">
+              <div class="stat"><b>21</b><span>在库</span></div>
+              <div class="stat"><b>¥1,286</b><span>库存价值</span></div>
+              <div class="stat warn"><b>2</b><span>临期</span></div>
+              <button class="stat-link" data-toast="筛选需补货（原型演示）">补货 1 ›</button>
+            </div>
+            <div class="chips">
+              <button class="chip active" data-toast="切换位置">全部</button>
+              <button class="chip" data-toast="切换位置">厨房</button>
+              <button class="chip" data-toast="切换位置">冰箱</button>
+              <button class="chip" data-toast="切换位置">储物间</button>
+              <button class="chip ghost" data-toast="位置管理"><svg class="icon sm"><use href="#i-settings"/></svg></button>
+            </div>
+            <div class="quick-grid">
+              <button class="quick" data-toast="开始盘点"><span class="q-ic"><svg class="icon"><use href="#i-clipboard"/></svg></span>盘点</button>
+              <button class="quick" data-toast="扫码"><span class="q-ic"><svg class="icon"><use href="#i-scan"/></svg></span>扫码</button>
+              <button class="quick" data-toast="拍照识别"><span class="q-ic"><svg class="icon"><use href="#i-camera"/></svg></span>拍照</button>
+              <button class="quick" data-toast="导出 CSV"><span class="q-ic"><svg class="icon"><use href="#i-download"/></svg></span>导出</button>
+            </div>
+            <div class="list-stack">
+              <button class="item-row" data-toast="打开物品详情：牛奶">
+                <span class="item-ic"><svg class="icon"><use href="#i-box"/></svg></span>
+                <span class="item-main"><span class="item-name">牛奶</span><span class="item-sub"><span class="badge warn">临期 2 天</span><span>冰箱 · 乳制品</span></span></span>
+                <span class="item-qty"><b>2</b><span>盒</span></span>
+              </button>
+              <button class="item-row" data-toast="打开物品详情：鸡蛋">
+                <span class="item-ic"><svg class="icon"><use href="#i-box"/></svg></span>
+                <span class="item-main"><span class="item-name">鸡蛋</span><span class="item-sub"><span>冰箱 · 生鲜</span><span>11月18日入库</span></span></span>
+                <span class="item-qty"><b>12</b><span>枚</span></span>
+              </button>
+              <button class="item-row low" data-toast="打开物品详情：洗衣液">
+                <span class="item-ic"><svg class="icon"><use href="#i-box"/></svg></span>
+                <span class="item-main"><span class="item-name">洗衣液</span><span class="item-sub"><span class="badge err">需补货</span><span>储物间 · 清洁</span></span></span>
+                <span class="item-qty"><b>1</b><span>瓶</span></span>
+              </button>
+              <button class="item-row" data-toast="打开物品详情：大米">
+                <span class="item-ic"><svg class="icon"><use href="#i-box"/></svg></span>
+                <span class="item-main"><span class="item-name">大米</span><span class="item-sub"><span>储物间 · 主食</span></span></span>
+                <span class="item-qty"><b>5</b><span>kg</span></span>
+              </button>
+              <button class="item-row" data-toast="打开物品详情：抽纸">
+                <span class="item-ic"><svg class="icon"><use href="#i-box"/></svg></span>
+                <span class="item-main"><span class="item-name">抽纸</span><span class="item-sub"><span>客厅 · 日用</span></span></span>
+                <span class="item-qty"><b>6</b><span>包</span></span>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- 03 购物清单 -->
+        <section class="screen global" data-screen="shopping">
+          <header class="sub-head">
+            <button class="icon-btn" data-go="life" aria-label="返回生活"><svg class="icon lg"><use href="#i-back"/></svg></button>
+            <h1 class="sub-title">购物清单</h1>
+            <div class="head-actions"><button class="icon-btn" data-toast="添加购物项" aria-label="添加"><svg class="icon lg"><use href="#i-plus"/></svg></button></div>
+          </header>
+          <div class="page-body">
+            <div class="card progress-card">
+              <div class="progress-top"><div><b id="shopDone">2</b><span> / <b id="shopTotal">6</b> 项已买</span></div><span>预计 ¥86.00</span></div>
+              <div class="bar"><i id="shopBar" style="width:33%"></i></div>
+            </div>
+            <div class="section-head"><h2>待买</h2><span class="mini-link">点击即可勾选</span></div>
+            <div class="card" style="padding:2px 13px">
+              <button class="check-row" data-check="0"><span class="check"><svg class="icon sm"><use href="#i-check"/></svg></span><span class="check-name">牛奶</span><span class="check-qty">2 盒</span></button>
+              <button class="check-row" data-check="1"><span class="check"><svg class="icon sm"><use href="#i-check"/></svg></span><span class="check-name">洗发水</span><span class="check-qty">1 瓶</span></button>
+              <button class="check-row" data-check="2"><span class="check"><svg class="icon sm"><use href="#i-check"/></svg></span><span class="check-name">垃圾袋</span><span class="check-qty">1 卷</span></button>
+              <button class="check-row" data-check="3"><span class="check"><svg class="icon sm"><use href="#i-check"/></svg></span><span class="check-name">咖啡豆</span><span class="check-qty">1 袋</span></button>
+            </div>
+            <div class="section-head"><h2>已买</h2><button class="mini-link" id="clearDone" data-action="clear-done">清空</button></div>
+            <div class="card" style="padding:2px 13px">
+              <button class="check-row done" data-check="4"><span class="check"><svg class="icon sm"><use href="#i-check"/></svg></span><span class="check-name">抽纸</span><span class="check-qty">6 包</span></button>
+              <button class="check-row done" data-check="5"><span class="check"><svg class="icon sm"><use href="#i-check"/></svg></span><span class="check-name">鸡蛋</span><span class="check-qty">12 枚</span></button>
+            </div>
+            <button class="menu-row" data-toast="采购入库（原型演示）" style="justify-content:center;color:var(--primary);font-weight:600">
+              <svg class="icon sm"><use href="#i-upload"/></svg> 已买项一键入库
+            </button>
+          </div>
+        </section>
+        <!-- 04 账本 · 明细 -->
+        <section class="screen finance" data-screen="ledger">
+          <header class="fin-head">
+            <button class="icon-btn" data-go="life" aria-label="退出账本"><svg class="icon lg"><use href="#i-back"/></svg></button>
+            <h1 class="fin-title">账本</h1>
+            <div class="head-actions">
+              <button class="icon-btn" data-action="toggle-search" aria-label="搜索"><svg class="icon"><use href="#i-search"/></svg></button>
+              <button class="icon-btn badge-btn" data-action="open-filter" id="filterBtn" aria-label="筛选"><svg class="icon"><use href="#i-filter"/></svg><i></i></button>
+            </div>
+          </header>
+          <div class="search-wrap" id="ledgerSearch">
+            <div class="search-box"><svg class="icon sm" style="color:var(--muted)"><use href="#i-search"/></svg><input id="ledgerQuery" placeholder="搜索全部月份：备注 / 分类 / 账户" /><button class="icon-btn" style="width:32px;height:32px" data-action="toggle-search" aria-label="关闭搜索"><svg class="icon sm"><use href="#i-x"/></svg></button></div>
+          </div>
+          <div class="page-body" id="ledgerBody">
+            <div class="month-strip">
+              <button class="icon-btn" data-action="month-prev" aria-label="上个月"><svg class="icon"><use href="#i-back"/></svg></button>
+              <button class="month-label" data-toast="月份选择器（P1）" id="monthLabel">2026年11月</button>
+              <button class="icon-btn" data-action="month-next" aria-label="下个月"><svg class="icon" style="transform:rotate(180deg)"><use href="#i-back"/></svg></button>
+              <button class="month-now" data-action="month-now" id="monthNow" hidden>本月</button>
+              <button class="icon-btn ml-auto" data-action="open-calendar" aria-label="日历"><svg class="icon"><use href="#i-cal"/></svg></button>
+            </div>
+            <div class="card summary-card">
+              <div class="sum-label">本月支出</div>
+              <div class="sum-amount"><span>¥</span><b id="sumExpense">1,846.80</b></div>
+              <div class="sum-meta"><span>收入 <b class="income" id="sumIncome">¥16,682.42</b></span><span>结余 <b id="sumBalance">+¥14,835.62</b></span></div>
+              <div class="budget-line" id="budgetLine"><div class="bar"><i id="budgetBar" style="width:74%"></i></div><span id="budgetText">预算已用 74% · 剩余 ¥653.20</span></div>
+            </div>
+            <div class="chips filter-chips" id="filterChips" hidden></div>
+            <div id="ledgerList"></div>
+            <div class="load-end" id="loadEnd">已加载全部</div>
+          </div>
+        </section>
+
+        <!-- 05 账本 · 图表 -->
+        <section class="screen finance" data-screen="charts">
+          <header class="fin-head">
+            <button class="icon-btn" data-go="life" aria-label="退出账本"><svg class="icon lg"><use href="#i-back"/></svg></button>
+            <h1 class="fin-title">图表</h1>
+            <div class="head-actions"><button class="add-pill" data-toast="自定义区间（P1）">自定义</button></div>
+          </header>
+          <div class="page-body">
+            <div class="seg seg-type" id="chartType">
+              <button class="active" data-chart-type="expense">支出</button>
+              <button data-chart-type="income">收入</button>
+            </div>
+            <div class="seg seg-range" id="chartRange">
+              <button data-range="week">周</button>
+              <button class="active" data-range="month">月</button>
+              <button data-range="year">年</button>
+            </div>
+            <div class="chart-summary">
+              <span class="range" id="chartRangeLabel">2026年11月 1日–30日</span>
+              <b id="chartTotal">¥1,846.80</b>
+              <span id="chartAvg">日均 ¥118.66</span>
+            </div>
+            <div class="card donut-card">
+              <div class="donut-wrap">
+                <svg id="donut" viewBox="0 0 168 168" aria-label="分类占比环形图"></svg>
+                <div class="donut-center"><small>总支出</small><b id="donutTotal">1,846.80</b></div>
+              </div>
+              <div class="rank" id="rankList"></div>
+            </div>
+            <div class="card trend-card">
+              <div class="card-head"><h3>趋势</h3><span id="trendHint">按日</span></div>
+              <svg id="trend" viewBox="0 0 320 168" aria-label="趋势折线图"></svg>
+              <div class="trend-tip" id="trendTip" hidden></div>
+            </div>
+            <div class="card budget-card" id="chartBudget">
+              <div class="card-head"><h3>本月预算</h3><span id="chartBudgetPct">已用 74%</span></div>
+              <div class="budget-row"><span>已用</span><b id="chartBudgetUsed">¥1,846.80</b></div>
+              <div class="budget-row"><span>剩余</span><b id="chartBudgetLeft" style="color:var(--accent)">¥653.20</b></div>
+              <div class="bar" style="margin-top:10px"><i id="chartBudgetBar" style="width:74%"></i></div>
+            </div>
+            <button class="menu-row" data-toast="已保存报表（P1，接 /finance/reports）"><span>已保存报表</span><span class="mini-link">0 份</span><svg class="icon sm"><use href="#i-chev-r"/></svg></button>
+          </div>
+        </section>
+
+        <!-- 06 记一笔 -->
+        <section class="screen" data-screen="add">
+          <header class="fin-head">
+            <button class="icon-btn" data-action="close-add" aria-label="关闭"><svg class="icon lg"><use href="#i-x"/></svg></button>
+            <h1 class="fin-title" id="addTitle">记一笔</h1>
+            <div class="head-actions">
+              <button class="icon-btn" data-toast="识图填入（复用 /finance/recognize）" aria-label="识图"><svg class="icon"><use href="#i-camera"/></svg></button>
+              <button class="icon-btn" data-action="delete-tx" id="addDelete" aria-label="删除" hidden style="color:var(--error)"><svg class="icon"><use href="#i-trash"/></svg></button>
+              <button class="save-btn" data-action="save-tx" id="saveBtn" disabled>保存</button>
+            </div>
+          </header>
+          <div class="page-body add-body">
+            <div class="seg seg-type add-type" id="addType">
+              <button class="active" data-type="expense">支出</button>
+              <button data-type="income">收入</button>
+            </div>
+            <div class="cat-grid" id="catGrid">
+              <button class="cat" data-cat="餐饮"><span class="c-ic"><svg class="icon"><use href="#i-bowl"/></svg></span>餐饮</button>
+              <button class="cat" data-cat="交通"><span class="c-ic"><svg class="icon"><use href="#i-bus"/></svg></span>交通</button>
+              <button class="cat" data-cat="购物"><span class="c-ic"><svg class="icon"><use href="#i-bag"/></svg></span>购物</button>
+              <button class="cat" data-cat="住房"><span class="c-ic"><svg class="icon"><use href="#i-home"/></svg></span>住房</button>
+              <button class="cat" data-cat="娱乐"><span class="c-ic"><svg class="icon"><use href="#i-game"/></svg></span>娱乐</button>
+              <button class="cat" data-cat="医疗"><span class="c-ic"><svg class="icon"><use href="#i-health"/></svg></span>医疗</button>
+              <button class="cat" data-cat="学习"><span class="c-ic"><svg class="icon"><use href="#i-book"/></svg></span>学习</button>
+              <button class="cat" data-cat="更多"><span class="c-ic"><svg class="icon"><use href="#i-more"/></svg></span>更多</button>
+            </div>
+            <div class="amount-bar" id="amountBar"><span class="cur">¥</span><b id="amountText" class="placeholder">0.00</b><i class="caret"></i></div>
+            <div class="meta-chips">
+              <button data-action="open-meta" data-meta="account" id="chipAccount"><svg class="icon sm"><use href="#i-wallet"/></svg><span>微信钱包</span></button>
+              <button data-action="open-meta" data-meta="pay" id="chipPay"><svg class="icon sm"><use href="#i-card"/></svg><span>微信</span></button>
+              <button data-action="open-meta" data-meta="date" id="chipDate"><svg class="icon sm"><use href="#i-clock"/></svg><span>今天 14:20</span></button>
+              <button data-action="open-meta" data-meta="note" id="chipNote"><svg class="icon sm"><use href="#i-tag"/></svg><span>备注</span></button>
+            </div>
+            <div class="keypad" id="keypad">
+              <button class="key" data-key="1">1</button>
+              <button class="key" data-key="2">2</button>
+              <button class="key" data-key="3">3</button>
+              <button class="key key-fn" data-key="back" aria-label="退格">⌫</button>
+              <button class="key" data-key="4">4</button>
+              <button class="key" data-key="5">5</button>
+              <button class="key" data-key="6">6</button>
+              <button class="key" data-key="7">7</button>
+              <button class="key" data-key="8">8</button>
+              <button class="key" data-key="9">9</button>
+              <button class="key key-sub" data-key=".">.</button>
+              <button class="key" data-key="0">0</button>
+              <button class="key key-sub" data-key="00">00</button>
+              <button class="key key-done" data-action="save-tx">完成</button>
+            </div>
+          </div>
+        </section>
+        <!-- 07 账本 · 计划 -->
+        <section class="screen finance" data-screen="plan">
+          <header class="fin-head">
+            <button class="icon-btn" data-go="life" aria-label="退出账本"><svg class="icon lg"><use href="#i-back"/></svg></button>
+            <h1 class="fin-title">计划</h1>
+            <div class="head-actions"><button class="icon-btn" data-toast="预算与周期设置" aria-label="设置"><svg class="icon"><use href="#i-settings"/></svg></button></div>
+          </header>
+          <div class="page-body">
+            <div class="plan-sum">
+              <div class="sum-label">本月总预算</div>
+              <div class="big">¥2,500.00</div>
+              <div class="bar" style="margin-top:10px"><i style="width:74%"></i></div>
+              <div class="sub"><span>已用 ¥1,846.80</span><span>剩余 ¥653.20</span></div>
+            </div>
+            <div class="section-head"><h2>分类预算</h2><button class="mini-link" data-toast="设置分类预算">设置 <svg class="icon sm"><use href="#i-chev-r"/></svg></button></div>
+            <div class="card" style="padding:2px 14px">
+              <div class="cat-budget">
+                <div class="cb-top"><div>餐饮 <span>· 2 笔</span></div><b>¥122.00 / ¥300</b></div>
+                <div class="bar"><i style="width:41%"></i></div>
+              </div>
+              <div class="cat-budget near">
+                <div class="cb-top"><div>购物 <span>· 2 笔</span></div><b>¥454.80 / ¥500</b></div>
+                <div class="bar"><i style="width:91%"></i></div>
+              </div>
+              <div class="cat-budget over">
+                <div class="cb-top"><div>医疗 <span>· 1 笔</span></div><b>¥320.00 / ¥200</b></div>
+                <div class="bar"><i style="width:100%"></i></div>
+              </div>
+            </div>
+            <div class="section-head"><h2>周期账单</h2><button class="mini-link" data-toast="新增周期账单"><svg class="icon sm"><use href="#i-plus"/></svg> 新增</button></div>
+            <div class="card" style="padding:0 12px">
+              <div class="row">
+                <span class="row-ic"><svg class="icon"><use href="#i-repeat"/></svg></span>
+                <span class="row-main"><span class="row-title">房租</span><span class="row-sub">每月 1 日 · 下次 12月1日</span></span>
+                <span class="row-amt">¥700.00</span>
+                <button class="switch on" data-switch aria-label="启用房租"></button>
+              </div>
+              <div class="row">
+                <span class="row-ic"><svg class="icon"><use href="#i-repeat"/></svg></span>
+                <span class="row-main"><span class="row-title">宽带</span><span class="row-sub">每月 8 日 · 下次 12月8日</span></span>
+                <span class="row-amt">¥129.00</span>
+                <button class="switch on" data-switch aria-label="启用宽带"></button>
+              </div>
+              <div class="row">
+                <span class="row-ic"><svg class="icon"><use href="#i-repeat"/></svg></span>
+                <span class="row-main"><span class="row-title">视频会员</span><span class="row-sub">每月 20 日 · 已暂停</span></span>
+                <span class="row-amt">¥25.00</span>
+                <button class="switch" data-switch aria-label="启用视频会员"></button>
+              </div>
+            </div>
+            <div class="load-end">周期账单将在到期月自动生成流水</div>
+          </div>
+        </section>
+
+        <!-- 08 账本 · 我的 -->
+        <section class="screen finance" data-screen="me">
+          <header class="fin-head">
+            <button class="icon-btn" data-go="life" aria-label="退出账本"><svg class="icon lg"><use href="#i-back"/></svg></button>
+            <h1 class="fin-title">我的</h1>
+            <div class="head-actions"><button class="icon-btn" data-toast="账本设置" aria-label="设置"><svg class="icon"><use href="#i-settings"/></svg></button></div>
+          </header>
+          <div class="page-body">
+            <div class="asset-card">
+              <div class="asset-label">总资产</div>
+              <div class="asset-total">¥14,835.62</div>
+              <div class="asset-accounts">
+                <div class="acc-pill"><small>微信钱包</small><b>¥8,120.40</b></div>
+                <div class="acc-pill"><small>银行卡</small><b>¥4,719.22</b></div>
+                <div class="acc-pill"><small>现金</small><b>¥1,996.00</b></div>
+              </div>
+            </div>
+            <div class="menu-group">
+              <h3>账本管理</h3>
+              <div class="menu-list">
+                <button class="row" data-toast="账户管理（原 AccountManager 账户 tab）">
+                  <span class="row-ic"><svg class="icon"><use href="#i-wallet"/></svg></span>
+                  <span class="row-main"><span class="row-title">账户管理</span><span class="row-sub">3 个账户 · 1 个已归档</span></span>
+                  <span class="chev"><svg class="icon sm"><use href="#i-chev-r"/></svg></span>
+                </button>
+                <button class="row" data-toast="分类管理（原 AccountManager 分类 tab）">
+                  <span class="row-ic"><svg class="icon"><use href="#i-tag"/></svg></span>
+                  <span class="row-main"><span class="row-title">分类管理</span><span class="row-sub">支出 8 类 · 收入 3 类</span></span>
+                  <span class="chev"><svg class="icon sm"><use href="#i-chev-r"/></svg></span>
+                </button>
+                <button class="row" data-go="charts">
+                  <span class="row-ic"><svg class="icon"><use href="#i-chart-line"/></svg></span>
+                  <span class="row-main"><span class="row-title">已保存报表</span><span class="row-sub">自定义区间与快照</span></span>
+                  <span class="chev"><svg class="icon sm"><use href="#i-chev-r"/></svg></span>
+                </button>
+              </div>
+            </div>
+            <div class="menu-group">
+              <h3>数据</h3>
+              <div class="menu-list">
+                <button class="row" data-toast="导入账单（支持支付宝 / 微信 / 鲨鱼记账 CSV）">
+                  <span class="row-ic"><svg class="icon"><use href="#i-upload"/></svg></span>
+                  <span class="row-main"><span class="row-title">导入账单</span><span class="row-sub">支付宝 / 微信 / 鲨鱼记账</span></span>
+                  <span class="chev"><svg class="icon sm"><use href="#i-chev-r"/></svg></span>
+                </button>
+                <button class="row" data-toast="导出本月 CSV">
+                  <span class="row-ic"><svg class="icon"><use href="#i-download"/></svg></span>
+                  <span class="row-main"><span class="row-title">导出 CSV</span><span class="row-sub">默认本月，可选区间</span></span>
+                  <span class="chev"><svg class="icon sm"><use href="#i-chev-r"/></svg></span>
+                </button>
+              </div>
+            </div>
+            <div class="menu-group">
+              <h3>自动化与帮助</h3>
+              <div class="menu-list">
+                <button class="row" data-toast="自动记账：库存入库联动、通知识别">
+                  <span class="row-ic"><svg class="icon"><use href="#i-repeat"/></svg></span>
+                  <span class="row-main"><span class="row-title">自动记账</span><span class="row-sub">库存入库联动 · 已开启</span></span>
+                  <span class="chev"><svg class="icon sm"><use href="#i-chev-r"/></svg></span>
+                </button>
+                <button class="row" data-toast="记账说明">
+                  <span class="row-ic"><svg class="icon"><use href="#i-help"/></svg></span>
+                  <span class="row-main"><span class="row-title">帮助与说明</span><span class="row-sub">记账规则、导入格式</span></span>
+                  <span class="chev"><svg class="icon sm"><use href="#i-chev-r"/></svg></span>
+                </button>
+              </div>
+            </div>
+            <div class="ver">账本 · 原型 v1.0 · 数据为演示</div>
+          </div>
+        </section>
+
+
+      </div>
+      <!-- 全局底栏（生活 / 库存 / 购物） -->
+      <nav class="tabbar global" aria-label="全局导航">
+        <div class="g-inner">
+          <button class="gtab" data-toast="首页（原型仅演示生活模块）"><svg class="icon"><use href="#i-home"/></svg>首页</button>
+          <button class="gtab" data-toast="地图（原型仅演示生活模块）"><svg class="icon"><use href="#i-map"/></svg>地图</button>
+          <button class="gtab" data-toast="户型图（原型仅演示生活模块）"><svg class="icon"><use href="#i-floor"/></svg>户型</button>
+          <button class="gtab" data-toast="设备（原型仅演示生活模块）"><svg class="icon"><use href="#i-device"/></svg>设备</button>
+          <button class="gtab active" data-go="life"><svg class="icon"><use href="#i-life"/></svg>生活</button>
+          <button class="gtab" data-toast="场景（原型仅演示生活模块）"><svg class="icon"><use href="#i-scene"/></svg>场景</button>
+          <button class="gtab" data-toast="设置（原型仅演示生活模块）"><svg class="icon"><use href="#i-settings"/></svg>设置</button>
+        </div>
+      </nav>
+
+      <!-- 账本专属底栏（进入 /inventory/finance 后显示） -->
+      <nav class="tabbar finance-tab" aria-label="账本导航">
+        <div class="f-inner">
+          <button class="ftab active" data-fin="ledger"><svg class="icon"><use href="#i-list"/></svg>明细</button>
+          <button class="ftab" data-fin="charts"><svg class="icon"><use href="#i-pie"/></svg>图表</button>
+          <button class="ftab fab" data-action="open-add" aria-label="记一笔">
+            <span class="fab-btn"><svg class="icon"><use href="#i-plus"/></svg></span>
+            <span class="fab-label">记账</span>
+          </button>
+          <button class="ftab" data-fin="plan"><svg class="icon"><use href="#i-target"/></svg>计划</button>
+          <button class="ftab" data-fin="me"><svg class="icon"><use href="#i-user"/></svg>我的</button>
+        </div>
+      </nav>
+
+      <!-- 筛选 Sheet -->
+      <div class="sheet-mask" data-sheet="filter" id="sheetFilter">
+        <div class="sheet">
+          <div class="sheet-handle"></div>
+          <div class="sheet-head"><h3>筛选账目</h3><button class="icon-btn" data-action="close-sheet" aria-label="关闭"><svg class="icon"><use href="#i-x"/></svg></button></div>
+          <div class="sheet-label">类型</div>
+          <div class="opt-row" data-fgroup="type">
+            <button class="opt active" data-fset="type" data-fval="">全部</button>
+            <button class="opt" data-fset="type" data-fval="expense">支出</button>
+            <button class="opt" data-fset="type" data-fval="income">收入</button>
+          </div>
+          <div class="sheet-label">分类</div>
+          <div class="opt-row" data-fgroup="cat">
+            <button class="opt active" data-fset="cat" data-fval="">全部分类</button>
+            <button class="opt" data-fset="cat" data-fval="餐饮">餐饮</button>
+            <button class="opt" data-fset="cat" data-fval="交通">交通</button>
+            <button class="opt" data-fset="cat" data-fval="购物">购物</button>
+            <button class="opt" data-fset="cat" data-fval="住房">住房</button>
+            <button class="opt" data-fset="cat" data-fval="医疗">医疗</button>
+            <button class="opt" data-fset="cat" data-fval="学习">学习</button>
+            <button class="opt" data-fset="cat" data-fval="娱乐">娱乐</button>
+          </div>
+          <div class="sheet-label">支付方式</div>
+          <div class="opt-row" data-fgroup="pay">
+            <button class="opt active" data-fset="pay" data-fval="">全部</button>
+            <button class="opt" data-fset="pay" data-fval="微信">微信</button>
+            <button class="opt" data-fset="pay" data-fval="支付宝">支付宝</button>
+            <button class="opt" data-fset="pay" data-fval="银行卡">银行卡</button>
+            <button class="opt" data-fset="pay" data-fval="信用卡">信用卡</button>
+            <button class="opt" data-fset="pay" data-fval="现金">现金</button>
+          </div>
+          <div class="sheet-actions">
+            <button class="btn ghost" data-action="reset-filter">重置</button>
+            <button class="btn primary" data-action="apply-filter">查看结果</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 日历 Sheet -->
+      <div class="sheet-mask" data-sheet="calendar" id="sheetCalendar">
+        <div class="sheet">
+          <div class="sheet-handle"></div>
+          <div class="sheet-head"><h3 id="calTitle">2026年11月</h3><button class="icon-btn" data-action="close-sheet" aria-label="关闭"><svg class="icon"><use href="#i-x"/></svg></button></div>
+          <div class="cal-grid" id="calGrid"></div>
+          <div class="sheet-actions"><button class="btn ghost" data-action="clear-day">清除日期</button><button class="btn primary" data-action="close-sheet">完成</button></div>
+        </div>
+      </div>
+
+      <!-- 补充信息 Sheet -->
+      <div class="sheet-mask" data-sheet="meta" id="sheetMeta">
+        <div class="sheet">
+          <div class="sheet-handle"></div>
+          <div class="sheet-head"><h3>补充信息</h3><button class="icon-btn" data-action="close-sheet" aria-label="关闭"><svg class="icon"><use href="#i-x"/></svg></button></div>
+          <div class="sheet-label">账户</div>
+          <div class="opt-row" id="metaAccounts">
+            <button class="opt active" data-macc="微信钱包">微信钱包</button>
+            <button class="opt" data-macc="支付宝">支付宝</button>
+            <button class="opt" data-macc="银行卡">银行卡</button>
+            <button class="opt" data-macc="信用卡">信用卡</button>
+          </div>
+          <div class="sheet-label">支付方式 <span style="color:var(--primary)">· 新增字段</span></div>
+          <div class="opt-row" id="metaPays">
+            <button class="opt active" data-mpay="微信">微信</button>
+            <button class="opt" data-mpay="支付宝">支付宝</button>
+            <button class="opt" data-mpay="银行卡">银行卡</button>
+            <button class="opt" data-mpay="信用卡">信用卡</button>
+            <button class="opt" data-mpay="现金">现金</button>
+            <button class="opt" data-mpay="其他">其他</button>
+          </div>
+          <div class="sheet-label">日期与备注</div>
+          <div class="field"><label>日期</label><input type="date" id="metaDate" value="2026-11-26" /></div>
+          <div class="field"><label>备注</label><input id="metaNote" placeholder="如：午饭 / 地铁 / 工资" /></div>
+          <div class="field"><label>标签</label><input id="metaTag" placeholder="逗号分隔，如：出差,报销" /></div>
+          <div class="sheet-actions">
+            <button class="btn ghost" data-action="close-sheet">取消</button>
+            <button class="btn primary" data-action="save-meta">确定</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 流水操作 Sheet -->
+      <div class="sheet-mask" data-sheet="actions" id="sheetActions">
+        <div class="sheet">
+          <div class="sheet-handle"></div>
+          <div class="sheet-head"><h3 id="actionTitle">这笔账目</h3><button class="icon-btn" data-action="close-sheet" aria-label="关闭"><svg class="icon"><use href="#i-x"/></svg></button></div>
+          <div class="sheet-actions" style="flex-direction:column;margin-top:6px">
+            <button class="btn ghost" data-action="edit-tx" style="justify-content:flex-start;padding-left:16px"><svg class="icon sm" style="margin-right:8px"><use href="#i-edit"/></svg>编辑</button>
+            <button class="btn ghost" data-action="copy-tx" style="justify-content:flex-start;padding-left:16px"><svg class="icon sm" style="margin-right:8px"><use href="#i-plus"/></svg>再记一笔</button>
+            <button class="btn danger" data-action="delete-tx" style="justify-content:flex-start;padding-left:16px"><svg class="icon sm" style="margin-right:8px"><use href="#i-trash"/></svg>删除</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="home-ind"></div>
+      <div class="toast" id="toast"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   原型脚本：仅演示交互与信息架构，数据为内存模拟
+   ============================================================ */
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+const phone = $('#phone');
+const TODAY = '2026-11-26';
+const NOW_MONTH = '2026-11';
+const BUDGET = 250000;
+
+const cssv = (name) => getComputedStyle(phone).getPropertyValue(name).trim();
+const nf = (cents) => (Number(cents || 0) / 100).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const shortNf = (cents) => {
+  const v = Number(cents || 0) / 100;
+  if (v >= 10000) return (v / 10000).toFixed(1).replace(/\.0$/, '') + '万';
+  return Math.round(v).toLocaleString('zh-CN');
+};
+const catIcons = { 餐饮:'bowl', 交通:'bus', 购物:'bag', 住房:'home', 娱乐:'game', 医疗:'health', 学习:'book', 工资:'wallet', 兼职:'wallet', 其他:'box' };
+const icon = (id, cls = '') => `<svg class="icon ${cls}"><use href="#i-${id}"/></svg>`;
+
+let txSeq = 100;
+let txs = [
+  { id: 1, date: '2026-11-26', time: '12:18', cat: '餐饮', type: 'expense', amount: 2800, note: '午饭', account: '微信钱包', pay: '微信' },
+  { id: 2, date: '2026-11-26', time: '08:42', cat: '交通', type: 'expense', amount: 600, note: '地铁', account: '支付宝', pay: '支付宝' },
+  { id: 3, date: '2026-11-25', time: '19:30', cat: '购物', type: 'expense', amount: 23680, note: '超市采购', account: '信用卡', pay: '信用卡' },
+  { id: 4, date: '2026-11-25', time: '10:00', cat: '工资', type: 'income', amount: 1633742, note: '11月工资', account: '银行卡', pay: '银行卡' },
+  { id: 5, date: '2026-11-24', time: '21:10', cat: '娱乐', type: 'expense', amount: 4500, note: '电影票', account: '微信钱包', pay: '微信' },
+  { id: 6, date: '2026-11-24', time: '18:05', cat: '餐饮', type: 'expense', amount: 6800, note: '晚餐', account: '支付宝', pay: '支付宝' },
+  { id: 7, date: '2026-11-23', time: '09:12', cat: '餐饮', type: 'expense', amount: 2600, note: '咖啡', account: '微信钱包', pay: '现金' },
+  { id: 8, date: '2026-11-20', time: '15:40', cat: '购物', type: 'expense', amount: 21800, note: '换季衣物', account: '信用卡', pay: '信用卡' },
+  { id: 9, date: '2026-11-18', time: '11:30', cat: '医疗', type: 'expense', amount: 32000, note: '体检', account: '银行卡', pay: '银行卡' },
+  { id: 10, date: '2026-11-12', time: '20:00', cat: '学习', type: 'expense', amount: 19900, note: '线上课程', account: '支付宝', pay: '支付宝' },
+  { id: 11, date: '2026-11-01', time: '09:00', cat: '住房', type: 'expense', amount: 70000, note: '房租', account: '银行卡', pay: '银行卡' },
+  { id: 12, date: '2026-11-20', time: '16:20', cat: '兼职', type: 'income', amount: 34500, note: '设计兼职', account: '微信钱包', pay: '微信' },
+];
+
+const state = {
+  screen: 'life',
+  month: NOW_MONTH,
+  addFrom: 'ledger',
+  editingId: null,
+  amount: '',
+  cat: '',
+  type: 'expense',
+  account: '微信钱包',
+  pay: '微信',
+  date: TODAY,
+  note: '',
+  tag: '',
+  chartType: 'expense',
+  chartRange: 'month',
+  filterType: '',
+  filterCat: '',
+  filterPay: '',
+  day: '',
+  query: '',
+  actionId: null,
+  metaTarget: 'account',
+};
+
+/* ---------- 通用 ---------- */
+const monthTxs = (type) => txs.filter(t => t.date.startsWith(state.month) && (!type || t.type === type));
+const sumCents = (list) => list.reduce((n, t) => n + t.amount, 0);
+const labelDate = (d) => {
+  if (d === TODAY) return '今天';
+  const y = new Date('2026-11-26T00:00:00');
+  if (d === '2026-11-25') return '昨天';
+  const dt = new Date(d + 'T00:00:00');
+  if (Number.isNaN(dt.getTime())) return d;
+  return `${dt.getMonth() + 1}月${dt.getDate()}日 周${'日一二三四五六'[dt.getDay()]}`;
+};
+const monthLabelText = () => {
+  const [y, m] = state.month.split('-');
+  return `${y}年${Number(m)}月`;
+};
+
+let toastTimer = null;
+function showToast(msg) {
+  const el = $('#toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 1700);
+}
+
+/* ---------- 导航 ---------- */
+const FIN_SCREENS = ['ledger', 'charts', 'plan', 'me'];
+function go(screen) {
+  if (screen === 'add') { openAdd(); return; }
+  state.screen = screen;
+  $$('.screen').forEach(el => {
+    const on = el.dataset.screen === screen;
+    el.classList.toggle('is-active', on);
+    el.classList.remove('is-entering');
+    if (on) { void el.offsetWidth; el.classList.add('is-entering'); }
+  });
+  const nav = FIN_SCREENS.includes(screen) ? 'finance' : 'global';
+  phone.dataset.nav = nav;
+  $$('#financeTab .ftab').forEach(b => b.classList.toggle('active', b.dataset.fin === screen));
+  $$('#screenNav button').forEach(b => b.classList.toggle('active', b.dataset.go === screen));
+  if (screen === 'life') renderLife();
+  if (screen === 'ledger') renderLedger();
+  if (screen === 'charts') renderCharts();
+  const body = $(`.screen[data-screen="${screen}"] .page-body`);
+  if (body) body.scrollTop = 0;
+  closeSheets();
+}
+function closeSheets() {
+  $$('.sheet-mask').forEach(m => m.classList.remove('open'));
+}
+function openSheet(name) {
+  closeSheets();
+  const m = $(`#sheet${name.charAt(0).toUpperCase() + name.slice(1)}`);
+  if (!m) return;
+  m.classList.add('open');
+}
+
+/* ---------- 生活入口 ---------- */
+function renderLife() {
+  const expense = sumCents(monthTxs('expense'));
+  const income = sumCents(monthTxs('income'));
+  const balance = income - expense;
+  $('#lifeExpense').textContent = nf(expense);
+  $('#lifeIncome').textContent = '¥' + nf(income);
+  const bal = $('#lifeBalance');
+  bal.textContent = (balance >= 0 ? '+¥' : '-¥') + nf(Math.abs(balance));
+  bal.classList.toggle('pos', balance >= 0);
+  const recent = [...txs].sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time)).slice(0, 3);
+  $('#lifeRecent').innerHTML = recent.map(t => `
+    <button class="row" data-tx="${t.id}">
+      <span class="row-ic" style="color:${t.type === 'income' ? 'var(--accent)' : 'var(--muted)'}">${icon(catIcons[t.cat] || 'box')}</span>
+      <span class="row-main">
+        <span class="row-title">${t.cat}${t.note ? ' · ' + t.note : ''}</span>
+        <span class="row-sub">${labelDate(t.date)} ${t.time} · ${t.account}</span>
+      </span>
+      <span class="row-amt ${t.type}">${t.type === 'income' ? '+' : '-'}¥${nf(t.amount)}</span>
+    </button>`).join('');
+  // 近 7 天迷你折线
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date('2026-11-26T00:00:00'); d.setDate(d.getDate() - i);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    days.push(txs.filter(t => t.date === key && t.type === 'expense').reduce((n, t) => n + t.amount, 0));
+  }
+  $('#lifeSpark').innerHTML = sparkSvg(days, 320, 46);
+}
+function sparkSvg(values, w, h) {
+  const max = Math.max(...values, 1);
+  const pad = 3;
+  const pts = values.map((v, i) => {
+    const x = pad + (i * (w - pad * 2)) / (values.length - 1);
+    const y = h - pad - (v / max) * (h - pad * 2);
+    return [x, y];
+  });
+  const line = pts.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(' ');
+  const area = `${line} L${pts[pts.length - 1][0].toFixed(1)} ${h} L${pts[0][0].toFixed(1)} ${h} Z`;
+  const dots = pts.map((p, i) => `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="${i === pts.length - 1 ? 3 : 2}"/>`).join('');
+  return `<path class="area" d="${area}"/><path class="line" d="${line}"/>${dots}`;
+}
+
+/* ---------- 明细 ---------- */
+function renderLedger() {
+  const all = monthTxs();
+  const expense = sumCents(all.filter(t => t.type === 'expense'));
+  const income = sumCents(all.filter(t => t.type === 'income'));
+  const balance = income - expense;
+  $('#sumExpense').textContent = nf(expense);
+  $('#sumIncome').textContent = '¥' + nf(income);
+  $('#sumBalance').textContent = (balance >= 0 ? '+¥' : '-¥') + nf(Math.abs(balance));
+  $('#monthLabel').textContent = monthLabelText();
+  $('#monthNow').hidden = state.month === NOW_MONTH;
+  const budgetPct = Math.min(100, Math.round((expense / BUDGET) * 100));
+  $('#budgetLine').classList.toggle('over', expense > BUDGET);
+  $('#budgetBar').style.width = budgetPct + '%';
+  $('#budgetText').textContent = expense > BUDGET
+    ? `已超支 ¥${nf(expense - BUDGET)}`
+    : `预算已用 ${budgetPct}% · 剩余 ¥${nf(BUDGET - expense)}`;
+
+  let list = all.filter(t => {
+    if (state.filterType && t.type !== state.filterType) return false;
+    if (state.filterCat && t.cat !== state.filterCat) return false;
+    if (state.filterPay && t.pay !== state.filterPay) return false;
+    if (state.day && t.date !== state.day) return false;
+    if (state.query) {
+      const q = state.query.toLowerCase();
+      const hay = `${t.cat} ${t.note} ${t.account} ${t.pay}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  }).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
+
+  renderFilterChips();
+
+  if (!list.length) {
+    const hint = state.query ? '没有找到匹配的账目' : state.day ? '这一天没有账目' : state.month === NOW_MONTH ? '本月还没有账目' : '这个月还没有账目';
+    $('#ledgerList').innerHTML = `<div class="empty"><div class="e-ic">${icon('list', 'lg')}</div><b>${hint}</b>点击底栏「记账」记下第一笔</div>`;
+    $('#loadEnd').hidden = true;
+    return;
+  }
+  $('#loadEnd').hidden = false;
+  const groups = new Map();
+  for (const t of list) {
+    if (!groups.has(t.date)) groups.set(t.date, { expense: 0, items: [] });
+    const g = groups.get(t.date);
+    g.items.push(t);
+    if (t.type === 'expense') g.expense += t.amount;
+  }
+  const html = Array.from(groups.entries()).map(([date, g]) => `
+    <div class="day-group">
+      <div class="day-head"><span>${labelDate(date)}</span>${g.expense ? `<b>支出 ¥${nf(g.expense)}</b>` : ''}</div>
+      <div class="tx-card">
+        ${g.items.map(t => {
+          const inc = t.type === 'income';
+          return `<div class="tx-row" data-tx="${t.id}">
+            <span class="tx-ic ${inc ? 'in' : ''}">${icon(catIcons[t.cat] || 'box')}</span>
+            <span class="tx-main">
+              <span class="tx-title">${t.cat}${t.note ? ' · ' + t.note : ''}</span>
+              <span class="tx-sub">${t.account} · ${t.pay}${t.note ? ' · ' + t.time : ''}</span>
+            </span>
+            <span class="tx-amt ${t.type}">${inc ? '+' : '-'}¥${nf(t.amount)}</span>
+            <button class="tx-more" data-action="tx-more" data-id="${t.id}" aria-label="更多操作">${icon('more', 'sm')}</button>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`).join('');
+  $('#ledgerList').innerHTML = html;
+}
+
+function renderFilterChips() {
+  const box = $('#filterChips');
+  const chips = [];
+  if (state.query) chips.push(`<button class="chip sm active" data-rmf="query">搜索：${state.query} ×</button>`);
+  if (state.filterType) chips.push(`<button class="chip sm active" data-rmf="type">${state.filterType === 'income' ? '收入' : '支出'} ×</button>`);
+  if (state.filterCat) chips.push(`<button class="chip sm active" data-rmf="cat">分类：${state.filterCat} ×</button>`);
+  if (state.filterPay) chips.push(`<button class="chip sm active" data-rmf="pay">${state.filterPay} ×</button>`);
+  if (state.day) chips.push(`<button class="chip sm active" data-rmf="day">${state.day.slice(5)} ×</button>`);
+  box.hidden = !chips.length;
+  box.innerHTML = chips.join('');
+  $('#filterBtn').classList.toggle('on', !!(state.filterType || state.filterCat || state.filterPay || state.day));
+}
+
+function shiftMonth(n) {
+  const [y, m] = state.month.split('-').map(Number);
+  const d = new Date(y, m - 1 + n, 1);
+  state.month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  state.day = '';
+  renderLedger();
+}
+
+/* ---------- 日历 ---------- */
+function renderCalendar() {
+  const [y, m] = state.month.split('-').map(Number);
+  const first = new Date(y, m - 1, 1);
+  const lead = (first.getDay() + 6) % 7;
+  const days = new Date(y, m, 0).getDate();
+  const cells = [];
+  for (let i = 0; i < lead; i++) cells.push('<button class="cal-d blank"></button>');
+  for (let d = 1; d <= days; d++) {
+    const key = `${state.month}-${String(d).padStart(2, '0')}`;
+    const has = txs.some(t => t.date === key);
+    cells.push(`<button class="cal-d ${has ? 'has' : ''} ${state.day === key ? 'sel' : ''}" data-day="${key}">${d}</button>`);
+  }
+  $('#calTitle').textContent = monthLabelText();
+  $('#calGrid').innerHTML = ['一','二','三','四','五','六','日'].map(w => `<div class="cal-w">${w}</div>`).join('') + cells.join('');
+}
+/* ---------- 图表 ---------- */
+let trendPoints = [];
+function paletteFor(type) {
+  const keys = type === 'income'
+    ? ['--accent', '--primary', '--info', '--warning', '--success', '--error']
+    : ['--primary', '--accent', '--info', '--warning', '--error', '--success'];
+  return keys.map(cssv).filter(Boolean);
+}
+function chartData() {
+  const type = state.chartType;
+  const range = state.chartRange;
+  let total = 0, cats = [], values = [], labels = [], avgN = 1, avgUnit = '日均', rangeLabel = '';
+  if (range === 'month') {
+    const list = monthTxs(type);
+    total = sumCents(list);
+    const map = new Map();
+    list.forEach(t => map.set(t.cat, (map.get(t.cat) || 0) + t.amount));
+    cats = Array.from(map.entries()).map(([name, amount]) => ({ name, amount })).sort((a, b) => b.amount - a.amount);
+    avgN = new Date(Number(state.month.slice(0, 4)), Number(state.month.slice(5, 7)), 0).getDate();
+    rangeLabel = `${monthLabelText()} 1日–${avgN}日`;
+    for (let d = 1; d <= avgN; d++) {
+      const key = `${state.month}-${String(d).padStart(2, '0')}`;
+      values.push(list.filter(t => t.date === key).reduce((n, t) => n + t.amount, 0));
+      labels.push(d === 1 || d % 5 === 0 ? `${Number(state.month.slice(5, 7))}/${d}` : '');
+    }
+  } else if (range === 'week') {
+    const dates = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date('2026-11-26T00:00:00');
+      d.setDate(d.getDate() - i);
+      dates.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+    }
+    const list = txs.filter(t => dates.includes(t.date) && t.type === type);
+    total = sumCents(list);
+    const map = new Map();
+    list.forEach(t => map.set(t.cat, (map.get(t.cat) || 0) + t.amount));
+    cats = Array.from(map.entries()).map(([name, amount]) => ({ name, amount })).sort((a, b) => b.amount - a.amount);
+    avgN = 7;
+    rangeLabel = '11月20日–11月26日';
+    values = dates.map(key => list.filter(t => t.date === key).reduce((n, t) => n + t.amount, 0));
+    labels = dates.map(k => `${Number(k.slice(5, 7))}/${Number(k.slice(8))}`);
+  } else {
+    const base = type === 'expense'
+      ? {
+          total: 4387050,
+          cats: [{ name: '住房', pct: 39.4 }, { name: '餐饮', pct: 18.2 }, { name: '购物', pct: 12.9 }, { name: '交通', pct: 9.0 }, { name: '医疗', pct: 7.6 }, { name: '其他', pct: 12.9 }],
+          values: [286000, 312000, 298000, 421000, 365000, 398000, 441000, 389000, 412000, 455000, 384260, 460000],
+        }
+      : {
+          total: 19680000,
+          cats: [{ name: '工资', pct: 97.9 }, { name: '兼职', pct: 2.1 }],
+          values: [1600000, 1600000, 1610000, 1600000, 1620000, 1610000, 1600000, 1710000, 1600000, 1600000, 1600000, 1638000],
+        };
+    total = base.total;
+    cats = base.cats.map(c => ({ name: c.name, amount: Math.round(base.total * c.pct / 100) }));
+    values = base.values;
+    labels = values.map((_, i) => `${i + 1}月`);
+    avgN = 12;
+    avgUnit = '月均';
+    rangeLabel = '2026年 1月–12月';
+  }
+  cats = cats.map(c => ({ ...c, pct: total > 0 ? +(c.amount / total * 100).toFixed(1) : 0 }));
+  return { total, cats, values, labels, avgN, avgUnit, rangeLabel, type, range };
+}
+function renderCharts() {
+  const d = chartData();
+  $$('#chartType button').forEach(b => b.classList.toggle('active', b.dataset.chartType === state.chartType));
+  $$('#chartRange button').forEach(b => b.classList.toggle('active', b.dataset.range === state.chartRange));
+  $('#chartRangeLabel').textContent = d.rangeLabel;
+  $('#chartTotal').textContent = '¥' + nf(d.total);
+  $('#chartAvg').textContent = `${d.avgUnit} ¥${nf(d.total / d.avgN)}`;
+  $('#donutTotal').textContent = nf(d.total);
+  const donutLabel = $('.donut-center small');
+  if (donutLabel) donutLabel.textContent = d.type === 'income' ? '总收入' : '总支出';
+
+  const colors = paletteFor(d.type);
+  let list = d.cats.slice();
+  if (list.length > 6) {
+    const rest = list.slice(5).reduce((n, c) => n + c.amount, 0);
+    list = list.slice(0, 5).concat([{ name: '其他', amount: rest, pct: totalPct(rest, d.total) }]);
+  }
+  renderDonut(list, colors);
+  renderRank(d.cats, colors);
+  renderTrend(d);
+  const showBudget = d.range === 'month' && d.type === 'expense';
+  $('#chartBudget').style.display = showBudget ? '' : 'none';
+  if (showBudget) {
+    const pct = Math.min(100, Math.round(d.total / BUDGET * 100));
+    $('#chartBudgetPct').textContent = pct >= 100 ? '已超支' : `已用 ${pct}%`;
+    $('#chartBudgetUsed').textContent = '¥' + nf(d.total);
+    const left = BUDGET - d.total;
+    const leftEl = $('#chartBudgetLeft');
+    leftEl.textContent = (left >= 0 ? '¥' : '-¥') + nf(Math.abs(left));
+    leftEl.style.color = left >= 0 ? 'var(--accent)' : 'var(--error)';
+    $('#chartBudgetBar').style.width = pct + '%';
+    $('#chartBudgetBar').style.background = left >= 0 ? 'var(--primary)' : 'var(--error)';
+  }
+}
+function totalPct(amount, total) { return total > 0 ? +(amount / total * 100).toFixed(1) : 0; }
+function renderDonut(cats, colors) {
+  const R = 62, C = 2 * Math.PI * R;
+  const base = `<circle cx="84" cy="84" r="${R}" fill="none" stroke="var(--surface-alt)" stroke-width="22"/>`;
+  if (!cats.length) { $('#donut').innerHTML = base; return; }
+  let offset = 0;
+  const segs = cats.map((c, i) => {
+    const len = Math.max(0, (c.pct / 100) * C - 2);
+    const el = `<circle cx="84" cy="84" r="${R}" fill="none" stroke="${colors[i % colors.length]}" stroke-width="22" stroke-dasharray="${len.toFixed(2)} ${(C - len).toFixed(2)}" stroke-dashoffset="${(-offset).toFixed(2)}" transform="rotate(-90 84 84)"/>`;
+    offset += (c.pct / 100) * C;
+    return el;
+  }).join('');
+  $('#donut').innerHTML = base + segs;
+}
+function renderRank(cats, colors) {
+  if (!cats.length) {
+    $('#rankList').innerHTML = '<div class="empty" style="padding:18px 0">暂无分类数据</div>';
+    return;
+  }
+  $('#rankList').innerHTML = cats.slice(0, 6).map((c, i) => `
+    <button class="rank-row" data-rank-cat="${c.name}">
+      <span class="rank-dot" style="background:${colors[i % colors.length]}"></span>
+      <span class="rank-name">${c.name}</span>
+      <span class="rank-pct">${c.pct}%</span>
+      <span class="rank-amt">${shortNf(c.amount)}</span>
+    </button>`).join('');
+}
+function renderTrend(d) {
+  const W = 320, H = 168, padL = 6, padR = 8, padT = 10, padB = 24;
+  const plotH = H - padT - padB;
+  const max = Math.max(...d.values, 1);
+  const pts = d.values.map((v, i) => {
+    const x = padL + (i * (W - padL - padR)) / Math.max(1, d.values.length - 1);
+    const y = padT + plotH - (v / max) * plotH;
+    return [x, y, v];
+  });
+  trendPoints = pts.map((p, i) => ({ x: p[0], y: p[1], value: p[2], label: d.labels[i] || '' }));
+  const line = pts.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(' ');
+  const area = `${line} L${pts[pts.length - 1][0].toFixed(1)} ${padT + plotH} L${pts[0][0].toFixed(1)} ${padT + plotH} Z`;
+  const grid = [0.25, 0.5, 0.75].map(r => `<line class="trend-grid" x1="${padL}" x2="${W - padR}" y1="${(padT + plotH * r).toFixed(1)}" y2="${(padT + plotH * r).toFixed(1)}"/>`).join('');
+  const dots = pts.map((p, i) => `<circle class="trend-pt" data-idx="${i}" cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="3.2"/>`).join('');
+  const axis = d.labels.map((lab, i) => {
+    if (!lab) return '';
+    const x = padL + (i * (W - padL - padR)) / Math.max(1, d.values.length - 1);
+    return `<text class="trend-axis" x="${x.toFixed(1)}" y="${H - 5}" text-anchor="middle">${lab}</text>`;
+  }).join('');
+  $('#trend').innerHTML = `${grid}<path class="trend-area" d="${area}"/><path class="trend-line" d="${line}"/>${dots}${axis}`;
+  $('#trendHint').textContent = d.range === 'year' ? '按月' : '按日';
+}
+function showTrendTip(circle) {
+  const idx = Number(circle.dataset.idx);
+  const p = trendPoints[idx];
+  if (!p) return;
+  const svg = $('#trend');
+  const svgRect = svg.getBoundingClientRect();
+  const cardRect = svg.closest('.trend-card').getBoundingClientRect();
+  const sx = (p.x / 320) * svgRect.width + (svgRect.left - cardRect.left);
+  const sy = (p.y / 168) * svgRect.height + (svgRect.top - cardRect.top);
+  const tip = $('#trendTip');
+  tip.hidden = false;
+  tip.innerHTML = `<div>${p.label || '—'}</div><b>¥${nf(p.value)}</b>`;
+  tip.style.left = Math.max(4, Math.min(svgRect.width - 88, sx - 40)) + 'px';
+  tip.style.top = Math.max(4, sy - 52) + 'px';
+}
+/* ---------- 记一笔 ---------- */
+function openAdd(editId) {
+  state.editingId = editId || null;
+  state.addFrom = FIN_SCREENS.includes(state.screen) ? state.screen : 'ledger';
+  if (editId) {
+    const t = txs.find(x => x.id === editId);
+    if (t) {
+      state.amount = String(t.amount / 100);
+      state.cat = t.cat;
+      state.type = t.type;
+      state.account = t.account;
+      state.pay = t.pay || '';
+      state.date = t.date;
+      state.note = t.note || '';
+      state.tag = '';
+    }
+  } else {
+    resetAdd();
+  }
+  showAdd();
+}
+function resetAdd() {
+  state.amount = '';
+  state.cat = '';
+  state.type = 'expense';
+  state.account = '微信钱包';
+  state.pay = '微信';
+  state.date = TODAY;
+  state.note = '';
+  state.tag = '';
+}
+function showAdd() {
+  state.screen = 'add';
+  $$('.screen').forEach(el => {
+    const on = el.dataset.screen === 'add';
+    el.classList.toggle('is-active', on);
+    el.classList.remove('is-entering');
+    if (on) { void el.offsetWidth; el.classList.add('is-entering'); }
+  });
+  phone.dataset.nav = 'none';
+  $$('#screenNav button').forEach(b => b.classList.remove('active'));
+  renderAdd();
+  closeSheets();
+}
+function renderAdd() {
+  $('#addTitle').textContent = state.editingId ? '编辑账目' : '记一笔';
+  $('#addDelete').hidden = !state.editingId;
+  $$('#addType button').forEach(b => b.classList.toggle('active', b.dataset.type === state.type));
+  $$('#catGrid .cat').forEach(b => b.classList.toggle('active', b.dataset.cat === state.cat));
+  const el = $('#amountText');
+  el.textContent = amountText();
+  el.classList.toggle('placeholder', !state.amount);
+  $('#saveBtn').disabled = !(parseFloat(state.amount) > 0) || !state.cat;
+  $('#chipAccount span').textContent = state.account;
+  $('#chipPay span').textContent = state.pay || '支付方式';
+  $('#chipDate span').textContent = state.date === TODAY ? '今天 14:20' : state.date;
+  $('#chipNote span').textContent = state.note || (state.tag ? '#' + state.tag : '备注');
+}
+function amountText() {
+  if (!state.amount) return '0.00';
+  if (state.amount.endsWith('.')) return state.amount;
+  const parts = state.amount.split('.');
+  const int = Number(parts[0] || 0).toLocaleString('zh-CN');
+  return parts[1] !== undefined ? `${int}.${parts[1]}` : int;
+}
+function pressKey(k) {
+  if (k === 'back') {
+    state.amount = state.amount.slice(0, -1);
+  } else if (k === '.') {
+    if (!state.amount.includes('.')) state.amount = (state.amount || '0') + '.';
+  } else if (k === '00') {
+    if (!state.amount) state.amount = '0';
+    else if (!state.amount.includes('.')) state.amount += '00';
+  } else {
+    if (state.amount.includes('.')) {
+      const dec = state.amount.split('.')[1] || '';
+      if (dec.length >= 2) return;
+    }
+    if (state.amount.replace('.', '').length >= 9) return;
+    state.amount = state.amount === '0' ? k : state.amount + k;
+  }
+  renderAdd();
+}
+function selectCat(name) {
+  if (name === '更多') { showToast('更多分类（原型演示）'); return; }
+  state.cat = name;
+  renderAdd();
+}
+function shakeAmount() {
+  const el = $('#amountBar');
+  el.classList.remove('shake');
+  void el.offsetWidth;
+  el.classList.add('shake');
+}
+function saveTx() {
+  const val = parseFloat(state.amount);
+  if (!state.cat) { shakeAmount(); showToast('请选择分类'); return; }
+  if (!(val > 0)) { shakeAmount(); showToast('请输入金额'); return; }
+  const cents = Math.round(val * 100);
+  const payload = { date: state.date, cat: state.cat, type: state.type, amount: cents, note: state.note, account: state.account, pay: state.pay };
+  if (state.editingId) {
+    const t = txs.find(x => x.id === state.editingId);
+    if (t) Object.assign(t, payload);
+    showToast('已保存修改');
+  } else {
+    txs.unshift({ id: ++txSeq, time: '14:20', ...payload });
+    showToast(`已记一笔 · ¥${nf(cents)}`);
+  }
+  const back = state.addFrom || 'ledger';
+  state.editingId = null;
+  go(back);
+}
+function removeTx(id) {
+  txs = txs.filter(t => t.id !== id);
+  renderLife();
+  renderLedger();
+  renderCharts();
+}
+function openMeta() {
+  $$('#metaAccounts .opt').forEach(b => b.classList.toggle('active', b.dataset.macc === state.account));
+  $$('#metaPays .opt').forEach(b => b.classList.toggle('active', b.dataset.mpay === state.pay));
+  $('#metaDate').value = state.date;
+  $('#metaNote').value = state.note;
+  $('#metaTag').value = state.tag;
+  openSheet('meta');
+}
+function saveMeta() {
+  const acc = $('#metaAccounts .opt.active');
+  const pay = $('#metaPays .opt.active');
+  if (acc) state.account = acc.dataset.macc;
+  if (pay) state.pay = pay.dataset.mpay;
+  state.date = $('#metaDate').value || TODAY;
+  state.note = $('#metaNote').value.trim();
+  state.tag = $('#metaTag').value.trim();
+  renderAdd();
+  closeSheets();
+  showToast('补充信息已更新');
+}
+function openActions(id) {
+  state.actionId = id;
+  const t = txs.find(x => x.id === id);
+  if (!t) return;
+  $('#actionTitle').textContent = `${t.cat} · ${t.type === 'income' ? '+' : '-'}¥${nf(t.amount)}`;
+  openSheet('actions');
+}
+function duplicateTx() {
+  const t = txs.find(x => x.id === state.actionId);
+  if (!t) return;
+  state.editingId = null;
+  state.amount = String(t.amount / 100);
+  state.cat = t.cat;
+  state.type = t.type;
+  state.account = t.account;
+  state.pay = t.pay;
+  state.date = TODAY;
+  state.note = t.note;
+  state.tag = '';
+  state.addFrom = 'ledger';
+  closeSheets();
+  showAdd();
+  showToast('已带入上一笔，请确认');
+}
+
+/* ---------- 购物 ---------- */
+function updateShop() {
+  const rows = $$('.check-row');
+  const done = rows.filter(r => r.classList.contains('done')).length;
+  $('#shopDone').textContent = done;
+  $('#shopTotal').textContent = rows.length;
+  $('#shopBar').style.width = rows.length ? Math.round(done / rows.length * 100) + '%' : '0%';
+}
+
+/* ---------- 筛选 / 搜索 ---------- */
+function syncFilterSheet() {
+  $$('[data-fset="type"]').forEach(b => b.classList.toggle('active', (b.dataset.fval || '') === state.filterType));
+  $$('[data-fset="cat"]').forEach(b => b.classList.toggle('active', (b.dataset.fval || '') === state.filterCat));
+  $$('[data-fset="pay"]').forEach(b => b.classList.toggle('active', (b.dataset.fval || '') === state.filterPay));
+}
+function toggleSearch() {
+  const wrap = $('#ledgerSearch');
+  const on = wrap.classList.toggle('on');
+  if (on) {
+    setTimeout(() => $('#ledgerQuery').focus(), 60);
+  } else {
+    $('#ledgerQuery').value = '';
+    state.query = '';
+    renderLedger();
+  }
+}
+
+/* ---------- 主题 ---------- */
+function applyTheme(key) {
+  phone.dataset.theme = key;
+  $$('#themeSwatches button').forEach(b => b.classList.toggle('active', b.dataset.theme === key));
+  renderLife();
+  renderCharts();
+}
+
+/* ---------- 交互分发 ---------- */
+function handleAction(action, el) {
+  switch (action) {
+    case 'open-add': openAdd(); break;
+    case 'close-add': go(state.addFrom || 'ledger'); break;
+    case 'save-tx': saveTx(); break;
+    case 'delete-tx': {
+      const id = state.screen === 'add' ? state.editingId : state.actionId;
+      if (!id) break;
+      removeTx(id);
+      closeSheets();
+      showToast('已删除');
+      if (state.screen === 'add') { state.editingId = null; go('ledger'); }
+      break;
+    }
+    case 'toggle-search': toggleSearch(); break;
+    case 'open-filter': syncFilterSheet(); openSheet('filter'); break;
+    case 'close-sheet': closeSheets(); break;
+    case 'reset-filter':
+      state.filterType = ''; state.filterCat = ''; state.filterPay = ''; state.day = '';
+      syncFilterSheet(); renderLedger();
+      break;
+    case 'apply-filter': closeSheets(); renderLedger(); break;
+    case 'month-prev': shiftMonth(-1); break;
+    case 'month-next': shiftMonth(1); break;
+    case 'month-now': state.month = NOW_MONTH; state.day = ''; renderLedger(); break;
+    case 'open-calendar': renderCalendar(); openSheet('calendar'); break;
+    case 'clear-day': state.day = ''; closeSheets(); renderLedger(); break;
+    case 'open-meta': openMeta(); break;
+    case 'save-meta': saveMeta(); break;
+    case 'tx-more': openActions(Number(el.dataset.id)); break;
+    case 'edit-tx': {
+      const id = state.actionId;
+      closeSheets();
+      openAdd(id);
+      break;
+    }
+    case 'copy-tx': duplicateTx(); break;
+    case 'clear-done':
+      $$('.check-row.done').forEach(r => r.remove());
+      updateShop();
+      showToast('已清空已买');
+      break;
+    case 'toggle-stock-search': $('#stockSearch').classList.toggle('on'); break;
+    default: break;
+  }
+}
+
+document.addEventListener('click', (e) => {
+  const themeBtn = e.target.closest('#themeSwatches button');
+  if (themeBtn) { applyTheme(themeBtn.dataset.theme); return; }
+
+  const actionEl = e.target.closest('[data-action]');
+  if (actionEl) { handleAction(actionEl.dataset.action, actionEl); return; }
+
+  const txEl = e.target.closest('[data-tx]');
+  if (txEl) { openAdd(Number(txEl.dataset.tx)); return; }
+
+  const goEl = e.target.closest('[data-go]');
+  if (goEl) { go(goEl.dataset.go); return; }
+
+  const finEl = e.target.closest('[data-fin]');
+  if (finEl) { go(finEl.dataset.fin); return; }
+
+  const toastEl = e.target.closest('[data-toast]');
+  if (toastEl) { showToast(toastEl.dataset.toast); return; }
+
+  const keyEl = e.target.closest('[data-key]');
+  if (keyEl) { pressKey(keyEl.dataset.key); return; }
+
+  const catEl = e.target.closest('[data-cat]');
+  if (catEl) { selectCat(catEl.dataset.cat); return; }
+
+  const typeEl = e.target.closest('[data-type]');
+  if (typeEl) { state.type = typeEl.dataset.type; renderAdd(); return; }
+
+  const chartTypeEl = e.target.closest('[data-chart-type]');
+  if (chartTypeEl) { state.chartType = chartTypeEl.dataset.chartType; renderCharts(); return; }
+
+  const rangeEl = e.target.closest('[data-range]');
+  if (rangeEl) { state.chartRange = rangeEl.dataset.range; renderCharts(); return; }
+
+  const fsetEl = e.target.closest('[data-fset]');
+  if (fsetEl) {
+    const key = fsetEl.dataset.fset;
+    const val = fsetEl.dataset.fval || '';
+    if (key === 'type') state.filterType = val;
+    if (key === 'cat') state.filterCat = val;
+    if (key === 'pay') state.filterPay = val;
+    $$(`[data-fset="${key}"]`).forEach(b => b.classList.toggle('active', b === fsetEl));
+    return;
+  }
+
+  const rmfEl = e.target.closest('[data-rmf]');
+  if (rmfEl) {
+    const key = rmfEl.dataset.rmf;
+    if (key === 'query') { state.query = ''; $('#ledgerQuery').value = ''; }
+    if (key === 'type') state.filterType = '';
+    if (key === 'cat') state.filterCat = '';
+    if (key === 'pay') state.filterPay = '';
+    if (key === 'day') state.day = '';
+    renderLedger();
+    return;
+  }
+
+  const dayEl = e.target.closest('[data-day]');
+  if (dayEl) {
+    state.day = dayEl.dataset.day;
+    closeSheets();
+    renderLedger();
+    return;
+  }
+
+  const maccEl = e.target.closest('[data-macc]');
+  if (maccEl) {
+    $$('[data-macc]').forEach(b => b.classList.toggle('active', b === maccEl));
+    return;
+  }
+  const mpayEl = e.target.closest('[data-mpay]');
+  if (mpayEl) {
+    $$('[data-mpay]').forEach(b => b.classList.toggle('active', b === mpayEl));
+    return;
+  }
+
+  const switchEl = e.target.closest('[data-switch]');
+  if (switchEl) { switchEl.classList.toggle('on'); return; }
+
+  const checkEl = e.target.closest('[data-check]');
+  if (checkEl) { checkEl.classList.toggle('done'); updateShop(); return; }
+
+  const rankEl = e.target.closest('[data-rank-cat]');
+  if (rankEl) {
+    const name = rankEl.dataset.rankCat;
+    state.filterType = state.chartType;
+    state.filterCat = name === '其他' ? '' : name;
+    state.day = '';
+    state.query = '';
+    go('ledger');
+    return;
+  }
+
+  const ptEl = e.target.closest('.trend-pt');
+  if (ptEl) { showTrendTip(ptEl); return; }
+});
+
+$$('.sheet-mask').forEach(m => m.addEventListener('click', (e) => { if (e.target === m) closeSheets(); }));
+$('#ledgerQuery').addEventListener('input', (e) => { state.query = e.target.value.trim(); renderLedger(); });
+
+/* ---------- 设备缩放 ---------- */
+function fitDevice() {
+  const wrap = $('#deviceWrap');
+  if (window.innerWidth <= 1080) {
+    phone.style.transform = '';
+    phone.style.position = 'static';
+    wrap.style.width = '100%';
+    wrap.style.height = '100dvh';
+    return;
+  }
+  const scale = Math.min(1, (window.innerHeight - 56) / 844, (window.innerWidth - 336 - 48 - 96) / 390);
+  wrap.style.width = `${390 * scale}px`;
+  wrap.style.height = `${844 * scale}px`;
+  phone.style.position = 'absolute';
+  phone.style.left = '0';
+  phone.style.top = '0';
+  phone.style.transformOrigin = 'top left';
+  phone.style.transform = `scale(${scale})`;
+}
+
+/* ---------- 初始化 ---------- */
+renderLife();
+renderLedger();
+renderCharts();
+updateShop();
+syncFilterSheet();
+fitDevice();
+window.addEventListener('resize', fitDevice);
+
+
+</script>
+
+</body>
+</html>

@@ -3,9 +3,11 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -56,6 +58,7 @@ type FinTransaction struct {
 	Note           string  `json:"note"`
 	Tags           string  `json:"tags"`
 	Source         string  `json:"source"`
+	PayMethod      string  `json:"pay_method"`
 	RefType        string  `json:"ref_type"`
 	RefID          int64   `json:"ref_id"`
 	OccurredAt     string  `json:"occurred_at"`
@@ -96,6 +99,7 @@ type FinTransactionInput struct {
 	FxRate      float64 `json:"fx_rate"`
 	Note        string  `json:"note"`
 	Tags        string  `json:"tags"`
+	PayMethod   string  `json:"pay_method"`
 	OccurredAt  string  `json:"occurred_at"`
 }
 
@@ -590,21 +594,23 @@ func (r *FinanceRepo) DeleteCategory(ctx context.Context, instanceID, id int64) 
 
 // ── 流水 ──────────────────────────────────────────────────────────
 
-const finTxSelect = `SELECT t.id, t.type, t.amount, t.account_id, COALESCE(a.name,''),
-	t.to_account_id, COALESCE(a2.name,''), t.category_id, COALESCE(c.name,''), COALESCE(p.name,''),
-	t.currency, t.orig_amount, t.fx_rate, t.note, t.tags, t.source, t.ref_type, t.ref_id, t.occurred_at,
-	t.created_by, t.created_at, t.updated_at
-	FROM fin_transactions t
+// 前置空格保证与 SELECT 列段拼接时不粘连（原 finTxSelect 靠换行分隔）。
+const finTxFrom = ` FROM fin_transactions t
 	LEFT JOIN fin_accounts a ON a.id=t.account_id
 	LEFT JOIN fin_accounts a2 ON a2.id=t.to_account_id
 	LEFT JOIN fin_categories c ON c.id=t.category_id
 	LEFT JOIN fin_categories p ON p.id=c.parent_id`
 
+const finTxSelect = `SELECT t.id, t.type, t.amount, t.account_id, COALESCE(a.name,''),
+	t.to_account_id, COALESCE(a2.name,''), t.category_id, COALESCE(c.name,''), COALESCE(p.name,''),
+	t.currency, t.orig_amount, t.fx_rate, t.note, t.tags, t.source, t.pay_method, t.ref_type, t.ref_id, t.occurred_at,
+	t.created_by, t.created_at, t.updated_at` + finTxFrom
+
 func scanFinTx(row interface{ Scan(...any) error }) (FinTransaction, error) {
 	var t FinTransaction
 	err := row.Scan(&t.ID, &t.Type, &t.Amount, &t.AccountID, &t.AccountName,
 		&t.ToAccountID, &t.ToAccountName, &t.CategoryID, &t.CategoryName, &t.CategoryParent,
-		&t.Currency, &t.OrigAmount, &t.FxRate, &t.Note, &t.Tags, &t.Source, &t.RefType, &t.RefID, &t.OccurredAt,
+		&t.Currency, &t.OrigAmount, &t.FxRate, &t.Note, &t.Tags, &t.Source, &t.PayMethod, &t.RefType, &t.RefID, &t.OccurredAt,
 		&t.CreatedBy, &t.CreatedAt, &t.UpdatedAt)
 	return t, err
 }
@@ -756,6 +762,7 @@ func (r *FinanceRepo) normalizeTxInput(ctx context.Context, instanceID int64, in
 	in.OccurredAt = normOccurred(in.OccurredAt)
 	in.Note = strings.TrimSpace(in.Note)
 	in.Tags = strings.TrimSpace(in.Tags)
+	in.PayMethod = strings.TrimSpace(in.PayMethod)
 	return nil
 }
 
@@ -766,10 +773,10 @@ func (r *FinanceRepo) CreateTransaction(ctx context.Context, instanceID int64, i
 	}
 	res, err := r.db.ExecContext(ctx,
 		`INSERT INTO fin_transactions(instance_id, type, amount, account_id, category_id, currency,
-			orig_amount, fx_rate, note, tags, source, occurred_at, created_by)
-		 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			orig_amount, fx_rate, note, tags, source, pay_method, occurred_at, created_by)
+		 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		instanceID, in.Type, in.Amount, in.AccountID, in.CategoryID, in.Currency,
-		in.OrigAmount, in.FxRate, in.Note, in.Tags, "manual", in.OccurredAt, user)
+		in.OrigAmount, in.FxRate, in.Note, in.Tags, "manual", in.PayMethod, in.OccurredAt, user)
 	if err != nil {
 		return FinTransaction{}, err
 	}
@@ -784,10 +791,10 @@ func (r *FinanceRepo) UpdateTransaction(ctx context.Context, instanceID, id int6
 	}
 	res, err := r.db.ExecContext(ctx,
 		`UPDATE fin_transactions SET type=?, amount=?, account_id=?, category_id=?, currency=?,
-			orig_amount=?, fx_rate=?, note=?, tags=?, occurred_at=?, updated_at=datetime('now')
+			orig_amount=?, fx_rate=?, note=?, tags=?, pay_method=?, occurred_at=?, updated_at=datetime('now')
 		 WHERE id=? AND instance_id=? AND deleted_at=''`,
 		in.Type, in.Amount, in.AccountID, in.CategoryID, in.Currency,
-		in.OrigAmount, in.FxRate, in.Note, in.Tags, in.OccurredAt, id, instanceID)
+		in.OrigAmount, in.FxRate, in.Note, in.Tags, in.PayMethod, in.OccurredAt, id, instanceID)
 	if err != nil {
 		return FinTransaction{}, err
 	}
@@ -1478,4 +1485,492 @@ func boolInt(v bool) int {
 // FormatCents 把分转换为元的字符串表示（供日志/导出复用）。
 func FormatCents(c int64) string {
 	return fmt.Sprintf("%.2f", float64(c)/100)
+}
+
+// ── 报表 ─────────────────────────────────────────────────────────
+
+// ReportFilter 报表筛选条件（金额单位仍为分；类型仅含 expense/income，不含 transfer）。
+type ReportFilter struct {
+	Start      string   `json:"start"` // yyyy-mm-dd
+	End        string   `json:"end"`   // yyyy-mm-dd
+	Types      []string `json:"types"` // 收支类型：expense / income（空=全部）
+	Categories []int64  `json:"categories"`
+	PayMethods []string `json:"pay_methods"`
+	AccountIDs []int64  `json:"account_ids"`
+}
+
+const maxReportRangeDays = 3660 // 报表时间范围上限：10 年（防零填充序列过长）
+
+// Validate 校验并归一化筛选条件（原地去重、去空值；types 为空表示全部）。
+func (f *ReportFilter) Validate() error {
+	start, err := time.Parse("2006-01-02", f.Start)
+	if err != nil {
+		return errors.New("开始日期格式应为 yyyy-mm-dd")
+	}
+	end, err := time.Parse("2006-01-02", f.End)
+	if err != nil {
+		return errors.New("结束日期格式应为 yyyy-mm-dd")
+	}
+	if end.Before(start) {
+		return errors.New("结束日期不能早于开始日期")
+	}
+	if end.Sub(start).Hours()/24 > maxReportRangeDays {
+		return errors.New("报表时间范围最长 10 年")
+	}
+	seen := map[string]bool{}
+	keep := f.Types[:0]
+	for _, t := range f.Types {
+		t = strings.TrimSpace(t)
+		if t != "expense" && t != "income" || seen[t] {
+			continue
+		}
+		seen[t] = true
+		keep = append(keep, t)
+	}
+	if len(keep) == 0 {
+		keep = []string{"expense", "income"}
+	}
+	f.Types = keep
+	seenI := map[int64]bool{}
+	keepI := f.Categories[:0]
+	for _, id := range f.Categories {
+		if id <= 0 || seenI[id] {
+			continue
+		}
+		seenI[id] = true
+		keepI = append(keepI, id)
+	}
+	f.Categories = keepI
+	seenP := map[string]bool{}
+	keepP := f.PayMethods[:0]
+	for _, p := range f.PayMethods {
+		p = strings.TrimSpace(p)
+		if p == "" || seenP[p] {
+			continue
+		}
+		seenP[p] = true
+		keepP = append(keepP, p)
+	}
+	f.PayMethods = keepP
+	seenA := map[int64]bool{}
+	keepA := f.AccountIDs[:0]
+	for _, id := range f.AccountIDs {
+		if id <= 0 || seenA[id] {
+			continue
+		}
+		seenA[id] = true
+		keepA = append(keepA, id)
+	}
+	f.AccountIDs = keepA
+	return nil
+}
+
+// FinSummary 报表汇总（金额单位：分）。
+type FinSummary struct {
+	Income  int64 `json:"income"`
+	Expense int64 `json:"expense"`
+	Balance int64 `json:"balance"`
+	Count   int   `json:"count"`
+}
+
+// FinMonthStat 某月收支合计（金额单位：分）。
+type FinMonthStat struct {
+	Month   string `json:"month"` // yyyy-mm
+	Income  int64  `json:"income"`
+	Expense int64  `json:"expense"`
+}
+
+// FinCatStat 分类占比（按类型分组，percent 为该类型内的占比）。
+type FinCatStat struct {
+	Type       string  `json:"type"` // expense / income
+	CategoryID int64   `json:"category_id"`
+	Name       string  `json:"name"`
+	Amount     int64   `json:"amount"` // 分
+	Percent    float64 `json:"percent"`
+}
+
+// FinReportData 报表完整数据（序列含零值填充，前端可直接绘图）。
+type FinReportData struct {
+	Summary    FinSummary     `json:"summary"`
+	ByDay      []FinDayStat   `json:"by_day"`
+	ByMonth    []FinMonthStat `json:"by_month"`
+	ByCategory []FinCatStat   `json:"by_category"`
+}
+
+// FinReport 已保存的报表（筛选条件快照）。
+type FinReport struct {
+	ID        int64        `json:"id"`
+	Name      string       `json:"name"`
+	Filters   ReportFilter `json:"filters"`
+	Summary   FinSummary   `json:"summary"`
+	CreatedBy string       `json:"created_by"`
+	CreatedAt string       `json:"created_at"`
+}
+
+// inPlaceholders 生成 SQL IN 占位符：(?,?,?)。
+func inPlaceholders(n int) string {
+	if n <= 0 {
+		return "(NULL)"
+	}
+	return "(" + strings.TrimRight(strings.Repeat("?,", n), ",") + ")"
+}
+
+// toAnyIDs []int64 → []any（供 SQL 参数拼接）。
+func toAnyIDs(ids []int64) []any {
+	out := make([]any, len(ids))
+	for i, id := range ids {
+		out[i] = id
+	}
+	return out
+}
+
+// finReportFrom 报表聚合查询的 FROM 段（JOIN 分类供分类/父分类筛选）。
+const finReportFrom = `fin_transactions t LEFT JOIN fin_categories c ON c.id=t.category_id`
+
+// reportWhere 报表查询的 WHERE 条件（日期按 occurred_at 字典序比较，可走索引）。
+func (f *ReportFilter) reportWhere(instanceID int64) (string, []any) {
+	where := []string{
+		"t.instance_id=?", "t.deleted_at=''",
+		"t.occurred_at >= ?", "t.occurred_at <= ?",
+	}
+	args := []any{instanceID, f.Start + " 00:00", f.End + " 23:59"}
+	if len(f.Types) > 0 {
+		where = append(where, "t.type IN "+inPlaceholders(len(f.Types)))
+		for _, t := range f.Types {
+			args = append(args, t)
+		}
+	}
+	if len(f.Categories) > 0 {
+		ph := inPlaceholders(len(f.Categories))
+		where = append(where, "(t.category_id IN "+ph+" OR c.parent_id IN "+ph+")")
+		args = append(args, toAnyIDs(f.Categories)...)
+		args = append(args, toAnyIDs(f.Categories)...)
+	}
+	if len(f.PayMethods) > 0 {
+		where = append(where, "t.pay_method IN "+inPlaceholders(len(f.PayMethods)))
+		for _, p := range f.PayMethods {
+			args = append(args, p)
+		}
+	}
+	if len(f.AccountIDs) > 0 {
+		where = append(where, "t.account_id IN "+inPlaceholders(len(f.AccountIDs)))
+		args = append(args, toAnyIDs(f.AccountIDs)...)
+	}
+	return " WHERE " + strings.Join(where, " AND "), args
+}
+
+// ReportSummary 报表汇总统计（不含序列，供列表/预览使用）。
+func (r *FinanceRepo) ReportSummary(ctx context.Context, instanceID int64, f ReportFilter) (FinSummary, error) {
+	if err := f.Validate(); err != nil {
+		return FinSummary{}, err
+	}
+	cond, args := f.reportWhere(instanceID)
+	var s FinSummary
+	err := r.db.QueryRowContext(ctx,
+		`SELECT COALESCE(SUM(CASE WHEN t.type='income' THEN t.amount ELSE 0 END),0),
+		        COALESCE(SUM(CASE WHEN t.type='expense' THEN t.amount ELSE 0 END),0), COUNT(1)
+		 FROM `+finReportFrom+cond, args...).Scan(&s.Income, &s.Expense, &s.Count)
+	if err != nil {
+		return FinSummary{}, err
+	}
+	s.Balance = s.Income - s.Expense
+	return s, nil
+}
+
+// ReportData 报表完整数据：汇总 + 按日/按月序列（零值填充）+ 分类占比。
+func (r *FinanceRepo) ReportData(ctx context.Context, instanceID int64, f ReportFilter) (FinReportData, error) {
+	if err := f.Validate(); err != nil {
+		return FinReportData{}, err
+	}
+	cond, args := f.reportWhere(instanceID)
+	from := finReportFrom + cond
+	var d FinReportData
+
+	// 汇总
+	if err := r.db.QueryRowContext(ctx,
+		`SELECT COALESCE(SUM(CASE WHEN t.type='income' THEN t.amount ELSE 0 END),0),
+		        COALESCE(SUM(CASE WHEN t.type='expense' THEN t.amount ELSE 0 END),0), COUNT(1)
+		 FROM `+from, args...).Scan(&d.Summary.Income, &d.Summary.Expense, &d.Summary.Count); err != nil {
+		return FinReportData{}, err
+	}
+	d.Summary.Balance = d.Summary.Income - d.Summary.Expense
+
+	start, _ := time.Parse("2006-01-02", f.Start)
+	end, _ := time.Parse("2006-01-02", f.End)
+
+	// 按日序列（零值填充）
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT substr(t.occurred_at,1,10),
+		        COALESCE(SUM(CASE WHEN t.type='income' THEN t.amount ELSE 0 END),0),
+		        COALESCE(SUM(CASE WHEN t.type='expense' THEN t.amount ELSE 0 END),0)
+		 FROM `+from+` GROUP BY substr(t.occurred_at,1,10)`, args...)
+	if err != nil {
+		return FinReportData{}, err
+	}
+	byDay := map[string]FinDayStat{}
+	for rows.Next() {
+		var day string
+		var inc, exp int64
+		if err := rows.Scan(&day, &inc, &exp); err != nil {
+			rows.Close()
+			return FinReportData{}, err
+		}
+		byDay[day] = FinDayStat{Day: day, Income: inc, Expense: exp}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return FinReportData{}, err
+	}
+	d.ByDay = []FinDayStat{}
+	for day := start; !day.After(end); day = day.AddDate(0, 0, 1) {
+		key := day.Format("2006-01-02")
+		if v, ok := byDay[key]; ok {
+			d.ByDay = append(d.ByDay, v)
+		} else {
+			d.ByDay = append(d.ByDay, FinDayStat{Day: key})
+		}
+	}
+
+	// 按月序列（零值填充）
+	rows, err = r.db.QueryContext(ctx,
+		`SELECT substr(t.occurred_at,1,7),
+		        COALESCE(SUM(CASE WHEN t.type='income' THEN t.amount ELSE 0 END),0),
+		        COALESCE(SUM(CASE WHEN t.type='expense' THEN t.amount ELSE 0 END),0)
+		 FROM `+from+` GROUP BY substr(t.occurred_at,1,7)`, args...)
+	if err != nil {
+		return FinReportData{}, err
+	}
+	byMonth := map[string]FinMonthStat{}
+	for rows.Next() {
+		var m string
+		var inc, exp int64
+		if err := rows.Scan(&m, &inc, &exp); err != nil {
+			rows.Close()
+			return FinReportData{}, err
+		}
+		byMonth[m] = FinMonthStat{Month: m, Income: inc, Expense: exp}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return FinReportData{}, err
+	}
+	d.ByMonth = []FinMonthStat{}
+	for m := start; !m.After(end); m = m.AddDate(0, 1, 0) {
+		key := m.Format("2006-01")
+		if v, ok := byMonth[key]; ok {
+			d.ByMonth = append(d.ByMonth, v)
+		} else {
+			d.ByMonth = append(d.ByMonth, FinMonthStat{Month: key})
+		}
+	}
+
+	// 分类占比（按类型分组；金额降序）
+	rows, err = r.db.QueryContext(ctx,
+		`SELECT t.type, t.category_id, COALESCE(c.name,''), SUM(t.amount)
+		 FROM `+from+` GROUP BY t.type, t.category_id`, args...)
+	if err != nil {
+		return FinReportData{}, err
+	}
+	type catAgg struct {
+		id   int64
+		name string
+		sum  int64
+	}
+	perType := map[string][]catAgg{}
+	totalPerType := map[string]int64{}
+	for rows.Next() {
+		var typ string
+		var ca catAgg
+		if err := rows.Scan(&typ, &ca.id, &ca.name, &ca.sum); err != nil {
+			rows.Close()
+			return FinReportData{}, err
+		}
+		perType[typ] = append(perType[typ], ca)
+		totalPerType[typ] += ca.sum
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return FinReportData{}, err
+	}
+	d.ByCategory = []FinCatStat{}
+	for _, typ := range []string{"expense", "income"} {
+		list := perType[typ]
+		sort.Slice(list, func(i, j int) bool {
+			if list[i].sum != list[j].sum {
+				return list[i].sum > list[j].sum
+			}
+			return list[i].id < list[j].id
+		})
+		total := totalPerType[typ]
+		for _, ca := range list {
+			pct := float64(0)
+			if total > 0 {
+				pct = math.Round(float64(ca.sum) / float64(total) * 1000) / 10
+			}
+			d.ByCategory = append(d.ByCategory, FinCatStat{Type: typ, CategoryID: ca.id, Name: ca.name, Amount: ca.sum, Percent: pct})
+		}
+	}
+	return d, nil
+}
+
+// ListReportTransactions 报表明细分页（默认 50/页，上限 200）。
+func (r *FinanceRepo) ListReportTransactions(ctx context.Context, instanceID int64, f ReportFilter, page, pageSize int) (FinTransactionPage, error) {
+	if err := f.Validate(); err != nil {
+		return FinTransactionPage{}, err
+	}
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 || pageSize > 200 {
+		pageSize = 50
+	}
+	cond, args := f.reportWhere(instanceID)
+	var total int
+	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(1) `+finTxFrom+cond, args...).Scan(&total); err != nil {
+		return FinTransactionPage{}, err
+	}
+	rows, err := r.db.QueryContext(ctx, finTxSelect+cond+` ORDER BY t.occurred_at DESC, t.id DESC LIMIT ? OFFSET ?`,
+		append(append([]any{}, args...), pageSize, (page-1)*pageSize)...)
+	if err != nil {
+		return FinTransactionPage{}, err
+	}
+	defer rows.Close()
+	items := []FinTransaction{}
+	for rows.Next() {
+		t, err := scanFinTx(rows)
+		if err != nil {
+			return FinTransactionPage{}, err
+		}
+		items = append(items, t)
+	}
+	return FinTransactionPage{Items: items, Total: total, Page: page, PageSize: pageSize}, rows.Err()
+}
+
+// ExportReportTransactions 报表全部明细（导出用，不分页，按时间升序）。
+func (r *FinanceRepo) ExportReportTransactions(ctx context.Context, instanceID int64, f ReportFilter) ([]FinTransaction, error) {
+	if err := f.Validate(); err != nil {
+		return nil, err
+	}
+	cond, args := f.reportWhere(instanceID)
+	rows, err := r.db.QueryContext(ctx, finTxSelect+cond+` ORDER BY t.occurred_at ASC, t.id ASC`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []FinTransaction{}
+	for rows.Next() {
+		t, err := scanFinTx(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, t)
+	}
+	return items, rows.Err()
+}
+
+// CreateReport 保存一份报表（筛选条件快照），并计算其汇总。
+func (r *FinanceRepo) CreateReport(ctx context.Context, instanceID int64, name string, f ReportFilter, user string) (FinReport, error) {
+	if err := f.Validate(); err != nil {
+		return FinReport{}, err
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = "报表 " + f.Start + "~" + f.End
+	}
+	b, err := json.Marshal(f)
+	if err != nil {
+		return FinReport{}, err
+	}
+	res, err := r.db.ExecContext(ctx,
+		`INSERT INTO fin_reports (instance_id, name, filters, created_by, created_at, updated_at)
+		 VALUES (?,?,?,?,datetime('now'),datetime('now'))`,
+		instanceID, name, string(b), user)
+	if err != nil {
+		return FinReport{}, err
+	}
+	id, _ := res.LastInsertId()
+	rep, err := r.GetReport(ctx, instanceID, id)
+	if err != nil {
+		return FinReport{}, err
+	}
+	rep.Summary, err = r.ReportSummary(ctx, instanceID, rep.Filters)
+	return rep, err
+}
+
+// ListReports 报表列表（附各自汇总），按创建时间倒序。
+func (r *FinanceRepo) ListReports(ctx context.Context, instanceID int64) ([]FinReport, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id, name, filters, created_by, created_at FROM fin_reports WHERE instance_id=? ORDER BY id DESC`, instanceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []FinReport{}
+	for rows.Next() {
+		var rep FinReport
+		var fb string
+		if err := rows.Scan(&rep.ID, &rep.Name, &fb, &rep.CreatedBy, &rep.CreatedAt); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(fb), &rep.Filters); err != nil {
+			return nil, err
+		}
+		rep.Summary, err = r.ReportSummary(ctx, instanceID, rep.Filters)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, rep)
+	}
+	return out, rows.Err()
+}
+
+// GetReport 取一份报表（不含汇总；汇总由 ReportData/ReportSummary 计算）。
+func (r *FinanceRepo) GetReport(ctx context.Context, instanceID, id int64) (FinReport, error) {
+	var rep FinReport
+	var fb string
+	err := r.db.QueryRowContext(ctx,
+		`SELECT id, name, filters, created_by, created_at FROM fin_reports WHERE id=? AND instance_id=?`, id, instanceID).
+		Scan(&rep.ID, &rep.Name, &fb, &rep.CreatedBy, &rep.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return FinReport{}, ErrNotFound
+	}
+	if err != nil {
+		return FinReport{}, err
+	}
+	if err := json.Unmarshal([]byte(fb), &rep.Filters); err != nil {
+		return FinReport{}, err
+	}
+	return rep, nil
+}
+
+// DeleteReport 删除一份报表。
+func (r *FinanceRepo) DeleteReport(ctx context.Context, instanceID, id int64) error {
+	res, err := r.db.ExecContext(ctx, `DELETE FROM fin_reports WHERE id=? AND instance_id=?`, id, instanceID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// PayMethodLabel 支付方式 key → 中文名（CSV 导出用；未识别的 key 原样返回）。
+func PayMethodLabel(key string) string {
+	switch key {
+	case "alipay":
+		return "支付宝"
+	case "wechat":
+		return "微信支付"
+	case "bankcard":
+		return "银行卡"
+	case "credit":
+		return "信用卡"
+	case "cash":
+		return "现金"
+	case "other":
+		return "其他"
+	default:
+		return key
+	}
 }

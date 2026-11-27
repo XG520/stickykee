@@ -1,4 +1,4 @@
-﻿package handler
+package handler
 
 import (
 	"bytes"
@@ -521,6 +521,7 @@ func (h *Inventory) AddShopping(w http.ResponseWriter, r *http.Request) {
 		invErr(w, err)
 		return
 	}
+	h.changed(id)
 	WriteJSON(w, 201, item)
 }
 
@@ -545,6 +546,7 @@ func (h *Inventory) UpdateShopping(w http.ResponseWriter, r *http.Request) {
 		invErr(w, err)
 		return
 	}
+	h.changed(id)
 	WriteJSON(w, 200, item)
 }
 
@@ -569,6 +571,7 @@ func (h *Inventory) CheckShopping(w http.ResponseWriter, r *http.Request) {
 		invErr(w, err)
 		return
 	}
+	h.changed(id)
 	WriteJSON(w, 200, true)
 }
 
@@ -587,6 +590,7 @@ func (h *Inventory) DeleteShopping(w http.ResponseWriter, r *http.Request) {
 		invErr(w, err)
 		return
 	}
+	h.changed(id)
 	WriteJSON(w, 200, true)
 }
 
@@ -673,6 +677,7 @@ func (h *Inventory) ItemToShopping(w http.ResponseWriter, r *http.Request) {
 		invErr(w, err)
 		return
 	}
+	h.changed(id)
 	WriteJSON(w, 201, item)
 }
 

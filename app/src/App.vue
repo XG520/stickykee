@@ -38,7 +38,7 @@
            keep-alive 缓存首页与地图页：仪表盘卡片数多（含地图卡）、地图页含高德
            实例（重建需重新拉 SDK 与全部瓦片），移动端切走再切回秒回，
            HA 实时数据仍经 store 推送保持新鲜。 -->
-      <main class="max-w-screen-2xl mx-auto px-6 pt-3 md:pt-5 pb-10">
+      <main class="max-w-screen-2xl mx-auto px-4 sm:px-6 pt-3 md:pt-5 pb-10">
         <router-view v-slot="{ Component }">
           <keep-alive include="HomeView,MapView">
             <component :is="Component" />
@@ -47,9 +47,10 @@
       </main>
 
       <!-- 移动端底部 Tab（沉浸模式 / 首页仪表盘编辑态折叠：编辑操作栏在同一位置，避免互相遮挡）。
+           账本子应用使用自己的 5 位底栏，此处按路由隐藏，避免同屏出现两个底栏。
            外包 transition：进出时向下滑出/滑入，避免突兀消失 -->
       <transition name="hc-slide-up">
-        <MobileTabBar v-if="!ui.immersive && !ui.dashEditing" />
+        <MobileTabBar v-if="!ui.immersive && !ui.dashEditing && !hideGlobalTab" />
       </transition>
 
       <!-- 全局设备抽屉：概览卡/统计卡/房间概览点击后按条件过滤展示设备（store.deviceDrawer 驱动） -->
@@ -126,6 +127,8 @@ import { getPrefs } from '@/utils/prefs'
 
 const route = useRoute()
 const isPublic = computed(() => !!route.meta.public)
+// 账本子应用（/inventory/finance/*）自带 5 位底栏，隐藏全局 7 项底栏。
+const hideGlobalTab = computed(() => route.path.startsWith('/inventory/finance') || !!route.meta.hideGlobalTab)
 let stopProx = null // 人接近自动亮屏的停止函数
 const { toggle: toggleFullscreen } = useFullscreen()
 const { visible: exitShow, enter: exitEnter, leave: exitLeave } = useAutoHide(3000)

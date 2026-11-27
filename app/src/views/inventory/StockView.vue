@@ -1,200 +1,152 @@
 <template>
-  <div class="space-y-4 md:space-y-5 py-2 pb-20 md:pb-2">
-    <h1 class="sr-only">生活</h1>
-
-    <!-- 页面头部：移动端纵向堆叠（标签在上、页签在下），桌面端页签直接左对齐 -->
-    <header class="flex flex-col gap-3 md:flex-row md:items-center">
-      <span class="md:hidden shrink-0 text-[11px] text-muted font-body">{{ locations.length }} 个位置</span>
-
-      <!-- 页签按内容宽度收窄（避免手机上铺满整行显得空），标签不换行 -->
-      <div class="self-start inline-grid grid-cols-3 gap-1 p-1 rounded-2xl bg-surface-alt border border-border md:self-auto md:min-w-[336px]">
-        <button
-          class="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm font-body whitespace-nowrap transition-colors"
-          :class="activeTab === 'stock' ? 'bg-surface text-primary shadow-sm border border-border' : 'text-muted hover:text-on-surface'"
-          @click="activeTab = 'stock'"
-        >
-          <span class="material-symbols-outlined hidden sm:inline-flex text-base">inventory_2</span>库存
-        </button>
-        <button
-          class="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm font-body whitespace-nowrap transition-colors"
-          :class="activeTab === 'shopping' ? 'bg-surface text-primary shadow-sm border border-border' : 'text-muted hover:text-on-surface'"
-          @click="activeTab = 'shopping'"
-        >
-          <span class="material-symbols-outlined hidden sm:inline-flex text-base">shopping_cart</span>购物清单
-        </button>
-        <button
-          class="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm font-body whitespace-nowrap transition-colors"
-          :class="activeTab === 'finance' ? 'bg-surface text-primary shadow-sm border border-border' : 'text-muted hover:text-on-surface'"
-          @click="activeTab = 'finance'"
-        >
-          <span class="material-symbols-outlined hidden sm:inline-flex text-base">account_balance_wallet</span>账本
-        </button>
-      </div>
+  <div class="py-2 pb-4 space-y-3 max-w-5xl mx-auto">
+    <!-- 头部 -->
+    <header class="flex items-center gap-2 min-h-12">
+      <button class="hc-icon-btn -ml-2" aria-label="返回生活" @click="router.push('/inventory')">
+        <span class="material-symbols-outlined">arrow_back</span>
+      </button>
+      <h1 class="flex-1 min-w-0 font-headline text-lg font-semibold truncate">库存</h1>
+      <button class="hc-icon-btn" :class="searchOpen ? 'text-primary' : ''" aria-label="搜索" @click="toggleSearch">
+        <span class="material-symbols-outlined">search</span>
+      </button>
+      <button class="h-9 px-3 rounded-full bg-primary text-on-primary text-xs font-body flex items-center gap-1" @click="openCreate">
+        <span class="material-symbols-outlined text-base">add</span>添加
+      </button>
     </header>
 
-    <template v-if="activeTab === 'stock'">
-    <!-- 位置筛选 -->
+    <!-- 搜索 -->
+    <div v-if="searchOpen" class="relative">
+      <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-muted text-lg pointer-events-none">search</span>
+      <input
+        ref="searchInput"
+        v-model="query"
+        placeholder="搜索名称 / 条码"
+        class="w-full h-11 pl-9 pr-9 rounded-xl bg-surface border border-border text-sm font-body text-on-background placeholder:text-faint outline-none focus:border-primary transition-colors"
+        @input="onQueryInput"
+      />
+      <button
+        v-if="query"
+        class="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center text-muted"
+        aria-label="清除搜索"
+        @click="clearQuery"
+      >
+        <span class="material-symbols-outlined text-base">close</span>
+      </button>
+    </div>
+
+    <!-- 位置 chips -->
     <div class="flex items-center gap-1.5 overflow-x-auto pb-0.5" style="scrollbar-width: none">
       <button
-        class="px-3 py-1.5 rounded-full text-xs font-body border whitespace-nowrap shrink-0"
-        :class="selectedLocation === 0 ? 'bg-primary text-white border-primary' : 'bg-surface-alt text-muted border-border'"
+        class="hc-chip"
+        :class="selectedLocation === 0 ? 'hc-chip--on' : ''"
         @click="selectLocation(0)"
       >全部</button>
       <button
         v-for="l in locations"
         :key="l.id"
-        class="px-3 py-1.5 rounded-full text-xs font-body border whitespace-nowrap shrink-0"
-        :class="selectedLocation === l.id ? 'bg-primary text-white border-primary' : 'bg-surface-alt text-muted border-border'"
+        class="hc-chip"
+        :class="selectedLocation === l.id ? 'hc-chip--on' : ''"
         @click="selectLocation(l.id)"
       >{{ l.name }}</button>
-      <button
-        class="shrink-0 flex items-center gap-0.5 px-2.5 py-1.5 rounded-full text-xs font-body border border-dashed border-border text-muted hover:text-on-surface"
-        title="管理位置"
-        @click="locManager = true"
-      >
+      <button class="hc-chip hc-chip--ghost" title="管理位置" @click="locManager = true">
         <span class="material-symbols-outlined text-base">tune</span>
       </button>
     </div>
 
-    <!-- 搜索 + 添加 -->
-    <div class="flex items-center gap-2">
-      <div class="relative flex-1 min-w-0">
-        <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-muted text-lg pointer-events-none">search</span>
-        <input
-          v-model="query"
-          placeholder="搜索名称 / 条码"
-          class="w-full pl-9 pr-8 py-2 rounded-xl bg-surface border border-border text-sm font-body text-on-background placeholder:text-faint outline-none focus:border-primary transition-colors"
-          @input="onQueryInput"
-        />
-        <button
-          v-if="query"
-          class="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-on-surface"
-          aria-label="清除搜索"
-          @click="clearQuery"
-        >
-          <span class="material-symbols-outlined text-base">close</span>
-        </button>
+    <!-- 概览 + 筛选 -->
+    <div class="bg-surface border border-border rounded-2xl p-4 space-y-3">
+      <div class="grid grid-cols-3 gap-2">
+        <div>
+          <div class="text-[11px] text-muted font-body">在库</div>
+          <div class="mt-1 font-headline text-xl font-semibold tabular-nums leading-none">{{ fmt(stats.total) }}</div>
+        </div>
+        <div>
+          <div class="text-[11px] text-muted font-body">价值</div>
+          <div class="mt-1 font-headline text-xl font-semibold tabular-nums leading-none">{{ fmt(stats.total_value) }}</div>
+        </div>
+        <div>
+          <div class="text-[11px] text-muted font-body">临期</div>
+          <div class="mt-1 font-headline text-xl font-semibold tabular-nums leading-none text-error">
+            {{ stats.expiring || 0 }}
+            <span v-if="Number(stats.expired) > 0" class="text-[10px] font-body text-muted ml-1">过期 {{ stats.expired }}</span>
+          </div>
+        </div>
       </div>
-      <button
-        class="shrink-0 flex items-center gap-1 px-3.5 py-2 rounded-xl bg-primary text-white text-sm font-body"
-        @click="openCreate"
-      >
-        <span class="material-symbols-outlined text-base">add</span>添加
-      </button>
+      <div class="flex items-center gap-1.5 flex-wrap">
+        <button class="hc-chip" :class="lowStockOnly ? 'hc-chip--on' : ''" @click="toggleLowStock">
+          需补货 {{ stats.low_stock || 0 }}
+        </button>
+        <button class="hc-chip" :class="expiringOnly ? 'hc-chip--danger' : ''" @click="toggleExpiring">仅看临期</button>
+        <button
+          v-if="remCan"
+          class="hc-chip"
+          :class="reminder.on ? 'hc-chip--on' : ''"
+          :title="reminder.on ? '每日 ' + reminder.time + ' 提醒库存风险（APK 后台触发）' : '开启每日库存提醒'"
+          @click="toggleReminder"
+        >提醒</button>
+        <input
+          v-if="remCan && reminder.on"
+          v-model="reminder.time"
+          type="time"
+          class="h-8 px-2 rounded-full bg-surface-alt border border-border text-xs font-body text-muted outline-none"
+          title="每日提醒时间"
+          @change="onReminderTime"
+        />
+        <span class="ml-auto text-[11px] text-muted font-body whitespace-nowrap">{{ items.length }} 件</span>
+      </div>
     </div>
 
     <!-- 快捷操作 -->
-    <div class="flex items-center gap-2 overflow-x-auto pb-0.5" style="scrollbar-width: none">
-      <button
-        class="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-full bg-surface-alt border border-border text-xs font-body text-muted hover:text-on-surface"
-        @click="openStocktake"
-      >
-        <span class="material-symbols-outlined text-base">fact_check</span>盘点
+    <div class="grid grid-cols-4 gap-2">
+      <button class="hc-quick" @click="openStocktake">
+        <span class="hc-quick__icon"><span class="material-symbols-outlined text-xl">fact_check</span></span>
+        <span class="hc-quick__label">盘点</span>
       </button>
-      <button
-        class="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-full bg-surface-alt border border-border text-xs font-body text-muted hover:text-on-surface"
-        @click="exportCsv"
-      >
-        <span class="material-symbols-outlined text-base">download</span>导出
+      <button class="hc-quick" @click="scanBarcode">
+        <span class="hc-quick__icon"><span class="material-symbols-outlined text-xl">qr_code_scanner</span></span>
+        <span class="hc-quick__label">扫码</span>
       </button>
-      <button
-        class="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-full bg-surface-alt border border-border text-xs font-body text-muted hover:text-on-surface"
-        @click="scanBarcode"
-      >
-        <span class="material-symbols-outlined text-base">qr_code_scanner</span>扫码
-      </button>
-      <label
-        class="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-full bg-surface-alt border border-border text-xs font-body text-muted cursor-pointer hover:text-on-surface"
-      >
-        <span class="material-symbols-outlined text-base">photo_camera</span>拍照
+      <label class="hc-quick cursor-pointer">
+        <span class="hc-quick__icon"><span class="material-symbols-outlined text-xl">photo_camera</span></span>
+        <span class="hc-quick__label">拍照</span>
         <input type="file" accept="image/*" capture="environment" class="hidden" @change="onPickImage" />
       </label>
+      <button class="hc-quick" @click="exportCsv">
+        <span class="hc-quick__icon"><span class="material-symbols-outlined text-xl">download</span></span>
+        <span class="hc-quick__label">导出</span>
+      </button>
     </div>
 
-    <!-- 概览 -->
-    <div class="grid grid-cols-2 md:grid-cols-5 gap-2.5 md:gap-3">
-      <div class="col-span-2 md:col-span-1 bg-surface border border-border rounded-2xl px-4 py-3.5">
-        <div class="text-[11px] text-muted font-body">在库总数</div>
-        <div class="mt-1 font-headline text-2xl md:text-xl font-semibold tabular-nums">{{ fmt(stats.total) }}</div>
-      </div>
-      <div class="bg-surface border border-border rounded-2xl px-4 py-3.5">
-        <div class="text-[11px] text-muted font-body">库存价值</div>
-        <div class="mt-1 font-headline text-xl font-semibold tabular-nums">{{ fmt(stats.total_value) }}</div>
-      </div>
-      <div class="bg-surface border border-border rounded-2xl px-4 py-3.5">
-        <div class="text-[11px] text-muted font-body">临期</div>
-        <div class="mt-1 font-headline text-xl font-semibold tabular-nums text-error">{{ stats.expiring || 0 }}</div>
-      </div>
-      <div class="bg-surface border border-border rounded-2xl px-4 py-3.5">
-        <div class="text-[11px] text-muted font-body">已过期</div>
-        <div class="mt-1 font-headline text-xl font-semibold tabular-nums text-error">{{ stats.expired || 0 }}</div>
-      </div>
-      <div class="bg-surface border border-border rounded-2xl px-4 py-3.5">
-        <div class="text-[11px] text-muted font-body">需补货</div>
-        <div class="mt-1 font-headline text-xl font-semibold tabular-nums text-primary">{{ stats.low_stock || 0 }}</div>
-      </div>
-    </div>
-
-    <!-- 筛选 + 结果数 -->
-    <div class="flex items-center gap-2 text-xs font-body">
-      <button
-        class="px-3 py-1 rounded-full border"
-        :class="expiringOnly ? 'bg-error/10 text-error border-error/30' : 'bg-surface-alt text-muted border-border'"
-        @click="toggleExpiring"
-      >仅看临期</button>
-      <button
-        class="px-3 py-1 rounded-full border"
-        :class="lowStockOnly ? 'bg-primary/10 text-primary border-primary/30' : 'bg-surface-alt text-muted border-border'"
-        @click="toggleLowStock"
-      >仅看需补货</button>
-      <button
-        v-if="remCan"
-        class="px-3 py-1 rounded-full border"
-        :class="reminder.on ? 'bg-primary/10 text-primary border-primary/30' : 'bg-surface-alt text-muted border-border'"
-        :title="reminder.on ? '每日 ' + reminder.time + ' 提醒库存风险（APK 后台触发）' : '开启每日库存提醒'"
-        @click="toggleReminder"
-      >提醒</button>
-      <input
-        v-if="remCan && reminder.on"
-        v-model="reminder.time"
-        type="time"
-        class="px-2 py-0.5 rounded-full bg-surface-alt border border-border text-xs font-body text-muted outline-none"
-        title="每日提醒时间"
-        @change="onReminderTime"
-      />
-      <span class="ml-auto whitespace-nowrap text-muted">{{ items.length }} 件</span>
-    </div>
     <div v-if="error" class="text-xs text-error font-body">{{ error }}</div>
 
     <!-- 列表 -->
-    <div v-if="items.length" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
+    <div v-if="items.length" class="bg-surface border border-border rounded-2xl divide-y divide-border overflow-hidden">
       <article
         v-for="it in items"
         :key="it.id"
-        class="group relative bg-surface border rounded-2xl p-4 cursor-pointer transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
-        :class="it.low_stock ? 'border-error/40' : 'border-border hover:border-primary/40'"
+        class="relative flex items-center gap-3 px-4 py-3 cursor-pointer active:bg-surface-alt transition-colors"
         @click="openDetail(it)"
       >
-        <span v-if="it.low_stock" class="absolute left-0 top-4 bottom-4 w-0.5 rounded-full bg-error/60"></span>
-        <div class="flex items-start justify-between gap-3">
-          <div class="min-w-0">
-            <div class="font-headline font-semibold text-[15px] truncate text-on-background">{{ it.name }}</div>
-            <div class="mt-1.5 flex items-center gap-1.5 flex-wrap">
-              <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-surface-alt text-muted font-body">{{ it.category || '未分类' }}</span>
-              <span v-if="it.low_stock" class="text-[10px] px-1.5 py-0.5 rounded-full bg-error/10 text-error font-body">需补货</span>
-            </div>
+        <span v-if="it.low_stock" class="absolute left-0 top-3 bottom-3 w-[3px] rounded-full bg-error"></span>
+        <div class="w-10 h-10 rounded-full bg-surface-alt flex items-center justify-center flex-shrink-0 text-muted">
+          <span class="material-symbols-outlined text-lg">inventory_2</span>
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-1.5 min-w-0">
+            <span class="font-headline font-semibold text-[15px] truncate">{{ it.name }}</span>
+            <span v-if="it.low_stock" class="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-error/10 text-error font-body">需补货</span>
           </div>
-          <div class="text-right shrink-0">
-            <div class="font-headline text-xl font-semibold leading-none tabular-nums">
-              {{ fmt(it.total_quantity) }}<span class="text-[11px] text-muted font-body ml-0.5">{{ it.unit }}</span>
-            </div>
+          <div class="mt-0.5 text-[11px] text-muted font-body truncate">
+            {{ it.category || '未分类' }} · {{ locationText(it) }}
           </div>
         </div>
-        <div class="mt-3 pt-3 border-t border-border flex items-center justify-between gap-2 text-xs font-body">
-          <span :class="expiryView(it.nearest_expiry).cls">{{ expiryView(it.nearest_expiry).text }}</span>
-          <span class="text-muted truncate flex items-center gap-0.5 min-w-0">
-            <span class="material-symbols-outlined text-sm">place</span>{{ locationText(it) }}
-          </span>
+        <div class="text-right shrink-0">
+          <div class="font-headline text-[17px] font-semibold leading-none tabular-nums">
+            {{ fmt(it.total_quantity) }}<span class="text-[11px] text-muted font-body ml-0.5">{{ it.unit }}</span>
+          </div>
+          <div class="mt-1 text-[10px] font-body" :class="expiryView(it.nearest_expiry).cls">
+            {{ expiryView(it.nearest_expiry).short }}
+          </div>
         </div>
       </article>
     </div>
@@ -205,15 +157,10 @@
       <p class="mt-3 text-sm text-muted font-body">{{ loading ? '加载中…' : '还没有记录物品' }}</p>
       <button
         v-if="!loading"
-        class="mt-3 px-4 py-2 rounded-xl bg-primary text-white text-xs font-body"
+        class="mt-3 px-4 py-2 rounded-xl bg-primary text-on-primary text-xs font-body"
         @click="openCreate"
       >添加第一件物品</button>
     </div>
-    </template>
-
-    <ShoppingListView v-else-if="activeTab === 'shopping'" @changed="refresh" />
-
-    <FinanceHome v-else />
 
     <!-- 物品详情 -->
     <div
@@ -313,7 +260,7 @@
             <option value="medicine">药箱</option>
             <option value="other">其他</option>
           </select>
-          <button class="px-3 py-2 rounded-lg bg-primary text-white text-sm" @click="addLocation">添加</button>
+          <button class="px-3 py-2 rounded-lg bg-primary text-on-primary text-sm" @click="addLocation">添加</button>
         </div>
         <div v-if="locError" class="text-xs text-error">{{ locError }}</div>
       </div>
@@ -354,7 +301,7 @@
         <div class="flex justify-end gap-2">
           <button class="px-4 py-2 rounded-lg text-sm text-muted border border-border" @click="stocktakeOpen = false">取消</button>
           <button
-            class="px-4 py-2 rounded-lg text-sm bg-primary text-white disabled:opacity-50"
+            class="px-4 py-2 rounded-lg text-sm bg-primary text-on-primary disabled:opacity-50"
             :disabled="stocktakeSaving"
             @click="submitStocktake"
           >{{ stocktakeSaving ? '提交中…' : '提交盘点' }}</button>
@@ -375,12 +322,14 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { nextTick, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import api from '@/api'
 import ItemEditorDialog from '@/components/inventory/ItemEditorDialog.vue'
-import ShoppingListView from '@/components/inventory/ShoppingListView.vue'
-import FinanceHome from '@/components/finance/FinanceHome.vue'
 import { reminderAvailable as canReminder, loadReminderPref, applyReminder } from '@/utils/stockReminder'
+
+const router = useRouter()
+const route = useRoute()
 
 const locations = ref([])
 const items = ref([])
@@ -391,8 +340,9 @@ const expiringOnly = ref(false)
 const lowStockOnly = ref(false)
 const loading = ref(false)
 const error = ref('')
+const searchOpen = ref(false)
+const searchInput = ref(null)
 
-// 每日库存提醒（临期/过期/需补货）：APK 内走原生精确闹钟，浏览器端 no-op。
 const remCan = canReminder()
 const reminder = ref(loadReminderPref())
 function reminderSummary() {
@@ -407,7 +357,6 @@ function onReminderTime() {
   applyReminder(reminder.value, reminder.value.on ? reminderSummary() : '')
 }
 
-const activeTab = ref('stock')
 const detailItem = ref(null)
 const editorOpen = ref(false)
 const editingItem = ref(null)
@@ -442,12 +391,12 @@ function daysLeft(dateStr) {
 
 function expiryView(dateStr) {
   const n = daysLeft(dateStr)
-  if (n === null) return { text: '无保质期', cls: 'text-muted' }
-  if (n < 0) return { text: `已过期 ${-n} 天`, cls: 'text-error' }
-  if (n === 0) return { text: '今天到期', cls: 'text-error' }
-  if (n <= 3) return { text: `${n} 天后到期`, cls: 'text-error' }
-  if (n <= 7) return { text: `${n} 天后到期`, cls: 'text-primary' }
-  return { text: `${dateStr} 到期`, cls: 'text-muted' }
+  if (n === null) return { text: '无保质期', short: '无保质期', cls: 'text-muted' }
+  if (n < 0) return { text: `已过期 ${-n} 天`, short: `过期 ${-n} 天`, cls: 'text-error' }
+  if (n === 0) return { text: '今天到期', short: '今天到期', cls: 'text-error' }
+  if (n <= 3) return { text: `${n} 天后到期`, short: `${n} 天后到期`, cls: 'text-error' }
+  if (n <= 7) return { text: `${n} 天后到期`, short: `${n} 天后到期`, cls: 'text-primary' }
+  return { text: `${dateStr} 到期`, short: `${dateStr.slice(5)} 到期`, cls: 'text-muted' }
 }
 
 function locationText(it) {
@@ -466,7 +415,6 @@ async function loadStats() {
   } catch (e) {
     error.value = e.message || ''
   }
-  // 每次打开库存页刷新原生提醒摘要（通知里的数字尽量新鲜；未开启时 no-op）
   if (remCan && reminder.value.on) applyReminder(reminder.value, reminderSummary())
 }
 
@@ -501,6 +449,11 @@ async function refresh() {
   await loadAll()
 }
 
+function toggleSearch() {
+  searchOpen.value = !searchOpen.value
+  if (searchOpen.value) nextTick(() => searchInput.value?.focus())
+}
+
 function onQueryInput() {
   clearTimeout(queryTimer)
   queryTimer = setTimeout(loadItems, 300)
@@ -518,11 +471,13 @@ function selectLocation(id) {
 
 function toggleExpiring() {
   expiringOnly.value = !expiringOnly.value
+  if (expiringOnly.value) lowStockOnly.value = false
   loadItems()
 }
 
 function toggleLowStock() {
   lowStockOnly.value = !lowStockOnly.value
+  if (lowStockOnly.value) expiringOnly.value = false
   loadItems()
 }
 
@@ -652,7 +607,6 @@ async function handleScanned(code) {
   } catch (e) {
     // 本地未命中，转在线商品库识别
   }
-  // 立即跳转新增表单（条码已填），商品名称由在线识别异步补全
   initialItem.value = null
   initialBarcode.value = code
   editingItem.value = null
@@ -661,14 +615,11 @@ async function handleScanned(code) {
   lookupProduct(code)
 }
 
-// 本地条码库只记录用户绑定过的商品；未收录时查询公开商品库补全名称
-// （微信扫商品条码能出名称，走的也是商品数据库，而非手机本地数据）
 async function lookupProduct(code) {
   try {
     const res = await api.inventoryBarcodeProduct(code)
     const p = res.data
     if (!p || !p.name) return
-    // 期间用户可能已关闭弹窗或改扫了别的条码，只在同一张表单上回填
     if (!editorOpen.value || editingItem.value || initialBarcode.value !== code) return
     initialItem.value = {
       name: p.name,
@@ -679,7 +630,6 @@ async function lookupProduct(code) {
     initialBarcode.value = ''
     barcodeState.value = 'found'
   } catch (e) {
-    // 商品库未收录或网络不可用：保留空表单，用户可手动填写
     barcodeState.value = String(e.message || '').includes('未收录') ? 'miss' : 'unavailable'
   }
 }
@@ -764,7 +714,7 @@ async function toShopping(it) {
     await api.itemToShopping(it.id, 1)
     error.value = ''
     detailItem.value = null
-    activeTab.value = 'shopping'
+    router.push('/inventory/shopping')
   } catch (e) {
     error.value = e.message || '加入购物清单失败'
   }
@@ -832,5 +782,79 @@ async function exportCsv() {
   }
 }
 
-onMounted(loadAll)
+onMounted(async () => {
+  await loadAll()
+  if (route.query.scan === '1') scanBarcode()
+  if (route.query.stocktake === '1') openStocktake()
+})
 </script>
+
+<style scoped>
+.hc-icon-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: rgb(var(--c-on-surface));
+  transition: background-color .15s ease, color .15s ease;
+}
+.hc-icon-btn:hover { background: rgb(var(--c-surface-alt)); }
+
+.hc-chip {
+  flex-shrink: 0;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 9999px;
+  border: 1px solid rgb(var(--c-border));
+  background: rgb(var(--c-surface-alt));
+  color: rgb(var(--c-muted));
+  font-size: 12px;
+  font-family: var(--font-body);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  transition: background-color .15s ease, color .15s ease, border-color .15s ease;
+}
+.hc-chip--on {
+  background: rgb(var(--c-primary));
+  border-color: rgb(var(--c-primary));
+  color: rgb(var(--c-on-primary));
+}
+.hc-chip--danger {
+  background: rgb(var(--c-error) / .12);
+  border-color: rgb(var(--c-error) / .35);
+  color: rgb(var(--c-error));
+}
+.hc-chip--ghost {
+  border-style: dashed;
+}
+
+.hc-quick {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+}
+.hc-quick__icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(var(--c-surface-alt));
+  border: 1px solid rgb(var(--c-border));
+  color: rgb(var(--c-on-surface));
+  transition: transform .12s ease;
+}
+.hc-quick:active .hc-quick__icon { transform: scale(.94); }
+.hc-quick__label {
+  font-size: 11px;
+  color: rgb(var(--c-muted));
+  font-family: var(--font-body);
+}
+</style>
