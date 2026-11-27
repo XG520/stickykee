@@ -3,10 +3,11 @@
     <FinanceHeader title="图表" subtitle="看清每个周期的钱花在哪里" />
 
     <!-- 桌面端双栏：左侧控制+趋势，右侧占比/预算/报表 -->
-    <div class="space-y-3 lg:grid lg:grid-cols-12 lg:gap-5 lg:space-y-0 lg:items-start">
-    <div class="space-y-3 lg:col-span-7 lg:col-start-1 lg:row-start-1">
+    <div class="flex flex-col gap-3 lg:grid lg:grid-cols-12 lg:gap-5 lg:items-start">
+    <!-- 左栏：控制项 + 总额 + 趋势。移动端 display:contents 回落为单列，用 order 保持原顺序 -->
+    <div class="contents lg:col-span-7 lg:flex lg:flex-col lg:gap-3">
     <!-- 时间维度 -->
-    <div class="grid grid-cols-4 gap-1 p-1 rounded-2xl bg-surface-alt">
+    <div class="order-1 grid grid-cols-4 gap-1 p-1 rounded-2xl bg-surface-alt lg:order-none">
       <button
         v-for="d in dims"
         :key="d.value"
@@ -17,7 +18,7 @@
     </div>
 
     <!-- 自定义时间段选择器 -->
-    <div v-if="dim === 'custom'" class="rounded-2xl bg-surface border border-border p-3 space-y-2">
+    <div v-if="dim === 'custom'" class="order-1 rounded-2xl bg-surface border border-border p-3 space-y-2 lg:order-none">
       <div class="grid grid-cols-2 gap-2">
         <label class="block min-w-0">
           <span class="text-[11px] text-muted font-body">开始日期</span>
@@ -44,7 +45,7 @@
     </div>
 
     <!-- 周期切换（自定义模式由日期选择器接管） -->
-    <div v-if="dim !== 'custom'" class="flex items-center justify-between gap-2">
+    <div v-if="dim !== 'custom'" class="order-1 flex items-center justify-between gap-2 lg:order-none">
       <div class="flex items-center gap-0.5 min-w-0">
         <button class="hc-ic-sm" aria-label="上一周期" @click="movePeriod(-1)">
           <span class="material-symbols-outlined">chevron_left</span>
@@ -62,7 +63,7 @@
     </div>
 
     <!-- 收支切换 -->
-    <div class="grid grid-cols-2 gap-1 p-1 rounded-2xl bg-surface-alt">
+    <div class="order-1 grid grid-cols-2 gap-1 p-1 rounded-2xl bg-surface-alt lg:order-none">
       <button
         class="hc-seg"
         :class="type === 'expense' ? 'bg-surface text-on-surface shadow-sm' : 'text-muted'"
@@ -76,7 +77,7 @@
     </div>
 
     <!-- 分类筛选：选定后总额与趋势只统计该分类 -->
-    <div v-if="allCats.length" class="hc-scroll flex gap-1.5 overflow-x-auto pb-0.5">
+    <div v-if="allCats.length" class="hc-scroll order-1 flex gap-1.5 overflow-x-auto pb-0.5 lg:order-none">
       <button
         class="hc-catchip"
         :class="!selectedCategory ? 'hc-catchip--on' : ''"
@@ -97,7 +98,7 @@
     </div>
 
     <!-- 总额 -->
-    <section class="min-w-0 rounded-2xl bg-surface border border-border p-4">
+    <section class="order-2 min-w-0 rounded-2xl bg-surface border border-border p-4 lg:order-none">
       <div class="flex items-center justify-between gap-2">
         <div class="min-w-0 text-[11px] text-muted font-body truncate">
           <template v-if="selectedCategory">{{ selectedCategory.name }} · </template>总{{ type === 'income' ? '收入' : '支出' }}
@@ -120,11 +121,69 @@
       </div>
     </section>
 
-    <div v-if="error" class="text-xs text-error font-body">{{ error }}</div>
+    <div v-if="error" class="order-2 text-xs text-error font-body lg:order-none">{{ error }}</div>
+
+    <!-- 趋势（数据点可点击看当日/当月明细） -->
+    <section class="order-4 rounded-2xl bg-surface border border-border p-4 space-y-3 lg:order-none lg:rounded-3xl lg:p-5">
+      <div class="flex items-center justify-between gap-2">
+        <div class="text-sm font-medium font-body min-w-0 truncate">
+          <template v-if="selectedCategory">{{ selectedCategory.name }} · </template>{{ trendUnit === 'month' ? '月度' : '每日' }}趋势
+        </div>
+        <span class="text-[11px] text-muted font-body flex-shrink-0">点击图形查看明细</span>
+      </div>
+      <div v-if="seq.length" class="relative">
+        <svg viewBox="0 0 300 120" class="w-full h-[140px] lg:h-[220px]" preserveAspectRatio="none" role="img" :aria-label="`每日${type === 'income' ? '收入' : '支出'}趋势折线图`">
+          <line x1="0" y1="100" x2="300" y2="100" stroke="rgb(var(--c-border))" stroke-width="1" />
+          <polyline
+            :points="trendPoints"
+            fill="none"
+            :stroke="type === 'income' ? 'rgb(var(--c-accent))' : 'rgb(var(--c-primary))'"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            vector-effect="non-scaling-stroke"
+          />
+          <g v-for="(p, i) in points" :key="i">
+            <circle
+              v-if="showDots"
+              :cx="p.x"
+              :cy="p.y"
+              r="2.6"
+              :fill="type === 'income' ? 'rgb(var(--c-accent))' : 'rgb(var(--c-primary))'"
+            />
+            <circle
+              v-if="showHits"
+              :cx="p.x"
+              :cy="p.y"
+              :r="hitR"
+              class="trend-hit cursor-pointer"
+              tabindex="0"
+              role="button"
+              :aria-label="`${p.label} ${money(p.value)}，点击查看明细`"
+              @click="openPoint(i)"
+              @keydown.enter="openPoint(i)"
+            >
+              <title>{{ p.label }} {{ money(p.value) }}</title>
+            </circle>
+          </g>
+        </svg>
+        <div class="relative h-3 mt-1">
+          <span
+            v-for="(l, i) in xLabels"
+            :key="i"
+            class="absolute -translate-x-1/2 text-[9px] text-muted font-body whitespace-nowrap"
+            :style="{ left: l.pct + '%' }"
+          >{{ l.text }}</span>
+        </div>
+      </div>
+      <div v-else class="text-xs text-muted font-body py-4 text-center">暂无趋势数据</div>
+    </section>
     </div>
 
+    <!-- 右栏：分类占比 + 预算 + 报表入口，独立堆叠，避免与左栏共享网格行而产生大块空白 -->
+    <div class="contents lg:col-span-5 lg:flex lg:flex-col lg:gap-3">
     <!-- 分类占比：点击扇区筛选分类，点击列表查看该分类明细 -->
-    <section class="rounded-2xl lg:rounded-3xl bg-surface border border-border p-4 lg:p-5 space-y-3 lg:col-span-5 lg:col-start-8 lg:row-start-1 lg:flex lg:flex-col lg:min-h-0 lg:max-h-[calc(100dvh-6rem)]">
+    <section class="order-3 rounded-2xl bg-surface border border-border p-4 space-y-3 lg:order-none lg:rounded-3xl lg:p-5 lg:flex lg:flex-col lg:min-h-0 lg:max-h-[calc(100dvh-6rem)]">
       <div class="flex items-center justify-between gap-2">
         <div class="text-sm font-medium font-body">分类{{ type === 'income' ? '收入' : '支出' }}</div>
         <span class="text-[10px] text-muted font-body flex-shrink-0">点扇区筛选 · 点列表看明细</span>
@@ -192,64 +251,8 @@
       <div v-else class="text-xs text-muted font-body py-4 text-center">当前区间暂无{{ type === 'income' ? '收入' : '支出' }}</div>
     </section>
 
-    <!-- 趋势（数据点可点击看当日/当月明细） -->
-    <section class="rounded-2xl lg:rounded-3xl bg-surface border border-border p-4 lg:p-5 space-y-3 lg:col-span-7 lg:col-start-1 lg:row-start-2">
-      <div class="flex items-center justify-between gap-2">
-        <div class="text-sm font-medium font-body min-w-0 truncate">
-          <template v-if="selectedCategory">{{ selectedCategory.name }} · </template>{{ trendUnit === 'month' ? '月度' : '每日' }}趋势
-        </div>
-        <span class="text-[11px] text-muted font-body flex-shrink-0">点击图形查看明细</span>
-      </div>
-      <div v-if="seq.length" class="relative">
-        <svg viewBox="0 0 300 120" class="w-full h-[140px] lg:h-[220px]" preserveAspectRatio="none" role="img" :aria-label="`每日${type === 'income' ? '收入' : '支出'}趋势折线图`">
-          <line x1="0" y1="100" x2="300" y2="100" stroke="rgb(var(--c-border))" stroke-width="1" />
-          <polyline
-            :points="trendPoints"
-            fill="none"
-            :stroke="type === 'income' ? 'rgb(var(--c-accent))' : 'rgb(var(--c-primary))'"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            vector-effect="non-scaling-stroke"
-          />
-          <g v-for="(p, i) in points" :key="i">
-            <circle
-              v-if="showDots"
-              :cx="p.x"
-              :cy="p.y"
-              r="2.6"
-              :fill="type === 'income' ? 'rgb(var(--c-accent))' : 'rgb(var(--c-primary))'"
-            />
-            <circle
-              v-if="showHits"
-              :cx="p.x"
-              :cy="p.y"
-              :r="hitR"
-              class="trend-hit cursor-pointer"
-              tabindex="0"
-              role="button"
-              :aria-label="`${p.label} ${money(p.value)}，点击查看明细`"
-              @click="openPoint(i)"
-              @keydown.enter="openPoint(i)"
-            >
-              <title>{{ p.label }} {{ money(p.value) }}</title>
-            </circle>
-          </g>
-        </svg>
-        <div class="relative h-3 mt-1">
-          <span
-            v-for="(l, i) in xLabels"
-            :key="i"
-            class="absolute -translate-x-1/2 text-[9px] text-muted font-body whitespace-nowrap"
-            :style="{ left: l.pct + '%' }"
-          >{{ l.text }}</span>
-        </div>
-      </div>
-      <div v-else class="text-xs text-muted font-body py-4 text-center">暂无趋势数据</div>
-    </section>
-
     <!-- 预算（仅月） -->
-    <section v-if="dim === 'month' && Number(budgetStats.budget_total) > 0" class="rounded-2xl bg-surface border border-border p-4 space-y-2 lg:col-span-5 lg:col-start-8 lg:row-start-2 lg:self-start">
+    <section v-if="dim === 'month' && Number(budgetStats.budget_total) > 0" class="order-5 rounded-2xl bg-surface border border-border p-4 space-y-2 lg:order-none">
       <div class="flex items-center justify-between text-xs font-body">
         <span class="text-muted">本月预算</span>
         <span :class="Number(budgetStats.budget_left) < 0 ? 'text-error' : 'text-muted'">
@@ -271,7 +274,7 @@
     <!-- 已保存报表入口 -->
     <router-link
       to="/inventory/finance/reports"
-      class="flex items-center justify-between gap-2 rounded-2xl bg-surface border border-border p-4 hover:border-primary/35 transition-colors lg:col-span-5 lg:col-start-8 lg:row-start-3 lg:self-start"
+      class="order-6 flex items-center justify-between gap-2 rounded-2xl bg-surface border border-border p-4 hover:border-primary/35 transition-colors lg:order-none"
     >
       <span class="flex items-center gap-2 text-sm font-body">
         <span class="material-symbols-outlined text-muted">bookmarks</span>
@@ -279,6 +282,7 @@
       </span>
       <span class="material-symbols-outlined text-muted">chevron_right</span>
     </router-link>
+    </div>
     </div>
   </div>
 
