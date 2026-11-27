@@ -189,8 +189,8 @@
         <span class="text-[10px] text-muted font-body flex-shrink-0">点扇区筛选 · 点列表看明细</span>
       </div>
 
-      <div v-if="catRows.length" class="flex justify-center py-0.5">
-        <div class="hc-donut relative" :class="{ 'hc-donut--zoom': selectedInDonut }">
+      <div v-if="catRows.length" class="hc-donut-wrap py-0.5">
+        <div class="hc-donut" :class="{ 'hc-donut--zoom': selectedInDonut }">
           <svg viewBox="0 0 100 100" class="w-full h-full -rotate-90" role="img" :aria-label="`分类${type === 'income' ? '收入' : '支出'}占比环图`">
             <circle cx="50" cy="50" r="40" fill="none" stroke="rgb(var(--c-surface-alt))" stroke-width="14" />
             <circle
@@ -1015,36 +1015,42 @@ onActivated(async () => {
 .hc-catrow:hover { background: rgb(var(--c-surface-alt)); }
 .hc-catrow--on { background: rgb(var(--c-primary) / .08); }
 
-/* 环形图扇区：stroke 过渡与容器 scale 同步，避免时间差导致的跳帧 */
+/* 环形图扇区：所有过渡统一时长，避免 width 放大时与 stroke 动画不同步跳帧 */
 .donut-seg {
-  transition: stroke-dasharray .32s cubic-bezier(.22,.61,.36,1),
-              stroke-dashoffset .32s cubic-bezier(.22,.61,.36,1),
-              stroke-width .32s cubic-bezier(.22,.61,.36,1),
+  transition: stroke-dasharray .34s cubic-bezier(.22,.61,.36,1),
+              stroke-dashoffset .34s cubic-bezier(.22,.61,.36,1),
+              stroke-width .34s cubic-bezier(.22,.61,.36,1),
               opacity .18s ease;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
   outline: none;
-  will-change: stroke-dasharray, stroke-dashoffset, opacity;
+  will-change: stroke-dasharray, stroke-dashoffset;
 }
 .donut-seg:hover { opacity: .75; }
 
-/* 环形图容器：固定 width + transform:scale() 放大，只走合成层，
-   不触发布局重排，移动端 WebView 也不跳帧。overflow 可见保证放大后不被裁剪。 */
-.hc-donut {
-  position: relative;
-  width: 9rem;
-  aspect-ratio: 1 / 1;
-  transform: scale(1);
-  transform-origin: center;
-  transition: transform .32s cubic-bezier(.22,.61,.36,1);
-  will-change: transform;
-  -webkit-tap-highlight-color: transparent;
+/* 环形图容器：用 margin-left: calc(50% - 半宽) 实现精确居中，
+   配合 width 从 9rem → 100% 的同步过渡，
+   左右边缘同时从中心向两侧扩展（margin-left 从 calc 过渡到 0），
+   视觉上就是「从中心向外放大」，不会从左上角弹出来。 */
+.hc-donut-wrap {
+  width: 100%;
   overflow: visible;
 }
-/* 手机端放大控制在 1.25，避免溢出 section；桌面端卡片更宽，放大到 1.45 效果明显 */
-.hc-donut--zoom { transform: scale(1.25); }
-@media (min-width: 1024px) {
-  .hc-donut--zoom { transform: scale(1.45); }
+.hc-donut {
+  width: 9rem;
+  aspect-ratio: 1 / 1;
+  /* 半宽 4.5rem，让元素中心对齐父容器 50% 处 */
+  margin-left: calc(50% - 4.5rem);
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-tap-highlight-color: transparent;
+  overflow: visible;
+  transition: width .34s cubic-bezier(.22,.61,.36,1),
+              margin-left .34s cubic-bezier(.22,.61,.36,1);
+}
+.hc-donut--zoom {
+  width: 100%;
+  margin-left: 0;
 }
 .hc-donut svg {
   width: 100%;
