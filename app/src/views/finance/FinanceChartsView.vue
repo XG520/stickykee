@@ -1015,25 +1015,43 @@ onActivated(async () => {
 .hc-catrow:hover { background: rgb(var(--c-surface-alt)); }
 .hc-catrow--on { background: rgb(var(--c-primary) / .08); }
 
-/* 环形图扇区与进度条的平滑过渡 */
+/* 环形图扇区：stroke 过渡与容器 scale 同步，避免时间差导致的跳帧 */
 .donut-seg {
-  transition: stroke-dasharray .55s ease, stroke-dashoffset .55s ease, opacity .18s ease;
-  /* 去掉移动端 WebView 点击时的黄色方块高亮，并让点按立即响应 */
+  transition: stroke-dasharray .32s cubic-bezier(.22,.61,.36,1),
+              stroke-dashoffset .32s cubic-bezier(.22,.61,.36,1),
+              stroke-width .32s cubic-bezier(.22,.61,.36,1),
+              opacity .18s ease;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
   outline: none;
+  will-change: stroke-dasharray, stroke-dashoffset, opacity;
 }
 .donut-seg:hover { opacity: .75; }
-/* 点击扇区后放大：直径与下方词条（分类行）等宽，词条随容器增高同步平滑下移。
-   宽高参与布局，下方列表跟随同一段过渡移动，不会出现跳变或遮挡。 */
+
+/* 环形图容器：固定 width + transform:scale() 放大，只走合成层，
+   不触发布局重排，移动端 WebView 也不跳帧。overflow 可见保证放大后不被裁剪。 */
 .hc-donut {
-  width: 8rem;
+  position: relative;
+  width: 9rem;
   aspect-ratio: 1 / 1;
-  transition: width .34s cubic-bezier(.4, 0, .2, 1);
+  transform: scale(1);
+  transform-origin: center;
+  transition: transform .32s cubic-bezier(.22,.61,.36,1);
+  will-change: transform;
   -webkit-tap-highlight-color: transparent;
+  overflow: visible;
 }
-.hc-donut--zoom { width: 100%; }
-.hc-donut svg { -webkit-tap-highlight-color: transparent; }
+/* 手机端放大控制在 1.25，避免溢出 section；桌面端卡片更宽，放大到 1.45 效果明显 */
+.hc-donut--zoom { transform: scale(1.25); }
+@media (min-width: 1024px) {
+  .hc-donut--zoom { transform: scale(1.45); }
+}
+.hc-donut svg {
+  width: 100%;
+  height: 100%;
+  -webkit-tap-highlight-color: transparent;
+  overflow: visible;
+}
 .hc-bar { transition: width .55s ease; }
 
 /* 趋势数据点热区：平时透明，悬停高亮 */
